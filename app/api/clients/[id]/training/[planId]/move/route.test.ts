@@ -14,9 +14,6 @@ vi.mock("@/services/training-plan-move-service", () => {
   class PlanMoveRefusedError extends Error {}
   return { moveTrainingPlanStart: vi.fn(), PlanMoveNotFoundError, PlanMoveRefusedError };
 });
-vi.mock("@/services/training-event-occupancy", () => ({
-  DateOccupiedError: class DateOccupiedError extends Error {},
-}));
 vi.mock("@/services/audit-log-service", () => ({ recordAuditEvent: vi.fn() }));
 vi.mock("@/lib/auth-helpers", () => ({ getAuthenticatedCoachId: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ coachApiRateLimit: vi.fn() }));
@@ -29,7 +26,6 @@ import {
   PlanMoveNotFoundError,
   PlanMoveRefusedError,
 } from "@/services/training-plan-move-service";
-import { DateOccupiedError } from "@/services/training-event-occupancy";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -159,16 +155,6 @@ describe("POST /api/clients/[id]/training/[planId]/move", () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: "That would overlap Strength." });
     expect(recordAuditEvent).not.toHaveBeenCalled();
-  });
-
-  it("relays a day that already holds a session as 409", async () => {
-    vi.mocked(moveTrainingPlanStart).mockRejectedValue(
-      new DateOccupiedError("Thu, Oct 22 already has a session")
-    );
-    const response = await POST(makePost({ startsOn: "2026-10-05" }), params());
-
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "Thu, Oct 22 already has a session" });
   });
 
   it("404s a plan that isn't this client's", async () => {

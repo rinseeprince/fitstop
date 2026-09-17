@@ -79,6 +79,16 @@ describe("resolveSessionPick — prescribed day", () => {
     });
   });
 
+  it("opens another session already on the same day — a day holds several, nothing moves", () => {
+    const sameDay = pick({ eventId: "ev-wed-pm", sessionId: "s-wed-pm", date: WED, state: "today" });
+    expect(resolveSessionPick(sameDay, ctx)).toEqual({ action: "open", eventId: "ev-wed-pm" });
+    // Even once the session in hand is logged: the other is its own workout, never an alt.
+    expect(resolveSessionPick(sameDay, { ...ctx, logged: true })).toEqual({
+      action: "open",
+      eventId: "ev-wed-pm",
+    });
+  });
+
   it("picking the session you are already on just opens it", () => {
     expect(resolveSessionPick(pick({ eventId: "ev-wed", date: WED, state: "today" }), ctx)).toEqual(
       { action: "open", eventId: "ev-wed" },

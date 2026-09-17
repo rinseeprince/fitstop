@@ -5,7 +5,7 @@
  */
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getEventForDate } from "./training-event-service";
+import { getFirstEventForDate } from "./training-event-service";
 import {
   getNutritionTargetsForDateRange,
   type NutritionDayTarget,
@@ -42,8 +42,8 @@ type PlanContextForDate = {
  * links. The nutrition id is the version COVERING the log's date — the same
  * version a computed day derives from, so there is no day-row leg to prefer;
  * null on a day no version covers, and the meal still saves without a stamp.
- * The training id prefers the date-accurate event, then falls back to the
- * active plan. A backdated log stamps the version that governed its own day,
+ * The training id prefers the plan of the day's first session, then falls back
+ * to the active plan. A backdated log stamps the version that governed its own day,
  * and a queued save never mis-stamps today's log with the future version's id.
  */
 export const resolvePlanContextForDate = async (
@@ -57,11 +57,11 @@ export const resolvePlanContextForDate = async (
   // a reader judges adherence by.
   const [coveringVersionId, trainingEvent] = await Promise.all([
     getNutritionPlanIdForDate(clientId, date),
-    getEventForDate(clientId, date),
+    getFirstEventForDate(clientId, date),
   ]);
 
-  // training_plan_id prefers the date's event, then falls back to the active
-  // plan so the per-card training write (Session 5.3) links even on a no-event
+  // training_plan_id prefers the plan of the date's first session, then falls
+  // back to the active plan so the per-card training write (Session 5.3) links even on a no-event
   // day. Uses the lightweight id-only getActiveTrainingPlanId (NOT the heavy
   // getActiveTrainingPlan, which loads sessions+exercises). Deliberately
   // untouched by the nutrition versioning work: its today-anchor (rather than

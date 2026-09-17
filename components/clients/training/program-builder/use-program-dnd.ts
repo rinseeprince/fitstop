@@ -19,17 +19,19 @@ import type { SessionDraft, WeekDraft } from "./program-builder-types";
 import { findSession } from "./use-program-builder-state";
 import type { ProgramDraft } from "./program-builder-types";
 
-// One DndContext handles all four drag kinds, discriminated by data.type:
+// One DndContext handles all four drag kinds, discriminated by data.type. A
+// day a drag can't land on is filtered out of collision (slotAcceptsDrag), so
+// it never highlights and a drop there is inert:
 // - "week": sortable week rows (vertical reorder)
-// - "session": a day cell's session card, dropped on any "day-slot" droppable
-//   (move onto rest, swap onto occupied)
+// - "session": one session card of a day cell, dropped on a "day-slot"
+//   droppable: onto a rest day it moves; onto a day holding one session, when
+//   it is the only session on its own day, the two swap
 // - "library-session": a library-panel session card, dropped on a REST
-//   day-slot only (one session per day-cell is locked — occupied cells are
-//   filtered out of collision, so they never highlight and drops are inert)
-// - "library-exercise": a library-panel exercise card, dropped on an OCCUPIED
-//   day-slot only (it appends to that slot's session — the inverse filter:
-//   rest cells are excluded from collision, so an exercise can't create a
-//   session out of nothing)
+//   day-slot only
+// - "library-exercise": a library-panel exercise card, dropped on a day-slot
+//   holding exactly ONE session — it appends to that session (a rest day has
+//   none to append to; on a day holding several the coach adds it inside the
+//   session they mean)
 // A single context works because the gestures can never coexist, and it
 // keeps one DragOverlay + portal.
 
@@ -38,6 +40,8 @@ export type SessionDragData = {
   type: "session";
   sessionUid: string;
   fromSlotUid: string;
+  /** Whether the session is the only one on its day — only then may it swap. */
+  aloneOnDay: boolean;
 };
 export type LibrarySessionDragData = {
   type: "library-session";
@@ -50,10 +54,9 @@ export type LibraryExerciseDragData = {
 export type SlotDropData = {
   type: "day-slot";
   slotUid: string;
-  // Set by day-cell so the library collision filters can include/exclude
-  // occupied cells without a draft lookup (library-session wants rest cells,
-  // library-exercise wants occupied cells).
-  occupied: boolean;
+  // Set by day-cell so the collision filters can judge a day without a draft
+  // lookup: how many sessions it holds.
+  sessionCount: number;
 };
 
 // A week is drag-locked when any of its slots is history (placed-plan target).
@@ -73,21 +76,29 @@ type ActiveDrag =
   | { type: "library-session"; session: SavedSession }
   | { type: "library-exercise"; exercise: Exercise };
 
-// Which day-slot droppables a drag type may collide with — pure so it's
-// unit-testable without dnd-kit geometry. A session hits any slot; a
-// library-session only REST slots (one session per cell); a library-exercise
-// only OCCUPIED slots (it appends to an existing session, never conjures one).
-// A locked slot (placed-plan history) accepts nothing.
+// Which day-slot droppables a drag may collide with — pure so it's
+// unit-testable without dnd-kit geometry. A session hits a rest slot, or a
+// slot holding one session when it is alone on its own day (the swap); a
+// library-session only REST slots; a library-exercise only a slot holding
+// exactly one session. A locked slot (placed-plan history) accepts nothing.
 export function slotAcceptsDrag(
-  activeType: string,
-  slot: { type?: string; occupied?: boolean; slotUid?: string },
+  active: { type?: string; aloneOnDay?: boolean },
+  slot: { type?: string; sessionCount?: number; slotUid?: string },
   lockedSlotUids?: ReadonlySet<string>,
 ): boolean {
   if (slot.type !== "day-slot") return false;
   if (slot.slotUid && lockedSlotUids?.has(slot.slotUid)) return false;
-  if (activeType === "library-session" && slot.occupied) return false;
-  if (activeType === "library-exercise" && !slot.occupied) return false;
-  return true;
+  const sessionCount = slot.sessionCount ?? 0;
+  switch (active.type) {
+    case "session":
+      return sessionCount === 0 || (sessionCount === 1 && active.aloneOnDay === true);
+    case "library-session":
+      return sessionCount === 0;
+    case "library-exercise":
+      return sessionCount === 1;
+    default:
+      return false;
+  }
 }
 
 type UseProgramDndParams = {
@@ -118,23 +129,23 @@ export function useProgramDnd({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // Type-aware collision: a dragged session only collides with day-slot
-  // droppables (pointerWithin feels right for cell targets, rectIntersection
-  // as fallback for keyboard/edge cases); a library-session skips occupied
-  // slots (one per cell), a library-exercise skips EMPTY slots (it appends to
-  // an existing session); a dragged week only collides with week rows.
+  // Type-aware collision: a dragged session or library card only collides
+  // with the day-slot droppables slotAcceptsDrag lets it land on
+  // (pointerWithin feels right for cell targets, rectIntersection as fallback
+  // for keyboard/edge cases); a dragged week only collides with week rows.
   const collisionDetection: CollisionDetection = useCallback(
     (args) => {
-      const activeType = (args.active.data.current as { type?: string } | undefined)?.type;
+      const active =
+        (args.active.data.current as { type?: string; aloneOnDay?: boolean } | undefined) ?? {};
       if (
-        activeType === "session" ||
-        activeType === "library-session" ||
-        activeType === "library-exercise"
+        active.type === "session" ||
+        active.type === "library-session" ||
+        active.type === "library-exercise"
       ) {
         const droppableContainers = args.droppableContainers.filter((c) =>
           slotAcceptsDrag(
-            activeType,
-            (c.data.current as { type?: string; occupied?: boolean; slotUid?: string } | undefined) ?? {},
+            active,
+            (c.data.current as { type?: string; sessionCount?: number; slotUid?: string } | undefined) ?? {},
             lockedSlotUids,
           ),
         );

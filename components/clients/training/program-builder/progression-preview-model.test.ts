@@ -161,31 +161,33 @@ describe("buildPreviewRows", () => {
     week.days[2] = {
       ...week.days[2],
       isRest: false,
-      session: {
-        uid: "sess-push",
-        name: "Push",
-        focus: null,
-        estimatedDurationMinutes: null,
-        calorieSurplusPercentage: null,
-        notes: null,
-        sessionType: "training",
-        groups: [
-          lone(
-            exercise({
-              uid: "ex-bench",
-              setSpecs: [working(1, { load_type: "absolute", load_value: 100 })],
-            }),
-          ),
-          lone(
-            exercise({
-              uid: "ex-curl",
-              exerciseId: null,
-              name: "Cable Curl",
-              setSpecs: [working(1, { load_type: "pct_1rm", load_value: 60 })],
-            }),
-          ),
-        ],
-      },
+      sessions: [
+        {
+          uid: "sess-push",
+          name: "Push",
+          focus: null,
+          estimatedDurationMinutes: null,
+          calorieSurplusPercentage: null,
+          notes: null,
+          sessionType: "training",
+          groups: [
+            lone(
+              exercise({
+                uid: "ex-bench",
+                setSpecs: [working(1, { load_type: "absolute", load_value: 100 })],
+              }),
+            ),
+            lone(
+              exercise({
+                uid: "ex-curl",
+                exerciseId: null,
+                name: "Cable Curl",
+                setSpecs: [working(1, { load_type: "pct_1rm", load_value: 60 })],
+              }),
+            ),
+          ],
+        },
+      ],
     };
     return week;
   }
@@ -198,6 +200,7 @@ describe("buildPreviewRows", () => {
 
     expect(days).toHaveLength(1); // rest days emit nothing
     expect(days[0].dayIndex).toBe(2);
+    expect(days[0].place).toBe(0);
     expect(days[0].sessionName).toBe("Push");
     const [bench, curl] = days[0].rows;
     expect(bench).toMatchObject({
@@ -215,26 +218,70 @@ describe("buildPreviewRows", () => {
       after: null,
     });
     // row uid is the CLONE's uid so checkbox state survives commit-side lookups
-    expect(bench.uid).toBe(sessionExercises(progressed.days[2].session!)[0].uid);
+    expect(bench.uid).toBe(sessionExercises(progressed.days[2].sessions[0])[0].uid);
+  });
+
+  it("gives each session of a day its own entry, paired by its place in the day", () => {
+    const source = sourceWeek();
+    const [push] = source.days[2].sessions;
+    source.days[2] = {
+      ...source.days[2],
+      sessions: [
+        push,
+        {
+          ...push,
+          uid: "sess-pull",
+          name: "Pull",
+          groups: [
+            lone(
+              exercise({
+                uid: "ex-row",
+                name: "Row",
+                setSpecs: [working(1, { load_type: "absolute", load_value: 70 })],
+              }),
+            ),
+          ],
+        },
+      ],
+    };
+    const rule = { kind: "load", mode: "absolute", amount: 5 } as const;
+    const { week: progressed, changedExerciseUids } = progressWeek(source, rule, () => true);
+    const entries = buildPreviewRows(source, progressed, changedExerciseUids, rule, "metric");
+
+    expect(entries.map((e) => [e.dayIndex, e.place, e.sessionName])).toEqual([
+      [2, 0, "Push"],
+      [2, 1, "Pull"],
+    ]);
+    expect(entries[1].rows).toEqual([
+      expect.objectContaining({
+        name: "Row",
+        changed: true,
+        before: "70 kg",
+        after: "75 kg",
+        uid: sessionExercises(progressed.days[2].sessions[1])[0].uid,
+      }),
+    ]);
   });
 
   it("reads a superset's Sets change as rounds, for every exercise in it", () => {
     const source = sourceWeek();
-    const session = source.days[2].session!;
+    const [session] = source.days[2].sessions;
     source.days[2] = {
       ...source.days[2],
-      session: {
-        ...session,
-        groups: [
-          {
-            uid: "grp-superset",
-            ...STRAIGHT_SETS,
-            format: "circuit",
-            rounds: 3,
-            exercises: session.groups.map((g) => ({ ...g.exercises[0], setSpecs: null, sets: 3 })),
-          },
-        ],
-      },
+      sessions: [
+        {
+          ...session,
+          groups: [
+            {
+              uid: "grp-superset",
+              ...STRAIGHT_SETS,
+              format: "circuit",
+              rounds: 3,
+              exercises: session.groups.map((g) => ({ ...g.exercises[0], setSpecs: null, sets: 3 })),
+            },
+          ],
+        },
+      ],
     };
     const rule = { kind: "sets", amount: 1 } as const;
     // Only the bench is in scope; the curl's rounds change with it.

@@ -30,10 +30,12 @@ import type { AdherenceSummary, DotState } from "@/types/coach-overview";
  */
 
 /**
- * One dot per date from that date's event statuses. The classification table
- * assumes one session per day; multi-event days collapse deterministically:
- * all completed → complete, any progress → partial, any missed/skipped →
- * missed, else (still scheduled, date ≤ today) → no_log.
+ * One dot per date from that date's event statuses — the rail reads a
+ * fortnight in one glance, so a day holding several sessions is still one dot,
+ * while the counts beside the rail count every session. A day's sessions
+ * collapse deterministically: all completed → complete, any progress →
+ * partial, any missed/skipped → missed, else (still scheduled, date ≤ today) →
+ * no_log.
  */
 export function classifyTrainingDay(statuses: string[]): DotState {
   if (!statuses.length) return "none";

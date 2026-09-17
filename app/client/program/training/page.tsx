@@ -118,6 +118,8 @@ export default function ProgramTrainingPage() {
     );
   }
 
+  // Days in order; a day holding several sessions lists them in the order the
+  // read gives them (the sort is stable).
   const sortedSessions = [...plan.sessions].sort(
     (a, b) => a.orderIndex - b.orderIndex,
   );
@@ -131,7 +133,7 @@ export default function ProgramTrainingPage() {
       <PlanStateNote plan={plan} className="mt-1 block font-mono-display text-xs text-muted-foreground" />
       <div className="mt-4 flex flex-col gap-2 pb-6">
         {sortedSessions.map((session) => (
-          <TrainingSessionRow key={session.orderIndex} session={session} />
+          <TrainingSessionRow key={`${session.orderIndex}:${session.id}`} session={session} />
         ))}
       </div>
     </div>

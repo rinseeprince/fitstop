@@ -7,22 +7,21 @@ import {
   LayoutNotFoundError,
   LayoutPolicyError,
 } from "@/services/training-event-layout-service";
-import { DateOccupiedError } from "@/services/training-event-occupancy";
 
 /**
  * POST — apply a week layout to the client's own calendar: N still-scheduled
  * sessions change date in one transaction (migration 150). A single move, a
  * two-day swap and a whole-week rearrangement are the same request at
- * different sizes. Nutrition follows the moved sessions (one cascade).
+ * different sizes; a session moved onto a day that holds one joins it, last
+ * (migration 179). Nutrition follows the moved sessions on the next read.
  *
  * requireClientAuth: IP burst guard → CSRF → auth → per-client tier (§9). The
  * service scopes every read and the RPC every write on the authed clientId, so
  * a foreign eventId reads as not found (404), never as someone else's.
  *
- * 409 carries a sentence the client can act on — either the day is taken
- * ("Sat, Aug 29 already has a session") or their week changed under them and
- * they should reload. 400 is a rule of their own calendar (week bound, a past
- * day already logged, a logged session).
+ * 409 carries a sentence the client can act on: their week changed under them
+ * and they should reload. 400 is a rule of their own calendar (week bound, a
+ * closed week, a logged session).
  */
 export async function POST(request: NextRequest) {
   const auth = await requireClientAuth(request);
@@ -50,7 +49,7 @@ export async function POST(request: NextRequest) {
     const data = await applyClientLayout(auth.clientId, parsed.data.moves);
     return NextResponse.json({ success: true, data }, { status: 200 });
   } catch (error) {
-    if (error instanceof DateOccupiedError || error instanceof LayoutDriftError) {
+    if (error instanceof LayoutDriftError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 409 });
     }
     if (error instanceof LayoutPolicyError) {

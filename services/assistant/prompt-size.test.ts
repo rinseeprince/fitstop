@@ -66,7 +66,7 @@ describe("assistant prompt cache floor", () => {
     }
   });
 
-  it("still ships all 23 tools (a dropped tool shrinks the prefix toward the floor)", () => {
+  it("still ships all 24 tools (a dropped tool shrinks the prefix toward the floor)", () => {
     expect(toolsWireChars()).toBeGreaterThan(9000);
   });
 });

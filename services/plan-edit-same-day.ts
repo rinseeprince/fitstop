@@ -1,14 +1,16 @@
 import { toPrescribedFields } from "@/utils/prescribed-fields";
 import { groupSettingsToRow, type GroupSettingsInput } from "@/utils/exercise-groups";
-import type { PlanEditDay } from "./plan-edit-service";
+import type { PlanEditSession } from "./plan-edit-service";
 
 // =============================================================================
-// Edit plan's "unchanged": a day the editor saves as it was laid keeps its
-// edited mark; a day the coach changed in the editor loses it.
+// Edit plan's "unchanged": a session the editor saves as it was laid keeps its
+// calendar entry's edited mark; a session the coach changed loses it.
 //
-// The laid day is the editor's own read of the calendar (layDays in
-// plan-edit-service.ts), re-read at save; the transaction's stale check then
-// guarantees it is the calendar the editor opened. Pure: no database client.
+// The laid session is the editor's own read of the calendar (layDays in
+// plan-edit-service.ts), re-read at save — the one on the saved session's day
+// that holds the entry the editor opened it from; the transaction's stale
+// check then guarantees it is the calendar the editor opened. Pure: no
+// database client.
 // =============================================================================
 
 type ExerciseContent = {
@@ -32,8 +34,8 @@ type ExerciseContent = {
 /** A group in the order its exercises are written. */
 type GroupContent = GroupSettingsInput & { exercises: readonly ExerciseContent[] };
 
-/** A session day in the order its groups are written. */
-type DayContent = {
+/** A session in the order its groups are written. */
+type SessionContent = {
   name: string;
   focus?: string | null;
   notes?: string | null;
@@ -69,17 +71,17 @@ function exerciseKey(exercise: ExerciseContent) {
   };
 }
 
-function dayKey(day: DayContent): string {
+function sessionKey(session: SessionContent): string {
   // Keys sorted at every depth: a set spec read from the database and one
   // parsed from the save carry the same values in a different key order.
   return JSON.stringify(
     {
-      name: day.name,
-      focus: day.focus ?? null,
-      notes: day.notes ?? null,
-      estimatedDurationMinutes: day.estimatedDurationMinutes ?? null,
-      calorieSurplusPercentage: day.calorieSurplusPercentage ?? null,
-      groups: day.groups.map((group) => ({
+      name: session.name,
+      focus: session.focus ?? null,
+      notes: session.notes ?? null,
+      estimatedDurationMinutes: session.estimatedDurationMinutes ?? null,
+      calorieSurplusPercentage: session.calorieSurplusPercentage ?? null,
+      groups: session.groups.map((group) => ({
         ...groupSettingsToRow(group),
         exercises: group.exercises.map(exerciseKey),
       })),
@@ -94,12 +96,15 @@ function dayKey(day: DayContent): string {
 }
 
 /**
- * True when the session day about to be written is the day as laid: the same
+ * True when the session about to be written is the session as laid: the same
  * name, focus, notes, duration and surplus, and the same groups — settings and
- * exercises — in the same order. A day laid as rest is never unchanged by a
- * session.
+ * exercises — in the same order. A session with nothing laid to compare (new,
+ * copied, or opened from another day) is never unchanged.
  */
-export function isDayUnchanged(laid: PlanEditDay | undefined, saved: DayContent): boolean {
-  if (!laid || laid.isRest) return false;
-  return dayKey(laid) === dayKey(saved);
+export function isSessionUnchanged(
+  laid: PlanEditSession | undefined,
+  saved: SessionContent,
+): boolean {
+  if (!laid) return false;
+  return sessionKey(laid) === sessionKey(saved);
 }

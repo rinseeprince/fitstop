@@ -3,24 +3,22 @@ import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { WeekRow } from "./week-row";
-import { makeRestWeek, type WeekDraft } from "./program-builder-types";
+import { makeRestWeek, type SessionDraft, type WeekDraft } from "./program-builder-types";
+
+const blank = (uid: string, name: string): SessionDraft => ({
+  uid,
+  name,
+  focus: null,
+  estimatedDurationMinutes: null,
+  calorieSurplusPercentage: null,
+  notes: null,
+  sessionType: "training",
+  groups: [],
+});
 
 function makeWeek(): WeekDraft {
   const week = makeRestWeek(0);
-  week.days[0] = {
-    ...week.days[0],
-    isRest: false,
-    session: {
-      uid: "sess-1",
-      name: "Push",
-      focus: null,
-      estimatedDurationMinutes: null,
-      calorieSurplusPercentage: null,
-      notes: null,
-      sessionType: "training",
-      groups: [],
-    },
-  };
+  week.days[0] = { ...week.days[0], isRest: false, sessions: [blank("sess-1", "Push")] };
   return week;
 }
 
@@ -33,7 +31,7 @@ function renderRow(props: Partial<Parameters<typeof WeekRow>[0]> = {}) {
     onDeleteWeek: vi.fn(),
     onOpenSession: vi.fn(),
     onRequestAddSession: vi.fn(),
-    onClearSlot: vi.fn(),
+    onRemoveSession: vi.fn(),
   };
   render(
     <DndContext>
@@ -64,6 +62,18 @@ describe("WeekRow / WeekCard", () => {
     // 1 session cell + 6 rest cells.
     expect(screen.getByText("Push")).toBeInTheDocument();
     expect(screen.getAllByText("Rest")).toHaveLength(6);
+  });
+
+  it("counts sessions, not training days: a day holding two counts twice", () => {
+    const week = makeWeek();
+    week.days[3] = {
+      ...week.days[3],
+      isRest: false,
+      sessions: [blank("sess-am", "AM run"), blank("sess-pm", "PM lift")],
+    };
+    renderRow({ week });
+    expect(screen.getByText("3×")).toBeInTheDocument();
+    expect(screen.getAllByText("Rest")).toHaveLength(5);
   });
 
   it("wires duplicate, duplicate-with-progression, and delete to the week uid", () => {

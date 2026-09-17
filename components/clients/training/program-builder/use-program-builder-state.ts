@@ -18,9 +18,11 @@ import {
   mapSession,
   mapSessionExercises,
   mapSlots,
+  moveSessionToDay,
   normalizeDraft,
   patchChanges,
   removeSessionExercise,
+  removeSessionFromDay,
   straightSetsGroup,
 } from "./program-builder-model";
 import {
@@ -257,13 +259,14 @@ export function useProgramBuilderState() {
     [apply],
   );
 
-  // --- day slots (slots never move; only their session payloads do) ---
+  // --- day slots (slots never move; only the sessions they hold do) ---
+  // Adds a new session to a REST day; a day holding sessions is a no-op.
   const addSessionToSlot = useCallback(
     (slotUid: string, name?: string) =>
       apply((d) => {
         let changed = false;
         const next = mapSlots(d, (slot) => {
-          if (slot.uid !== slotUid || slot.session) return slot;
+          if (slot.uid !== slotUid || slot.sessions.length > 0) return slot;
           changed = true;
           const session: SessionDraft = {
             uid: newUid("sess"),
@@ -275,64 +278,59 @@ export function useProgramBuilderState() {
             sessionType: "training",
             groups: [],
           };
-          return { ...slot, session };
+          return { ...slot, sessions: [session] };
         });
         return changed ? next : d;
       }),
     [apply],
   );
 
-  // Insert a pre-built SessionDraft (a clone of a library session) into an
-  // EMPTY slot. Occupied slots are a same-ref no-op — belt under the dnd
-  // collision filter that already keeps library drags off occupied cells
-  // (one session per day-cell is a locked invariant).
+  // Insert a pre-built SessionDraft (a clone of a library session) into a REST
+  // slot. A day holding sessions is a same-ref no-op — belt under the dnd
+  // collision filter that already keeps library drags off those days.
   const placeSession = useCallback(
     (slotUid: string, session: SessionDraft) =>
       apply((d) => {
         let changed = false;
         const next = mapSlots(d, (slot) => {
-          if (slot.uid !== slotUid || slot.session) return slot;
+          if (slot.uid !== slotUid || slot.sessions.length > 0) return slot;
           changed = true;
-          return { ...slot, session };
+          return { ...slot, sessions: [session] };
         });
         return changed ? next : d;
       }),
     [apply],
   );
 
+  // Empties the whole day, every session on it.
   const clearSlot = useCallback(
     (slotUid: string) =>
       apply((d) => {
         let changed = false;
         const next = mapSlots(d, (slot) => {
-          if (slot.uid !== slotUid || !slot.session) return slot;
+          if (slot.uid !== slotUid || slot.sessions.length === 0) return slot;
           changed = true;
-          return { ...slot, session: null };
+          return { ...slot, sessions: [] };
         });
         return changed ? next : d;
       }),
     [apply],
   );
 
-  // Drop onto a rest slot = move (source becomes rest); onto an occupied slot
-  // = swap the two session payloads. Self-drops fall out as no-ops.
+  // One session off its day; the day is rest once it holds none.
+  const removeSession = useCallback(
+    (sessionUid: string) => apply((d) => removeSessionFromDay(d, sessionUid)),
+    [apply],
+  );
+
+  // The move rule is the model's (moveSessionToDay): onto a rest day it moves,
+  // onto a day holding one session a session alone on its day swaps, and a
+  // drop onto its own day or a day that refuses it is a no-op.
   const moveSession = useCallback(
     (sessionUid: string, targetSlotUid: string) =>
       apply((d) => {
-        let moving: SessionDraft | null = null;
-        let displaced: SessionDraft | null = null;
-        for (const week of d.weeks) {
-          for (const slot of week.days) {
-            if (slot.session?.uid === sessionUid) moving = slot.session;
-            if (slot.uid === targetSlotUid) displaced = slot.session;
-          }
-        }
-        if (!moving || displaced?.uid === sessionUid) return d;
-        return mapSlots(d, (slot) => {
-          if (slot.uid === targetSlotUid) return { ...slot, session: moving };
-          if (slot.session?.uid === sessionUid) return { ...slot, session: displaced };
-          return slot;
-        });
+        const moved = moveSessionToDay(d, sessionUid, targetSlotUid);
+        return moved.ok ? moved.draft : d;
       }),
     [apply],
   );
@@ -490,6 +488,7 @@ export function useProgramBuilderState() {
     addSessionToSlot,
     placeSession,
     clearSlot,
+    removeSession,
     moveSession,
     updateSession,
     addExercise,

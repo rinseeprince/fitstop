@@ -583,7 +583,7 @@ WATCH FOR
 NOT IN THIS COMMIT: AMRAP, EMOM and For time (commits 14–15).
 ```
 
-### Commit 5 — Several sessions a day: showing, moving and saving days
+### Commit 5 — Several sessions a day: showing, moving and saving days — SHIPPED 2026-09-17
 
 ```text
 Implement commit 5 of 22 — Several sessions a day: showing, moving and saving days — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
@@ -631,7 +631,7 @@ WHEN THIS COMMIT IS DONE
 RULES: §4.3 — closed. Include a frame test for the day-cell interactions (§2).
 
 WATCH FOR
-- The builder's day slot holds a single session today; the draft types name that field as the seam for a list.
+- Since commit 5 the builder's day slot holds a list of sessions (`DaySlotDraft.sessions`) and Edit plan saves them; the builder still adds a session only to a rest day, a drop onto a day holding one only swaps two lone sessions (`moveSessionToDay`), and a library exercise lands only on a day holding one session.
 - Sessions on the same day share a week and day position, so they need an order within the day. Two session rows on the same position were once a corruption bug: make same-day rows legitimate and unambiguous, and make every reader that assumed one row per position handle a list.
 - training_plans.frequency_per_week is checked 1–7.
 

@@ -32,7 +32,7 @@ vi.mock("@/services/training-session-replace-service", () => ({
 const { SessionLoggedError } = vi.hoisted(() => ({
   SessionLoggedError: class SessionLoggedError extends Error {},
 }));
-vi.mock("@/services/training-event-occupancy", () => ({
+vi.mock("@/services/training-session-lock", () => ({
   getSessionEventLinks: vi.fn(),
   SessionLoggedError,
 }));
@@ -46,7 +46,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { getTrainingPlanById } from "@/services/training-service";
 import { replaceSessionFull } from "@/services/training-session-replace-service";
-import { getSessionEventLinks } from "@/services/training-event-occupancy";
+import { getSessionEventLinks } from "@/services/training-session-lock";
 import { getClientTodayString } from "@/services/today-service";
 import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 

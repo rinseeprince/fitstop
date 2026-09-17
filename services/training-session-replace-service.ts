@@ -7,7 +7,7 @@ import {
   updateSurplusForFutureEvents,
 } from "./training-session-service";
 import type { TrainingGroupWrite } from "./training-group-writes";
-import { assertSessionUnlogged } from "./training-event-occupancy";
+import { assertSessionUnlogged } from "./training-session-lock";
 
 type ReplaceSessionInput = {
   name: string;

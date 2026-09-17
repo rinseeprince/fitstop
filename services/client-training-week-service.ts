@@ -23,12 +23,14 @@ function deriveState(status: string, date: string, today: string): ClientTrainin
 
 /**
  * The client's training week containing `date` — every training event in the
- * check-in-anchored week, with a `state` derived against the CLIENT's today.
+ * check-in-anchored week, by date and each day's sessions in the day's order,
+ * with a `state` derived against the CLIENT's today.
  *
  * This is the set the layout write may touch (moves are bounded to the week a
  * session currently sits in), and it is what the session picker lists, so the
- * client sees exactly the days a pick can land on. ≤7 rows, one indexed read
- * on `idx_training_events_client_date`, plus the check-in day and today.
+ * client sees exactly the days a pick can land on. A day can hold several
+ * sessions, so a week can hold more than seven rows. One indexed read on
+ * `idx_training_events_client_date`, plus the check-in day and today.
  */
 export async function getClientTrainingWeek(
   clientId: string,
@@ -49,7 +51,8 @@ export async function getClientTrainingWeek(
     .gte("date", weekStart)
     .lte("date", weekEnd)
     .order("date", { ascending: true })
-    .order("created_at", { ascending: true });
+    .order("day_order", { ascending: true })
+    .order("id", { ascending: true });
   if (error) {
     throw new Error(`Failed to load training week: ${error.message}`);
   }

@@ -131,6 +131,7 @@ export function createMockTrainingEventRow(options: MockTrainingEventOptions = {
     training_plan_id: event.trainingPlanId,
     training_session_id: event.trainingSessionId,
     date: event.date,
+    day_order: 0,
     session_name: event.sessionName,
     session_focus: event.sessionFocus,
     estimated_calories: event.estimatedCalories,

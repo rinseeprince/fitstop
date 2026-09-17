@@ -37,6 +37,9 @@ export type ClientTrainingSessionEntry = {
   id: string;
   name: string;
   focus: string | null;
+  // The day's position in the program, 0-based from its start. A day holding
+  // several sessions has one entry per session, each with the day's orderIndex,
+  // in the day's order.
   orderIndex: number;
   // 0-based week within a multi-week program (absent/0 for single-week plans).
   // Lets the client program view group entries under "Week N" dividers.

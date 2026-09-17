@@ -36,8 +36,8 @@ function useInvalidateClientTrainingData() {
 
 /**
  * A refused layout: the server's own sentence, plus the HTTP status so a caller
- * can tell "your week changed / that day is taken" (409 — reload the week)
- * from a rule of the client's own calendar (400 — show it and carry on).
+ * can tell "your week changed" (409 — reload the week) from a rule of the
+ * client's own calendar (400 — show it and carry on).
  */
 export class ClientLayoutError extends Error {
   readonly status: number;
@@ -53,8 +53,9 @@ export class ClientLayoutError extends Error {
  * The ONE client-side writer for "a session changes date": POSTs a layout
  * (a single move, a two-day swap, a week rearrangement) and invalidates the
  * training area on success. Throws with the server's own sentence on a
- * refusal — "Sat, Aug 29 already has a session", "Your week changed since
- * you opened it — reload and try again" — so the caller can show it as is.
+ * refusal — "Your week changed since you opened it — reload and try again",
+ * "A session can only move within its own week" — so the caller can show it
+ * as is.
  */
 export function useApplyClientLayout() {
   const invalidate = useInvalidateClientTrainingData();

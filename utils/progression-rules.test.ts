@@ -450,35 +450,37 @@ function weekWithSessions(): WeekDraft {
   week.days[0] = {
     ...week.days[0],
     isRest: false,
-    session: {
-      uid: "sess-push",
-      name: "Push",
-      focus: "Chest",
-      estimatedDurationMinutes: 60,
-      calorieSurplusPercentage: 12,
-      notes: null,
-      sessionType: "training",
-      groups: [
-        lone(
-          draftExercise({
-            uid: "ex-bench",
-            setSpecs: [
-              spec("warmup", 1, { load_type: "absolute", load_value: 60 }),
-              absWorking(2, 100),
-              absWorking(3, 90),
-            ],
-          }),
-        ),
-        lone(
-          draftExercise({
-            uid: "ex-curl",
-            exerciseId: null,
-            name: "Cable Curl",
-            setSpecs: [spec("working", 1, { load_type: "pct_1rm", load_value: 60 })],
-          }),
-        ),
-      ],
-    },
+    sessions: [
+      {
+        uid: "sess-push",
+        name: "Push",
+        focus: "Chest",
+        estimatedDurationMinutes: 60,
+        calorieSurplusPercentage: 12,
+        notes: null,
+        sessionType: "training",
+        groups: [
+          lone(
+            draftExercise({
+              uid: "ex-bench",
+              setSpecs: [
+                spec("warmup", 1, { load_type: "absolute", load_value: 60 }),
+                absWorking(2, 100),
+                absWorking(3, 90),
+              ],
+            }),
+          ),
+          lone(
+            draftExercise({
+              uid: "ex-curl",
+              exerciseId: null,
+              name: "Cable Curl",
+              setSpecs: [spec("working", 1, { load_type: "pct_1rm", load_value: 60 })],
+            }),
+          ),
+        ],
+      },
+    ],
   };
   return week;
 }
@@ -498,7 +500,7 @@ describe("progressWeek (duplicate-week integration)", () => {
     expect(JSON.stringify(weeks)).toBe(before);
     expect(weeks).toEqual(beforeDeep);
     // and the progressed clone actually changed
-    expect(sessionExercises(progressed.days[0].session!)[0].setSpecs![1].load_value).toBe(102.5);
+    expect(sessionExercises(progressed.days[0].sessions[0])[0].setSpecs![1].load_value).toBe(102.5);
   });
 
   it("'+2.5 kg, compounds only': bench changes, curl keeps its reference, uids are the clone's", () => {
@@ -509,14 +511,14 @@ describe("progressWeek (duplicate-week integration)", () => {
       kg(2.5),
       buildScopePredicate({ kind: "compounds" }, isCompound),
     );
-    const [bench, curl] = sessionExercises(progressed.days[0].session!);
+    const [bench, curl] = sessionExercises(progressed.days[0].sessions[0]);
     expect(bench.setSpecs![1].load_value).toBe(102.5);
     expect(bench.setSpecs![2].load_value).toBe(92.5);
     expect(bench.setSpecs![0].load_value).toBe(60); // warm-up untouched
-    expect(curl).toBe(sessionExercises(clone.days[0].session!)[1]); // out of scope: same reference
-    expect(changedExerciseUids).toEqual(new Set([sessionExercises(clone.days[0].session!)[0].uid]));
+    expect(curl).toBe(sessionExercises(clone.days[0].sessions[0])[1]); // out of scope: same reference
+    expect(changedExerciseUids).toEqual(new Set([sessionExercises(clone.days[0].sessions[0])[0].uid]));
     // surplus reconciliation: the session's surplus passes through untouched
-    expect(progressed.days[0].session!.calorieSurplusPercentage).toBe(12);
+    expect(progressed.days[0].sessions[0].calorieSurplusPercentage).toBe(12);
   });
 
   it("a week the rule cannot change returns the INPUT reference and an empty set", () => {

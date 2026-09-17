@@ -65,7 +65,8 @@ export async function GET(
 }
 
 // PUT - Save the editor: every day from the first editable day is rewritten
-// from it, in one transaction that refuses when the calendar changed.
+// from it, every session of a day in order, in one transaction that refuses
+// when the calendar changed.
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; planId: string }> }
@@ -100,7 +101,7 @@ export async function PUT(
       clientId,
       coachId,
       planId,
-      sessions: validation.data.sessions,
+      days: validation.data.days,
       name: validation.data.plan.name,
       splitType: validation.data.plan.splitType ?? null,
       version: validation.data.version,

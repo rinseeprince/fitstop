@@ -18,23 +18,17 @@ vi.mock("@/lib/auth-helpers", () => ({
   getAuthenticatedClientId: vi.fn(),
 }));
 
-const { LayoutDriftError, LayoutNotFoundError, LayoutPolicyError, DateOccupiedError } =
-  vi.hoisted(() => ({
-    LayoutDriftError: class LayoutDriftError extends Error {},
-    LayoutNotFoundError: class LayoutNotFoundError extends Error {},
-    LayoutPolicyError: class LayoutPolicyError extends Error {},
-    DateOccupiedError: class DateOccupiedError extends Error {},
-  }));
+const { LayoutDriftError, LayoutNotFoundError, LayoutPolicyError } = vi.hoisted(() => ({
+  LayoutDriftError: class LayoutDriftError extends Error {},
+  LayoutNotFoundError: class LayoutNotFoundError extends Error {},
+  LayoutPolicyError: class LayoutPolicyError extends Error {},
+}));
 
 vi.mock("@/services/training-event-layout-service", () => ({
   applyClientLayout: vi.fn(),
   LayoutDriftError,
   LayoutNotFoundError,
   LayoutPolicyError,
-}));
-
-vi.mock("@/services/training-event-occupancy", () => ({
-  DateOccupiedError,
 }));
 
 import { POST } from "./route";
@@ -100,19 +94,9 @@ describe("POST /api/client/training/events/layout", () => {
     expect(json).toEqual({ success: true, data: { moved: swap.moves } });
   });
 
-  it("maps the service's errors: 409 taken day, 409 drift, 400 policy, 404 unknown", async () => {
-    vi.mocked(applyClientLayout).mockRejectedValueOnce(
-      new DateOccupiedError("Sat, Aug 29 already has a session"),
-    );
-    let res = await POST(makeRequest(swap));
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({
-      success: false,
-      error: "Sat, Aug 29 already has a session",
-    });
-
+  it("maps the service's errors: 409 drift, 400 policy, 404 unknown", async () => {
     vi.mocked(applyClientLayout).mockRejectedValueOnce(new LayoutDriftError("Your week changed"));
-    res = await POST(makeRequest(swap));
+    let res = await POST(makeRequest(swap));
     expect(res.status).toBe(409);
 
     vi.mocked(applyClientLayout).mockRejectedValueOnce(

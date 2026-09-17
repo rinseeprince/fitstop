@@ -15,9 +15,9 @@ import { isSupersetOrCircuit } from "./program-builder-groups";
 
 // Pure view-model for the duplicate-week progression preview: pairs the
 // source week with its progressed clone POSITIONALLY (progressWeek never
-// adds/removes/reorders exercises) and formats the field the active rule
-// touches as a before → after diff line. React-free so the formatting is
-// unit-testable without a render.
+// adds/removes/reorders sessions or exercises) and formats the field the
+// active rule touches as a before → after diff line. React-free so the
+// formatting is unit-testable without a render.
 
 type ProgressionPreviewRow = {
   uid: string; // the progressed clone's uid (matches changedExerciseUids)
@@ -28,8 +28,10 @@ type ProgressionPreviewRow = {
   after: string | null; // null when the rule leaves this exercise unchanged
 };
 
-export type ProgressionPreviewDay = {
+// One session of the week: its day, its place within the day, and its rows.
+export type ProgressionPreviewSession = {
   dayIndex: number;
+  place: number;
   sessionName: string;
   rows: ProgressionPreviewRow[];
 };
@@ -142,29 +144,31 @@ export function buildPreviewRows(
   changedExerciseUids: ReadonlySet<string>,
   rule: ProgressionRule,
   viewer: UnitSystem,
-): ProgressionPreviewDay[] {
-  const days: ProgressionPreviewDay[] = [];
+): ProgressionPreviewSession[] {
+  const sessions: ProgressionPreviewSession[] = [];
   source.days.forEach((slot, dayIndex) => {
-    const progressedSession = progressed.days[dayIndex]?.session;
-    if (!slot.session || !progressedSession) return;
-    // progressWeek keeps every group and exercise in place, so the two
-    // sessions pair up group by group, exercise by exercise.
-    const rows = slot.session.groups.flatMap((group, g) => {
-      const inRounds = isSupersetOrCircuit(group);
-      return group.exercises.map((before, e): ProgressionPreviewRow => {
-        const after = progressedSession.groups[g]?.exercises[e];
-        const changed = after != null && changedExerciseUids.has(after.uid);
-        return {
-          uid: after?.uid ?? before.uid,
-          scopeKey: exerciseScopeKey(before),
-          name: before.name,
-          changed,
-          before: formatForRule(rule, before, viewer, inRounds),
-          after: changed ? formatForRule(rule, after, viewer, inRounds) : null,
-        };
+    slot.sessions.forEach((session, place) => {
+      const progressedSession = progressed.days[dayIndex]?.sessions[place];
+      if (!progressedSession) return;
+      // progressWeek keeps every session, group and exercise in place, so the
+      // two sessions pair up group by group, exercise by exercise.
+      const rows = session.groups.flatMap((group, g) => {
+        const inRounds = isSupersetOrCircuit(group);
+        return group.exercises.map((before, e): ProgressionPreviewRow => {
+          const after = progressedSession.groups[g]?.exercises[e];
+          const changed = after != null && changedExerciseUids.has(after.uid);
+          return {
+            uid: after?.uid ?? before.uid,
+            scopeKey: exerciseScopeKey(before),
+            name: before.name,
+            changed,
+            before: formatForRule(rule, before, viewer, inRounds),
+            after: changed ? formatForRule(rule, after, viewer, inRounds) : null,
+          };
+        });
       });
+      sessions.push({ dayIndex, place, sessionName: session.name, rows });
     });
-    days.push({ dayIndex, sessionName: slot.session.name, rows });
   });
-  return days;
+  return sessions;
 }

@@ -2,20 +2,16 @@ import { z } from "zod";
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
-import {
-  DateOccupiedError,
-  occupiedMessage,
-  rethrowIfAnyDateOccupied,
-} from "./training-event-occupancy";
 
 // =============================================================================
 // Moving a program's start. A coach who placed a program on the wrong day moves
 // it from the Plans hero instead of deleting it and customising it again: the
 // program moves whole, as it is on the calendar — its start, its end and every
 // session between them shift by the same number of days, in one transaction
-// (move_training_plan_atomic, migration 177). Only a program that hasn't
+// (move_training_plan_atomic, migrations 177, 179). Only a program that hasn't
 // started moves, and nothing is shortened or trimmed to make room: a move that
-// doesn't fit is refused with a sentence saying why.
+// doesn't fit is refused with a sentence saying why. A session landing on a day
+// that already holds one joins it, after the sessions already there.
 // =============================================================================
 
 /** No live plan by that id for this client. Route: 404. */
@@ -81,13 +77,11 @@ export async function moveTrainingPlanStart(params: {
 
 /**
  * The function's refusal in the coach's sentences. Its message prefixes are
- * its error contract (migration 177). The two constraints stay backstops for a
- * write landing between the function's checks and its move: the
- * one-scheduled-per-day index answers with the checks' own sentence, and the
- * live-window exclusion with the overlap's, less the program it can't name.
+ * its error contract (migration 177). The live-window exclusion stays the
+ * backstop for a program placed between the function's checks and its move,
+ * answered with the overlap's sentence, less the program it can't name.
  */
 function translateMoveError(error: MoveRpcError, clientToday: string): Error {
-  rethrowIfAnyDateOccupied(error);
   if (error.code === WINDOW_OVERLAP) {
     return new PlanMoveRefusedError("That would overlap another program.");
   }
@@ -119,9 +113,6 @@ function translateMoveError(error: MoveRpcError, clientToday: string): Error {
     return new PlanMoveRefusedError(
       `That would take it past the end of the ${after("block:end:")} block.`
     );
-  }
-  if (message.startsWith("occupied:")) {
-    return new DateOccupiedError(occupiedMessage(after("occupied:")));
   }
   return new Error(`Failed to move the program: ${message}`);
 }

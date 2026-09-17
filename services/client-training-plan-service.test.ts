@@ -323,6 +323,7 @@ describe("client-training-plan-service", () => {
         training_plan_id: PLAN_ID,
         training_session_id: sessionId,
         date,
+        day_order: 0,
         status: "scheduled",
         session_name: `Event ${id}`,
         session_focus: null,
@@ -597,7 +598,7 @@ describe("client-training-plan-service", () => {
       expect(sessionExercises(sessions[0]).map((e) => e.name)).toEqual(["Bench"]);
     });
 
-    it("takes each day's event from the calendar, whichever plan wrote it, the scheduled one first", async () => {
+    it("lists every session on a day from the calendar, whichever plan wrote it, in the day's order", async () => {
       mockTables({
         plan: PLAN,
         sessions: [
@@ -607,21 +608,32 @@ describe("client-training-plan-service", () => {
           session("s-later", 0, 5, { name: "Scheduled later" }),
           session("s-drop", 0, 0, { plan_id: "plan-other", name: "Dropped in" }),
         ],
-        // The scheduled event wins on each day, whether its id sorts first or last.
+        // Logged or not, every session shows; the day's order decides, never the ids.
         events: [
-          event("e-c", "2026-07-23", "s-now"),
-          event("e-d", "2026-07-23", "s-extra", { status: "completed" }),
-          event("e-a", "2026-07-25", "s-logged", { status: "completed" }),
-          event("e-b", "2026-07-25", "s-later"),
+          event("e-c", "2026-07-23", "s-now", { day_order: 1 }),
+          event("e-d", "2026-07-23", "s-extra", { status: "completed", day_order: 0 }),
+          event("e-a", "2026-07-25", "s-logged", { status: "completed", day_order: 0 }),
+          event("e-b", "2026-07-25", "s-later", { day_order: 1 }),
           event("e-drop", "2026-07-26", "s-drop", { training_plan_id: null }),
         ],
       });
 
       const sessions = await readSessions();
 
-      expect(sessions[3]).toMatchObject({ id: "s-now", name: "Scheduled" });
-      expect(sessions[5]).toMatchObject({ id: "s-later", name: "Scheduled later" });
-      expect(sessions[6]).toMatchObject({ id: "s-drop", name: "Dropped in", isRest: false });
+      // A day holding two sessions gives each its own entry at the day's position.
+      expect(sessions.slice(0, 9).map((entry) => [entry.orderIndex, entry.name])).toEqual([
+        [0, "Rest"],
+        [1, "Rest"],
+        [2, "Rest"],
+        [3, "Logged extra"],
+        [3, "Scheduled"],
+        [4, "Rest"],
+        [5, "Logged earlier"],
+        [5, "Scheduled later"],
+        [6, "Dropped in"],
+      ]);
+      expect(sessions[4]).toMatchObject({ id: "s-now", weekIndex: 0, isRest: false });
+      expect(sessions[8]).toMatchObject({ id: "s-drop", name: "Dropped in", isRest: false });
     });
 
     it("carries the row's active exercises in order, mapped as the client reads them", async () => {
@@ -767,13 +779,14 @@ describe("client-training-plan-service", () => {
 
       const [events] = reads.training_events;
       expect(events.select).toHaveBeenCalledWith(
-        "id, date, status, training_session_id, session_name, session_focus"
+        "id, date, day_order, status, training_session_id, session_name, session_focus"
       );
       expect(events.eq.mock.calls).toEqual([["client_id", CLIENT_ID]]);
       expect(events.gte).toHaveBeenCalledWith("date", "2026-07-20");
       expect(events.lte).toHaveBeenCalledWith("date", "2026-08-02");
       expect(events.order.mock.calls).toEqual([
         ["date", { ascending: true }],
+        ["day_order", { ascending: true }],
         ["id", { ascending: true }],
       ]);
       expect(events.range).toHaveBeenCalledWith(0, 999);

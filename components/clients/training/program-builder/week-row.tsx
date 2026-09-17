@@ -31,7 +31,7 @@ type WeekRowProps = {
   onDeleteWeek: (weekUid: string) => void;
   onOpenSession: (sessionUid: string) => void;
   onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
-  onClearSlot: (slotUid: string) => void;
+  onRemoveSession: (sessionUid: string) => void;
 };
 
 export function WeekRow({
@@ -47,7 +47,7 @@ export function WeekRow({
   onDeleteWeek,
   onOpenSession,
   onRequestAddSession,
-  onClearSlot,
+  onRemoveSession,
 }: WeekRowProps) {
   const weekRules = dayRules?.weeks.get(week.uid);
   const weekLocked = weekRules != null && !weekRules.canReorder;
@@ -101,7 +101,7 @@ export function WeekRow({
           defaultSurplusPercentage={defaultSurplusPercentage}
           onOpenSession={onOpenSession}
           onRequestAddSession={onRequestAddSession}
-          onClearSlot={onClearSlot}
+          onRemoveSession={onRemoveSession}
         />
       ))}
     </div>

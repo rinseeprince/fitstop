@@ -107,7 +107,7 @@ function makePlan(day2Session = false): SavedPlan {
 // assert the working tree without reaching into provider internals.
 function SlotProbe({ w, d }: { w: number; d: number }) {
   const { draft, isDirty } = useProgramDraft();
-  const session = draft?.weeks[w]?.days[d]?.session ?? null;
+  const session = draft?.weeks[w]?.days[d]?.sessions[0] ?? null;
   return (
     <>
       <div data-testid="slot-probe">{session ? session.name : "(rest)"}</div>

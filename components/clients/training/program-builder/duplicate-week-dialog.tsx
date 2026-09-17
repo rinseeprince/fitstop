@@ -28,7 +28,7 @@ import {
   TEXT_MUTED,
   TEXT_SECONDARY,
 } from "./builder-tokens";
-import { cloneWeek, progressWeek } from "./program-builder-model";
+import { cloneWeek, progressWeek, weekSessions } from "./program-builder-model";
 import { buildIsCompound, buildPreviewRows } from "./progression-preview-model";
 import { useUnits } from "@/contexts/units-context";
 import { formatLoad, parseWeightToKg } from "@/utils/unit-conversions";
@@ -91,7 +91,7 @@ export function DuplicateWeekDialog({
   const [setsAmount, setSetsAmount] = useState("1");
   const [scopeKind, setScopeKind] = useState<ScopeKind>("all");
 
-  const allExercises = week.days.flatMap((d) => (d.session ? sessionExercises(d.session) : []));
+  const allExercises = weekSessions(week).flatMap(sessionExercises);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
     // "Pick exercises" starts all-checked; toggling works by identity key.
     () => new Set(allExercises.map(exerciseScopeKey)),
@@ -136,7 +136,7 @@ export function DuplicateWeekDialog({
     (ruleKind === "load"
       ? { kind: "load", mode: loadMode, amount: 0 }
       : { kind: ruleKind, amount: 0 });
-  const previewDays = buildPreviewRows(
+  const previewSessions = buildPreviewRows(
     week,
     result?.week ?? clone,
     result?.changedExerciseUids ?? new Set(),
@@ -145,7 +145,7 @@ export function DuplicateWeekDialog({
   );
 
   const compoundsDisabled = isCatalogLoading || catalogError != null || catalog.length === 0;
-  const allRest = week.days.every((d) => !d.session);
+  const allRest = weekSessions(week).length === 0;
   const hasExercises = allExercises.length > 0;
 
   const toggleKey = (key: string) =>
@@ -284,7 +284,7 @@ export function DuplicateWeekDialog({
                 </span>
               </div>
               <ProgressionPreview
-                days={previewDays}
+                sessions={previewSessions}
                 showCheckboxes={scopeKind === "selected"}
                 selectedKeys={selectedKeys}
                 onToggleKey={toggleKey}

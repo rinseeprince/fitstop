@@ -13,7 +13,11 @@ type UnlinkedSessionLog = {
 };
 
 /**
- * Map training events onto a list of dates to produce ScheduleDay[].
+ * Map training events onto a list of dates to produce ScheduleDay[]: one row
+ * per workout — each session on a date, in the order `events` gives them (the
+ * calendar's order: by date, a day's sessions in the day's order) — and one
+ * rest row for a date holding none. A day can hold several sessions, each its
+ * own workout, so a date can have several rows.
  * Pure function — no DB calls.
  *
  * Status logic:
@@ -22,9 +26,10 @@ type UnlinkedSessionLog = {
  * - Event scheduled + date today or future → rest (with planned fields populated)
  * - No event for date → rest
  *
- * Unlinked session logs (completed sessions with no matching event) are merged:
- * - Missed day (had a planned event) → completed_swap + isAlternative
- * - Rest day (no planned event) → rest_trained + isAlternative
+ * Unlinked session logs (completed sessions with no matching event) are merged
+ * onto their date's first row that can take them:
+ * - A missed workout → completed_swap + isAlternative
+ * - A rest day (no planned event) → rest_trained + isAlternative
  */
 export function mapEventsToScheduleDays(
   dates: string[],
@@ -35,98 +40,92 @@ export function mapEventsToScheduleDays(
   // show the session the client actually did, not the prescribed snapshot.
   performedSessionNames?: Map<string, string>
 ): ScheduleDay[] {
-  // When multiple events exist on the same date (e.g. from backfill across plan versions),
-  // prefer the most informative: completed > partial > skipped > missed > scheduled
-  const STATUS_PRIORITY: Record<string, number> = {
-    completed: 4, partial: 3, skipped: 2, missed: 1, scheduled: 0,
-  };
-
-  const eventMap = new Map<string, TrainingEvent>();
+  const eventsByDate = new Map<string, TrainingEvent[]>();
   for (const event of events) {
     const dateKey = event.date.split("T")[0];
-    const existing = eventMap.get(dateKey);
-    const eventPriority = STATUS_PRIORITY[event.status] ?? 0;
-    const existingPriority = existing ? (STATUS_PRIORITY[existing.status] ?? 0) : -1;
-    if (eventPriority > existingPriority) {
-      eventMap.set(dateKey, event);
-    }
+    eventsByDate.set(dateKey, [...(eventsByDate.get(dateKey) ?? []), event]);
   }
 
   const today = getTodayDateString();
 
-  const schedule: ScheduleDay[] = dates.map((date) => {
+  const schedule: ScheduleDay[] = dates.flatMap((date): ScheduleDay[] => {
     const dayNum = new Date(date + "T00:00:00").getDay();
     const dayOfWeek = DAY_NAMES[dayNum] ?? "monday";
-    const event = eventMap.get(date);
+    const dayEvents = eventsByDate.get(date) ?? [];
 
-    if (!event) {
+    if (dayEvents.length === 0) {
+      return [
+        {
+          date,
+          dayOfWeek,
+          status: "rest" as TrainingDayStatus,
+          plannedSessionId: null,
+          plannedSessionName: null,
+          loggedSessionName: null,
+          completionQuality: null,
+          isAlternative: false,
+          notes: null,
+          sessionLogId: null,
+        },
+      ];
+    }
+
+    return dayEvents.map((event): ScheduleDay => {
+      const resolved = resolveEventStatus(event, date, today);
+      let status = resolved.status;
+      const completionQuality = resolved.completionQuality;
+      let loggedSessionName = resolved.loggedSessionName;
+      let isAlternative = false;
+      let notes: string | null = null;
+
+      // Detect alternative session: event linked to a log for a different session
+      if (
+        sessionLogMap &&
+        event.sessionLogId &&
+        (status === "completed" || status === "partial")
+      ) {
+        const linkedLog = sessionLogMap.get(event.sessionLogId);
+        if (linkedLog && linkedLog.training_session_id !== event.trainingSessionId) {
+          status = "completed_swap";
+          isAlternative = true;
+          // Show the PERFORMED session's live name (the log's training_session_id),
+          // not the prescribed snapshot. The snapshot here is the prescribed
+          // session (event's session), so it would mislabel the swap.
+          const snapshot = linkedLog.prescribed_session_snapshot as Record<string, unknown> | null;
+          const performedName = linkedLog.training_session_id
+            ? performedSessionNames?.get(linkedLog.training_session_id)
+            : undefined;
+          loggedSessionName =
+            performedName ??
+            (typeof snapshot?.name === "string" ? snapshot.name : null) ??
+            loggedSessionName;
+          notes = linkedLog.notes;
+        }
+      }
+
       return {
         date,
         dayOfWeek,
-        status: "rest" as TrainingDayStatus,
-        plannedSessionId: null,
-        plannedSessionName: null,
-        loggedSessionName: null,
-        completionQuality: null,
-        isAlternative: false,
-        notes: null,
-        sessionLogId: null,
+        status,
+        plannedSessionId: event.trainingSessionId ?? event.id,
+        plannedSessionName: event.sessionName,
+        loggedSessionName,
+        completionQuality,
+        isAlternative,
+        notes,
+        sessionLogId: event.sessionLogId ?? null,
       };
-    }
-
-    const resolved = resolveEventStatus(event, date, today);
-    let status = resolved.status;
-    const completionQuality = resolved.completionQuality;
-    let loggedSessionName = resolved.loggedSessionName;
-    let isAlternative = false;
-    let notes: string | null = null;
-
-    // Detect alternative session: event linked to a log for a different session
-    if (
-      sessionLogMap &&
-      event.sessionLogId &&
-      (status === "completed" || status === "partial")
-    ) {
-      const linkedLog = sessionLogMap.get(event.sessionLogId);
-      if (linkedLog && linkedLog.training_session_id !== event.trainingSessionId) {
-        status = "completed_swap";
-        isAlternative = true;
-        // Show the PERFORMED session's live name (the log's training_session_id),
-        // not the prescribed snapshot. The snapshot here is the prescribed
-        // session (event's session), so it would mislabel the swap.
-        const snapshot = linkedLog.prescribed_session_snapshot as Record<string, unknown> | null;
-        const performedName = linkedLog.training_session_id
-          ? performedSessionNames?.get(linkedLog.training_session_id)
-          : undefined;
-        loggedSessionName =
-          performedName ??
-          (typeof snapshot?.name === "string" ? snapshot.name : null) ??
-          loggedSessionName;
-        notes = linkedLog.notes;
-      }
-    }
-
-    return {
-      date,
-      dayOfWeek,
-      status,
-      plannedSessionId: event.trainingSessionId ?? event.id,
-      plannedSessionName: event.sessionName,
-      loggedSessionName,
-      completionQuality,
-      isAlternative,
-      notes,
-      sessionLogId: event.sessionLogId ?? null,
-    };
+    });
   });
 
   // Merge unlinked session logs (completions with no matching event)
   if (unlinkedLogs && unlinkedLogs.length > 0) {
-    const scheduleByDate = new Map(schedule.map((day) => [day.date, day]));
-
     for (const log of unlinkedLogs) {
       const logDate = log.completed_at.substring(0, 10);
-      const day = scheduleByDate.get(logDate);
+      // The date's first row a log can land on: a missed workout or a rest day.
+      const day = schedule.find(
+        (row) => row.date === logDate && (row.status === "missed" || row.status === "rest"),
+      );
       if (!day) continue;
 
       const snapshot = log.prescribed_session_snapshot as Record<string, unknown> | null;
@@ -151,7 +150,6 @@ export function mapEventsToScheduleDays(
         day.notes = log.notes;
         day.sessionLogId = log.id;
       }
-      // Skip if day already completed/partial — don't overwrite
     }
   }
 

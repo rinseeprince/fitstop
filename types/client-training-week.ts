@@ -29,5 +29,5 @@ export type ClientTrainingWeek = {
   weekStart: string; // YYYY-MM-DD
   weekEnd: string; // YYYY-MM-DD
   today: string; // the client's device-zone today, YYYY-MM-DD
-  sessions: ClientTrainingWeekSession[]; // date ascending
+  sessions: ClientTrainingWeekSession[]; // by date, each day's sessions in the day's order
 };

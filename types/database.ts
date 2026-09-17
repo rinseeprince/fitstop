@@ -2288,6 +2288,7 @@ export type Database = {
           client_id: string
           created_at: string
           date: string
+          day_order: number
           estimated_calories: number | null
           id: string
           is_modified: boolean
@@ -2304,6 +2305,7 @@ export type Database = {
           client_id: string
           created_at?: string
           date: string
+          day_order?: number
           estimated_calories?: number | null
           id?: string
           is_modified?: boolean
@@ -2320,6 +2322,7 @@ export type Database = {
           client_id?: string
           created_at?: string
           date?: string
+          day_order?: number
           estimated_calories?: number | null
           id?: string
           is_modified?: boolean

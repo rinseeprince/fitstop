@@ -1,10 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "@/services/today-service";
-import {
-  assertDateFree,
-  DateOccupiedError,
-  occupiedMessage,
-} from "./training-event-occupancy";
 import { readMoveRpcError, type MoveRpcError } from "./training-event-layout-service";
 
 /** The coach's calendar is stale: the session moved since it loaded. The route answers 409. */
@@ -32,7 +27,8 @@ const MOVE_DRIFT_MESSAGE =
  * the session on: it is checked here and re-checked by the function under a
  * row lock, so a drag racing the client's own move is refused rather than
  * applied to a session that has left that day. The function also sets
- * is_modified, which drives the calendar card's edited badge.
+ * is_modified, which drives the calendar card's edited badge. A day that
+ * already holds a session takes the moved one after them (migration 179).
  */
 export async function moveEvent(
   eventId: string,
@@ -63,10 +59,6 @@ export async function moveEvent(
     throw new Error("Cannot move event to a past date");
   }
 
-  // One session per day. The old check here matched on training_session_id and
-  // could therefore never fire — see training-event-occupancy.ts.
-  await assertDateFree(clientId, newDate, eventId);
-
   const { error: rpcError } = await supabaseAdmin.rpc("move_training_events_atomic", {
     p_client_id: clientId,
     p_moves: [{ event_id: eventId, from_date: fromDate, to_date: newDate }],
@@ -83,8 +75,6 @@ function translateMoveRpcError(error: MoveRpcError): Error {
   switch (failure.kind) {
     case "drift":
       return new CalendarMoveDriftError(MOVE_DRIFT_MESSAGE);
-    case "occupied":
-      return new DateOccupiedError(occupiedMessage(failure.date));
     case "not_found":
       return new CalendarMoveNotFoundError("Event not found");
     case "not_scheduled":

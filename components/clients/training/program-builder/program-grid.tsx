@@ -29,7 +29,7 @@ type ProgramGridProps = {
   onAddWeek: () => void;
   onOpenSession: (sessionUid: string) => void;
   onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
-  onClearSlot: (slotUid: string) => void;
+  onRemoveSession: (sessionUid: string) => void;
 };
 
 export function ProgramGrid({
@@ -44,7 +44,7 @@ export function ProgramGrid({
   onAddWeek,
   onOpenSession,
   onRequestAddSession,
-  onClearSlot,
+  onRemoveSession,
 }: ProgramGridProps) {
   const canDelete = draft.weeks.length > 1;
 
@@ -86,7 +86,7 @@ export function ProgramGrid({
                 onDeleteWeek={onDeleteWeek}
                 onOpenSession={onOpenSession}
                 onRequestAddSession={onRequestAddSession}
-                onClearSlot={onClearSlot}
+                onRemoveSession={onRemoveSession}
               />
             ))}
           </SortableContext>

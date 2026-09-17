@@ -193,6 +193,7 @@ function event(id: string, position: number, sessionId: string | null, extra: Ro
     training_plan_id: PLAN_ID,
     training_session_id: sessionId,
     date: dayAt(position),
+    day_order: 0,
     status: "scheduled",
     session_name: "Snapshot",
     session_focus: null,
@@ -290,10 +291,12 @@ async function open(): Promise<PlanForEditing> {
   return result;
 }
 
-/** The day, which must hold a session. */
-function sessionDay(day: PlanEditDay | undefined) {
-  if (!day || day.isRest) throw new Error(`Expected a session day, got ${JSON.stringify(day)}`);
-  return day;
+/** The day's one session: the day must hold exactly one. */
+function onlySession(day: PlanEditDay | undefined) {
+  if (day?.sessions.length !== 1) {
+    throw new Error(`Expected a day holding one session, got ${JSON.stringify(day)}`);
+  }
+  return day.sessions[0];
 }
 
 const decode = (version: string): unknown =>
@@ -368,13 +371,14 @@ describe("getPlanForEditing", () => {
     expect(result.days.map((day) => day.date)).toEqual(
       Array.from({ length: 14 }, (_, i) => dayAt(i)),
     );
-    expect(result.days.filter((day) => !day.isRest).map((day) => day.date)).toEqual([
+    expect(result.days.filter((day) => day.sessions.length > 0).map((day) => day.date)).toEqual([
       dayAt(12),
     ]);
     const calendar = reads.training_events[0];
     expect(calendar.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
     expect(calendar.gte).toHaveBeenCalledWith("date", START);
     expect(calendar.lte).toHaveBeenCalledWith("date", "2026-09-20");
+    expect(calendar.order).toHaveBeenCalledWith("day_order", { ascending: true });
   });
 
   it("gives a day its event's session, read through the row the event points at", async () => {
@@ -397,10 +401,10 @@ describe("getPlanForEditing", () => {
       ],
     });
 
-    const push = sessionDay((await open()).days[0]);
+    const push = onlySession((await open()).days[0]);
 
     expect(push).toMatchObject({
-      date: START,
+      eventId: eventId(1),
       name: "Push",
       focus: "Chest",
       estimatedDurationMinutes: 60,
@@ -438,7 +442,7 @@ describe("getPlanForEditing", () => {
       ],
     });
 
-    const push = sessionDay((await open()).days[0]);
+    const push = onlySession((await open()).days[0]);
 
     expect(push.groups).toEqual([
       expect.objectContaining({
@@ -479,7 +483,7 @@ describe("getPlanForEditing", () => {
       exercises: [exerciseRow("x-bench", PUSH, "Bench press", 0)],
     });
 
-    const push = sessionDay((await open()).days[0]);
+    const push = onlySession((await open()).days[0]);
 
     expect(push.name).toBe("Push");
     expect(sessionExercises(push).map((exercise) => exercise.name)).toEqual(["Bench press"]);
@@ -501,8 +505,8 @@ describe("getPlanForEditing", () => {
 
     const { days } = await open();
 
-    expect(sessionDay(days[0]).calorieSurplusPercentage).toBe(15);
-    expect(sessionDay(days[3]).calorieSurplusPercentage).toBeNull();
+    expect(onlySession(days[0]).calorieSurplusPercentage).toBe(15);
+    expect(onlySession(days[3]).calorieSurplusPercentage).toBeNull();
   });
 
   it("shows a moved session on its new day only", async () => {
@@ -519,9 +523,9 @@ describe("getPlanForEditing", () => {
 
     const { days } = await open();
 
-    expect(days[2]).toEqual({ date: dayAt(2), isRest: true });
-    expect(sessionDay(days[3]).name).toBe("Pull");
-    expect(days.filter((day) => !day.isRest && day.name === "Pull")).toHaveLength(1);
+    expect(days[2]).toEqual({ date: dayAt(2), sessions: [] });
+    expect(onlySession(days[3]).name).toBe("Pull");
+    expect(days.flatMap((day) => day.sessions).filter((s) => s.name === "Pull")).toHaveLength(1);
   });
 
   it("shows a day whose event was deleted as rest", async () => {
@@ -534,8 +538,8 @@ describe("getPlanForEditing", () => {
 
     const { days } = await open();
 
-    expect(days[4]).toEqual({ date: dayAt(4), isRest: true });
-    expect(days.every((day) => day.isRest)).toBe(true);
+    expect(days[4]).toEqual({ date: dayAt(4), sessions: [] });
+    expect(days.every((day) => day.sessions.length === 0)).toBe(true);
   });
 
   it("shows a day as the row its event points at, beside another row at the same place", async () => {
@@ -564,7 +568,7 @@ describe("getPlanForEditing", () => {
 
     const { days } = await open();
 
-    const legs = sessionDay(days[4]);
+    const legs = onlySession(days[4]);
     expect(legs).toMatchObject({
       name: "Legs (lighter)",
       focus: "Quads",
@@ -575,7 +579,7 @@ describe("getPlanForEditing", () => {
       "Split squat",
       "Goblet squat",
     ]);
-    expect(days.filter((day) => !day.isRest)).toHaveLength(1);
+    expect(days.filter((day) => day.sessions.length > 0)).toHaveLength(1);
   });
 
   it("lays a day whose row is missing from its event's snapshot, with no exercises", async () => {
@@ -597,23 +601,31 @@ describe("getPlanForEditing", () => {
 
     expect(days[1]).toEqual({
       date: dayAt(1),
-      isRest: false,
-      name: "Upper",
-      focus: "Chest",
-      estimatedDurationMinutes: null,
-      notes: null,
-      calorieSurplusPercentage: 10,
-      groups: [],
+      sessions: [
+        {
+          eventId: eventId(1),
+          name: "Upper",
+          focus: "Chest",
+          estimatedDurationMinutes: null,
+          notes: null,
+          calorieSurplusPercentage: 10,
+          groups: [],
+        },
+      ],
     });
     expect(days[2]).toEqual({
       date: dayAt(2),
-      isRest: false,
-      name: "Conditioning",
-      focus: null,
-      estimatedDurationMinutes: null,
-      notes: null,
-      calorieSurplusPercentage: null,
-      groups: [],
+      sessions: [
+        {
+          eventId: eventId(2),
+          name: "Conditioning",
+          focus: null,
+          estimatedDurationMinutes: null,
+          notes: null,
+          calorieSurplusPercentage: null,
+          groups: [],
+        },
+      ],
     });
   });
 
@@ -632,25 +644,35 @@ describe("getPlanForEditing", () => {
 
     const { days } = await open();
 
-    expect(days[0]).toMatchObject({ name: "Mine", groups: [] });
-    expect(days[1]).toEqual({ date: dayAt(1), isRest: true });
+    expect(onlySession(days[0])).toMatchObject({ name: "Mine", groups: [] });
+    expect(days[1]).toEqual({ date: dayAt(1), sessions: [] });
   });
 
-  it("gives a day holding a logged and a scheduled event the scheduled one", async () => {
+  it("lays every session on a day, logged or not, in the day's order", async () => {
     const LOGGED = rowId(1);
-    const SCHEDULED = rowId(2);
+    const EVENING = rowId(2);
+    const MORNING = rowId(3);
     mockTables({
-      sessions: [sessionRow(LOGGED, "Logged"), sessionRow(SCHEDULED, "Scheduled")],
-      // The logged event's id sorts first; the day still shows the scheduled one.
+      sessions: [
+        sessionRow(LOGGED, "Logged"),
+        sessionRow(EVENING, "Evening lift"),
+        sessionRow(MORNING, "Morning run"),
+      ],
+      // Ids sort against the day's order: the order is the day's, never the ids'.
       events: [
-        event(eventId(1), 1, LOGGED, { status: "completed" }),
-        event(eventId(2), 1, SCHEDULED),
+        event(eventId(1), 1, LOGGED, { status: "completed", day_order: 0 }),
+        event(eventId(2), 1, EVENING, { day_order: 2 }),
+        event(eventId(3), 1, MORNING, { day_order: 1 }),
       ],
     });
 
     const { days } = await open();
 
-    expect(sessionDay(days[1]).name).toBe("Scheduled");
+    expect(days[1].sessions.map((session) => [session.eventId, session.name])).toEqual([
+      [eventId(1), "Logged"],
+      [eventId(3), "Morning run"],
+      [eventId(2), "Evening lift"],
+    ]);
   });
 
   it("lays the days past the plan's limit as rest, even with an event", async () => {
@@ -667,8 +689,8 @@ describe("getPlanForEditing", () => {
 
     expect(result.limit).toEqual(cap);
     expect(result.days).toHaveLength(14);
-    expect(sessionDay(result.days[10]).name).toBe("Thursday");
-    expect(result.days[11]).toEqual({ date: dayAt(11), isRest: true });
+    expect(onlySession(result.days[10]).name).toBe("Thursday");
+    expect(result.days[11]).toEqual({ date: dayAt(11), sessions: [] });
   });
 
   it("opens from the deletion floor: tomorrow once the client has trained today", async () => {
@@ -726,6 +748,7 @@ describe("getPlanForEditing", () => {
         {
           id: eventId(2),
           date: TODAY,
+          day_order: 0,
           training_session_id: NOW,
           status: "scheduled",
           calorie_surplus_percentage: 12.5,
@@ -733,6 +756,7 @@ describe("getPlanForEditing", () => {
         {
           id: eventId(3),
           date: dayAt(9),
+          day_order: 0,
           training_session_id: LATER,
           status: "scheduled",
           calorie_surplus_percentage: null,
@@ -740,6 +764,7 @@ describe("getPlanForEditing", () => {
         {
           id: eventId(4),
           date: dayAt(11),
+          day_order: 0,
           training_session_id: MISSING,
           status: "scheduled",
           calorie_surplus_percentage: null,
@@ -747,6 +772,7 @@ describe("getPlanForEditing", () => {
         {
           id: eventId(5),
           date: dayAt(12),
+          day_order: 0,
           training_session_id: null,
           status: "scheduled",
           calorie_surplus_percentage: null,
@@ -772,7 +798,7 @@ describe("getPlanForEditing", () => {
 
     const { days, version } = await open();
 
-    expect(days[11]).toEqual({ date: dayAt(11), isRest: true });
+    expect(days[11]).toEqual({ date: dayAt(11), sessions: [] });
     expect(decode(version)).toMatchObject({
       from: TODAY,
       through: "2026-09-20",
@@ -802,12 +828,13 @@ describe("getPlanForEditing", () => {
 // The save
 // =============================================================================
 
-type PlanEditSessionInput = Parameters<typeof savePlanEdit>[0]["sessions"][number];
-type Group = PlanEditSessionInput["groups"][number];
+type PlanEditDayInput = Parameters<typeof savePlanEdit>[0]["days"][number];
+type SessionFields = PlanEditDayInput["sessions"][number];
+type Group = SessionFields["groups"][number];
 type Exercise = Group["exercises"][number];
-type SessionFields = Omit<PlanEditSessionInput, "orderIndex" | "weekIndex" | "isRest">;
 
-const session = (name: string, groups: Group[] = []): SessionFields => ({
+const session = (name: string, groups: Group[] = [], eventId: string | null = null): SessionFields => ({
+  eventId,
   name,
   groups,
 });
@@ -815,17 +842,14 @@ const session = (name: string, groups: Group[] = []): SessionFields => ({
 /** A lone exercise: a straight-sets group of one. */
 const lone = (exercise: Exercise): Group => ({ ...STRAIGHT_SETS, exercises: [exercise] });
 
-/** A canonical grid: slot i is the plan's day i, rest unless `sessions` holds it. */
+/** A canonical grid: day i is the plan's day i, holding the session or sessions `sessions` gives it, else rest. */
 function grid(
   weeks: number,
-  sessions: Partial<Record<number, SessionFields>> = {},
-): PlanEditSessionInput[] {
+  sessions: Partial<Record<number, SessionFields | SessionFields[]>> = {},
+): PlanEditDayInput[] {
   return Array.from({ length: weeks * 7 }, (_, i) => {
-    const place = { orderIndex: i, weekIndex: Math.floor(i / 7) };
-    const fields = sessions[i];
-    return fields
-      ? { ...fields, ...place, isRest: false }
-      : { name: "Rest", ...place, isRest: true, groups: [] };
+    const held = sessions[i];
+    return { sessions: held === undefined ? [] : Array.isArray(held) ? held : [held] };
   });
 }
 
@@ -840,6 +864,7 @@ function versionFor(overrides: Record<string, unknown> = {}) {
       {
         id: eventId(1),
         date: TODAY,
+        day_order: 0,
         training_session_id: rowId(1),
         status: "scheduled",
         calorie_surplus_percentage: null,
@@ -850,12 +875,12 @@ function versionFor(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function save(sessions: PlanEditSessionInput[], version = encode(versionFor())) {
+function save(days: PlanEditDayInput[], version = encode(versionFor())) {
   return savePlanEdit({
     clientId: CLIENT_ID,
     coachId: COACH_ID,
     planId: PLAN_ID,
-    sessions,
+    days,
     name: "Block A",
     splitType: "Strength",
     version,
@@ -871,7 +896,8 @@ function rpcArgs(): Record<string, unknown> {
   return sent as Record<string, unknown>;
 }
 
-type SaveDay = { date: string; is_rest: boolean; [column: string]: unknown };
+type SaveSession = { event_id: string | null; name: string; [column: string]: unknown };
+type SaveDay = { date: string; sessions: SaveSession[] };
 const rpcDays = (): SaveDay[] => rpcArgs().p_days as SaveDay[];
 
 /** An exercise as the save writes it, every column it isn't given null. No position: its place in its group's list is its position. */
@@ -925,16 +951,11 @@ describe("savePlanEdit", () => {
       expect(mockRpc).not.toHaveBeenCalled();
     });
 
-    it("refuses a grid that is not whole weeks in order", async () => {
+    it("refuses a grid that is not whole weeks", async () => {
       mockTables({});
-      const twoWeeks = grid(2);
-      const swapped = twoWeeks.map((slot, i) =>
-        i === 3 ? { ...slot, orderIndex: 4 } : i === 4 ? { ...slot, orderIndex: 3 } : slot,
-      );
-      const misfiled = twoWeeks.map((slot, i) => (i === 7 ? { ...slot, weekIndex: 0 } : slot));
 
-      for (const sessions of [[], twoWeeks.slice(0, 8), swapped, misfiled]) {
-        await expect(save(sessions)).rejects.toThrow(PlanEditInvalidError);
+      for (const days of [[], grid(2).slice(0, 8)]) {
+        await expect(save(days)).rejects.toThrow(PlanEditInvalidError);
       }
       expect(mockFrom).not.toHaveBeenCalled();
       expect(mockRpc).not.toHaveBeenCalled();
@@ -990,7 +1011,7 @@ describe("savePlanEdit", () => {
   describe("the write", () => {
     it("rewrites the days from the first editable day to the grid's end, in one call", async () => {
       mockTables({});
-      const sessions = grid(2, {
+      const days = grid(2, {
         0: session("Mon"),
         1: session("Tue"),
         2: session("Wed"),
@@ -998,7 +1019,7 @@ describe("savePlanEdit", () => {
         9: session("Wed 2"),
       });
 
-      const result = await save(sessions);
+      const result = await save(days);
 
       expect(result).toEqual({ firstDay: TODAY, lastDay: "2026-09-20", sessionsWritten: 2 });
       expect(rpcArgs()).toMatchObject({
@@ -1014,7 +1035,9 @@ describe("savePlanEdit", () => {
       expect(rpcDays().map((day) => day.date)).toEqual(
         Array.from({ length: 11 }, (_, i) => dayAt(3 + i)),
       );
-      expect(rpcDays().filter((day) => !day.is_rest).map((day) => [day.date, day.name])).toEqual([
+      expect(
+        rpcDays().flatMap((day) => day.sessions.map((written) => [day.date, written.name])),
+      ).toEqual([
         [TODAY, "Thu"],
         [dayAt(9), "Wed 2"],
       ]);
@@ -1079,7 +1102,7 @@ describe("savePlanEdit", () => {
         cap: { endsOn: "2026-09-24", source: "next_block" },
       });
       mockTables({});
-      const sessions = grid(3, {
+      const days = grid(3, {
         0: session("Push"),
         3: session("Pull"),
         15: session("Week 3 A"),
@@ -1089,7 +1112,7 @@ describe("savePlanEdit", () => {
         20: session("Greyed too"),
       });
 
-      const result = await save(sessions, encode(versionFor({ limit: "2026-09-24" })));
+      const result = await save(days, encode(versionFor({ limit: "2026-09-24" })));
 
       expect(result).toEqual({ firstDay: TODAY, lastDay: "2026-09-24", sessionsWritten: 3 });
       expect(rpcArgs()).toMatchObject({
@@ -1102,7 +1125,7 @@ describe("savePlanEdit", () => {
       expect(rpcDays().map((day) => day.date)).toEqual(
         Array.from({ length: 15 }, (_, i) => dayAt(3 + i)),
       );
-      expect(rpcDays().filter((day) => !day.is_rest).map((day) => day.name)).toEqual([
+      expect(rpcDays().flatMap((day) => day.sessions.map((written) => written.name))).toEqual([
         "Pull",
         "Week 3 A",
         "Week 3 B",
@@ -1146,9 +1169,10 @@ describe("savePlanEdit", () => {
           load_value: 80,
         },
       ];
-      const sessions = grid(2, {
+      const days = grid(2, {
         0: session("Push", [lone({ name: "Bench press", exerciseId: IN_HISTORY, sets: 3 })]),
         3: {
+          eventId: null,
           name: "Pull",
           focus: "Back",
           notes: "Brace",
@@ -1190,22 +1214,24 @@ describe("savePlanEdit", () => {
         5: session("Legs"),
       });
 
-      await save(sessions);
+      await save(days);
 
       const [pull, rest, legs] = rpcDays();
       expect(pull).toEqual({
         date: TODAY,
-        is_rest: false,
-        name: "Pull",
-        focus: "Back",
-        notes: "Brace",
-        estimated_duration_minutes: 50,
-        calorie_surplus_percentage: 12.5,
-        // The calendar holds nothing here: a session on a rest day is a change.
-        unchanged: false,
-        // The groups in the grid's order, each with its settings and its
-        // exercises in its list's order: a position is a place, never a column.
-        groups: [
+        sessions: [
+          {
+            event_id: null,
+            name: "Pull",
+            focus: "Back",
+            notes: "Brace",
+            estimated_duration_minutes: 50,
+            calorie_surplus_percentage: 12.5,
+            // The calendar holds nothing here: a session on a rest day is a change.
+            unchanged: false,
+            // The groups in the grid's order, each with its settings and its
+            // exercises in its list's order: a position is a place, never a column.
+            groups: [
           writtenGroup(
             [
               writtenExercise({ name: "Pull-up", sets: 3 }),
@@ -1238,25 +1264,31 @@ describe("savePlanEdit", () => {
             },
           ),
           writtenGroup([writtenExercise({ name: "Face pull", sets: 2 })]),
+            ],
+          },
         ],
       });
       // An exercise's position is its place in its group's list, never a column.
-      for (const group of pull.groups as Array<{ exercises: Record<string, unknown>[] }>) {
+      for (const group of pull.sessions[0].groups as Array<{ exercises: Record<string, unknown>[] }>) {
         for (const exercise of group.exercises) {
           expect(exercise).not.toHaveProperty("order_index");
         }
       }
-      expect(rest).toEqual({ date: dayAt(4), is_rest: true });
+      expect(rest).toEqual({ date: dayAt(4), sessions: [] });
       expect(legs).toEqual({
         date: dayAt(5),
-        is_rest: false,
-        name: "Legs",
-        focus: null,
-        notes: null,
-        estimated_duration_minutes: null,
-        calorie_surplus_percentage: null,
-        unchanged: false,
-        groups: [],
+        sessions: [
+          {
+            event_id: null,
+            name: "Legs",
+            focus: null,
+            notes: null,
+            estimated_duration_minutes: null,
+            calorie_surplus_percentage: null,
+            unchanged: false,
+            groups: [],
+          },
+        ],
       });
       // Asked of the written days only: history's exercises are not sent.
       expect(fetchVisibleExerciseIds).toHaveBeenCalledWith(COACH_ID, [NOT_MINE, MINE]);
@@ -1269,7 +1301,7 @@ describe("savePlanEdit", () => {
         clientId: CLIENT_ID,
         coachId: COACH_ID,
         planId: PLAN_ID,
-        sessions: grid(2),
+        days: grid(2),
         name: "Block A (edited)",
         splitType: null,
         version: encode(versionFor()),
@@ -1295,10 +1327,60 @@ describe("savePlanEdit", () => {
     });
   });
 
+  describe("several sessions on a day", () => {
+    it("writes a day's sessions in order, each naming the entry it was opened from", async () => {
+      const RUN = rowId(1);
+      const LIFT = rowId(2);
+      mockTables({
+        sessions: [sessionRow(RUN, "Run"), sessionRow(LIFT, "Lift")],
+        events: [
+          event(eventId(1), 3, RUN, { day_order: 0 }),
+          event(eventId(2), 3, LIFT, { day_order: 1 }),
+        ],
+      });
+      const opened = await open();
+
+      // The coach put the lift first, left the run as laid, and removed nothing.
+      const result = await save(
+        grid(2, {
+          3: [session("Lift (heavier)", [], eventId(2)), session("Run", [], eventId(1))],
+          5: session("Legs"),
+        }),
+        opened.version,
+      );
+
+      expect(result.sessionsWritten).toBe(3);
+      expect(
+        rpcDays()[0].sessions.map((written) => [written.event_id, written.name, written.unchanged]),
+      ).toEqual([
+        [eventId(2), "Lift (heavier)", false],
+        [eventId(1), "Run", true],
+      ]);
+      // Three sessions over two weeks: frequency counts sessions, not days.
+      expect(rpcArgs()).toMatchObject({ p_frequency_per_week: 2 });
+    });
+
+    it("never calls a session unchanged against an entry from another day", async () => {
+      const RUN = rowId(1);
+      mockTables({
+        sessions: [sessionRow(RUN, "Run")],
+        events: [event(eventId(1), 3, RUN)],
+      });
+      const opened = await open();
+
+      // The coach dragged the run, untouched, from Thursday to Saturday.
+      await save(grid(2, { 5: session("Run", [], eventId(1)) }), opened.version);
+
+      const [thursday, , saturday] = rpcDays();
+      expect(thursday.sessions).toEqual([]);
+      expect(saturday.sessions).toMatchObject([{ event_id: eventId(1), unchanged: false }]);
+    });
+  });
+
   describe("the edited mark", () => {
-    // A day the editor saves as it was laid keeps its edited mark; a day the
-    // coach changed loses it. The save says which with `unchanged`, judged
-    // against the calendar it reads over the days it writes.
+    // A session the editor saves as it was laid keeps its entry's edited mark;
+    // a session the coach changed loses it. The save says which with
+    // `unchanged`, judged against the calendar it reads over the days it writes.
     const UPPER_A = rowId(1);
     const LOWER_A = rowId(2);
     const UPPER_B = rowId(3);
@@ -1356,15 +1438,19 @@ describe("savePlanEdit", () => {
     /** Open the editor, change nothing or what `edit` changes, save through its own code. */
     async function saveThroughEditor(edit: (draft: ProgramDraft) => ProgramDraft = (d) => d) {
       const opened = await open();
-      const seeded = normalizeDraft(planForEditingToDraft(opened).draft);
+      const seed = planForEditingToDraft(opened);
       const body = planEditSaveSchema.parse(
-        draftToPlanEditBody(normalizeDraft(edit(seeded)), opened.version),
+        draftToPlanEditBody(
+          normalizeDraft(edit(normalizeDraft(seed.draft))),
+          opened.version,
+          seed.sessionEvents,
+        ),
       );
       await savePlanEdit({
         clientId: CLIENT_ID,
         coachId: COACH_ID,
         planId: PLAN_ID,
-        sessions: body.sessions,
+        days: body.days,
         name: body.plan.name,
         splitType: body.plan.splitType ?? null,
         version: body.version,
@@ -1372,11 +1458,9 @@ describe("savePlanEdit", () => {
     }
 
     const marks = () =>
-      rpcDays()
-        .filter((day) => !day.is_rest)
-        .map((day) => [day.date, day.unchanged]);
+      rpcDays().flatMap((day) => day.sessions.map((written) => [day.date, written.unchanged]));
 
-    /** The draft with one slot's session replaced (week, day). */
+    /** The draft with one slot changed (week, day). */
     function withSlot(
       draft: ProgramDraft,
       week: number,
@@ -1410,7 +1494,7 @@ describe("savePlanEdit", () => {
       await saveThroughEditor((draft) =>
         withSlot(draft, 0, 5, (slot) => ({
           ...slot,
-          session: slot.session && { ...slot.session, estimatedDurationMinutes: 45 },
+          sessions: slot.sessions.map((session) => ({ ...session, estimatedDurationMinutes: 45 })),
         })),
       );
 
@@ -1428,12 +1512,12 @@ describe("savePlanEdit", () => {
       await saveThroughEditor((draft) =>
         withSlot(draft, 0, 5, (slot) => ({
           ...slot,
-          session: slot.session && {
-            ...slot.session,
-            groups: slot.session.groups.map((group) =>
+          sessions: slot.sessions.map((session) => ({
+            ...session,
+            groups: session.groups.map((group) =>
               group.format === "circuit" ? { ...group, restBetweenRoundsSeconds: 120 } : group,
             ),
-          },
+          })),
         })),
       );
 
@@ -1449,9 +1533,9 @@ describe("savePlanEdit", () => {
 
       // Upper B moves from Wednesday of week 2 to Thursday.
       await saveThroughEditor((draft) => {
-        const upperB = draft.weeks[1].days[2].session;
-        const cleared = withSlot(draft, 1, 2, (slot) => ({ ...slot, isRest: true, session: null }));
-        return withSlot(cleared, 1, 3, (slot) => ({ ...slot, isRest: false, session: upperB }));
+        const upperB = draft.weeks[1].days[2].sessions;
+        const cleared = withSlot(draft, 1, 2, (slot) => ({ ...slot, isRest: true, sessions: [] }));
+        return withSlot(cleared, 1, 3, (slot) => ({ ...slot, isRest: false, sessions: upperB }));
       });
 
       expect(marks()).toEqual([
@@ -1461,8 +1545,35 @@ describe("savePlanEdit", () => {
       ]);
       expect(rpcDays().find((day) => day.date === dayAt(9))).toEqual({
         date: dayAt(9),
-        is_rest: true,
+        sessions: [],
       });
+      // It still names the entry it was opened from; the function keeps an
+      // entry only on its own day, so Thursday gets a new one.
+      expect(rpcDays().find((day) => day.date === dayAt(10))?.sessions[0].event_id).toBe(eventId(3));
+    });
+
+    it("judges each of a day's sessions against its own entry: removing one leaves the other's mark", async () => {
+      const RUN = rowId(4);
+      const fixture = calendar();
+      mockTables({
+        ...fixture,
+        sessions: [...fixture.sessions, sessionRow(RUN, "Evening run")],
+        // Saturday holds Lower A, then a run.
+        events: [...fixture.events, event(eventId(4), 5, RUN, { day_order: 1 })],
+      });
+
+      // The coach removes Lower A and leaves the run alone.
+      await saveThroughEditor((draft) =>
+        withSlot(draft, 0, 5, (slot) => ({
+          ...slot,
+          sessions: slot.sessions.filter((session) => session.name !== "Lower A"),
+        })),
+      );
+
+      const saturday = rpcDays().find((day) => day.date === dayAt(5))!;
+      expect(saturday.sessions.map((written) => [written.event_id, written.name, written.unchanged])).toEqual([
+        [eventId(4), "Evening run", true],
+      ]);
     });
 
     it("says a day the save unlinks from a catalog exercise the coach can't see is not unchanged", async () => {
@@ -1503,7 +1614,6 @@ describe("savePlanEdit", () => {
     it.each([
       ["a stale: refusal", { code: "P0001", message: "stale: the calendar changed since the editor opened" }],
       ["the live-window exclusion", { code: "23P01", message: "conflicting key value violates exclusion constraint" }],
-      ["the one-scheduled-per-day index", { code: "23505", message: "duplicate key value violates unique constraint" }],
     ])("maps %s to stale", async (_label, error) => {
       mockTables({});
       mockRpc.mockResolvedValue({ data: null, error } as never);
@@ -1526,6 +1636,8 @@ describe("savePlanEdit", () => {
 
       for (const error of [
         { code: "P0001", message: "invalid: p_days must hold each day from 2026-09-10 to 2026-09-20 once" },
+        // A day may hold several sessions: no unique violation means the calendar changed.
+        { code: "23505", message: "duplicate key value violates unique constraint" },
         { message: "canceling statement due to statement timeout" },
       ]) {
         mockRpc.mockResolvedValue({ data: null, error } as never);

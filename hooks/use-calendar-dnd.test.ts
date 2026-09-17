@@ -172,6 +172,33 @@ describe("useCalendarDnd", () => {
       });
     });
 
+    it("the optimistic update puts the moved card LAST on its new day, as the server will", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() =>
+          Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ success: true }) }),
+        ),
+      );
+      const moving = event({ id: "ev-1", date: "2026-07-28" });
+      const resident = event({ id: "ev-2", date: "2026-07-30" });
+      const { result, mutate } = setup([moving, resident]);
+
+      act(() => result.current.handleDragEnd(dragEnd("ev-1", "2026-07-30")));
+
+      await vi.waitFor(() =>
+        expect(mutate).toHaveBeenCalledWith(expect.any(Function), { revalidate: false }),
+      );
+      const update = mutate.mock.calls[0][0] as (current: { events: TrainingEvent[] }) => {
+        events: TrainingEvent[];
+      };
+      const next = update({ events: [moving, resident] });
+      // The calendar lays a day in list order: the resident first, the arrival after it.
+      expect(next.events.map((e) => [e.id, e.date])).toEqual([
+        ["ev-2", "2026-07-30"],
+        ["ev-1", "2026-07-30"],
+      ]);
+    });
+
     it("a refused move refetches the calendar and shows the server's sentence", async () => {
       const drift =
         "This session moved since your calendar loaded. The calendar now shows where it is.";

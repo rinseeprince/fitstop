@@ -136,9 +136,10 @@ export function collectNewExerciseBests(
  * client trains that evening" case.
  *
  * Residual edge: if a PRE-existing session is attributed to the same calendar
- * date as one of the new sessions, its row is excluded too, so previousBest can
- * be understated on that date. The RPC keeps the earliest date per rep bucket,
- * so a weight first hit on an older date still survives.
+ * date as one of the new sessions — a day holding several sessions, the first
+ * logged before the coach last looked — its row is excluded too, so
+ * previousBest can be understated on that date. The RPC keeps the earliest date
+ * per rep bucket, so a weight first hit on an older date still survives.
  */
 export function priorBestExcludingDates(
   rows: { weight: number; date: string }[],

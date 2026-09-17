@@ -83,7 +83,29 @@ describe("resolveNutritionDay", () => {
     expect(day.isTrainingDay).toBe(true);
   });
 
-  it("the FIRST session decides the surplus — a later one's is not read", () => {
+  it("a day holding several sessions adds every session's surplus", () => {
+    const day = resolveNutritionDay({
+      ...base,
+      trainingEvents: [
+        { calorieSurplusPercentage: 10, estimatedCalories: null },
+        { calorieSurplusPercentage: 15, estimatedCalories: null },
+      ],
+    });
+
+    expect(day.calorieSurplusPercentage).toBe(25);
+    expect(day.trainingBurnCalories).toBe(488); // round(1950 × 25 / 100)
+    // The order on the day changes nothing.
+    const reversed = resolveNutritionDay({
+      ...base,
+      trainingEvents: [
+        { calorieSurplusPercentage: 15, estimatedCalories: null },
+        { calorieSurplusPercentage: 10, estimatedCalories: null },
+      ],
+    });
+    expect(reversed.calorieSurplusPercentage).toBe(25);
+  });
+
+  it("a session carrying no surplus adds nothing once another on the day carries one", () => {
     const day = resolveNutritionDay({
       ...base,
       trainingEvents: [
@@ -92,8 +114,9 @@ describe("resolveNutritionDay", () => {
       ],
     });
 
-    expect(day.calorieSurplusPercentage).toBeNull();
-    expect(day.trainingBurnCalories).toBe(300);
+    // The estimate is the legacy path, read only when no session carries a surplus.
+    expect(day.calorieSurplusPercentage).toBe(15);
+    expect(day.trainingBurnCalories).toBe(293); // round(1950 × 15 / 100)
   });
 
   it("an edited day takes the edit verbatim, carries its note, and takes no surplus — even on a training day", () => {

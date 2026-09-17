@@ -15,7 +15,6 @@ vi.mock("./event-deletion-floor", () => ({
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
-import { DateOccupiedError } from "./training-event-occupancy";
 import {
   moveTrainingPlanStart,
   PlanMoveNotFoundError,
@@ -127,26 +126,6 @@ describe("moveTrainingPlanStart", () => {
     expect(error.message).toBe("That would take it past the end of the Build block.");
   });
 
-  it("a day that already holds a session is named in the calendar's own sentence", async () => {
-    refuse("occupied:2026-10-22");
-    const error = await refusal(move());
-    expect(error).toBeInstanceOf(DateOccupiedError);
-    expect(error.message).toBe("Thu, Oct 22 already has a session");
-  });
-
-  it("the one-session-a-day index firing mid-move reads as the same sentence", async () => {
-    refuse(
-      'duplicate key value violates unique constraint "idx_training_events_one_scheduled_per_day"',
-      {
-        code: "23505",
-        details: "Key (client_id, date)=(client-1, 2026-10-22) already exists.",
-      }
-    );
-    const error = await refusal(move());
-    expect(error).toBeInstanceOf(DateOccupiedError);
-    expect(error.message).toBe("Thu, Oct 22 already has a session");
-  });
-
   it("the live-window exclusion firing mid-move reads as an overlap", async () => {
     refuse('conflicting key value violates exclusion constraint "training_plans_live_window_overlap"', {
       code: "23P01",
@@ -160,7 +139,6 @@ describe("moveTrainingPlanStart", () => {
     refuse("connection reset");
     const error = await refusal(move());
     expect(error).not.toBeInstanceOf(PlanMoveRefusedError);
-    expect(error).not.toBeInstanceOf(DateOccupiedError);
     expect(error.message).toBe("Failed to move the program: connection reset");
   });
 });

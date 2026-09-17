@@ -8,7 +8,6 @@ import {
   expandProgramToWindow,
   resolvePlacementWindowEnd,
 } from "./program-event-walk";
-import { assertDateFree, rethrowIfDateOccupied } from "./training-event-occupancy";
 import {
   concatTrainingGroupRows,
   insertTrainingGroupRows,
@@ -612,11 +611,6 @@ export async function placeSessionOnCalendar(params: {
   if (fetchError || !savedSessionRow) throw new Error("Saved session not found");
   const savedSession = savedSessionRow as SavedSessionTreeRow;
 
-  // One session per day. Checked BEFORE any cloning: this path used to have no
-  // date guard of any kind, and rejecting after the session/exercise clones
-  // would leave orphan rows behind for a drop that never landed.
-  await assertDateFree(clientId, targetDate);
-
   // 2. Resolve the slot position from the TARGET plan, never the template.
   //    A saved session's (week_index, order_index) describe where it sat in the
   //    program it was authored in; carried into a different plan they are
@@ -624,18 +618,37 @@ export async function placeSessionOnCalendar(params: {
   //    plan as self-describing if ANY entry has week_index > 0, so one dropped
   //    session could flip a whole flat plan onto that branch and change how
   //    every rest day renders. An ad-hoc drop appends after the plan's last slot.
-  const { data: lastSlot, error: slotError } = await supabaseAdmin
-    .from("training_sessions")
-    .select("week_index, order_index")
-    .eq("plan_id", planId)
-    .eq("is_active", true)
-    .order("week_index", { ascending: false })
-    .order("order_index", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  //    Beside it, the last session already on the target day: a day can hold
+  //    several sessions, and a dropped one joins it after them. Both are read
+  //    before anything is cloned, so a failed read leaves no orphan rows.
+  const [
+    { data: lastSlot, error: slotError },
+    { data: lastOnDay, error: dayError },
+  ] = await Promise.all([
+    supabaseAdmin
+      .from("training_sessions")
+      .select("week_index, order_index")
+      .eq("plan_id", planId)
+      .eq("is_active", true)
+      .order("week_index", { ascending: false })
+      .order("order_index", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("training_events")
+      .select("day_order")
+      .eq("client_id", clientId)
+      .eq("date", targetDate)
+      .order("day_order", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
   if (slotError) {
     throw new Error(`Failed to resolve plan slot position: ${slotError.message}`);
+  }
+  if (dayError) {
+    throw new Error(`Failed to read the day's sessions: ${dayError.message}`);
   }
 
   const weekIndex = lastSlot?.week_index ?? 0;
@@ -674,7 +687,7 @@ export async function placeSessionOnCalendar(params: {
     throw new Error(`Failed to clone exercises: ${detail}`);
   }
 
-  // 6. Create single event
+  // 6. Create single event, last on its day
   const { data: event, error: eventError } = await supabaseAdmin
     .from("training_events")
     .insert({
@@ -682,6 +695,7 @@ export async function placeSessionOnCalendar(params: {
       training_plan_id: planId,
       training_session_id: clonedSession.id,
       date: targetDate,
+      day_order: (lastOnDay?.day_order ?? -1) + 1,
       session_name: savedSession.name,
       session_focus: savedSession.focus ?? null,
       calorie_surplus_percentage: savedSession.calorie_surplus_percentage ?? null,
@@ -692,7 +706,6 @@ export async function placeSessionOnCalendar(params: {
     .single();
 
   if (eventError || !event) {
-    rethrowIfDateOccupied(eventError, targetDate);
     throw new Error(`Failed to create event: ${eventError?.message}`);
   }
 

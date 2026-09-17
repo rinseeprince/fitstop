@@ -2,6 +2,7 @@ import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { calculateDailyMacros, applySurplusSplit } from "@/utils/nutrition-helpers";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
+import { sumSurplusPercentages } from "@/services/nutrition-day-resolver";
 import { addDaysToDateString, expandDateRange } from "@/lib/date-helpers";
 import type { TrainingEvent } from "@/types/training";
 import type { DietType, NutritionEvent } from "@/types/check-in";
@@ -11,16 +12,16 @@ const DAY_NAMES: Record<number, string> = {
   4: "thursday", 5: "friday", 6: "saturday",
 };
 
-/** Get surplus percentage from events for a specific day-of-week. Uses the first event's value. */
+/** The training surplus for each weekday that holds a session: every session's percentage on the day added. */
 function getEventSurplusByDay(events: TrainingEvent[]): Record<string, number | null> {
-  const result: Record<string, number | null> = {};
+  const eventsByDay = new Map<string, TrainingEvent[]>();
   for (const event of events) {
     const dayOfWeek = DAY_NAMES[new Date(event.date + "T00:00:00").getDay()];
-    if (!(dayOfWeek in result)) {
-      result[dayOfWeek] = event.calorieSurplusPercentage ?? null;
-    }
+    eventsByDay.set(dayOfWeek, [...(eventsByDay.get(dayOfWeek) ?? []), event]);
   }
-  return result;
+  return Object.fromEntries(
+    [...eventsByDay].map(([dayOfWeek, dayEvents]) => [dayOfWeek, sumSurplusPercentages(dayEvents)]),
+  );
 }
 
 /** Build training session summaries from events, grouped by day-of-week. */

@@ -6,7 +6,6 @@ import {
   PlanMoveNotFoundError,
   PlanMoveRefusedError,
 } from "@/services/training-plan-move-service";
-import { DateOccupiedError } from "@/services/training-event-occupancy";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
@@ -76,7 +75,7 @@ export async function POST(
     return NextResponse.json({ success: true, data: result }, { status: 200 });
   } catch (error) {
     // A refusal is the service's own sentence, written for the coach.
-    if (error instanceof PlanMoveRefusedError || error instanceof DateOccupiedError) {
+    if (error instanceof PlanMoveRefusedError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
     if (error instanceof PlanMoveNotFoundError) {

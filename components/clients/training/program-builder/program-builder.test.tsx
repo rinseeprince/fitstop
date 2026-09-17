@@ -651,8 +651,8 @@ describe("ProgramBuilder session sheet — the subject outlives the close", () =
     fireEvent.click(screen.getByText("Push"));
     expect(sheet()).toHaveAttribute("data-open", "true");
 
-    // The grid's clear stands in for an assistant op removing the session.
-    fireEvent.click(screen.getByLabelText("Clear session (back to rest)"));
+    // The card's remove stands in for an assistant op removing the session.
+    fireEvent.click(screen.getByLabelText("Remove session"));
     expect(sheet()).toHaveAttribute("data-open", "false");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(launcher()).toBeInTheDocument();
@@ -809,6 +809,9 @@ const PLAN_START = "2026-07-15";
 const isTrainingPos = (i: number) => i % 7 === 0 || i % 7 === 2 || i % 7 === 4;
 /** The read lays a session on days 1, 3 and 5 of each week, up to the limit. */
 const holdsSession = (i: number) => isTrainingPos(i) && i <= 17;
+/** The calendar entry of the session at `place` on the day at `position`. */
+const eventAt = (position: number, place = 1) =>
+  `e0000000-0000-4000-8000-${String(position * 10 + place).padStart(12, "0")}`;
 
 /** Three weeks from 2026-07-15. The client's today, 07-22 (position 7), is the
  *  first editable day, so week 1 is history. The block ends 08-01 (position
@@ -825,21 +828,22 @@ function makePlanForEditing(overrides: Partial<PlanForEditing> = {}): PlanForEdi
     clientToday: "2026-07-22",
     firstEditableDate: "2026-07-22",
     limit: { endsOn: "2026-08-01", source: "block" },
-    days: Array.from({ length: 21 }, (_, i): PlanEditDay => {
-      const date = addDaysToDateString(PLAN_START, i);
-      return holdsSession(i)
-        ? {
-            date,
-            isRest: false,
-            name: `Session ${i}`,
-            focus: "strength",
-            estimatedDurationMinutes: null,
-            notes: null,
-            calorieSurplusPercentage: 15,
-            groups: [],
-          }
-        : { date, isRest: true };
-    }),
+    days: Array.from({ length: 21 }, (_, i): PlanEditDay => ({
+      date: addDaysToDateString(PLAN_START, i),
+      sessions: holdsSession(i)
+        ? [
+            {
+              eventId: eventAt(i),
+              name: `Session ${i}`,
+              focus: "strength",
+              estimatedDurationMinutes: null,
+              notes: null,
+              calorieSurplusPercentage: 15,
+              groups: [],
+            },
+          ]
+        : [],
+    })),
     version: "v-1",
     ...overrides,
   };
@@ -865,7 +869,7 @@ const editGets = () => fetchCalls.filter((c) => c.url === EDIT_URL && c.method =
 const editPuts = () => fetchCalls.filter((c) => c.url === EDIT_URL && c.method === "PUT");
 
 type PlanEditPutBody = {
-  sessions: Array<{ name: string; orderIndex: number; weekIndex?: number; isRest: boolean }>;
+  days: Array<{ sessions: Array<{ eventId: string | null; name: string }> }>;
   plan: { name: string; splitType: string | null };
   version: string;
 };
@@ -879,12 +883,10 @@ function renamePlan(name: string) {
   fireEvent.blur(nameInput);
 }
 
-/** Clear a session back to rest from its card's quick-clear. */
-function clearSession(name: string) {
+/** Remove a session from its day with its card's X. */
+function removeSession(name: string) {
   fireEvent.click(
-    within(screen.getByLabelText(`Open session ${name}`)).getByLabelText(
-      "Clear session (back to rest)",
-    ),
+    within(screen.getByLabelText(`Open session ${name}`)).getByLabelText("Remove session"),
   );
 }
 
@@ -938,8 +940,8 @@ describe("ProgramBuilder placed-plan target (the plan editor)", () => {
     await openEditor();
     // Week 1's three sessions carry the lock marker ...
     expect(screen.getAllByTitle(PAST_LOCKED)).toHaveLength(3);
-    // ... and only the five editable sessions (days 7, 9, 11, 14, 16) clear.
-    expect(screen.getAllByLabelText("Clear session (back to rest)")).toHaveLength(5);
+    // ... and only the five editable sessions (days 7, 9, 11, 14, 16) remove.
+    expect(screen.getAllByLabelText("Remove session")).toHaveLength(5);
     // Only the editable rest days (8, 10, 12, 13, 15, 17) offer an add.
     expect(screen.getAllByLabelText(/^Add session to day/)).toHaveLength(6);
   });
@@ -1002,14 +1004,15 @@ describe("ProgramBuilder placed-plan target (the plan editor)", () => {
     await waitFor(() => expect(editPuts()).toHaveLength(1));
 
     const body = editPuts()[0].body as PlanEditPutBody;
-    expect(Object.keys(body).sort()).toEqual(["plan", "sessions", "version"]);
+    expect(Object.keys(body).sort()).toEqual(["days", "plan", "version"]);
     expect(body.plan).toEqual({ name: "PPL Block v2", splitType: "Push/Pull" });
     expect(body.version).toBe("v-1");
-    expect(body.sessions).toHaveLength(21);
-    body.sessions.forEach((s, i) => {
-      expect(s.orderIndex).toBe(i);
-      expect(s.weekIndex).toBe(Math.floor(i / 7));
-      expect(s.isRest).toBe(!holdsSession(i));
+    expect(body.days).toHaveLength(21);
+    body.days.forEach((day, i) => {
+      // Each session read from the calendar claims its entry.
+      expect(day.sessions).toEqual(
+        holdsSession(i) ? [expect.objectContaining({ eventId: eventAt(i), name: `Session ${i}` })] : [],
+      );
     });
     await waitFor(() => expect(toastSpy.success).toHaveBeenCalledWith("Plan updated"));
     // With no host waiting on the save, the confirm closes on a clean tree.
@@ -1106,7 +1109,7 @@ describe("ProgramBuilder placed-plan target (the plan editor)", () => {
     editStatus = 409;
     renderPlaced();
     await openEditor();
-    clearSession("Session 9");
+    removeSession("Session 9");
     expect(screen.queryByText("Session 9")).not.toBeInTheDocument();
     await saveAndConfirm();
     await screen.findByRole("dialog", { name: "This plan changed while you were editing" });
@@ -1114,7 +1117,9 @@ describe("ProgramBuilder placed-plan target (the plan editor)", () => {
     // The calendar moved on: day 11's session was renamed elsewhere.
     const latest = makePlanForEditing({ version: "v-2" });
     latest.days = latest.days.map((day, i) =>
-      i === 11 && !day.isRest ? { ...day, name: "Session 11 (moved)" } : day,
+      i === 11
+        ? { ...day, sessions: day.sessions.map((s) => ({ ...s, name: "Session 11 (moved)" })) }
+        : day,
     );
     planEditFixture = latest;
     fireEvent.click(screen.getByRole("button", { name: "Reload and discard edits" }));
@@ -1132,9 +1137,110 @@ describe("ProgramBuilder placed-plan target (the plan editor)", () => {
 
     // The next save sends the version of the plan it re-read.
     editStatus = 200;
-    clearSession("Session 9");
+    removeSession("Session 9");
     await saveAndConfirm();
     await waitFor(() => expect(editPuts()).toHaveLength(2));
     expect((editPuts()[1].body as PlanEditPutBody).version).toBe("v-2");
+  });
+});
+
+describe("ProgramBuilder placed-plan target — a day holding several sessions", () => {
+  beforeEach(() => {
+    cleanup();
+    fetchCalls.length = 0;
+    editStatus = 200;
+    planFixture = null;
+    toastSpy.success.mockClear();
+    toastSpy.error.mockClear();
+  });
+
+  // Day 9 holds an evening session after Session 9, from its own entry.
+  function twoADayRead(): PlanForEditing {
+    const read = makePlanForEditing();
+    read.days = read.days.map((day, i) =>
+      i === 9
+        ? {
+            ...day,
+            sessions: [
+              ...day.sessions,
+              { ...day.sessions[0], eventId: eventAt(9, 2), name: "Session 9 PM", calorieSurplusPercentage: 5 },
+            ],
+          }
+        : day,
+    );
+    return read;
+  }
+
+  const sheet = () => screen.getByTestId("session-sheet");
+
+  it("shows every session on the day, in order, and counts sessions — not days — in the header and the week", async () => {
+    planEditFixture = twoADayRead();
+    renderPlaced();
+    await openEditor();
+    expect(
+      screen.getAllByLabelText(/^Open session Session 9/).map((card) => card.getAttribute("aria-label")),
+    ).toEqual(["Open session Session 9", "Open session Session 9 PM"]);
+    expect(screen.getByText("3 weeks · 9 sessions")).toBeInTheDocument();
+    // Week 2 holds four sessions on three days.
+    expect(screen.getByText("4×")).toBeInTheDocument();
+  });
+
+  it("opens each session of the day in the editor sheet on its own", async () => {
+    planEditFixture = twoADayRead();
+    renderPlaced();
+    await openEditor();
+    fireEvent.click(screen.getByLabelText("Open session Session 9 PM"));
+    expect(sheet()).toHaveAttribute("data-open", "true");
+    expect(sheet()).toHaveAttribute("data-session", "Session 9 PM");
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByLabelText("Open session Session 9"));
+    expect(sheet()).toHaveAttribute("data-session", "Session 9");
+  });
+
+  it("saves a day holding two sessions with both, in order, each claiming its entry", async () => {
+    planEditFixture = twoADayRead();
+    renderPlaced();
+    await openEditor();
+    renamePlan("PPL Block v2");
+    await saveAndConfirm();
+
+    await waitFor(() => expect(editPuts()).toHaveLength(1));
+    const body = editPuts()[0].body as PlanEditPutBody;
+    expect(body.days[9].sessions).toEqual([
+      expect.objectContaining({ eventId: eventAt(9), name: "Session 9" }),
+      expect.objectContaining({ eventId: eventAt(9, 2), name: "Session 9 PM", calorieSurplusPercentage: 5 }),
+    ]);
+    expect(body.days.flatMap((day) => day.sessions)).toHaveLength(9);
+  });
+
+  it("removes one session with its X — the day keeps the other, and the save sends it alone", async () => {
+    planEditFixture = twoADayRead();
+    renderPlaced();
+    await openEditor();
+    removeSession("Session 9");
+    expect(screen.queryByLabelText("Open session Session 9")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Open session Session 9 PM")).toBeInTheDocument();
+    expect(screen.getByText("3 weeks · 8 sessions")).toBeInTheDocument();
+
+    await saveAndConfirm();
+    await waitFor(() => expect(editPuts()).toHaveLength(1));
+    const body = editPuts()[0].body as PlanEditPutBody;
+    expect(body.days[9].sessions).toEqual([
+      expect.objectContaining({ eventId: eventAt(9, 2), name: "Session 9 PM" }),
+    ]);
+  });
+
+  it("closes a session's open sheet when that session is removed, and keeps the day's other one", async () => {
+    planEditFixture = twoADayRead();
+    renderPlaced();
+    await openEditor();
+    fireEvent.click(screen.getByLabelText("Open session Session 9 PM"));
+    expect(sheet()).toHaveAttribute("data-open", "true");
+
+    // An assistant op or any other writer removing it: here, its card's X.
+    removeSession("Session 9 PM");
+    expect(sheet()).toHaveAttribute("data-open", "false");
+    expect(screen.getByLabelText("Open session Session 9")).toBeInTheDocument();
   });
 });

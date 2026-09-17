@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
 
 const { mockUseSWR, mockToast, mockMutate } = vi.hoisted(() => ({
   mockUseSWR: vi.fn(),
@@ -22,7 +22,6 @@ const WED = "2026-08-26";
 const THU = "2026-08-27";
 const SAT = "2026-08-29";
 const SUN = "2026-08-30";
-const STACK = "Two sessions on one day — move one";
 const DRIFT = "Your week changed since you opened it — reload and try again";
 
 function weekResponse(sessions: ClientTrainingWeekSession[]) {
@@ -59,6 +58,8 @@ function stubFetch(status: number, body: unknown) {
 const chip = (name: string) => screen.getByText(name).closest("button");
 const dayTarget = (name: string, day: string) => screen.getByRole("button", { name: `Move ${name} to ${day}` });
 const saveButton = () => screen.getByRole("button", { name: "Save" });
+/** The week's row for a weekday ("Sat"), holding that day's sessions. */
+const dayRow = (weekday: string) => screen.getByText(weekday).closest("li") as HTMLElement;
 
 describe("TrainingWeekLayout", () => {
   beforeEach(() => {
@@ -89,7 +90,7 @@ describe("TrainingWeekLayout", () => {
     expect(saveButton()).toBeDisabled();
   });
 
-  it("swaps two days by stacking then un-stacking, and saves the whole layout in one POST", async () => {
+  it("moves a session onto a day that holds one — it joins, last — and saves in one POST", async () => {
     const fetchMock = stubFetch(200, { success: true, data: { moved: [] } });
     render(<TrainingWeekLayout />);
 
@@ -98,15 +99,13 @@ describe("TrainingWeekLayout", () => {
     expect(screen.getByText("Tap a day to move Legs there.")).toBeInTheDocument();
     fireEvent.click(dayTarget("Legs", "Sat, Aug 29"));
 
-    // Legs now sits with Upper: a stack, shown inline, Save blocked.
+    // Legs now sits after Upper on Saturday, and the week can be saved as it is.
     expect(screen.getByText(/moved from Thu/)).toBeInTheDocument();
-    expect(screen.getByText(STACK)).toBeInTheDocument();
-    expect(saveButton()).toBeDisabled();
-
-    // Move Upper onto Legs' old day: the stack resolves.
-    fireEvent.click(chip("Upper")!);
-    fireEvent.click(dayTarget("Upper", "Thu, Aug 27"));
-    expect(screen.queryByText(STACK)).toBeNull();
+    const saturday = within(dayRow("Sat"));
+    expect(saturday.getAllByText(/^(Upper|Legs)$/).map((node) => node.textContent)).toEqual([
+      "Upper",
+      "Legs",
+    ]);
     expect(saveButton()).toBeEnabled();
 
     fireEvent.click(saveButton());
@@ -117,9 +116,30 @@ describe("TrainingWeekLayout", () => {
     expect(url).toBe("/api/client/training/events/layout");
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual({
+      moves: [{ eventId: "ev-thu", fromDate: THU, toDate: SAT }],
+    });
+    // Pending state is gone once saved; the refetch settles the chips.
+    expect(screen.queryByText(/moved from/)).toBeNull();
+    expect(saveButton()).toBeDisabled();
+  });
+
+  it("a swap is two moves, sent in one POST", async () => {
+    const fetchMock = stubFetch(200, { success: true, data: { moved: [] } });
+    render(<TrainingWeekLayout />);
+
+    fireEvent.click(chip("Legs")!);
+    fireEvent.click(dayTarget("Legs", "Sat, Aug 29"));
+    fireEvent.click(chip("Upper")!);
+    fireEvent.click(dayTarget("Upper", "Thu, Aug 27"));
+
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith("Week updated"));
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
       moves: [
-        { eventId: "ev-thu", fromDate: THU, toDate: SAT },
         { eventId: "ev-sat", fromDate: SAT, toDate: THU },
+        { eventId: "ev-thu", fromDate: THU, toDate: SAT },
       ],
     });
     // Pending state is gone once saved; the refetch settles the chips.

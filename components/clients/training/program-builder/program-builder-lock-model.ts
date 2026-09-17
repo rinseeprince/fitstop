@@ -1,4 +1,5 @@
 import type { ProgramDraft, WeekDraft } from "./program-builder-types";
+import { findSessionPlace } from "./program-builder-model";
 
 // The plan editor's one date rule. The grid's slots are the plan's days in
 // order — slot i of the flattened weeks is the day effective_from + i — and a
@@ -46,7 +47,7 @@ function sessionPastLimit(weeks: WeekDraft[], through: number | null): boolean {
   let position = 0;
   for (const week of weeks) {
     for (const slot of week.days) {
-      if (slot.session && position > through) return true;
+      if (slot.sessions.length > 0 && position > through) return true;
       position += 1;
     }
   }
@@ -122,12 +123,8 @@ export function sessionRefusal(
   rules: PlanDayRules,
   sessionUid: string,
 ): string | null {
-  for (const week of draft.weeks) {
-    for (const slot of week.days) {
-      if (slot.session?.uid === sessionUid) return slotRefusal(rules, slot.uid);
-    }
-  }
-  return null;
+  const at = findSessionPlace(draft, sessionUid);
+  return at ? slotRefusal(rules, at.slot.uid) : null;
 }
 
 /** A session is locked iff the slot holding it is locked. Vanished → false. */
@@ -136,12 +133,8 @@ export function isSessionLocked(
   locked: ReadonlySet<string>,
   sessionUid: string,
 ): boolean {
-  for (const week of draft.weeks) {
-    for (const slot of week.days) {
-      if (slot.session?.uid === sessionUid) return locked.has(slot.uid);
-    }
-  }
-  return false;
+  const at = findSessionPlace(draft, sessionUid);
+  return at != null && locked.has(at.slot.uid);
 }
 
 /**

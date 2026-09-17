@@ -94,11 +94,16 @@ const sessionDraftSnapshotSchema = z.object({
     }),
 });
 
+// A day on a client's calendar can hold several sessions (a morning run and
+// an evening lift); this is far above any real day and only bounds a request.
+const MAX_SESSIONS_PER_DAY = 20;
+
 const daySlotSnapshotSchema = z.object({
   uid: uidSchema,
   orderIndex: z.number().int().min(0).max(6),
   isRest: z.boolean(),
-  session: sessionDraftSnapshotSchema.nullable(),
+  // In the day's order; none is a rest day.
+  sessions: z.array(sessionDraftSnapshotSchema).max(MAX_SESSIONS_PER_DAY),
 });
 
 const weekDraftSnapshotSchema = z.object({
@@ -233,6 +238,7 @@ export const draftOpSchema = z.discriminatedUnion("type", [
     label: opLabel,
   }),
   z.object({ type: z.literal("clear_slot"), slotUid: uidSchema, label: opLabel }),
+  z.object({ type: z.literal("remove_session"), sessionUid: uidSchema, label: opLabel }),
   z.object({
     type: z.literal("move_session"),
     sessionUid: uidSchema,

@@ -377,7 +377,7 @@ describe("savedPlanToDraft flat-plan normalization", () => {
   it("yields one all-rest week for a plan with no sessions", () => {
     const draft = savedPlanToDraft(makePlan({ sessions: [] }));
     expect(draft.weeks).toHaveLength(1);
-    expect(draft.weeks[0].days.every((d) => d.isRest && d.session === null)).toBe(true);
+    expect(draft.weeks[0].days.every((d) => d.isRest && d.sessions.length === 0)).toBe(true);
   });
 });
 
@@ -408,11 +408,38 @@ describe("draftToOverwriteBody guards", () => {
     expect(body.sessions.every((s) => s.isRest && s.groups.length === 0)).toBe(true);
   });
 
+  it("emits one row per session of a day, sharing the day's place, and one rest row per rest day", () => {
+    const draft = savedPlanToDraft(makeWeekShapedPlan(2));
+    // Week 2's day 4 (Pull W2) gains a second session after it.
+    const [pull] = draft.weeks[1].days[3].sessions;
+    draft.weeks[1].days[3].sessions = [pull, { ...pull, uid: "sess-pm", name: "PM run", notes: "Easy" }];
+
+    for (const sessions of [draftToOverwriteBody(draft).sessions, draftToInlinePlanBody(draft).sessions]) {
+      expect(sessions).toHaveLength(15);
+      expect(sessions.slice(9, 12)).toEqual([
+        expect.objectContaining({ name: "Rest", orderIndex: 9, weekIndex: 1, isRest: true, groups: [] }),
+        expect.objectContaining({ name: "Pull W2", orderIndex: 10, weekIndex: 1, isRest: false }),
+        expect.objectContaining({
+          name: "PM run",
+          orderIndex: 10,
+          weekIndex: 1,
+          isRest: false,
+          notes: "Easy",
+          focus: "chest",
+          sessionType: "training",
+        }),
+      ]);
+      expect(sessions.map((s) => s.orderIndex)).toEqual([
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 12, 13,
+      ]);
+    }
+  });
+
   it("nullifies blank video URLs and empty setSpecs arrays", () => {
     const plan = makeWeekShapedPlan(1);
     const draft = savedPlanToDraft(plan);
     const slot = draft.weeks[0].days[0];
-    const [ex1, ex2] = sessionExercises(slot.session!);
+    const [ex1, ex2] = sessionExercises(slot.sessions[0]);
     ex1.videoUrl = "   ";
     ex2.setSpecs = []; // must never reach the API — fails the zod refine
     const body = draftToOverwriteBody(draft);
@@ -433,7 +460,7 @@ describe("draftToOverwriteBody guards", () => {
   it("clamps exercise sets into the schema's 1..20 range", () => {
     const plan = makeWeekShapedPlan(1);
     const draft = savedPlanToDraft(plan);
-    const [ex1, ex2] = sessionExercises(draft.weeks[0].days[0].session!);
+    const [ex1, ex2] = sessionExercises(draft.weeks[0].days[0].sessions[0]);
     ex1.sets = 0;
     ex2.sets = 25;
     const body = draftToOverwriteBody(draft);
@@ -736,7 +763,7 @@ function expectNoPositionFields(groups: ReadonlyArray<{ exercises: ReadonlyArray
 describe("groups through the serializers", () => {
   it("savedPlanToDraft builds the session's groups: settings kept, fresh grp- uids, exercises in group order", () => {
     const plan = makePlan({ sessions: [makeGroupedSession()] });
-    const session = savedPlanToDraft(plan).weeks[0].days[0].session!;
+    const [session] = savedPlanToDraft(plan).weeks[0].days[0].sessions;
 
     expect(session.groups).toHaveLength(2);
     const [circuit, bench] = session.groups;
@@ -749,7 +776,7 @@ describe("groups through the serializers", () => {
     expect(circuit.uid).toMatch(/^grp-/);
     expect(bench.uid).toMatch(/^grp-/);
     expect(circuit.uid).not.toBe(bench.uid);
-    const again = savedPlanToDraft(plan).weeks[0].days[0].session!;
+    const [again] = savedPlanToDraft(plan).weeks[0].days[0].sessions;
     expect(again.groups.map((g) => g.uid)).not.toContain(circuit.uid);
     expect(again.groups.map((g) => g.uid)).not.toContain(bench.uid);
   });

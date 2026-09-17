@@ -24,8 +24,14 @@ import {
   type ProgramDraft,
   type SessionDraft,
 } from "@/components/clients/training/program-builder/program-builder-types";
-import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
-import { applyDraftOps } from "@/components/clients/training/program-builder/program-builder-ops";
+import {
+  mapSession,
+  normalizeDraft,
+} from "@/components/clients/training/program-builder/program-builder-model";
+import {
+  applyDraftOps,
+  isDestructiveOp,
+} from "@/components/clients/training/program-builder/program-builder-ops";
 import {
   LIMIT_LOCKED,
   PAST_LOCKED,
@@ -39,8 +45,13 @@ import {
   sessionExercises,
   type GroupSettings,
 } from "@/utils/exercise-groups";
-import { buildWorkspaceFromRows, finalizeAssistantOps } from "./draft-workspace";
-import { programContext, resolveExerciseRef } from "./draft-tool-helpers";
+import {
+  buildWorkspaceFromRows,
+  finalizeAssistantOps,
+  type DraftWorkspace,
+} from "./draft-workspace";
+import { programContext, programSkeleton, resolveExerciseRef } from "./draft-tool-helpers";
+import { buildReadTools } from "./draft-read-tools";
 import { buildWeekTools } from "./draft-week-tools";
 import { buildSessionTools } from "./draft-session-tools";
 import { buildExerciseTools } from "./draft-exercise-tools";
@@ -138,7 +149,7 @@ function makeDraft(): ProgramDraft {
     ],
   };
   const week = makeRestWeek(0);
-  week.days[0] = { ...makeRestSlot(0), isRest: false, session };
+  week.days[0] = { ...makeRestSlot(0), isRest: false, sessions: [session] };
   return normalizeDraft({
     id: "44444444-4444-4444-8444-444444444444",
     name: "Strength Block",
@@ -162,7 +173,7 @@ const tool = (tools: Array<{ name: string }>, name: string) => {
 };
 
 const squatLoads = (ws: ReturnType<typeof makeWs>, weekIndex: number): number[] => {
-  const session = ws.draft.weeks[weekIndex].days[0].session;
+  const [session] = ws.draft.weeks[weekIndex].days[0].sessions;
   return ((session ? sessionExercises(session)[0].setSpecs : null) ?? []).map(
     (s) => s.load_value ?? -1,
   );
@@ -194,7 +205,7 @@ describe("duplicate_week with progression", () => {
       rules: [{ kind: "sets", amount: 1, everyNWeeks: 2 }],
     } as never);
     const setCount = (w: number) => {
-      const session = ws.draft.weeks[w].days[0].session;
+      const [session] = ws.draft.weeks[w].days[0].sessions;
       return session ? sessionExercises(session)[0].setSpecs?.length : undefined;
     };
     expect(setCount(1)).toBe(2); // step 1: rule not due
@@ -212,7 +223,7 @@ describe("duplicate_week with progression", () => {
       rules: [{ kind: "load_kg", amount: 5 }],
       scope: "compounds",
     } as never);
-    const exercises = sessionExercises(ws.draft.weeks[1].days[0].session!);
+    const exercises = sessionExercises(ws.draft.weeks[1].days[0].sessions[0]);
     expect(exercises[0].setSpecs?.[0].load_value).toBe(105); // Back Squat (Compound)
     expect(exercises[1].setSpecs?.[0].load_value).toBe(40); // Leg Curl untouched
   });
@@ -278,7 +289,7 @@ describe("catalog constraint (add_exercise)", () => {
     expect(exercises[0].uid).toMatch(/^ex-/);
 
     // The working copy holds that very group, after the session's two.
-    const groups = ws.draft.weeks[0].days[0].session!.groups;
+    const groups = ws.draft.weeks[0].days[0].sessions[0].groups;
     expect(groups).toHaveLength(3);
     expect(groups[2]).toEqual(op.group);
   });
@@ -369,24 +380,10 @@ describe("finalizeAssistantOps sweeps", () => {
     // Simulate an executor bug: an exercise with no catalog identity and a
     // name that did not exist at entry lands in the working copy.
     const rogue = lone(exercise("Invented Movement", null, null));
-    const sessionUid = ws.draft.weeks[0].days[0].session!.uid;
-    ws.draft = normalizeDraft({
-      ...ws.draft,
-      weeks: ws.draft.weeks.map((w) => ({
-        ...w,
-        days: w.days.map((slot) =>
-          slot.session?.uid === sessionUid
-            ? {
-                ...slot,
-                session: {
-                  ...slot.session,
-                  groups: [...slot.session.groups, rogue],
-                },
-              }
-            : slot,
-        ),
-      })),
-    });
+    const sessionUid = ws.draft.weeks[0].days[0].sessions[0].uid;
+    ws.draft = normalizeDraft(
+      mapSession(ws.draft, sessionUid, (s) => ({ ...s, groups: [...s.groups, rogue] })),
+    );
     ws.ops.push({ type: "add_exercise", sessionUid, group: rogue });
 
     const { ops, notes } = finalizeAssistantOps(ws);
@@ -399,7 +396,7 @@ describe("finalizeAssistantOps sweeps", () => {
       target: "library",
       draft: (() => {
         const d = makeDraft();
-        d.weeks[0].days[0].session!.groups[0].exercises[0] = exercise("Coach Special", null, null);
+        d.weeks[0].days[0].sessions[0].groups[0].exercises[0] = exercise("Coach Special", null, null);
         return normalizeDraft(d);
       })(),
       catalog: CATALOG,
@@ -428,24 +425,13 @@ describe("review-fleet regressions (S6a follow-up)", () => {
   it("update_exercise applies compact fields BEFORE materializing a load (compact/specs can't contradict)", async () => {
     const ws = makeWs();
     // Compact-only exercise: setSpecs null, 3 sets 8-12.
-    const sessionUid = ws.draft.weeks[0].days[0].session!.uid;
-    ws.draft = normalizeDraft({
-      ...ws.draft,
-      weeks: ws.draft.weeks.map((w) => ({
-        ...w,
-        days: w.days.map((slot) =>
-          slot.session?.uid === sessionUid
-            ? {
-                ...slot,
-                session: {
-                  ...slot.session,
-                  groups: [lone(exercise("Back Squat", SQUAT_ID, null))],
-                },
-              }
-            : slot,
-        ),
+    const sessionUid = ws.draft.weeks[0].days[0].sessions[0].uid;
+    ws.draft = normalizeDraft(
+      mapSession(ws.draft, sessionUid, (s) => ({
+        ...s,
+        groups: [lone(exercise("Back Squat", SQUAT_ID, null))],
       })),
-    });
+    );
 
     const update = tool(buildExerciseTools(ws), "update_exercise");
     // "make it 5 sets of 5 at 100kg" — load AND compact fields in one call.
@@ -475,17 +461,12 @@ describe("review-fleet regressions (S6a follow-up)", () => {
   it("clamps op labels to the wire cap so one long name can't void the whole turn", async () => {
     const ws = makeWs();
     const longName = "X".repeat(190);
-    ws.draft = normalizeDraft({
-      ...ws.draft,
-      weeks: ws.draft.weeks.map((w) => ({
-        ...w,
-        days: w.days.map((slot) =>
-          slot.session
-            ? { ...slot, session: { ...slot.session, name: longName } }
-            : slot,
-        ),
+    ws.draft = normalizeDraft(
+      mapSession(ws.draft, ws.draft.weeks[0].days[0].sessions[0].uid, (s) => ({
+        ...s,
+        name: longName,
       })),
-    });
+    );
     const clear = tool(buildSessionTools(ws), "clear_day");
     await clear.run({ week: 1, day: 1 } as never);
     expect(ws.ops).toHaveLength(1);
@@ -567,18 +548,20 @@ describe("programContext front-loading (latency)", () => {
         w.days[0] = {
           ...makeRestSlot(0),
           isRest: false,
-          session: {
-            uid: newUid("sess"),
-            name: `Session ${i}`,
-            focus: "full body",
-            estimatedDurationMinutes: 60,
-            calorieSurplusPercentage: null,
-            notes: null,
-            sessionType: "training",
-            groups: Array.from({ length: 8 }, () =>
-              lone(exercise("Back Squat", SQUAT_ID, [workingSet(100)])),
-            ),
-          },
+          sessions: [
+            {
+              uid: newUid("sess"),
+              name: `Session ${i}`,
+              focus: "full body",
+              estimatedDurationMinutes: 60,
+              calorieSurplusPercentage: null,
+              notes: null,
+              sessionType: "training",
+              groups: Array.from({ length: 8 }, () =>
+                lone(exercise("Back Squat", SQUAT_ID, [workingSet(100)])),
+              ),
+            },
+          ],
         };
         return w;
       }),
@@ -596,24 +579,13 @@ describe("duplicate_week reports STORED loads, not recomputed arithmetic", () =>
     // Reproduces the live 12-week case: 80kg bench, +5%/week. Raw arithmetic
     // gives 84 / 88.2 / 92.61; the engine snaps to the nearest 0.5kg, so the
     // tool result must say 88 and 92.5 — those are what the grid holds.
-    const sessionUid = ws.draft.weeks[0].days[0].session!.uid;
-    ws.draft = normalizeDraft({
-      ...ws.draft,
-      weeks: ws.draft.weeks.map((w) => ({
-        ...w,
-        days: w.days.map((slot) =>
-          slot.session?.uid === sessionUid
-            ? {
-                ...slot,
-                session: {
-                  ...slot.session,
-                  groups: [lone(exercise("Back Squat", SQUAT_ID, [workingSet(80)]))],
-                },
-              }
-            : slot,
-        ),
+    const sessionUid = ws.draft.weeks[0].days[0].sessions[0].uid;
+    ws.draft = normalizeDraft(
+      mapSession(ws.draft, sessionUid, (s) => ({
+        ...s,
+        groups: [lone(exercise("Back Squat", SQUAT_ID, [workingSet(80)]))],
       })),
-    });
+    );
 
     const dup = tool(buildWeekTools(ws), "duplicate_week");
     const out = await dup.run({
@@ -632,7 +604,7 @@ describe("duplicate_week reports STORED loads, not recomputed arithmetic", () =>
     expect(out).not.toContain("92.6");
 
     const loads = (w: number) =>
-      sessionExercises(ws.draft.weeks[w].days[0].session!)[0].setSpecs![0].load_value;
+      sessionExercises(ws.draft.weeks[w].days[0].sessions[0])[0].setSpecs![0].load_value;
     expect([loads(1), loads(2), loads(3)]).toEqual([84, 88, 92.5]);
   });
 });
@@ -670,7 +642,7 @@ function makeCircuitDraft(): { draft: ProgramDraft; circuit: ExerciseGroupDraft 
     ],
   };
   const week = makeRestWeek(0);
-  week.days[0] = { ...makeRestSlot(0), isRest: false, session };
+  week.days[0] = { ...makeRestSlot(0), isRest: false, sessions: [session] };
   const draft = normalizeDraft({
     id: "44444444-4444-4444-8444-444444444444",
     name: "Strength Block",
@@ -732,7 +704,7 @@ describe("a turn over a draft holding a circuit", () => {
     expect(replayed.skipped).toEqual([]);
     expect(replayed.applied).toBe(3);
 
-    const session = replayed.draft.weeks[0].days[0].session!;
+    const [session] = replayed.draft.weeks[0].days[0].sessions;
     expect(session.groups[0].uid).toBe(circuit.uid);
     expect(groupSettingsOf(session.groups[0])).toEqual(CIRCUIT);
     expect(session.groups[0]).toEqual(circuit);
@@ -763,7 +735,7 @@ describe("a turn over a draft holding a circuit", () => {
     expect(out).toBe(
       '"Bench Press" is at position 3, not 2: exercises linked in a group stay together, so it went to the nearest place that keeps every group whole.',
     );
-    expect(sessionExercises(ws.draft.weeks[0].days[0].session!).map((e) => e.name)).toEqual([
+    expect(sessionExercises(ws.draft.weeks[0].days[0].sessions[0]).map((e) => e.name)).toEqual([
       "Back Squat",
       "Leg Curl",
       "Bench Press",
@@ -802,14 +774,14 @@ describe("a turn over a draft holding a circuit", () => {
       position: 2,
     } as never);
     expect(out).toMatch(/^Added "[^"]+" to "Lower A" \(week 1 day 1\)\. "[^"]+" is at position 3, not 2: exercises linked in a group stay together/);
-    const names = sessionExercises(ws.draft.weeks[0].days[0].session!).map((e) => e.name);
+    const names = sessionExercises(ws.draft.weeks[0].days[0].sessions[0]).map((e) => e.name);
     expect(names.slice(0, 2)).toEqual(["Back Squat", "Leg Curl"]);
   });
 });
 
 describe("resolveExerciseRef across groups", () => {
   it("counts exercisePosition across groups: position 2 is the second exercise of a two-exercise first group", () => {
-    const session = makeCircuitDraft().draft.weeks[0].days[0].session!;
+    const [session] = makeCircuitDraft().draft.weeks[0].days[0].sessions;
 
     const second = resolveExerciseRef(session, { exercisePosition: 2 });
     if (!second.ok) throw new Error(second.error);
@@ -856,9 +828,9 @@ function makePlacedDraft(): ProgramDraft {
     groups: [lone(exercise("Leg Curl", CURL_ID, [workingSet(40)]))],
   };
   const week0 = makeRestWeek(0);
-  week0.days[0] = { ...makeRestSlot(0), isRest: false, session: past };
+  week0.days[0] = { ...makeRestSlot(0), isRest: false, sessions: [past] };
   const week1 = makeRestWeek(1);
-  week1.days[0] = { ...makeRestSlot(0), isRest: false, session: future };
+  week1.days[0] = { ...makeRestSlot(0), isRest: false, sessions: [future] };
   return normalizeDraft({
     id: "44444444-4444-4444-8444-444444444444",
     name: "Placed Block",
@@ -990,21 +962,12 @@ describe("placed-plan sweep (finalizeAssistantOps)", () => {
   it("discards the turn when a history day's content changed despite the guards", () => {
     const ws = makePlacedWs();
     // Simulate an executor bug mutating history directly (bypassing commitOp).
-    ws.draft = normalizeDraft({
-      ...ws.draft,
-      weeks: ws.draft.weeks.map((w, i) =>
-        i !== 0
-          ? w
-          : {
-              ...w,
-              days: w.days.map((slot) =>
-                slot.session
-                  ? { ...slot, session: { ...slot.session, name: "Rewritten History" } }
-                  : slot,
-              ),
-            },
-      ),
-    });
+    ws.draft = normalizeDraft(
+      mapSession(ws.draft, ws.draft.weeks[0].days[0].sessions[0].uid, (s) => ({
+        ...s,
+        name: "Rewritten History",
+      })),
+    );
 
     const finalized = finalizeAssistantOps(ws);
     expect(finalized.ops).toHaveLength(0);
@@ -1040,7 +1003,7 @@ describe("placed-plan sweep (finalizeAssistantOps)", () => {
       weeks: ws.draft.weeks.map((w) => ({
         ...w,
         days: w.days.map((slot) =>
-          slot.uid === greyedUid ? { ...slot, isRest: false, session: extra } : slot,
+          slot.uid === greyedUid ? { ...slot, isRest: false, sessions: [extra] } : slot,
         ),
       })),
     });
@@ -1086,7 +1049,7 @@ function makeLoneDraft(): ProgramDraft {
     ],
   };
   const week = makeRestWeek(0);
-  week.days[0] = { ...makeRestSlot(0), isRest: false, session };
+  week.days[0] = { ...makeRestSlot(0), isRest: false, sessions: [session] };
   return normalizeDraft({
     id: "44444444-4444-4444-8444-444444444444",
     name: "Hybrid",
@@ -1099,7 +1062,7 @@ function makeLoneDraft(): ProgramDraft {
   });
 }
 
-const dayOne = (draft: ProgramDraft) => draft.weeks[0].days[0].session!;
+const dayOne = (draft: ProgramDraft) => draft.weeks[0].days[0].sessions[0];
 const shapeOf = (draft: ProgramDraft) =>
   dayOne(draft).groups.map((g) => g.exercises.map((e) => e.name));
 
@@ -1302,5 +1265,239 @@ describe("group tools", () => {
     expect(text).toContain("      2. Bench Press — 3 rounds");
     expect(text).toContain("      3. Leg Curl — 3 rounds");
     expect(text).toContain("    4. Calf Raise — 3 sets");
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// A day holding several sessions: tools name a session by its place in its day,
+// the program state lists each with its place, and the session tools follow
+// the coach's rules — as ops the client replays identically.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Week 1 day 1 holds an AM run, then a PM lift of squat and bench; day 3 holds
+// Upper; every other day is rest.
+function makeTwoADayDraft(): ProgramDraft {
+  const named = (name: string, groups: ExerciseGroupDraft[]): SessionDraft => ({
+    uid: newUid("sess"),
+    name,
+    focus: null,
+    estimatedDurationMinutes: null,
+    calorieSurplusPercentage: null,
+    notes: null,
+    sessionType: "training",
+    groups,
+  });
+  const week = makeRestWeek(0);
+  week.days[0] = {
+    ...makeRestSlot(0),
+    isRest: false,
+    sessions: [
+      named("AM run", [lone(exercise("Leg Curl", CURL_ID, [workingSet(40)]))]),
+      named("PM lift", [
+        lone(exercise("Back Squat", SQUAT_ID, [workingSet(100)])),
+        lone(exercise("Bench Press", BENCH_ID, [workingSet(80)])),
+      ]),
+    ],
+  };
+  week.days[2] = {
+    ...makeRestSlot(2),
+    isRest: false,
+    sessions: [named("Upper", [lone(exercise("Bench Press", BENCH_ID, [workingSet(60)]))])],
+  };
+  return normalizeDraft({
+    id: "44444444-4444-4444-8444-444444444444",
+    name: "Hybrid",
+    description: null,
+    status: "saved",
+    splitType: null,
+    programDurationWeeks: null,
+    defaultSurplusPercentage: null,
+    weeks: [week],
+  });
+}
+
+describe("a day holding several sessions", () => {
+  function twoADayWs(target: "library" | "client-draft" = "library") {
+    const coachDraft = makeTwoADayDraft();
+    const ws = buildWorkspaceFromRows({ target, draft: coachDraft, catalog: CATALOG });
+    return { coachDraft, ws };
+  }
+
+  const namesOn = (draft: ProgramDraft, d: number) =>
+    draft.weeks[0].days[d].sessions.map((s) => s.name);
+
+  // What the client does with a turn: re-validate, then replay onto its own draft.
+  function expectReplayMatches(coachDraft: ProgramDraft, ws: DraftWorkspace) {
+    const { ops, notes } = finalizeAssistantOps(ws);
+    expect(notes).toEqual([]);
+    const received = z.array(draftOpSchema).parse(JSON.parse(JSON.stringify(ops)));
+    const replayed = applyDraftOps(coachDraft, received, { target: "library" });
+    expect(replayed.skipped).toEqual([]);
+    expect(replayed.draft).toEqual(ws.draft);
+  }
+
+  it("tools address a day's session by its place, the day's first by default", async () => {
+    const { ws } = twoADayWs();
+    const details = tool(buildSessionTools(ws), "update_session_details");
+    expect(await details.run({ week: 1, day: 1, session: 2, notes: "Heavy" } as never)).toBe(
+      'Updated "PM lift" (week 1 day 1).',
+    );
+    expect(await details.run({ week: 1, day: 1, notes: "Easy" } as never)).toBe(
+      'Updated "AM run" (week 1 day 1).',
+    );
+    expect(ws.draft.weeks[0].days[0].sessions.map((s) => s.notes)).toEqual(["Easy", "Heavy"]);
+
+    // Exercise positions count inside the session the place names.
+    const update = tool(buildExerciseTools(ws), "update_exercise");
+    expect(
+      await update.run({ week: 1, day: 1, session: 2, exercisePosition: 2, loadKg: 85 } as never),
+    ).toBe('Updated "Bench Press".');
+    expect(
+      sessionExercises(ws.draft.weeks[0].days[0].sessions[1])[1].setSpecs![0].load_value,
+    ).toBe(85);
+  });
+
+  it("a place past the day's sessions is an error naming how many the day holds", async () => {
+    const { ws } = twoADayWs();
+    const getSession = tool(buildReadTools(ws), "get_session");
+    expect(await getSession.run({ week: 1, day: 1, session: 3 } as never)).toBe(
+      "Week 1 day 1 has only 2 sessions.",
+    );
+    expect(await getSession.run({ week: 1, day: 3, session: 2 } as never)).toBe(
+      "Week 1 day 3 has only 1 session.",
+    );
+    expect(await getSession.run({ week: 1, day: 2 } as never)).toMatch(/is a rest day/);
+    const addToSecond = tool(buildExerciseTools(ws), "add_exercise");
+    expect(await addToSecond.run({ week: 1, day: 3, session: 2, name: "Leg Curl" } as never)).toBe(
+      "Week 1 day 3 has only 1 session.",
+    );
+    expect(ws.ops).toEqual([]);
+  });
+
+  it("remove_session removes the session it names and the day keeps the rest; the client replays it", async () => {
+    const { coachDraft, ws } = twoADayWs();
+    const remove = tool(buildSessionTools(ws), "remove_session");
+    expect(await remove.run({ week: 1, day: 1, session: 1 } as never)).toBe(
+      "Removed \"AM run\" from week 1 day 1; the day's other sessions stay.",
+    );
+    expect(namesOn(ws.draft, 0)).toEqual(["PM lift"]);
+
+    expect(await remove.run({ week: 1, day: 3 } as never)).toBe(
+      'Week 1 day 3 is now a rest day ("Upper" removed).',
+    );
+    expect(ws.draft.weeks[0].days[2]).toMatchObject({ isRest: true, sessions: [] });
+
+    expect(ws.ops.map((op) => op.type)).toEqual(["remove_session", "remove_session"]);
+    // The coach previews a removal before it lands.
+    expect(ws.ops.every(isDestructiveOp)).toBe(true);
+    expectReplayMatches(coachDraft, ws);
+  });
+
+  it("clear_day removes every session on the day and names them", async () => {
+    const { ws } = twoADayWs();
+    const clear = tool(buildSessionTools(ws), "clear_day");
+    expect(await clear.run({ week: 1, day: 1 } as never)).toBe(
+      'Week 1 day 1 is now a rest day ("AM run", "PM lift" removed).',
+    );
+    expect(ws.draft.weeks[0].days[0]).toMatchObject({ isRest: true, sessions: [] });
+    expect(ws.ops.map((op) => op.label)).toEqual(['W1 D1: removed "AM run", "PM lift" (now rest)']);
+  });
+
+  it("move_session follows the coach's rule: onto a rest day it moves, a lone session swaps, anything else is refused", async () => {
+    const { coachDraft, ws } = twoADayWs();
+    const move = tool(buildSessionTools(ws), "move_session");
+    // The lift shares day 1 with the run: it can't swap with Upper.
+    expect(
+      await move.run({ fromWeek: 1, fromDay: 1, session: 2, toWeek: 1, toDay: 3 } as never),
+    ).toBe("That day already has a session");
+    // Upper is alone on day 3, but day 1 holds two.
+    expect(await move.run({ fromWeek: 1, fromDay: 3, toWeek: 1, toDay: 1 } as never)).toBe(
+      "That day already has a session",
+    );
+    expect(ws.ops).toEqual([]);
+
+    expect(
+      await move.run({ fromWeek: 1, fromDay: 1, session: 2, toWeek: 1, toDay: 5 } as never),
+    ).toBe('Moved "PM lift" to week 1 day 5.');
+    expect(namesOn(ws.draft, 0)).toEqual(["AM run"]);
+    expect(namesOn(ws.draft, 4)).toEqual(["PM lift"]);
+
+    // Alone on day 1 now, the run swaps with Upper.
+    expect(await move.run({ fromWeek: 1, fromDay: 1, toWeek: 1, toDay: 3 } as never)).toBe(
+      'Moved "AM run" to week 1 day 3 — it swapped places with "Upper".',
+    );
+    expect(namesOn(ws.draft, 0)).toEqual(["Upper"]);
+    expect(namesOn(ws.draft, 2)).toEqual(["AM run"]);
+    expectReplayMatches(coachDraft, ws);
+  });
+
+  it("add_session still takes only a rest day", async () => {
+    const { ws } = twoADayWs();
+    const add = tool(buildSessionTools(ws), "add_session");
+    expect(await add.run({ week: 1, day: 1, name: "Mobility" } as never)).toBe(
+      "That day already has a session",
+    );
+    expect(ws.ops).toEqual([]);
+  });
+
+  it("the program state lists each session of a day with its place; a day's only session carries none", async () => {
+    const { ws } = twoADayWs();
+    const full = programContext(ws.draft);
+    expect(full.complete).toBe(true);
+    expect(full.text).toContain('  Day 1 · session 1: "AM run"');
+    expect(full.text).toContain('  Day 1 · session 2: "PM lift"');
+    expect(full.text).toContain('  Day 3: "Upper"');
+    expect(full.text).toContain("  Day 2: rest");
+    expect(programSkeleton(ws.draft).split("\n")[1]).toBe(
+      "W1: D1 AM run(1ex) + PM lift(2ex) | D2 rest | D3 Upper(1ex) | D4 rest | D5 rest | D6 rest | D7 rest",
+    );
+
+    const read = buildReadTools(ws);
+    const week = await tool(read, "get_week").run({ week: 1 } as never);
+    expect(week).toContain('Day 1 · session 1: "AM run"');
+    expect(week).toContain('Day 1 · session 2: "PM lift"');
+    expect(week).toContain('Day 3: "Upper"');
+    expect(await tool(read, "get_session").run({ week: 1, day: 1, session: 2 } as never)).toMatch(
+      /^Week 1 day 1 · session 2: "PM lift"/,
+    );
+    expect(await tool(read, "get_session").run({ week: 1, day: 3 } as never)).toMatch(
+      /^Week 1 day 3: "Upper"/,
+    );
+  });
+
+  it("duplicate_week copies and progresses every session of a day, and reports across them", async () => {
+    const { ws } = twoADayWs();
+    const out = await tool(buildWeekTools(ws), "duplicate_week").run({
+      week: 1,
+      rules: [{ kind: "load_kg", amount: 5 }],
+    } as never);
+    expect(out).toContain("4/4 in-scope exercises changed");
+    expect(out).toContain("Back Squat 100 kg → 105 kg");
+    const [am, pm] = ws.draft.weeks[1].days[0].sessions;
+    expect([am.name, pm.name]).toEqual(["AM run", "PM lift"]);
+    expect(sessionExercises(pm).map((e) => e.setSpecs![0].load_value)).toEqual([105, 85]);
+  });
+
+  it("the catalog sweep reads every session: an unresolved exercise new on a day's second session discards the turn", () => {
+    const { ws } = twoADayWs();
+    const pm = ws.draft.weeks[0].days[0].sessions[1];
+    const rogue = lone(exercise("Invented Movement", null, null));
+    ws.draft = normalizeDraft(mapSession(ws.draft, pm.uid, (s) => ({ ...s, groups: [...s.groups, rogue] })));
+    ws.ops.push({ type: "add_exercise", sessionUid: pm.uid, group: rogue });
+
+    const { ops, notes } = finalizeAssistantOps(ws);
+    expect(ops).toEqual([]);
+    expect(notes.join(" ")).toMatch(/Invented Movement/);
+  });
+
+  it("in the client editor, the identity sweep reads a day's second session too", () => {
+    const { ws } = twoADayWs("client-draft");
+    const pm = ws.draft.weeks[0].days[0].sessions[1];
+    ws.draft = normalizeDraft(mapSession(ws.draft, pm.uid, (s) => ({ ...s, name: "Renamed" })));
+    ws.ops.push({ type: "set_program_meta", patch: { description: "cover" } });
+
+    const { ops, notes } = finalizeAssistantOps(ws);
+    expect(ops).toEqual([]);
+    expect(notes.join(" ")).toMatch(/identity/);
   });
 });

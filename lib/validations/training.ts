@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LOAD_KG_MAX } from "@/lib/constants";
+import { MAX_PLAN_EDIT_SESSIONS, MAX_WEEK_LAYOUT_MOVES } from "@/lib/training-constants";
 import { MAX_PRESCRIBED_ROWS } from "@/utils/set-spec-rows";
 import {
   GROUP_FORMATS,
@@ -268,14 +269,35 @@ export const savedSessionInputSchema = z.object({
   groups: savedExerciseGroupsSchema,
 });
 
+// One session of a day in the plan editor's save. `eventId` is the calendar
+// entry the editor opened it from, when it came from one: the save keeps that
+// entry for the session while it stays on the same day.
+const planEditSessionInputSchema = z.object({
+  eventId: z.string().uuid().nullish(),
+  name: z.string().min(1).max(100),
+  focus: z.string().max(200).nullish(),
+  estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
+  calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
+  notes: z.string().max(1000).nullish(),
+  groups: savedExerciseGroupsSchema,
+});
+export type PlanEditSessionInput = z.infer<typeof planEditSessionInputSchema>;
+
 // Save the plan editor (PUT .../training/[planId]/edit). The body is the WHOLE
-// grid — slot i is the plan's day effective_from + i — and the server decides
-// which of its days are written, so a stale editor cannot rewrite a past day.
-// min(7): whole weeks only (the serializer emits weekIndex*7+day slots).
+// grid — day i is the plan's day effective_from + i, holding its sessions in
+// order (none = rest) — and the server decides which of its days are written,
+// so a stale editor cannot rewrite a past day. min(7): whole weeks only.
 // `version` is the read's, sent back unchanged: the save is refused (409) when
 // anything the editor was built from changed.
 export const planEditSaveSchema = z.object({
-  sessions: z.array(savedSessionInputSchema).min(7).max(364),
+  days: z
+    .array(z.object({ sessions: z.array(planEditSessionInputSchema).max(MAX_PLAN_EDIT_SESSIONS) }))
+    .min(7)
+    .max(364)
+    .refine(
+      (days) => days.reduce((sum, day) => sum + day.sessions.length, 0) <= MAX_PLAN_EDIT_SESSIONS,
+      { message: `A plan edit holds at most ${MAX_PLAN_EDIT_SESSIONS} sessions` },
+    ),
   plan: z.object({
     name: z.string().min(1).max(100),
     // Free-text program focus (stored in split_type) — same shape as
@@ -459,12 +481,13 @@ export const logTrainingEventSchema = z.object({
 
 export type LogTrainingEventInput = z.infer<typeof logTrainingEventSchema>;
 
-// Client week layout (migration 150): N still-scheduled sessions change date in
-// one transaction. A single move is a one-entry layout, a swap two entries, a
-// week rearrangement up to seven. `fromDate` is the day the client SAW the
-// session on — the drift check that turns a concurrent coach move into a 409
-// instead of a half-applied week. Policy (week bound, past targets) lives in
-// services/training-event-layout-service.ts.
+// Client week layout (migrations 150, 179): N still-scheduled sessions change
+// date in one transaction. A single move is a one-entry layout, a swap two
+// entries, a week rearrangement one entry per session it moves; sessions moving
+// onto one day join it in the order the list gives them. `fromDate` is the day
+// the client SAW the session on — the drift check that turns a concurrent coach
+// move into a 409 instead of a half-applied week. Policy (week bound, closed
+// weeks) lives in services/training-event-layout-service.ts.
 export const clientLayoutSchema = z.object({
   moves: z
     .array(
@@ -475,7 +498,7 @@ export const clientLayoutSchema = z.object({
       })
     )
     .min(1)
-    .max(7),
+    .max(MAX_WEEK_LAYOUT_MOVES),
 });
 
 // A program's new start date, picked from the Plans hero. Format AND calendar

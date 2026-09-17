@@ -31,6 +31,8 @@ type UsePlanEditSaveParams = {
   getRevision: () => number;
   markSaved: (revision: number) => boolean;
   version: string | null;
+  /** Each seeded session's draft uid → the calendar entry it was read from. */
+  sessionEvents: Readonly<Record<string, string>>;
   reload: () => Promise<void>;
   refreshVersion: () => Promise<void>;
   onSaved?: () => Promise<void> | void;
@@ -44,6 +46,7 @@ export function usePlanEditSave({
   getRevision,
   markSaved,
   version,
+  sessionEvents,
   reload,
   refreshVersion,
   onSaved,
@@ -67,7 +70,7 @@ export function usePlanEditSave({
       const res = await fetch(`/api/clients/${clientId}/training/${planId}/edit`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draftToPlanEditBody(draft, version)),
+        body: JSON.stringify(draftToPlanEditBody(draft, version, sessionEvents)),
       });
       if (res.status === 409) {
         // One state update: the confirm closes as the refusal opens.
@@ -108,6 +111,7 @@ export function usePlanEditSave({
     getRevision,
     markSaved,
     version,
+    sessionEvents,
     refreshVersion,
     onSaved,
   ]);

@@ -18,10 +18,8 @@ import { formatDay, stateClass } from "@/components/client-portal/training/sessi
 import { SessionChip } from "./training-week-session-chip";
 import type { ClientTrainingWeekSession } from "@/types/client-training-week";
 
-const STACK_MESSAGE = "Two sessions on one day — move one";
 const IDLE_HINT = "Tap a session, then the day to move it to.";
-const STACK_HINT = "Move one of the doubled-up sessions before saving.";
-/** 409 = the week changed under the client (drift, or a day taken since) — reload, don't retry. */
+/** 409 = the week changed under the client since they opened it — reload, don't retry. */
 const RELOAD_STATUS = 409;
 
 type Refusal = { message: string; status: number | null };
@@ -29,12 +27,12 @@ type Refusal = { message: string; status: number | null };
 /**
  * This week, rearrangeable (owner decision 2026-08-26: a client may move their
  * own sessions within the week). Tap a session to pick it up, tap a day to put
- * it there. A day holding two sessions shows both and blocks Save until one is
- * moved on — that is how a swap is made, and it is the server's occupancy rule
- * applied before the round trip — so the week is never saved half-applied.
- * Save is ONE layout write (`POST /api/client/training/events/layout`) carrying
- * every changed session with the day it was read on, so a coach edit in the
- * meantime answers 409 and the client reloads instead of overwriting it.
+ * it there. A day can hold several sessions: one put on a day that holds some
+ * joins it, after them, in the order the client moves them — so a swap is two
+ * moves. Save is ONE layout write (`POST /api/client/training/events/layout`)
+ * carrying every changed session with the day it was read on, so a coach edit
+ * in the meantime answers 409 and the client reloads instead of overwriting it,
+ * and the week is never saved half-applied.
  *
  * What the week looks like with the unsaved moves — and the write that makes
  * it so — is `lib/week-layout.ts`; this component only renders and taps.
@@ -91,12 +89,16 @@ export function TrainingWeekLayout() {
 
   const putDown = (date: string) => {
     if (!selected || saving) return;
-    setPlacements((current) => ({ ...current, [selected.eventId]: date }));
+    // Re-added at the end: a session put down again is the latest to arrive.
+    setPlacements((current) => {
+      const { [selected.eventId]: _previous, ...rest } = current;
+      return { ...rest, [selected.eventId]: date };
+    });
     setSelectedEventId(null);
   };
 
   const save = async () => {
-    if (!layout.canSave || saving) return;
+    if (!layout.isDirty || saving) return;
     setSaving(true);
     setRefusal(null);
     try {
@@ -121,11 +123,7 @@ export function TrainingWeekLayout() {
     void mutate();
   };
 
-  const hint = selected
-    ? `Tap a day to move ${selected.name} there.`
-    : layout.conflictDates.length > 0
-      ? STACK_HINT
-      : IDLE_HINT;
+  const hint = selected ? `Tap a day to move ${selected.name} there.` : IDLE_HINT;
 
   return (
     <section className="space-y-3" data-testid="training-week-layout" aria-busy={saving}>
@@ -136,11 +134,9 @@ export function TrainingWeekLayout() {
 
       <ul className="space-y-1.5">
         {layout.days.map((day) => {
-          const stacked = day.entries.length > 1;
           const rowClass = cn(
             "flex w-full items-start gap-3 rounded-[6px] bg-white px-3 py-2 text-left",
             day.isPast && "opacity-70",
-            stacked && "ring-1 ring-[#c06060]",
             selected && "transition-colors hover:bg-[rgba(13,148,136,0.04)]",
           );
           const content = (
@@ -174,7 +170,6 @@ export function TrainingWeekLayout() {
                     />
                   ))
                 )}
-                {stacked && <span className="text-[12px] text-[#c06060]">{STACK_MESSAGE}</span>}
               </span>
             </>
           );
@@ -221,7 +216,7 @@ export function TrainingWeekLayout() {
         <Button
           type="button"
           className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
-          disabled={!layout.canSave || saving}
+          disabled={!layout.isDirty || saving}
           onClick={() => void save()}
         >
           {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}

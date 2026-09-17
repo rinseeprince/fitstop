@@ -37,7 +37,6 @@ function createMockQuery<T = unknown>(result: {
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getLogWindow } from "./daily-log-permissions-service";
-import { DateOccupiedError } from "./training-event-occupancy";
 import {
   applyClientLayout,
   LayoutDriftError,
@@ -60,10 +59,10 @@ const NEXT_MON = "2026-08-31";
 type EventRow = { id: string; date: string; status: string };
 
 /**
- * Wires the reads the service issues, in order, per table:
- *   training_events #1 = the moving events (client-scoped, by id)
- *   clients          = check-in day
- *   training_events #2 = occupants on the target dates
+ * Wires the reads the service issues, per table:
+ *   training_events = the moving events (client-scoped, by id) — the ONLY read
+ *                     of the table: nothing asks what a target day holds
+ *   clients         = check-in day
  *
  * `session_logs` is wired but must stay untouched: the old backfill rule read it
  * to ask whether a past target already held a logged workout, and the day rule
@@ -71,13 +70,10 @@ type EventRow = { id: string; date: string; status: string };
  */
 function wire(opts: {
   events: EventRow[];
-  occupants?: { id: string; date: string }[];
   checkInDue?: string | null;
   logsOpenFrom?: string | null;
 }) {
-  let eventsCalls = 0;
   const eventsQuery = createMockQuery<EventRow[]>({ data: opts.events, error: null });
-  const occupantsQuery = createMockQuery({ data: opts.occupants ?? [], error: null });
   const clientQuery = createMockQuery({
     data: { next_check_in_due: opts.checkInDue ?? null },
     error: null,
@@ -90,16 +86,13 @@ function wire(opts: {
   });
 
   mockFrom.mockImplementation((table: string) => {
-    if (table === "training_events") {
-      eventsCalls += 1;
-      return (eventsCalls === 1 ? eventsQuery : occupantsQuery) as any;
-    }
+    if (table === "training_events") return eventsQuery as any;
     if (table === "clients") return clientQuery as any;
     if (table === "session_logs") return sessionLogsQuery as any;
     return createMockQuery({ data: null, error: null }) as any;
   });
 
-  return { eventsQuery, occupantsQuery, sessionLogsQuery };
+  return { eventsQuery, sessionLogsQuery };
 }
 
 describe("applyClientLayout", () => {
@@ -113,11 +106,6 @@ describe("applyClientLayout", () => {
       events: [
         { id: "ev-wed", date: WED, status: "scheduled" },
         { id: "ev-thu", date: THU, status: "scheduled" },
-      ],
-      // The only occupants of the targets are the moving rows themselves.
-      occupants: [
-        { id: "ev-wed", date: WED },
-        { id: "ev-thu", date: THU },
       ],
     });
 
@@ -217,18 +205,38 @@ describe("applyClientLayout", () => {
     expect(mockRpc).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses a target held by a session that is not moving — whatever its status", async () => {
+  it("moves onto a day that already holds sessions — the day is never asked what it holds", async () => {
+    wire({ events: [{ id: "ev-thu", date: THU, status: "scheduled" }] });
+
+    await applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: WED }]);
+
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    // One read of the calendar — the moving events — and none of the target day.
+    expect(
+      mockFrom.mock.calls.filter(([table]) => (table as string) === "training_events"),
+    ).toHaveLength(1);
+  });
+
+  it("sends several sessions onto one day in the order the client listed them", async () => {
     wire({
-      events: [{ id: "ev-thu", date: THU, status: "scheduled" }],
-      // Wednesday already has a COMPLETED session; the index would not care,
-      // the policy does (the assertDateFree posture).
-      occupants: [{ id: "ev-wed-done", date: WED }],
+      events: [
+        { id: "ev-wed", date: WED, status: "scheduled" },
+        { id: "ev-thu", date: THU, status: "scheduled" },
+      ],
     });
 
-    await expect(
-      applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: WED }]),
-    ).rejects.toMatchObject({ message: "Wed, Aug 26 already has a session" });
-    expect(mockRpc).not.toHaveBeenCalled();
+    await applyClientLayout("client-1", [
+      { eventId: "ev-thu", fromDate: THU, toDate: SAT },
+      { eventId: "ev-wed", fromDate: WED, toDate: SAT },
+    ]);
+
+    expect(mockRpc).toHaveBeenCalledWith("move_training_events_atomic", {
+      p_client_id: "client-1",
+      p_moves: [
+        { event_id: "ev-thu", from_date: THU, to_date: SAT },
+        { event_id: "ev-wed", from_date: WED, to_date: SAT },
+      ],
+    });
   });
 
   it("reads as not found when an event is foreign or missing", async () => {
@@ -241,10 +249,7 @@ describe("applyClientLayout", () => {
 
   it("translates the RPC's message contract into typed errors", async () => {
     const attempt = async (message: string) => {
-      wire({
-        events: [{ id: "ev-thu", date: THU, status: "scheduled" }],
-        occupants: [{ id: "ev-thu", date: THU }],
-      });
+      wire({ events: [{ id: "ev-thu", date: THU, status: "scheduled" }] });
       mockRpc.mockResolvedValue({ data: null, error: { message } } as any);
       return applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: SAT }]);
     };
@@ -252,10 +257,6 @@ describe("applyClientLayout", () => {
     await expect(attempt("drift: event ev-thu is on 2026-08-29, not 2026-08-27")).rejects.toBeInstanceOf(
       LayoutDriftError,
     );
-    await expect(attempt("occupied:2026-08-29")).rejects.toMatchObject({
-      message: "Sat, Aug 29 already has a session",
-    });
-    await expect(attempt("occupied:2026-08-29")).rejects.toBeInstanceOf(DateOccupiedError);
     await expect(attempt("not_found: event ev-thu is not this client's")).rejects.toBeInstanceOf(
       LayoutNotFoundError,
     );
@@ -264,39 +265,17 @@ describe("applyClientLayout", () => {
     );
   });
 
-  it("translates the index backstop (a raw 23505) into the same sentence as the pre-check", async () => {
-    wire({
-      events: [{ id: "ev-thu", date: THU, status: "scheduled" }],
-      occupants: [{ id: "ev-thu", date: THU }],
-    });
-    mockRpc.mockResolvedValue({
-      data: null,
-      error: {
-        code: "23505",
-        message: 'duplicate key value violates unique constraint "idx_training_events_one_scheduled_per_day"',
-        details: "Key (client_id, date)=(client-1, 2026-08-29) already exists.",
-      },
-    } as any);
-
-    await expect(
-      applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: SAT }]),
-    ).rejects.toMatchObject({ message: "Sat, Aug 29 already has a session" });
-  });
-
   it("keeps the client's sentences for a duplicate and for an unrecognised failure", async () => {
     const attempt = async (message: string) => {
-      wire({
-        events: [{ id: "ev-thu", date: THU, status: "scheduled" }],
-        occupants: [{ id: "ev-thu", date: THU }],
-      });
+      wire({ events: [{ id: "ev-thu", date: THU, status: "scheduled" }] });
       mockRpc.mockResolvedValue({ data: null, error: { message } } as never);
       return applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: SAT }]);
     };
 
-    const duplicate = attempt("duplicate_target: two moves share a target date");
+    const duplicate = attempt("duplicate_event: an event appears twice");
     await expect(duplicate).rejects.toBeInstanceOf(LayoutPolicyError);
     await expect(duplicate).rejects.toMatchObject({
-      message: "Two sessions can't land on the same day",
+      message: "A session can't be moved twice at once",
     });
     await expect(attempt("invalid_moves: p_moves must be a non-empty array")).rejects.toMatchObject({
       message: "Failed to apply layout: invalid_moves: p_moves must be a non-empty array",
@@ -307,13 +286,9 @@ describe("applyClientLayout", () => {
 // The function's message contract, read once for both of its callers — this
 // service and the coach's moveEvent — so the two cannot parse it differently.
 describe("readMoveRpcError", () => {
-  it("reads each prefix of the contract, and only an occupied day names its date", () => {
+  it("reads each prefix of the contract", () => {
     expect(readMoveRpcError({ message: "drift: event ev-thu is on 2026-08-29, not 2026-08-27" })).toEqual({
       kind: "drift",
-    });
-    expect(readMoveRpcError({ message: "occupied:2026-08-29" })).toEqual({
-      kind: "occupied",
-      date: "2026-08-29",
     });
     expect(readMoveRpcError({ message: "not_found: event ev-thu is not this client's" })).toEqual({
       kind: "not_found",
@@ -321,25 +296,11 @@ describe("readMoveRpcError", () => {
     expect(
       readMoveRpcError({ message: "not_scheduled: event ev-thu has left the scheduled state" }),
     ).toEqual({ kind: "not_scheduled" });
-    expect(readMoveRpcError({ message: "duplicate_target: two moves share a target date" })).toEqual({
-      kind: "duplicate",
-    });
     expect(readMoveRpcError({ message: "duplicate_event: an event appears twice" })).toEqual({
       kind: "duplicate",
     });
     expect(readMoveRpcError({ message: "invalid_moves: p_moves must be a non-empty array" })).toEqual({
       kind: "other",
     });
-  });
-
-  it("throws the index backstop (a raw 23505) as the pre-check's sentence instead of reading it", () => {
-    const backstop = {
-      code: "23505",
-      message: 'duplicate key value violates unique constraint "idx_training_events_one_scheduled_per_day"',
-      details: "Key (client_id, date)=(client-1, 2026-08-29) already exists.",
-    };
-
-    expect(() => readMoveRpcError(backstop)).toThrow(DateOccupiedError);
-    expect(() => readMoveRpcError(backstop)).toThrow("Sat, Aug 29 already has a session");
   });
 });

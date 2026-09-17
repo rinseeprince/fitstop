@@ -83,6 +83,12 @@ describe("getClientTrainingWeek", () => {
     expect(eventsQuery.eq).toHaveBeenCalledWith("client_id", "client-1");
     expect(eventsQuery.gte).toHaveBeenCalledWith("date", "2026-08-26");
     expect(eventsQuery.lte).toHaveBeenCalledWith("date", "2026-09-01");
+    // A day can hold several sessions: by date, then the day's order.
+    expect(eventsQuery.order.mock.calls).toEqual([
+      ["date", { ascending: true }],
+      ["day_order", { ascending: true }],
+      ["id", { ascending: true }],
+    ]);
 
     expect(week.sessions.map((s) => [s.eventId, s.state])).toEqual([
       ["mon", "done"],

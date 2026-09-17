@@ -131,14 +131,14 @@ describe("ClientTrainingDetailPage", () => {
     vi.mocked(global.fetch).mockResolvedValue({
       ok: false,
       json: () =>
-        Promise.resolve({ success: false, error: "Fri, May 8 already has a session" }),
+        Promise.resolve({ success: false, error: "A session can only move within its own week" }),
     } as unknown as Response);
 
     render(<ClientTrainingDetailPage />);
     fireEvent.click(screen.getByText("pick-legs"));
 
     await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent("Fri, May 8 already has a session"),
+      expect(screen.getByRole("alert")).toHaveTextContent("A session can only move within its own week"),
     );
     expect(mockReplace).not.toHaveBeenCalled();
     expect(screen.getByTestId("session-picker")).toBeInTheDocument();

@@ -75,7 +75,7 @@ function Host({ groups, mode = "edit" }: { groups: ExerciseGroupDraft[]; mode?: 
   // Seeded once, as the hosts do.
   const [initial] = useState(() => makeStandaloneDraft(session(groups)));
   useEffect(() => seed(initial), [seed, initial]);
-  const current = builder.draft?.weeks[0].days[0].session;
+  const current = builder.draft?.weeks[0].days[0].sessions[0];
   if (!current) return null;
   return (
     <SessionEditorBody

@@ -76,15 +76,18 @@ export function useCalendarDnd({
   /** Moves one event and one event only. */
   const performMove = useCallback(
     async (event: TrainingEvent, targetDate: string) => {
-      // Optimistic: the card lands under the cursor and stays there.
+      // Optimistic: the card lands under the cursor and stays there, LAST on
+      // its new day — the calendar lays a day's sessions in the list's order,
+      // and the server puts a moved session after those already on the day.
       await mutate(
         (current) => {
           if (!current) return current;
           return {
             ...current,
-            events: current.events.map((e) =>
-              e.id === event.id ? { ...e, date: targetDate } : e
-            ),
+            events: [
+              ...current.events.filter((e) => e.id !== event.id),
+              { ...event, date: targetDate },
+            ],
           };
         },
         { revalidate: false }

@@ -32,6 +32,7 @@ import {
   reorderDestination,
   resolveExerciseRef,
   resolveSession,
+  sessionPlaceProperty,
 } from "./draft-tool-helpers";
 
 // Exercise-level WRITE tools. Two invariants live here:
@@ -46,6 +47,7 @@ import {
 const exerciseRefProperties = {
   week: { type: "integer", minimum: 1 },
   day: { type: "integer", minimum: 1, maximum: 7 },
+  session: sessionPlaceProperty,
   exercisePosition: {
     type: "integer",
     minimum: 1,
@@ -91,6 +93,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       properties: {
         week: { type: "integer", minimum: 1 },
         day: { type: "integer", minimum: 1, maximum: 7 },
+        session: sessionPlaceProperty,
         name: { type: "string", minLength: 1, maxLength: 200 },
         sets: { type: "integer", minimum: 1, maximum: 20 },
         repsMin: { type: "integer", minimum: 0, maximum: 100 },
@@ -110,7 +113,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       additionalProperties: false,
     } as const,
     run: (input) => {
-      const session = resolveSession(ws, input.week, input.day);
+      const session = resolveSession(ws, input.week, input.day, input.session);
       if (!session.ok) return session.error;
       const row = matchExerciseInRows(ws.catalog, input.name);
       if (!row) {
@@ -193,7 +196,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       additionalProperties: false,
     } as const,
     run: (input) => {
-      const session = resolveSession(ws, input.week, input.day);
+      const session = resolveSession(ws, input.week, input.day, input.session);
       if (!session.ok) return session.error;
       const ref = resolveExerciseRef(session.value, input);
       if (!ref.ok) return ref.error;
@@ -310,7 +313,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       additionalProperties: false,
     } as const,
     run: (input) => {
-      const session = resolveSession(ws, input.week, input.day);
+      const session = resolveSession(ws, input.week, input.day, input.session);
       if (!session.ok) return session.error;
       const ref = resolveExerciseRef(session.value, input);
       if (!ref.ok) return ref.error;
@@ -372,7 +375,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       additionalProperties: false,
     } as const,
     run: (input) => {
-      const session = resolveSession(ws, input.week, input.day);
+      const session = resolveSession(ws, input.week, input.day, input.session);
       if (!session.ok) return session.error;
       const ref = resolveExerciseRef(session.value, input);
       if (!ref.ok) return ref.error;
@@ -400,7 +403,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       additionalProperties: false,
     } as const,
     run: (input) => {
-      const session = resolveSession(ws, input.week, input.day);
+      const session = resolveSession(ws, input.week, input.day, input.session);
       if (!session.ok) return session.error;
       const ref = resolveExerciseRef(session.value, input);
       if (!ref.ok) return ref.error;

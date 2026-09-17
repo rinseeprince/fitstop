@@ -103,7 +103,7 @@ export function usePlacedSessionEditor(
     seededForRef.current = state;
   }, [state, data, seed]);
 
-  const session = builder.draft?.weeks[0]?.days[0]?.session ?? null;
+  const session = builder.draft?.weeks[0]?.days[0]?.sessions[0] ?? null;
   // Seeded for THIS opening — until then the draft still holds the previous
   // opening's session and must not render.
   const isSeeded = state != null && seededForRef.current === state;
@@ -111,7 +111,7 @@ export function usePlacedSessionEditor(
   // The lock: a session whose calendar has left `scheduled` anywhere can no
   // longer be edited, because the save rewrites the exercise rows the client's
   // logs point at. Server-enforced in `assertSessionUnlogged`
-  // (services/training-event-occupancy.ts); this is the same predicate so the
+  // (services/training-session-lock.ts); this is the same predicate so the
   // coach sees a locked panel instead of a save that 409s. Two places spell
   // it — that assertion and here — and it cannot be shared: that module
   // reaches supabaseAdmin.

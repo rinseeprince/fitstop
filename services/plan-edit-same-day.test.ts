@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { isDayUnchanged } from "./plan-edit-same-day";
-import type { PlanEditDay } from "./plan-edit-service";
+import { isSessionUnchanged } from "./plan-edit-same-day";
+import type { PlanEditSession } from "./plan-edit-service";
 import type { TrainingExercise, TrainingExerciseGroup } from "@/types/training";
 import { STRAIGHT_SETS, type GroupSettings } from "@/utils/exercise-groups";
 
-// A day the editor saves as it was laid keeps its edited mark; a day the coach
-// changed in the editor loses it. Every field the save writes counts, and
-// nothing else: the editor's own renumbering and tidying of an untouched day
-// must not read as a change.
+// A session the editor saves as it was laid keeps its entry's edited mark; a
+// session the coach changed in the editor loses it. Every field the save writes
+// counts, and nothing else: the editor's own renumbering and tidying of an
+// untouched session must not read as a change.
 
 const exercise = (overrides: Partial<TrainingExercise> = {}): TrainingExercise => ({
   id: "row-ex-1",
@@ -44,11 +44,10 @@ const group = (
 /** A lone exercise: a straight-sets group of one. */
 const lone = (ex: TrainingExercise): TrainingExerciseGroup => group([ex]);
 
-type LaidSession = Extract<PlanEditDay, { isRest: false }>;
+type LaidSession = PlanEditSession;
 
 const laidDay = (overrides: Partial<LaidSession> = {}): LaidSession => ({
-  date: "2026-09-18",
-  isRest: false,
+  eventId: "e0000000-0000-4000-8000-000000000001",
   name: "Upper B",
   focus: "Shoulders and arms",
   estimatedDurationMinutes: 60,
@@ -86,15 +85,14 @@ const circuitDay = (overrides: Partial<LaidSession> = {}): LaidSession =>
     ...overrides,
   });
 
-describe("isDayUnchanged", () => {
+describe("isSessionUnchanged", () => {
   it("holds for the day as laid", () => {
     const laid = laidDay();
-    expect(isDayUnchanged(laid, laidDay())).toBe(true);
+    expect(isSessionUnchanged(laid, laidDay())).toBe(true);
   });
 
-  it("never holds for a session on a day laid as rest, or on no day", () => {
-    expect(isDayUnchanged({ date: "2026-09-18", isRest: true }, laidDay())).toBe(false);
-    expect(isDayUnchanged(undefined, laidDay())).toBe(false);
+  it("never holds for a session with nothing laid to compare it with", () => {
+    expect(isSessionUnchanged(undefined, laidDay())).toBe(false);
   });
 
   it.each<[string, Partial<LaidSession>]>([
@@ -109,7 +107,7 @@ describe("isDayUnchanged", () => {
     ["an exercise removed", { groups: [lone(exercise())] }],
     ["the exercises reordered", { groups: [...laidDay().groups].reverse() }],
   ])("fails when the coach changed %s", (_label, change) => {
-    expect(isDayUnchanged(laidDay(), laidDay(change))).toBe(false);
+    expect(isSessionUnchanged(laidDay(), laidDay(change))).toBe(false);
   });
 
   it.each<[string, Partial<TrainingExercise>]>([
@@ -139,12 +137,12 @@ describe("isDayUnchanged", () => {
     const changed = laidDay({
       groups: [lone(exercise(change)), laidDay().groups[1]],
     });
-    expect(isDayUnchanged(laidDay(), changed)).toBe(false);
+    expect(isSessionUnchanged(laidDay(), changed)).toBe(false);
   });
 
   describe("a day's groups", () => {
     it("holds for a day of several groups as laid, settings and all", () => {
-      expect(isDayUnchanged(circuitDay(), circuitDay())).toBe(true);
+      expect(isSessionUnchanged(circuitDay(), circuitDay())).toBe(true);
     });
 
     it.each<[string, Partial<GroupSettings>]>([
@@ -159,7 +157,7 @@ describe("isDayUnchanged", () => {
     ])("fails when the coach changed a group's %s", (_label, change) => {
       const [circuit, loneGroup] = circuitDay().groups;
       const changed = circuitDay({ groups: [{ ...circuit, ...change }, loneGroup] });
-      expect(isDayUnchanged(circuitDay(), changed)).toBe(false);
+      expect(isSessionUnchanged(circuitDay(), changed)).toBe(false);
     });
 
     it("fails when an exercise moves to another group, even with the exercises in the same order", () => {
@@ -180,12 +178,12 @@ describe("isDayUnchanged", () => {
       expect(moved.groups.flatMap((g) => g.exercises.map((e) => e.name))).toEqual(
         laid.groups.flatMap((g) => g.exercises.map((e) => e.name)),
       );
-      expect(isDayUnchanged(laid, moved)).toBe(false);
+      expect(isSessionUnchanged(laid, moved)).toBe(false);
     });
 
     it("fails when the groups are reordered", () => {
       const [circuit, loneGroup] = circuitDay().groups;
-      expect(isDayUnchanged(circuitDay(), circuitDay({ groups: [loneGroup, circuit] }))).toBe(false);
+      expect(isSessionUnchanged(circuitDay(), circuitDay({ groups: [loneGroup, circuit] }))).toBe(false);
     });
 
     it("fails when two groups of the same exercises swap places, though the exercises read the same", () => {
@@ -198,7 +196,7 @@ describe("isDayUnchanged", () => {
         ],
       });
       const swapped = laidDay({ groups: [...laid.groups].reverse() });
-      expect(isDayUnchanged(laid, swapped)).toBe(false);
+      expect(isSessionUnchanged(laid, swapped)).toBe(false);
     });
 
     it("holds when the saved groups carry the laid groups' settings with their keys in another order", () => {
@@ -235,7 +233,7 @@ describe("isDayUnchanged", () => {
         focus: laid.focus,
         name: laid.name,
       };
-      expect(isDayUnchanged(laid, saved)).toBe(true);
+      expect(isSessionUnchanged(laid, saved)).toBe(true);
     });
   });
 
@@ -253,7 +251,7 @@ describe("isDayUnchanged", () => {
           group([exercise({ id: "row-ex-2", name: "Pull-up", orderIndex: 0 })], { orderIndex: 1 }),
         ],
       });
-      expect(isDayUnchanged(laid, saved)).toBe(true);
+      expect(isSessionUnchanged(laid, saved)).toBe(true);
     });
 
     it("numbers the sets by position, and reads their keys in any order", () => {
@@ -281,7 +279,7 @@ describe("isDayUnchanged", () => {
           ),
         ],
       });
-      expect(isDayUnchanged(laid, saved)).toBe(true);
+      expect(isSessionUnchanged(laid, saved)).toBe(true);
     });
 
     it("reads an empty set list as none, a padded video link as trimmed and an empty field list as none", () => {
@@ -293,7 +291,7 @@ describe("isDayUnchanged", () => {
       const saved = laidDay({
         groups: [lone(exercise({ setSpecs: null, videoUrl: "https://example.com/bench", prescribedFields: null }))],
       });
-      expect(isDayUnchanged(laid, saved)).toBe(true);
+      expect(isSessionUnchanged(laid, saved)).toBe(true);
     });
 
     it("reads a missing value as an empty one", () => {
@@ -304,14 +302,14 @@ describe("isDayUnchanged", () => {
           { ...STRAIGHT_SETS, exercises: [{ ...exercise(), tempo: null, notes: null, repsTarget: null }] },
         ],
       };
-      expect(isDayUnchanged(laid, saved)).toBe(true);
+      expect(isSessionUnchanged(laid, saved)).toBe(true);
     });
 
     it("reads a group's missing settings as empty ones", () => {
       // A straight-sets group as the save may send it: the format alone.
       const laid = laidDay({ groups: [lone(exercise())] });
       const saved = { ...laidDay(), groups: [{ format: "straight_sets" as const, exercises: [exercise()] }] };
-      expect(isDayUnchanged(laid, saved)).toBe(true);
+      expect(isSessionUnchanged(laid, saved)).toBe(true);
     });
   });
 });

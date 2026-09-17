@@ -8,7 +8,7 @@ import { calculateDailyMacros } from "@/utils/nutrition-helpers";
  *
  * A nutrition day is COMPUTED, never stored (owner decision 2026-09-10). It is
  * built from four facts and nothing else: the version covering the date and
- * its grid row for the weekday, the session placed on the date, and the
+ * its grid row for the weekday, the sessions placed on the date, and the
  * coach's per-day edit. Every reader — the coach calendar, the client's day,
  * the check-in week, the history table, the block facts — gets its numbers
  * from this function, so they cannot disagree, and no writer keeps a day in
@@ -24,9 +24,11 @@ import { calculateDailyMacros } from "@/utils/nutrition-helpers";
  *     whole answer for that date;
  *   - otherwise the baseline is the grid row's calories (custom macros and the
  *     coach's split live there) else the version's baseline;
- *   - the surplus is the first session's percentage; the burn is that share of
- *     the baseline, else the legacy flat sum of the sessions' estimated
- *     calories (a plan placed before the percentage model);
+ *   - the surplus adds every session's percentage — a day holding a morning
+ *     run and an evening lift takes both; the burn is that share of the
+ *     baseline, else, when no session carries a percentage, the legacy flat sum
+ *     of the sessions' estimated calories (a plan placed before the percentage
+ *     model);
  *   - the macros are the grid row's, verbatim, else the diet split over the
  *     baseline with protein held at the version's target;
  *   - the coach note is the covering version's save note, carried on the day
@@ -89,10 +91,24 @@ export function nutritionDayOfWeek(date: string): DayOfWeek {
   return DAY_NAMES[new Date(date + "T00:00:00").getDay()];
 }
 
+/**
+ * The day's training surplus: every session's percentage added, null when no
+ * session on the day carries one. Shared with the client's weekly targets
+ * (`utils/build-daily-targets.ts`), so a day prices the same on every screen.
+ */
+export function sumSurplusPercentages(
+  sessions: readonly { calorieSurplusPercentage: number | null }[],
+): number | null {
+  const percentages = sessions
+    .map((session) => session.calorieSurplusPercentage)
+    .filter((percentage): percentage is number => percentage != null);
+  return percentages.length === 0 ? null : percentages.reduce((sum, p) => sum + p, 0);
+}
+
 export function resolveNutritionDay(input: NutritionDayInputs): NutritionEvent {
   const { clientId, date, version, gridRow, trainingEvents, edit, coachNote } = input;
   const dayOfWeek = nutritionDayOfWeek(date);
-  // Live: the session on the date decides, whether or not the day is edited —
+  // Live: the sessions on the date decide, whether or not the day is edited —
   // the TRAIN badge follows the calendar, never a stored flag.
   const isTrainingDay = trainingEvents.length > 0;
 
@@ -121,9 +137,10 @@ export function resolveNutritionDay(input: NutritionDayInputs): NutritionEvent {
 
   const baselineCalories = gridRow?.calories ?? version.baselineCalories;
 
-  // Percentage model: the first session's surplus, as a share of the baseline.
-  // Legacy fallback: the flat sum of the sessions' estimated calories.
-  const surplusPercentage = trainingEvents[0]?.calorieSurplusPercentage ?? null;
+  // Percentage model: every session's surplus added, as a share of the baseline.
+  // Legacy fallback, when no session carries one: the flat sum of the sessions'
+  // estimated calories.
+  const surplusPercentage = sumSurplusPercentages(trainingEvents);
   const trainingBurnCalories =
     surplusPercentage != null
       ? Math.round(baselineCalories * surplusPercentage / 100)

@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
     //
     // 409, not 403: the request is authenticated and authorised, it just
     // conflicts with the state the client is already in — the same reading as
-    // the training-event occupancy conflicts.
+    // a week layout refused because the week changed under the client.
     //
     // Before the photo uploads deliberately: refusing after them would burn the
     // work and leave orphaned objects in storage.

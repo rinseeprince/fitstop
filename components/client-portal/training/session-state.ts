@@ -5,7 +5,7 @@ import type { ClientTrainingWeekSession } from "@/types/client-training-week";
 // the client's week: the app's date spelling and the state chip. One module so
 // the two surfaces cannot word a state — or spell a day — differently.
 
-/** The app's date spelling (`EEE, MMM d`) — see training-event-occupancy.ts. */
+/** The app's date spelling (`EEE, MMM d`) — see training-session-lock.ts. */
 export function formatDay(date: string): string {
   return format(new Date(date + "T00:00:00"), "EEE, MMM d");
 }

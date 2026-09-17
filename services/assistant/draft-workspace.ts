@@ -4,7 +4,10 @@ import type {
   BuilderTarget,
   ProgramDraft,
 } from "@/components/clients/training/program-builder/program-builder-types";
-import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
+import {
+  normalizeDraft,
+  weekSessions,
+} from "@/components/clients/training/program-builder/program-builder-model";
 import { sessionExercises } from "@/utils/exercise-groups";
 import type { DraftOp } from "@/components/clients/training/program-builder/program-builder-ops";
 import {
@@ -92,13 +95,9 @@ export function buildWorkspaceFromRows(opts: {
   const exerciseUids = new Set<string>();
   const exerciseNames = new Set<string>();
   for (const week of draft.weeks) {
-    for (const slot of week.days) {
-      if (!slot.session) continue;
-      sessionIdentity.set(slot.session.uid, {
-        name: slot.session.name,
-        focus: slot.session.focus,
-      });
-      for (const ex of sessionExercises(slot.session)) {
+    for (const session of weekSessions(week)) {
+      sessionIdentity.set(session.uid, { name: session.name, focus: session.focus });
+      for (const ex of sessionExercises(session)) {
         exerciseUids.add(ex.uid);
         exerciseNames.add(ex.name.trim().toLowerCase());
       }
@@ -158,8 +157,8 @@ export function finalizeAssistantOps(ws: DraftWorkspace): {
   const catalogIds = new Set(ws.catalog.map((r) => r.id));
 
   for (const week of ws.draft.weeks) {
-    for (const slot of week.days) {
-      for (const ex of slot.session ? sessionExercises(slot.session) : []) {
+    for (const session of weekSessions(week)) {
+      for (const ex of sessionExercises(session)) {
         if (ws.entry.exerciseUids.has(ex.uid)) continue;
         const resolved = ex.exerciseId != null && catalogIds.has(ex.exerciseId);
         const cloneOfExisting = ws.entry.exerciseNames.has(
@@ -183,11 +182,10 @@ export function finalizeAssistantOps(ws: DraftWorkspace): {
       ws.draft.name !== ws.entry.programName ||
       ws.draft.splitType !== ws.entry.programSplitType ||
       ws.draft.weeks.some((week) =>
-        week.days.some((slot) => {
-          if (!slot.session) return false;
-          const entry = ws.entry.sessionIdentity.get(slot.session.uid);
+        weekSessions(week).some((session) => {
+          const entry = ws.entry.sessionIdentity.get(session.uid);
           if (!entry) return false; // session added this turn — its own name is fine
-          return entry.name !== slot.session.name || entry.focus !== slot.session.focus;
+          return entry.name !== session.name || entry.focus !== session.focus;
         }),
       );
     if (identityBroken) {
@@ -220,7 +218,7 @@ export function finalizeAssistantOps(ws: DraftWorkspace): {
     }
     const { beyond } = planDayRules(ws.draft.weeks, ws.editableDays, null);
     const onGreyedDay = ws.draft.weeks.some((week) =>
-      week.days.some((slot) => slot.session != null && beyond.has(slot.uid)),
+      week.days.some((slot) => slot.sessions.length > 0 && beyond.has(slot.uid)),
     );
     if (onGreyedDay) {
       return {

@@ -192,7 +192,7 @@ Logged: 2026-07-02.
 
 Logged: 2026-07-27, found while fixing the calendar's drag gates.
 
-`POST /api/clients/[id]/training/place-from-library` guards its `plan` branch and its `inline` branch against a past `targetDate` using `getClientTodayString`, but the `type: "session"` branch does not: it calls `placeSessionOnCalendar` directly, and that function only runs `assertDateFree` — an occupancy check, not a date check. The past-date rule for a library-session drop is therefore **client-side only** (`use-calendar-dnd.ts`, now correctly anchored on the client's day).
+`POST /api/clients/[id]/training/place-from-library` guards its `plan` branch and its `inline` branch against a past `targetDate` using `getClientTodayString`, but the `type: "session"` branch does not: it calls `placeSessionOnCalendar` directly, and that function checks no date at all. The past-date rule for a library-session drop is therefore **client-side only** (`use-calendar-dnd.ts`, now correctly anchored on the client's day).
 
 **Why it matters.** A crafted request writes a scheduled session into the past, and `deleteEvent` refuses to remove past events — the same stranded-row shape that had to be cleaned up with a script this morning, reachable without the UI. Nothing in the app sends such a request, so this is a hardening gap rather than a live defect; the fix is the two-line guard its sibling branches already have.
 

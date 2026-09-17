@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  DAY_HAS_SESSION,
   cloneWeek,
   defaultExerciseDraftFromCatalog,
+  findSession,
+  findSessionPlace,
+  findSlot,
+  mapSession,
   mapSessionExercises,
+  moveSessionToDay,
   normalizeDraft,
   progressWeek,
   removeSessionExercise,
+  removeSessionFromDay,
   straightSetsGroup,
+  weekSessions,
 } from "./program-builder-model";
 import {
   makeRestSlot,
@@ -39,8 +47,8 @@ const circuit = (uid: string, exercises: ExerciseDraft[]): ExerciseGroupDraft =>
   exercises,
 });
 
-const session = (groups: ExerciseGroupDraft[]): SessionDraft => ({
-  uid: "sess-1",
+const session = (groups: ExerciseGroupDraft[], uid = "sess-1"): SessionDraft => ({
+  uid,
   name: "Hybrid",
   focus: null,
   estimatedDurationMinutes: null,
@@ -52,14 +60,29 @@ const session = (groups: ExerciseGroupDraft[]): SessionDraft => ({
 
 const order = (s: SessionDraft) => sessionExercises(s).map((e) => e.uid);
 
-function weekOf(s: SessionDraft): WeekDraft {
+// A week whose first day holds `sessions`, in order; the other six are rest.
+// The day at position d is `slot-<d>`.
+function weekOf(...sessions: SessionDraft[]): WeekDraft {
   return {
     uid: "wk-1",
     weekIndex: 0,
     days: [
-      { uid: "slot-0", orderIndex: 0, isRest: false, session: s },
-      ...Array.from({ length: 6 }, (_, i) => makeRestSlot(i + 1)),
+      { uid: "slot-0", orderIndex: 0, isRest: false, sessions },
+      ...Array.from({ length: 6 }, (_, i) => ({ ...makeRestSlot(i + 1), uid: `slot-${i + 1}` })),
     ],
+  };
+}
+
+function draftOf(...weeks: WeekDraft[]): ProgramDraft {
+  return {
+    id: "p",
+    name: "P",
+    description: null,
+    status: "draft",
+    splitType: null,
+    programDurationWeeks: 1,
+    defaultSurplusPercentage: null,
+    weeks,
   };
 }
 
@@ -82,7 +105,7 @@ describe("normalizeDraft", () => {
       defaultSurplusPercentage: null,
       weeks: [weekOf(session([{ ...lone("gone"), exercises: [] }, circuit("grp-c", [exercise("a"), exercise("b")])]))],
     };
-    const normalized = normalizeDraft(draft).weeks[0].days[0].session!;
+    const normalized = normalizeDraft(draft).weeks[0].days[0].sessions[0];
     expect(normalized.groups).toHaveLength(1);
     expect(normalized.groups[0]).toMatchObject({ uid: "grp-c", format: "circuit", rounds: 3, notes: "A" });
   });
@@ -98,7 +121,7 @@ describe("normalizeDraft", () => {
       defaultSurplusPercentage: null,
       weeks: [weekOf(session([circuit("grp-c", [exercise("a")])]))],
     };
-    expect(normalizeDraft(draft).weeks[0].days[0].session!.groups).toEqual([
+    expect(normalizeDraft(draft).weeks[0].days[0].sessions[0].groups).toEqual([
       { uid: "grp-c", ...STRAIGHT_SETS, exercises: [exercise("a")] },
     ]);
   });
@@ -107,8 +130,8 @@ describe("normalizeDraft", () => {
 describe("cloneWeek", () => {
   it("gives every group and exercise a fresh uid and keeps every setting and order", () => {
     const source = weekOf(session([circuit("grp-c", [exercise("a"), exercise("b")]), lone("c")]));
-    const copy = cloneWeek(source).days[0].session!;
-    const original = source.days[0].session!;
+    const copy = cloneWeek(source).days[0].sessions[0];
+    const original = source.days[0].sessions[0];
     expect(copy.groups.map((g) => g.uid)).not.toContain("grp-c");
     expect(copy.groups.every((g) => g.uid.startsWith("grp-"))).toBe(true);
     expect(sessionExercises(copy).some((e) => ["a", "b", "c"].includes(e.uid))).toBe(false);
@@ -128,12 +151,12 @@ describe("progressWeek", () => {
       { kind: "sets", amount: 1 },
       (e) => e.uid === "b",
     );
-    const s = next.days[0].session!;
+    const s = next.days[0].sessions[0];
     expect([...changedExerciseUids].sort()).toEqual(["a", "b"]);
     expect(s.groups[0]).toMatchObject({ uid: "grp-c", format: "circuit", rounds: 4, restBetweenRoundsSeconds: 90 });
     expect(s.groups[0].exercises.map(setSpecCount)).toEqual([4, 4]);
     // The group nothing changed in keeps its reference.
-    expect(s.groups[1]).toBe(week.days[0].session!.groups[1]);
+    expect(s.groups[1]).toBe(week.days[0].sessions[0].groups[1]);
   });
 
   it("leaves a superset or circuit none of whose exercises is in scope", () => {
@@ -144,7 +167,7 @@ describe("progressWeek", () => {
       (e) => e.uid === "c",
     );
     expect([...changedExerciseUids]).toEqual(["c"]);
-    expect(next.days[0].session!.groups[0]).toBe(week.days[0].session!.groups[0]);
+    expect(next.days[0].sessions[0].groups[0]).toBe(week.days[0].sessions[0].groups[0]);
   });
 
   it("progresses load and reps round by round, exercise by exercise, inside a group", () => {
@@ -156,11 +179,11 @@ describe("progressWeek", () => {
       { kind: "reps", amount: 1 },
       (e) => e.uid === "a",
     );
-    const [a, b] = next.days[0].session!.groups[0].exercises;
+    const [a, b] = next.days[0].sessions[0].groups[0].exercises;
     expect([...changedExerciseUids]).toEqual(["a"]);
     expect(a.repsMin).toBe(9);
     expect(setSpecCount(a)).toBe(3);
-    expect(b).toBe(week.days[0].session!.groups[0].exercises[1]);
+    expect(b).toBe(week.days[0].sessions[0].groups[0].exercises[1]);
   });
 
   it("returns the same week when the rule changes nothing", () => {
@@ -192,5 +215,156 @@ describe("removeSessionExercise", () => {
   it("returns the same session when the exercise is not there", () => {
     const s = session([lone("a")]);
     expect(removeSessionExercise(s, "zzz")).toBe(s);
+  });
+});
+
+// =============================================================================
+// A day holds its sessions in order
+// =============================================================================
+
+describe("normalizeDraft over a day's sessions", () => {
+  it("mirrors isRest from the day's session count and normalizes every session on it", () => {
+    const week = weekOf(
+      session([{ ...lone("gone"), exercises: [] }, lone("a")], "sess-am"),
+      session([circuit("grp-c", [exercise("b")])], "sess-pm"),
+    );
+    // Stale mirrors both ways.
+    week.days[0] = { ...week.days[0], isRest: true };
+    week.days[1] = { ...week.days[1], isRest: false };
+    const [first, second] = normalizeDraft(draftOf(week)).weeks[0].days;
+    expect(first.isRest).toBe(false);
+    expect(first.sessions.map((s) => s.uid)).toEqual(["sess-am", "sess-pm"]);
+    expect(first.sessions[0].groups.map((g) => g.uid)).toEqual(["grp-a"]);
+    expect(first.sessions[1].groups).toEqual([{ uid: "grp-c", ...STRAIGHT_SETS, exercises: [exercise("b")] }]);
+    expect(second.isRest).toBe(true);
+  });
+});
+
+describe("cloneWeek and progressWeek over a day holding two sessions", () => {
+  it("cloneWeek copies every session of the day, in order, each a new session with new uids", () => {
+    const source = weekOf(session([lone("a")], "sess-am"), session([lone("b")], "sess-pm"));
+    const copy = cloneWeek(source).days[0];
+    expect(copy.sessions).toHaveLength(2);
+    expect(copy.sessions.map((s) => s.uid)).not.toContain("sess-am");
+    expect(copy.sessions.map((s) => s.uid)).not.toContain("sess-pm");
+    expect(new Set(copy.sessions.map((s) => s.uid)).size).toBe(2);
+    expect(copy.sessions.map((s) => sessionExercises(s).map((e) => e.name))).toEqual([["a"], ["b"]]);
+    expect(copy.sessions.flatMap((s) => sessionExercises(s).map((e) => e.uid))).not.toContain("a");
+  });
+
+  it("progressWeek progresses every session on the day; a session the rule leaves keeps its reference", () => {
+    const week = weekOf(
+      session([lone("a")], "sess-am"),
+      session([lone("b")], "sess-pm"),
+      session([lone("c")], "sess-late"),
+    );
+    const { week: next, changedExerciseUids } = progressWeek(
+      week,
+      { kind: "reps", amount: 1 },
+      (e) => e.uid !== "b",
+    );
+    expect([...changedExerciseUids].sort()).toEqual(["a", "c"]);
+    const [am, pm, late] = next.days[0].sessions;
+    expect(sessionExercises(am)[0].repsMin).toBe(9);
+    expect(pm).toBe(week.days[0].sessions[1]);
+    expect(sessionExercises(late)[0].repsMin).toBe(9);
+  });
+});
+
+describe("finding sessions on their days", () => {
+  const draft = draftOf(weekOf(session([lone("a")], "sess-am"), session([lone("b")], "sess-pm")));
+
+  it("findSessionPlace names the day and the place in it; findSession and findSlot resolve through the lists", () => {
+    const place = findSessionPlace(draft, "sess-pm");
+    expect(place?.slot.uid).toBe("slot-0");
+    expect(place?.index).toBe(1);
+    expect(findSession(draft, "sess-pm")?.uid).toBe("sess-pm");
+    expect(findSlot(draft, "slot-3")?.orderIndex).toBe(3);
+    expect(findSessionPlace(draft, "sess-gone")).toBeNull();
+    expect(findSession(draft, null)).toBeNull();
+    expect(findSlot(draft, "slot-gone")).toBeNull();
+  });
+
+  it("mapSession changes only the session it names; weekSessions lists a week's sessions day by day", () => {
+    const next = mapSession(draft, "sess-pm", (s) => ({ ...s, name: "Evening" }));
+    expect(next.weeks[0].days[0].sessions.map((s) => s.name)).toEqual(["Hybrid", "Evening"]);
+    expect(next.weeks[0].days[0].sessions[0]).toBe(draft.weeks[0].days[0].sessions[0]);
+    expect(weekSessions(draft.weeks[0]).map((s) => s.uid)).toEqual(["sess-am", "sess-pm"]);
+  });
+});
+
+describe("removeSessionFromDay", () => {
+  // Day 1 holds a morning and an evening session; day 4 holds one.
+  function twoADay(): ProgramDraft {
+    const week = weekOf(session([lone("a")], "sess-am"), session([lone("b")], "sess-pm"));
+    week.days[3] = { ...week.days[3], isRest: false, sessions: [session([lone("c")], "sess-solo")] };
+    return draftOf(week);
+  }
+
+  it("removes one of two sessions; the day keeps the other", () => {
+    const next = normalizeDraft(removeSessionFromDay(twoADay(), "sess-am"));
+    expect(next.weeks[0].days[0]).toMatchObject({ isRest: false });
+    expect(next.weeks[0].days[0].sessions.map((s) => s.uid)).toEqual(["sess-pm"]);
+  });
+
+  it("removes a day's last session and the day is rest; a session no day holds changes nothing", () => {
+    const draft = twoADay();
+    const next = normalizeDraft(removeSessionFromDay(draft, "sess-solo"));
+    expect(next.weeks[0].days[3]).toMatchObject({ isRest: true, sessions: [] });
+    expect(removeSessionFromDay(draft, "sess-gone")).toBe(draft);
+  });
+});
+
+describe("moveSessionToDay", () => {
+  // Day 1 holds a morning and an evening session, days 4 and 5 one each, day 6 is rest.
+  function fixture(): ProgramDraft {
+    const week = weekOf(session([lone("a")], "sess-am"), session([lone("b")], "sess-pm"));
+    week.days[3] = { ...week.days[3], isRest: false, sessions: [session([lone("c")], "sess-four")] };
+    week.days[4] = { ...week.days[4], isRest: false, sessions: [session([lone("d")], "sess-five")] };
+    return draftOf(week);
+  }
+  const uidsOn = (draft: ProgramDraft, d: number) => draft.weeks[0].days[d].sessions.map((s) => s.uid);
+  const moved = (result: ReturnType<typeof moveSessionToDay>) => {
+    if (!result.ok) throw new Error(result.reason);
+    return normalizeDraft(result.draft);
+  };
+
+  it("onto a rest day it moves, and a day holding two keeps its other session", () => {
+    const next = moved(moveSessionToDay(fixture(), "sess-pm", "slot-6"));
+    expect(uidsOn(next, 6)).toEqual(["sess-pm"]);
+    expect(uidsOn(next, 0)).toEqual(["sess-am"]);
+    expect(next.weeks[0].days[0].isRest).toBe(false);
+  });
+
+  it("onto a rest day from a day it held alone, that day is rest", () => {
+    const next = moved(moveSessionToDay(fixture(), "sess-four", "slot-6"));
+    expect(uidsOn(next, 6)).toEqual(["sess-four"]);
+    expect(next.weeks[0].days[3]).toMatchObject({ isRest: true, sessions: [] });
+  });
+
+  it("a session alone on its day swaps with a day holding one", () => {
+    const next = moved(moveSessionToDay(fixture(), "sess-four", "slot-4"));
+    expect(uidsOn(next, 4)).toEqual(["sess-four"]);
+    expect(uidsOn(next, 3)).toEqual(["sess-five"]);
+  });
+
+  it("refuses a day holding two, and refuses to swap a session that shares its day", () => {
+    const draft = fixture();
+    expect(moveSessionToDay(draft, "sess-four", "slot-0")).toEqual({ ok: false, reason: DAY_HAS_SESSION });
+    expect(moveSessionToDay(draft, "sess-am", "slot-3")).toEqual({ ok: false, reason: DAY_HAS_SESSION });
+  });
+
+  it("onto its own day changes nothing; a vanished session or day is a reason", () => {
+    const draft = fixture();
+    expect(moveSessionToDay(draft, "sess-pm", "slot-0")).toEqual({ ok: true, draft });
+    expect(moveSessionToDay(draft, "sess-five", "slot-4")).toEqual({ ok: true, draft });
+    expect(moveSessionToDay(draft, "sess-gone", "slot-6")).toEqual({
+      ok: false,
+      reason: "That session no longer exists",
+    });
+    expect(moveSessionToDay(draft, "sess-am", "slot-gone")).toEqual({
+      ok: false,
+      reason: "The target day no longer exists",
+    });
   });
 });

@@ -5,19 +5,20 @@ import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { resolveWindowCap, type WindowCap } from "./program-event-walk";
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import { fetchVisibleExerciseIds } from "./library-placement-service";
-import { eventByDay } from "./calendar-day-events";
+import { sessionsByDay } from "./calendar-day-events";
 import {
   EXERCISE_WITH_GROUP_COLUMNS,
   mapExerciseRowsToGroupsBySession,
   type TrainingExerciseWithGroupRow,
 } from "./training-mappers";
-import { isDayUnchanged } from "./plan-edit-same-day";
+import { isSessionUnchanged } from "./plan-edit-same-day";
 import { fetchAllPages, fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import { daysBetween } from "@/utils/metric-points";
 import { toPrescribedFields } from "@/utils/prescribed-fields";
 import { groupSettingsToRow, sessionExercises } from "@/utils/exercise-groups";
-import type { savedSessionInputSchema } from "@/lib/validations/training";
+import { MAX_PLAN_EDIT_SESSIONS } from "@/lib/training-constants";
+import type { PlanEditSessionInput } from "@/lib/validations/training";
 import type { TrainingExerciseGroup } from "@/types/training";
 
 // =============================================================================
@@ -25,31 +26,33 @@ import type { TrainingExerciseGroup } from "@/types/training";
 // calendar, and whatever the coach leaves in it becomes the plan from the
 // first day that can still change.
 //
-// The read lays the calendar out day by day from the plan's start (the day's
-// session as the calendar holds it, whatever the coach moved or deleted, else
-// rest) and hands back a version: everything the editor was built from. The
-// save sends the version back, and edit_training_plan_atomic (migration 178)
-// refuses it in the same transaction as the write when any of it changed.
-// The save lays the days it writes the same way, so a day saved as it was laid
-// keeps its edited mark and a day the coach changed loses it.
+// The read lays the calendar out day by day from the plan's start (every
+// session on the day as the calendar holds it, in the day's order, whatever the
+// coach or the client moved or deleted; none is rest) and hands back a version:
+// everything the editor was built from. The save sends the version back, and
+// edit_training_plan_atomic (migration 179) refuses it in the same transaction
+// as the write when any of it changed. Each session the editor opened carries
+// the calendar entry it came from, so the save keeps that entry for it while it
+// stays on its day, and the save lays the days it writes the same way as the
+// read, so a session saved as it was laid keeps its edited mark and a session
+// the coach changed loses it.
 // =============================================================================
 
-type PlanEditSessionInput = z.infer<typeof savedSessionInputSchema>;
+/** One session on a day of the plan as the editor opens it. */
+export type PlanEditSession = {
+  /** The calendar entry holding it: the save keeps that entry for the session while it stays on this day. */
+  eventId: string;
+  name: string;
+  focus: string | null;
+  estimatedDurationMinutes: number | null;
+  notes: string | null;
+  /** The entry carries the per-date value. */
+  calorieSurplusPercentage: number | null;
+  groups: TrainingExerciseGroup[];
+};
 
-/** One day of the plan as the editor opens it. */
-export type PlanEditDay =
-  | { date: string; isRest: true }
-  | {
-      date: string;
-      isRest: false;
-      name: string;
-      focus: string | null;
-      estimatedDurationMinutes: number | null;
-      notes: string | null;
-      /** The day's event carries the per-date value. */
-      calorieSurplusPercentage: number | null;
-      groups: TrainingExerciseGroup[];
-    };
+/** One day of the plan as the editor opens it: its sessions in the day's order; none is a rest day. */
+export type PlanEditDay = { date: string; sessions: PlanEditSession[] };
 
 export type PlanForEditing = {
   plan: {
@@ -69,6 +72,9 @@ export type PlanForEditing = {
   /** Opaque: the save sends it back unchanged. */
   version: string;
 };
+
+/** One day of the editor's save: its sessions in order; none is a rest day. */
+type PlanEditDayInput = { sessions: PlanEditSessionInput[] };
 
 type PlanEditResult = {
   firstDay: string;
@@ -114,6 +120,7 @@ type PlanRow = {
 type CalendarEventRow = {
   id: string;
   date: string;
+  day_order: number;
   status: string;
   training_session_id: string | null;
   session_name: string;
@@ -132,7 +139,7 @@ type SessionRow = {
 
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-// The version's own shape, in the columns migration 175 compares.
+// The version's own shape, in the columns migration 179 compares.
 const versionSchema = z.object({
   plan_updated_at: z.string().min(1).max(64),
   from: dateString,
@@ -143,15 +150,16 @@ const versionSchema = z.object({
       z.object({
         id: z.string().uuid(),
         date: dateString,
+        day_order: z.number().int().min(0),
         training_session_id: z.string().uuid().nullable(),
         status: z.string().min(1).max(20),
         calorie_surplus_percentage: z.number().nullable(),
       }),
     )
-    .max(2000),
+    .max(MAX_PLAN_EDIT_SESSIONS),
   sessions: z
     .array(z.object({ id: z.string().uuid(), updated_at: z.string().min(1).max(64) }))
-    .max(2000),
+    .max(MAX_PLAN_EDIT_SESSIONS),
 });
 type PlanEditVersion = z.infer<typeof versionSchema>;
 
@@ -215,12 +223,13 @@ async function readCalendar(
       supabaseAdmin
         .from("training_events")
         .select(
-          "id, date, status, training_session_id, session_name, session_focus, calorie_surplus_percentage",
+          "id, date, day_order, status, training_session_id, session_name, session_focus, calorie_surplus_percentage",
         )
         .eq("client_id", clientId)
         .gte("date", from)
         .lte("date", through)
         .order("date", { ascending: true })
+        .order("day_order", { ascending: true })
         .order("id", { ascending: true })
         .range(rangeFrom, rangeTo),
     { errorLabel: "the plan's calendar" },
@@ -281,9 +290,10 @@ async function readGroups(sessionIds: string[]): Promise<Map<string, TrainingExe
 
 /**
  * One day per date from `from` to `gridEnd`. Up to `layThrough` a day holds
- * its event's session, read through the row it points at (an event whose row
- * cannot be read is laid from its own snapshot, with no groups), else rest.
- * Past `layThrough` a day holds nothing: the plan can't reach it.
+ * every session on its date, in the day's order, each read through the row its
+ * entry points at (an entry whose row cannot be read is laid from its own
+ * snapshot, with no groups); a day holding none is rest. Past `layThrough` a
+ * day holds nothing: the plan can't reach it.
  */
 function layDays(input: {
   from: string;
@@ -293,26 +303,28 @@ function layDays(input: {
   rows: Map<string, SessionRow>;
   groups: Map<string, TrainingExerciseGroup[]>;
 }): PlanEditDay[] {
-  const byDay = eventByDay(input.events);
+  const byDay = sessionsByDay(input.events);
   const total = daysBetween(input.from, input.gridEnd) + 1;
   const days: PlanEditDay[] = [];
   for (let offset = 0; offset < total; offset++) {
     const date = addDaysToDateString(input.from, offset);
-    const event = date <= input.layThrough ? byDay.get(date) : undefined;
-    if (!event) {
-      days.push({ date, isRest: true });
-      continue;
-    }
-    const row = event.training_session_id ? input.rows.get(event.training_session_id) : undefined;
+    const events = date <= input.layThrough ? (byDay.get(date) ?? []) : [];
     days.push({
       date,
-      isRest: false,
-      name: row?.name ?? event.session_name,
-      focus: row ? row.focus : event.session_focus,
-      estimatedDurationMinutes: row?.estimated_duration_minutes ?? null,
-      notes: row?.notes ?? null,
-      calorieSurplusPercentage: event.calorie_surplus_percentage,
-      groups: row ? (input.groups.get(row.id) ?? []) : [],
+      sessions: events.map((event) => {
+        const row = event.training_session_id
+          ? input.rows.get(event.training_session_id)
+          : undefined;
+        return {
+          eventId: event.id,
+          name: row?.name ?? event.session_name,
+          focus: row ? row.focus : event.session_focus,
+          estimatedDurationMinutes: row?.estimated_duration_minutes ?? null,
+          notes: row?.notes ?? null,
+          calorieSurplusPercentage: event.calorie_surplus_percentage,
+          groups: row ? (input.groups.get(row.id) ?? []) : [],
+        };
+      }),
     });
   }
   return days;
@@ -397,6 +409,7 @@ export async function getPlanForEditing(
       events: seen.map((e) => ({
         id: e.id,
         date: e.date,
+        day_order: e.day_order,
         training_session_id: e.training_session_id,
         status: e.status,
         calorie_surplus_percentage: e.calorie_surplus_percentage,
@@ -408,94 +421,97 @@ export async function getPlanForEditing(
   };
 }
 
-// One day of the save, in migration 178's columns: the day's groups in order,
-// each with its settings and its exercises in order. Exercises splat verbatim —
-// the builder keeps each exercise's compact columns the projection of its set
-// specs, as placement does — with a catalog id the coach can't see nulled.
-// `unchanged` says the day as written is the day as laid, so its event keeps
-// its edited mark; the function never reads it on a rest day.
+// One day of the save, in migration 179's columns: the day's sessions in order,
+// each with its groups in order and their exercises in order. Exercises splat
+// verbatim — the builder keeps each exercise's compact columns the projection
+// of its set specs, as placement does — with a catalog id the coach can't see
+// nulled. `event_id` is the entry the editor opened the session from; the
+// function keeps it for the session only while it is still on this day.
+// `unchanged` says the session as written is that entry's session as laid, so
+// the entry keeps its edited mark.
 function toSaveDay(
   date: string,
-  input: PlanEditSessionInput,
+  input: PlanEditDayInput,
   visible: Set<string>,
   laid: PlanEditDay | undefined,
 ) {
-  if (input.isRest) return { date, is_rest: true };
-  const groups = input.groups.map((group) => ({
-    ...group,
-    exercises: group.exercises.map((ex) => ({
-      ...ex,
-      exerciseId: ex.exerciseId && visible.has(ex.exerciseId) ? ex.exerciseId : null,
-    })),
-  }));
   return {
     date,
-    is_rest: false,
-    name: input.name,
-    focus: input.focus ?? null,
-    notes: input.notes ?? null,
-    estimated_duration_minutes: input.estimatedDurationMinutes ?? null,
-    calorie_surplus_percentage: input.calorieSurplusPercentage ?? null,
-    unchanged: isDayUnchanged(laid, { ...input, groups }),
-    groups: groups.map((group) => ({
-      ...groupSettingsToRow(group),
-      exercises: group.exercises.map((ex) => ({
-        name: ex.name,
-        exercise_id: ex.exerciseId,
-        sets: ex.sets,
-        reps_min: ex.repsMin ?? null,
-        reps_max: ex.repsMax ?? null,
-        reps_target: ex.repsTarget ?? null,
-        rpe_target: ex.rpeTarget ?? null,
-        percentage_1rm: ex.percentage1rm ?? null,
-        tempo: ex.tempo ?? null,
-        rest_seconds: ex.restSeconds ?? null,
-        notes: ex.notes ?? null,
-        is_warmup: ex.isWarmup ?? false,
-        set_specs: ex.setSpecs ?? null,
-        video_url: ex.videoUrl ?? null,
-        prescribed_fields: toPrescribedFields(ex.prescribedFields),
-      })),
-    })),
+    sessions: input.sessions.map((session) => {
+      const groups = session.groups.map((group) => ({
+        ...group,
+        exercises: group.exercises.map((ex) => ({
+          ...ex,
+          exerciseId: ex.exerciseId && visible.has(ex.exerciseId) ? ex.exerciseId : null,
+        })),
+      }));
+      const laidSession = session.eventId
+        ? laid?.sessions.find((candidate) => candidate.eventId === session.eventId)
+        : undefined;
+      return {
+        event_id: session.eventId ?? null,
+        name: session.name,
+        focus: session.focus ?? null,
+        notes: session.notes ?? null,
+        estimated_duration_minutes: session.estimatedDurationMinutes ?? null,
+        calorie_surplus_percentage: session.calorieSurplusPercentage ?? null,
+        unchanged: isSessionUnchanged(laidSession, { ...session, groups }),
+        groups: groups.map((group) => ({
+          ...groupSettingsToRow(group),
+          exercises: group.exercises.map((ex) => ({
+            name: ex.name,
+            exercise_id: ex.exerciseId,
+            sets: ex.sets,
+            reps_min: ex.repsMin ?? null,
+            reps_max: ex.repsMax ?? null,
+            reps_target: ex.repsTarget ?? null,
+            rpe_target: ex.rpeTarget ?? null,
+            percentage_1rm: ex.percentage1rm ?? null,
+            tempo: ex.tempo ?? null,
+            rest_seconds: ex.restSeconds ?? null,
+            notes: ex.notes ?? null,
+            is_warmup: ex.isWarmup ?? false,
+            set_specs: ex.setSpecs ?? null,
+            video_url: ex.videoUrl ?? null,
+            prescribed_fields: toPrescribedFields(ex.prescribedFields),
+          })),
+        })),
+      };
+    }),
   };
 }
 
 function translateSaveError(error: { code?: string; message: string }): Error {
-  // A plan placed into the reach of this save (the live-window exclusion) or a
-  // session landing on one of its days (the one-scheduled-per-day index)
-  // between the read and the write is the calendar changing under the editor.
-  if (error.code === "23P01" || error.code === "23505") return new PlanEditStaleError();
+  // A plan placed into the reach of this save between the read and the write
+  // (the live-window exclusion) is the calendar changing under the editor.
+  if (error.code === "23P01") return new PlanEditStaleError();
   if (error.message.startsWith("stale:")) return new PlanEditStaleError();
   if (error.message.startsWith("not_found:")) return new PlanEditNotFoundError();
   return new Error(`Failed to save the plan: ${error.message}`);
 }
 
 /**
- * Save the editor. `sessions` is the whole grid — slot i is the plan's day
- * `effective_from + i` — and only its days from the first editable day to the
- * plan's new last day are written: the grid's end, capped at the plan's limit,
- * never before the day before the first editable day.
+ * Save the editor. `days` is the whole grid — day i is the plan's day
+ * `effective_from + i`, holding its sessions in order — and only its days from
+ * the first editable day to the plan's new last day are written: the grid's
+ * end, capped at the plan's limit, never before the day before the first
+ * editable day.
  */
 export async function savePlanEdit(params: {
   clientId: string;
   coachId: string;
   planId: string;
-  sessions: PlanEditSessionInput[];
+  days: PlanEditDayInput[];
   name: string;
   splitType: string | null;
   version: string;
 }): Promise<PlanEditResult> {
-  const { clientId, coachId, planId, sessions } = params;
+  const { clientId, coachId, planId, days } = params;
   const version = decodeVersion(params.version);
 
-  if (sessions.length === 0 || sessions.length % DAYS_PER_WEEK !== 0) {
+  if (days.length === 0 || days.length % DAYS_PER_WEEK !== 0) {
     throw new PlanEditInvalidError("The plan must be whole weeks");
   }
-  sessions.forEach((slot, i) => {
-    if (slot.orderIndex !== i || (slot.weekIndex ?? 0) !== Math.floor(i / DAYS_PER_WEEK)) {
-      throw new PlanEditInvalidError("The plan's days must be in order");
-    }
-  });
 
   const [plan, clientToday] = await Promise.all([
     readPlan(clientId, planId),
@@ -511,26 +527,30 @@ export async function savePlanEdit(params: {
     throw new PlanEditStaleError();
   }
 
-  const gridEnd = addDaysToDateString(plan.effective_from, sessions.length - 1);
+  const gridEnd = addDaysToDateString(plan.effective_from, days.length - 1);
   const capped = limit ? earlier(limit.endsOn, gridEnd) : gridEnd;
   const lastDay = later(capped, addDaysToDateString(firstEditableDate, -1));
   const firstPosition = daysBetween(plan.effective_from, firstEditableDate);
   const lastPosition = daysBetween(plan.effective_from, lastDay);
 
-  const written = sessions.slice(firstPosition, lastPosition + 1);
+  const written = days.slice(firstPosition, lastPosition + 1);
   // The days as laid are read now, outside the transaction; the function's
   // stale check refuses the save unless they are still the calendar the
   // editor opened, so "unchanged" is judged against what the editor showed.
   const [visible, laid] = await Promise.all([
     fetchVisibleExerciseIds(
       coachId,
-      written.flatMap((s) =>
-        sessionExercises(s).map((e) => e.exerciseId).filter((id): id is string => Boolean(id)),
+      written.flatMap((day) =>
+        day.sessions.flatMap((session) =>
+          sessionExercises(session)
+            .map((e) => e.exerciseId)
+            .filter((id): id is string => Boolean(id)),
+        ),
       ),
     ),
     readLaidDays(clientId, firstEditableDate, lastDay),
   ]);
-  const window = sessions.slice(0, lastPosition + 1);
+  const window = days.slice(0, lastPosition + 1);
 
   const { error } = await supabaseAdmin.rpc("edit_training_plan_atomic", {
     p_client_id: clientId,
@@ -540,9 +560,16 @@ export async function savePlanEdit(params: {
     p_name: params.name,
     p_split_type: params.splitType ?? "custom",
     p_program_duration_weeks: Math.ceil(window.length / DAYS_PER_WEEK),
-    p_frequency_per_week: deriveFrequencyPerWeek(window),
-    p_days: written.map((slot, i) =>
-      toSaveDay(addDaysToDateString(firstEditableDate, i), slot, visible, laid[i]),
+    p_frequency_per_week: deriveFrequencyPerWeek(
+      window.flatMap((day, i): Array<{ weekIndex: number; isRest: boolean }> => {
+        const weekIndex = Math.floor(i / DAYS_PER_WEEK);
+        return day.sessions.length === 0
+          ? [{ weekIndex, isRest: true }]
+          : day.sessions.map(() => ({ weekIndex, isRest: false }));
+      }),
+    ),
+    p_days: written.map((day, i) =>
+      toSaveDay(addDaysToDateString(firstEditableDate, i), day, visible, laid[i]),
     ),
     p_version: version,
   });
@@ -551,6 +578,6 @@ export async function savePlanEdit(params: {
   return {
     firstDay: firstEditableDate,
     lastDay,
-    sessionsWritten: written.filter((s) => !s.isRest).length,
+    sessionsWritten: written.reduce((sum, day) => sum + day.sessions.length, 0),
   };
 }

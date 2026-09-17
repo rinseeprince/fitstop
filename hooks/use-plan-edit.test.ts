@@ -39,7 +39,7 @@ function makeRead(): PlanForEditing {
     limit: null,
     days: Array.from({ length: 7 }, (_, i) => ({
       date: `2026-07-${15 + i}`,
-      isRest: true as const,
+      sessions: [],
     })),
     version: "v-1",
   };

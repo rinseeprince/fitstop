@@ -60,7 +60,7 @@ function clampName(session: SessionDraft): SessionDraft {
 // the placed-session tray, which wraps a placed session the same way.
 export function makeStandaloneDraft(session: SessionDraft): ProgramDraft {
   const week = makeRestWeek(0);
-  week.days[0] = { ...week.days[0], isRest: false, session };
+  week.days[0] = { ...week.days[0], isRest: false, sessions: [session] };
   return {
     id: "standalone",
     name: "Standalone session",
@@ -114,7 +114,7 @@ export function useStandaloneSessionEditor(
     seededForRef.current = identity;
   }, [open, state, identity, seed]);
 
-  const session = builder.draft?.weeks[0]?.days[0]?.session ?? null;
+  const session = builder.draft?.weeks[0]?.days[0]?.sessions[0] ?? null;
 
   // setState is async — the ref is the authoritative double-fire gate.
   const inFlightRef = useRef(false);

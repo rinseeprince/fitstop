@@ -16,7 +16,8 @@ const mockUsePlanEdit = vi.mocked(usePlanEdit);
 type PlanEditResponse = { success: boolean; data: PlanForEditing };
 
 /** A one-week plan from 2026-07-15; today (07-17) is its first editable day
- *  and its block ends on its last day. */
+ *  and its block ends on its last day. Day 3 (07-17) holds a morning and an
+ *  evening session. */
 function makeRead(version: string, planName = "PPL Block"): PlanForEditing {
   return {
     plan: {
@@ -31,10 +32,30 @@ function makeRead(version: string, planName = "PPL Block"): PlanForEditing {
     limit: { endsOn: "2026-07-21", source: "block" },
     days: Array.from({ length: 7 }, (_, i) => ({
       date: `2026-07-${15 + i}`,
-      isRest: true as const,
+      sessions:
+        i === 2
+          ? [readSession(`${version}-am`, "AM run"), readSession(`${version}-pm`, "PM lift")]
+          : [],
     })),
     version,
   };
+}
+
+function readSession(eventId: string, name: string) {
+  return {
+    eventId,
+    name,
+    focus: null,
+    estimatedDurationMinutes: null,
+    notes: null,
+    calorieSurplusPercentage: null,
+    groups: [],
+  };
+}
+
+/** The seeded draft's day-3 session uids, each with the entry it was read from. */
+function entriesOf(draft: ProgramDraft | null, sessionEvents: Readonly<Record<string, string>>) {
+  return (draft?.weeks[0].days[2].sessions ?? []).map((s) => sessionEvents[s.uid]);
 }
 
 // Mutable harness standing in for useProgramBuilderState: the source hook only
@@ -108,6 +129,16 @@ describe("usePlacedPlanSource", () => {
     expect(h.seed).toHaveBeenCalledTimes(1);
   });
 
+  it("holds each seeded session's calendar entry by its draft uid, set with the version", () => {
+    const h = makeHarness();
+    const view = renderSource(h, null);
+    expect(view.result.current.sessionEvents).toEqual({});
+
+    view.setRead(makeRead("v-1"));
+    expect(entriesOf(h.box.draft, view.result.current.sessionEvents)).toEqual(["v-1-am", "v-1-pm"]);
+    expect(Object.keys(view.result.current.sessionEvents)).toHaveLength(2);
+  });
+
   it("a later read never re-seeds the draft that is there", () => {
     const h = makeHarness();
     const view = renderSource(h, makeRead("v-1"));
@@ -130,6 +161,8 @@ describe("usePlacedPlanSource", () => {
     expect(h.seed).toHaveBeenCalledTimes(2);
     expect(h.seed.mock.calls[1][0].name).toBe("Current read");
     expect(view.result.current.version).toBe("v-2");
+    // The re-seed mints new uids: the entries are held under those.
+    expect(entriesOf(h.box.draft, view.result.current.sessionEvents)).toEqual(["v-2-am", "v-2-pm"]);
     expect(h.setMode).toHaveBeenCalledWith("edit");
   });
 
@@ -169,12 +202,15 @@ describe("usePlacedPlanSource", () => {
       data: { ...makeRead("v-2", "Fresh read"), firstEditableDate: "2026-07-18" },
     });
 
+    const entries = view.result.current.sessionEvents;
     await act(async () => {
       await view.result.current.refreshVersion();
     });
     expect(view.result.current.version).toBe("v-2");
     expect(h.seed).toHaveBeenCalledTimes(1);
     expect(h.box.draft).toBe(seeded);
+    // The kept draft's sessions keep the entries the seed brought.
+    expect(view.result.current.sessionEvents).toBe(entries);
     // Only the version moves: the days the draft was built on stay.
     expect(view.result.current.editableDays).toEqual({ from: 2, through: 6 });
   });

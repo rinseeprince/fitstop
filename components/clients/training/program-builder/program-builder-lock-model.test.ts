@@ -19,7 +19,8 @@ import {
 
 // Deterministic fixtures (no newUid) so assertions can name uids directly:
 // week w is `wk-w`, and the slot at position p — the plan's day
-// effective_from + p — is `s<p>`, holding session `sess-<p>` when it has one.
+// effective_from + p — is `s<p>`, holding session `sess-<p>` when it has one
+// (and `sess-<p>-2` after it when it holds two).
 
 function sess(uid: string): SessionDraft {
   return {
@@ -34,21 +35,19 @@ function sess(uid: string): SessionDraft {
   };
 }
 
-function slot(uid: string, orderIndex: number, session: SessionDraft | null = null): DaySlotDraft {
-  return { uid, orderIndex, isRest: session == null, session };
+function slot(uid: string, orderIndex: number, sessions: SessionDraft[] = []): DaySlotDraft {
+  return { uid, orderIndex, isRest: sessions.length === 0, sessions };
 }
 
-function makeWeeks(count: number, sessionsAt: number[] = []): WeekDraft[] {
+function makeWeeks(count: number, sessionsAt: number[] = [], twoAt: number[] = []): WeekDraft[] {
   return Array.from({ length: count }, (_, w) => ({
     uid: `wk-${w}`,
     weekIndex: w,
     days: Array.from({ length: DAYS_PER_WEEK }, (_, d) => {
       const position = w * DAYS_PER_WEEK + d;
-      return slot(
-        `s${position}`,
-        d,
-        sessionsAt.includes(position) ? sess(`sess-${position}`) : null,
-      );
+      const sessions = sessionsAt.includes(position) ? [sess(`sess-${position}`)] : [];
+      if (twoAt.includes(position)) sessions.push(sess(`sess-${position}`), sess(`sess-${position}-2`));
+      return slot(`s${position}`, d, sessions);
     }),
   }));
 }
@@ -59,7 +58,7 @@ function newWeek(sessionDay: number | null = null): WeekDraft {
     uid: "wk-new",
     weekIndex: 0,
     days: Array.from({ length: DAYS_PER_WEEK }, (_, d) =>
-      slot(`new-${d}`, d, d === sessionDay ? sess("sess-new") : null),
+      slot(`new-${d}`, d, d === sessionDay ? [sess("sess-new")] : []),
     ),
   };
 }
@@ -195,6 +194,16 @@ describe("session queries", () => {
     expect(isSessionLocked(draft, rules.locked, "sess-12")).toBe(true);
     expect(isSessionLocked(draft, rules.locked, "sess-gone")).toBe(false);
   });
+
+  it("finds a day's second session through its day's list", () => {
+    // Two sessions on a history day (2) and on an editable day (6).
+    const twoADay = draftWith(makeWeeks(2, [], [2, 6]));
+    const twoRules = planDayRules(twoADay.weeks, { from: 3, through: 10 }, null);
+    expect(sessionRefusal(twoADay, twoRules, "sess-2-2")).toBe(PAST_LOCKED);
+    expect(sessionRefusal(twoADay, twoRules, "sess-6-2")).toBeNull();
+    expect(isSessionLocked(twoADay, twoRules.locked, "sess-2-2")).toBe(true);
+    expect(isSessionLocked(twoADay, twoRules.locked, "sess-6-2")).toBe(false);
+  });
 });
 
 describe("insertWeekRefusal", () => {
@@ -267,6 +276,12 @@ describe("moveWeekRefusal", () => {
     expect(moveWeekRefusal(weeks, days, 1, 3)).toBe(LIMIT_LOCKED);
     // One week on: 15.
     expect(moveWeekRefusal(weeks, days, 1, 2)).toBeNull();
+  });
+
+  it("refuses a move that lands a day holding several sessions past the plan's last day", () => {
+    // Two sessions on 8 and nothing else; the plan reaches position 20.
+    const weeks = makeWeeks(4, [], [8]);
+    expect(moveWeekRefusal(weeks, { from: 0, through: 20 }, 1, 3)).toBe(LIMIT_LOCKED);
   });
 });
 

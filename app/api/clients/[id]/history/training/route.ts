@@ -104,7 +104,6 @@ export async function GET(
     // Coach-local today bounds the history range (coach's view).
     const today = await getCoachTodayString(auth.coachId);
     const dates = generateDateRange(rangeStart, today);
-    const total = dates.length;
 
     // Fetch training events and session_logs for the full range
     const [events, { data: sessionLogs }] = await Promise.all([
@@ -158,12 +157,12 @@ export async function GET(
       performedSessionNames
     );
 
-    // Reverse for newest-first, then paginate
-    const reversed = schedule.reverse();
-    const paged = reversed.slice(offset, offset + limit);
-    const rows = paged.map(mapScheduleDayToRow);
+    // One row per workout (a rest day is one row). Newest day first, a day's
+    // workouts still in the day's order — the sort is stable — then paginate.
+    const newestFirst = [...schedule].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    const rows = newestFirst.slice(offset, offset + limit).map(mapScheduleDayToRow);
 
-    return NextResponse.json({ rows, total }, { status: 200 });
+    return NextResponse.json({ rows, total: newestFirst.length }, { status: 200 });
   } catch (error) {
     console.error("Error fetching training history:", error);
     return NextResponse.json(

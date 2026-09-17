@@ -96,31 +96,33 @@ function makeWeek(): WeekDraft {
   week.days[0] = {
     ...week.days[0],
     isRest: false,
-    session: {
-      uid: "sess-push",
-      name: "Push",
-      focus: "Chest",
-      estimatedDurationMinutes: 60,
-      calorieSurplusPercentage: 12,
-      notes: null,
-      sessionType: "training",
-      groups: [
-        lone(
-          draftExercise({
-            uid: "ex-bench",
-            exerciseId: "e-bench",
-            name: "Bench Press",
-            setSpecs: [
-              { set_number: 1, set_type: "warmup", load_type: "absolute", load_value: 60 },
-              working(2, 100, [8, 10]),
-              working(3, 90, [8, 10]),
-              working(4, 90, [8, 10]),
-            ],
-          }),
-        ),
-        lone(draftExercise({ uid: "ex-curl", exerciseId: null, name: "Cable Curl" })),
-      ],
-    },
+    sessions: [
+      {
+        uid: "sess-push",
+        name: "Push",
+        focus: "Chest",
+        estimatedDurationMinutes: 60,
+        calorieSurplusPercentage: 12,
+        notes: null,
+        sessionType: "training",
+        groups: [
+          lone(
+            draftExercise({
+              uid: "ex-bench",
+              exerciseId: "e-bench",
+              name: "Bench Press",
+              setSpecs: [
+                { set_number: 1, set_type: "warmup", load_type: "absolute", load_value: 60 },
+                working(2, 100, [8, 10]),
+                working(3, 90, [8, 10]),
+                working(4, 90, [8, 10]),
+              ],
+            }),
+          ),
+          lone(draftExercise({ uid: "ex-curl", exerciseId: null, name: "Cable Curl" })),
+        ],
+      },
+    ],
   };
   return deepFreeze(week);
 }
@@ -173,12 +175,12 @@ describe("DuplicateWeekDialog", () => {
     expect(onCommit).toHaveBeenCalledTimes(1);
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
     expect(committed.uid).not.toBe(week.uid);
-    const bench = sessionExercises(committed.days[0].session!)[0];
+    const bench = sessionExercises(committed.days[0].sessions[0])[0];
     expect(bench.uid).not.toBe("ex-bench");
     expect(bench.setSpecs!.map((s) => s.load_value)).toEqual([60, 102.5, 92.5, 92.5]);
-    expect(committed.days[0].session!.calorieSurplusPercentage).toBe(12);
+    expect(committed.days[0].sessions[0].calorieSurplusPercentage).toBe(12);
     // the frozen source is untouched
-    expect(sessionExercises(week.days[0].session!)[0].setSpecs!.map((s) => s.load_value)).toEqual([
+    expect(sessionExercises(week.days[0].sessions[0])[0].setSpecs!.map((s) => s.load_value)).toEqual([
       60, 100, 90, 90,
     ]);
   });
@@ -192,7 +194,7 @@ describe("DuplicateWeekDialog", () => {
 
     fireEvent.click(commitButton());
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
-    const [bench, curl] = sessionExercises(committed.days[0].session!);
+    const [bench, curl] = sessionExercises(committed.days[0].sessions[0]);
     expect(bench.setSpecs![1].reps_min).toBe(9);
     expect(curl.setSpecs).toBeNull(); // stayed compact: rule never touched it
   });
@@ -209,7 +211,7 @@ describe("DuplicateWeekDialog", () => {
 
     fireEvent.click(commitButton());
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
-    const [bench, curl] = sessionExercises(committed.days[0].session!);
+    const [bench, curl] = sessionExercises(committed.days[0].sessions[0]);
     expect(bench.setSpecs![1].reps_min).toBe(8); // unchecked: untouched
     // compact-only curl materialized with 10-12 -> 11-13
     expect(curl.setSpecs!.every((s) => s.reps_min === 11 && s.reps_max === 13)).toBe(true);
@@ -237,7 +239,7 @@ describe("DuplicateWeekDialog", () => {
 
     fireEvent.click(commitButton());
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
-    const [bench, curl] = sessionExercises(committed.days[0].session!);
+    const [bench, curl] = sessionExercises(committed.days[0].sessions[0]);
     // warm-up + first two working sets survive; the LAST working set was removed
     expect(bench.setSpecs!.map((s) => [s.set_type, s.load_value])).toEqual([
       ["warmup", 60],
@@ -267,7 +269,7 @@ describe("DuplicateWeekDialog", () => {
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
     expect(committed.uid).not.toBe(restWeek.uid);
     expect(committed.days).toHaveLength(7);
-    expect(committed.days.every((d) => d.session === null)).toBe(true);
+    expect(committed.days.every((d) => d.sessions.length === 0)).toBe(true);
   });
 
   it("a rule that changes nothing shows the exact-copy notice and commits an exact copy", () => {
@@ -282,8 +284,65 @@ describe("DuplicateWeekDialog", () => {
     fireEvent.click(commitButton());
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
     expect(
-      sessionExercises(committed.days[0].session!)[0].setSpecs!.map((s) => s.load_value),
+      sessionExercises(committed.days[0].sessions[0])[0].setSpecs!.map((s) => s.load_value),
     ).toEqual([60, 100, 90, 90]);
+  });
+
+  it("previews and progresses every session of a day holding two, each a new session in the copy", () => {
+    const source = makeWeek();
+    const [push] = source.days[0].sessions;
+    const week = deepFreeze({
+      ...source,
+      days: source.days.map((day, d) =>
+        d === 0
+          ? {
+              ...day,
+              sessions: [
+                push,
+                {
+                  ...push,
+                  uid: "sess-pull",
+                  name: "Pull",
+                  calorieSurplusPercentage: null,
+                  groups: [
+                    lone(
+                      draftExercise({
+                        uid: "ex-row",
+                        exerciseId: "e-row",
+                        name: "Barbell Row",
+                        setSpecs: [working(1, 80, [6, 8]), working(2, 80, [6, 8])],
+                      }),
+                    ),
+                  ],
+                },
+              ],
+            }
+          : day,
+      ),
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { onCommit } = renderDialog({ week });
+    // Each session's section has its own key: React warns on a repeated one.
+    const repeatedKeys = consoleError.mock.calls.filter(([message]) =>
+      String(message).includes("same key"),
+    );
+    consoleError.mockRestore();
+    expect(repeatedKeys).toEqual([]);
+
+    // Both sessions of Day 1 preview, under their own headings.
+    expect(screen.getByText("Day 1 · Push")).toBeInTheDocument();
+    expect(screen.getByText("Day 1 · Pull")).toBeInTheDocument();
+    expect(screen.getByText("2 of 3 exercises change")).toBeInTheDocument();
+    expect(screen.getByText("82.5 / 82.5 kg")).toBeInTheDocument();
+
+    fireEvent.click(commitButton());
+    const committed = onCommit.mock.calls[0][0] as WeekDraft;
+    const [copiedPush, copiedPull] = committed.days[0].sessions;
+    expect([copiedPush.name, copiedPull.name]).toEqual(["Push", "Pull"]);
+    expect(copiedPush.uid).not.toBe("sess-push");
+    expect(copiedPull.uid).not.toBe("sess-pull");
+    expect(sessionExercises(copiedPull)[0].setSpecs!.map((s) => s.load_value)).toEqual([82.5, 82.5]);
+    expect(sessionExercises(copiedPush)[0].setSpecs!.map((s) => s.load_value)).toEqual([60, 102.5, 92.5, 92.5]);
   });
 
   it("disables commit at the 52-week limit", () => {

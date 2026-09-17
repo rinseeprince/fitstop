@@ -51,15 +51,18 @@ const EXERCISE: Omit<ExerciseDraft, "uid"> = {
   prescribedFields: null,
 };
 
-// Weeks of 7 whose slots are `s<position>`, with a session at each listed position.
+// Weeks of 7 whose slots are `s<position>`, with a session at each listed
+// position — `sess<position>`, then `sess<position>b` on a day listed twice.
 function weeks(count: number, sessionsAt: number[]): WeekDraft[] {
   return Array.from({ length: count }, (_, w) => ({
     uid: `w${w}`,
     weekIndex: w,
     days: Array.from({ length: DAYS_PER_WEEK }, (_, d): DaySlotDraft => {
       const position = w * DAYS_PER_WEEK + d;
-      const session = sessionsAt.includes(position) ? sess(`sess${position}`) : null;
-      return { uid: `s${position}`, orderIndex: d, isRest: session == null, session };
+      const sessions = sessionsAt
+        .filter((p) => p === position)
+        .map((_, i) => sess(`sess${position}${i === 0 ? "" : "b"}`));
+      return { uid: `s${position}`, orderIndex: d, isRest: sessions.length === 0, sessions };
     }),
   }));
 }
@@ -69,6 +72,7 @@ function fakeState(draft: ProgramDraft) {
     addWeek: vi.fn(),
     placeSession: vi.fn(),
     clearSlot: vi.fn(),
+    removeSession: vi.fn(),
     moveSession: vi.fn(),
     updateSession: vi.fn(),
     addExercise: vi.fn(),
@@ -88,7 +92,8 @@ function fakeState(draft: ProgramDraft) {
   return { state, calls };
 }
 
-// Three weeks (positions 0-20): history before 9, the plan reaches 18.
+// Three weeks (positions 0-20): history before 9, the plan reaches 18. Days 2
+// and 10 hold two sessions each.
 const DRAFT: ProgramDraft = {
   id: "plan-1",
   name: "Plan",
@@ -97,7 +102,7 @@ const DRAFT: ProgramDraft = {
   splitType: null,
   programDurationWeeks: 3,
   defaultSurplusPercentage: null,
-  weeks: weeks(3, [2, 10, 16]),
+  weeks: weeks(3, [2, 2, 10, 10, 16]),
 };
 const DAYS = { from: 9, through: 18 };
 
@@ -145,6 +150,19 @@ describe("useLockedMutators", () => {
     // A move onto a greyed day is refused whatever the session.
     m.moveSession("sess10", "s20");
     expect(calls.moveSession).not.toHaveBeenCalled();
+  });
+
+  it("removeSession is refused by the day of the session it names, the day's second session too", () => {
+    const { m, calls } = mutators();
+
+    m.removeSession("sess2");
+    m.removeSession("sess2b");
+    refusedWith(PAST_LOCKED);
+    expect(calls.removeSession).not.toHaveBeenCalled();
+
+    m.removeSession("sess10b");
+    expect(calls.removeSession).toHaveBeenCalledWith("sess10b");
+    expect(calls.removeSession).toHaveBeenCalledTimes(1);
   });
 
   it("refuses every group edit to a session on a locked day, and passes an editable one through", () => {
@@ -201,9 +219,11 @@ describe("useLockedMutators", () => {
     m.placeSession("s3", sess("new"));
     m.deleteWeek("w0");
     m.addWeek();
+    m.removeSession("sess2");
     expect(calls.placeSession).toHaveBeenCalledTimes(1);
     expect(calls.deleteWeek).toHaveBeenCalledTimes(1);
     expect(calls.addWeek).toHaveBeenCalledTimes(1);
+    expect(calls.removeSession).toHaveBeenCalledWith("sess2");
     expect(toast.error).not.toHaveBeenCalled();
   });
 });

@@ -103,6 +103,21 @@ describe("buildDailyTargetsFromPlan", () => {
     expect(mon.fatG).toBe(94);
   });
 
+  it("no-event day holding two sessions: their surpluses add", () => {
+    const rows = [row("monday", { carb_g: 100, fat_g: 50, is_training_day: true })];
+    const events = [
+      tev({ calorieSurplusPercentage: 10, sessionName: "Morning run" }),
+      tev({ calorieSurplusPercentage: 5, sessionName: "Evening lift" }),
+    ];
+    const mon = find(
+      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: rows, includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: events, nutritionEvents: undefined, weekWindow: NO_GATE }),
+      "monday",
+    );
+    expect(mon.calorieSurplusPercentage).toBe(15);
+    expect(mon.calories).toBe(2300);
+    expect(mon.trainingSessions.map((session) => session.name)).toEqual(["Morning run", "Evening lift"]);
+  });
+
   it("no-event training day, carbs-only: protein AND fat held, surplus goes to carbs", () => {
     const rows = [row("monday", { carb_g: 100, fat_g: 50, is_training_day: true })];
     const events = [tev({ calorieSurplusPercentage: 10 })];

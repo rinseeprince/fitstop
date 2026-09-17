@@ -10,7 +10,8 @@ const DATE_SHAPE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * `types/client-training-week.ts`): every session in the check-in-anchored
  * week with a `state` derived against the client's own today. Powers the
  * session picker and the week view; it is also exactly the set a layout write
- * may touch. ≤7 rows, `no-store`, same date validation as day-summary.
+ * may touch, by date and each day's sessions in order. `no-store`, same date
+ * validation as day-summary.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireClientAuth(request);

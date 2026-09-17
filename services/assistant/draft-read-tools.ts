@@ -4,9 +4,12 @@ import type { DraftWorkspace } from "./draft-workspace";
 import {
   programSkeleton,
   resolveSession,
+  resolveSlot,
   resolveWeek,
   sessionDetail,
   sessionExerciseLines,
+  sessionPlaceLabel,
+  sessionPlaceProperty,
 } from "./draft-tool-helpers";
 
 // READ tools — answer from the per-request workspace, zero client round-trips.
@@ -41,10 +44,12 @@ export function buildReadTools(ws: DraftWorkspace) {
     run: ({ week }) => {
       const w = resolveWeek(ws, week);
       if (!w.ok) return w.error;
-      const lines = w.value.days.map((slot, i) => {
-        if (!slot.session) return `Day ${i + 1}: rest`;
-        const head = `Day ${i + 1}: "${slot.session.name}"${slot.session.focus ? ` (${slot.session.focus})` : ""}`;
-        return [head, ...sessionExerciseLines(slot.session, "  ")].join("\n");
+      const lines = w.value.days.flatMap((slot, i) => {
+        if (slot.sessions.length === 0) return [`Day ${i + 1}: rest`];
+        return slot.sessions.map((session, p) => {
+          const head = `Day ${i + 1}${sessionPlaceLabel(p + 1, slot.sessions.length)}: "${session.name}"${session.focus ? ` (${session.focus})` : ""}`;
+          return [head, ...sessionExerciseLines(session, "  ")].join("\n");
+        });
       });
       return [`Week ${week}:`, ...lines].join("\n");
     },
@@ -59,14 +64,22 @@ export function buildReadTools(ws: DraftWorkspace) {
       properties: {
         week: { type: "integer", minimum: 1 },
         day: { type: "integer", minimum: 1, maximum: 7 },
+        session: sessionPlaceProperty,
       },
       required: ["week", "day"],
       additionalProperties: false,
     } as const,
-    run: ({ week, day }) => {
-      const session = resolveSession(ws, week, day);
+    run: ({ week, day, session: place = 1 }) => {
+      const slot = resolveSlot(ws, week, day);
+      if (!slot.ok) return slot.error;
+      const session = resolveSession(ws, week, day, place);
       if (!session.ok) return session.error;
-      return sessionDetail(session.value, week, day);
+      return sessionDetail(
+        session.value,
+        week,
+        day,
+        sessionPlaceLabel(place, slot.value.sessions.length),
+      );
     },
   });
 

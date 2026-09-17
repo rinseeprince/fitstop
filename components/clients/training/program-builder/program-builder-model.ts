@@ -57,8 +57,8 @@ function normalizeSlot(slot: DaySlotDraft, orderIndex: number): DaySlotDraft {
   return {
     ...slot,
     orderIndex,
-    isRest: slot.session == null,
-    session: slot.session ? normalizeSession(slot.session) : null,
+    isRest: slot.sessions.length === 0,
+    sessions: slot.sessions.map(normalizeSession),
   };
 }
 
@@ -112,7 +112,7 @@ export function cloneWeek(w: WeekDraft): WeekDraft {
     days: w.days.map((slot) => ({
       ...slot,
       uid: newUid("slot"),
-      session: slot.session ? cloneSession(slot.session) : null,
+      sessions: slot.sessions.map(cloneSession),
     })),
   };
 }
@@ -126,11 +126,12 @@ export function cloneWeek(w: WeekDraft): WeekDraft {
  * pure engine in utils/progression-rules.ts (which cannot import component
  * types). Call it on a cloneWeek()'d copy and commit THAT returned week:
  * clone-then-progress, never re-clone after, or changedExerciseUids (the
- * clone's uids, used for preview rows) go stale. Never adds/removes/reorders
- * exercises — the preview pairs source↔progressed positionally. Rest slots,
- * out-of-scope exercises, and rule no-ops keep their references; a week the
- * rule doesn't touch returns the INPUT reference so callers can detect
- * "this rule changes nothing".
+ * clone's uids, used for preview rows) go stale. Progresses every session of
+ * every day, and never adds/removes/reorders sessions or exercises — the
+ * preview pairs source↔progressed positionally. Rest slots, out-of-scope
+ * exercises, and rule no-ops keep their references; a week the rule doesn't
+ * touch returns the INPUT reference so callers can detect "this rule changes
+ * nothing".
  */
 export function progressWeek(
   week: WeekDraft,
@@ -140,11 +141,15 @@ export function progressWeek(
   const changedExerciseUids = new Set<string>();
   let weekChanged = false;
   const days = week.days.map((slot) => {
-    if (!slot.session) return slot;
-    const session = progressSession(slot.session, rule, inScope, changedExerciseUids);
-    if (session === slot.session) return slot;
+    let slotChanged = false;
+    const sessions = slot.sessions.map((session) => {
+      const next = progressSession(session, rule, inScope, changedExerciseUids);
+      if (next !== session) slotChanged = true;
+      return next;
+    });
+    if (!slotChanged) return slot;
     weekChanged = true;
-    return { ...slot, session };
+    return { ...slot, sessions };
   });
   return {
     week: weekChanged ? { ...week, days } : week,
@@ -191,20 +196,45 @@ function progressSession(
 }
 
 // =============================================================================
-// lookup + map helpers
+// lookup + map helpers (a day holds its sessions in order)
 // =============================================================================
+
+/** The day slot with `slotUid`; null when it is gone. */
+export function findSlot(draft: ProgramDraft | null, slotUid: string): DaySlotDraft | null {
+  if (!draft) return null;
+  for (const week of draft.weeks) {
+    const slot = week.days.find((s) => s.uid === slotUid);
+    if (slot) return slot;
+  }
+  return null;
+}
+
+/** The day holding a session and the session's place in it; null when no day does. */
+export function findSessionPlace(
+  draft: ProgramDraft | null,
+  sessionUid: string | null,
+): { slot: DaySlotDraft; index: number } | null {
+  if (!draft || !sessionUid) return null;
+  for (const week of draft.weeks) {
+    for (const slot of week.days) {
+      const index = slot.sessions.findIndex((s) => s.uid === sessionUid);
+      if (index >= 0) return { slot, index };
+    }
+  }
+  return null;
+}
 
 export function findSession(
   draft: ProgramDraft | null,
   sessionUid: string | null,
 ): SessionDraft | null {
-  if (!draft || !sessionUid) return null;
-  for (const week of draft.weeks) {
-    for (const slot of week.days) {
-      if (slot.session?.uid === sessionUid) return slot.session;
-    }
-  }
-  return null;
+  const at = findSessionPlace(draft, sessionUid);
+  return at ? at.slot.sessions[at.index] : null;
+}
+
+/** A week's sessions, day by day, each day's in its order. */
+export function weekSessions(week: WeekDraft): SessionDraft[] {
+  return week.days.flatMap((slot) => slot.sessions);
 }
 
 export function mapSlots(
@@ -223,10 +253,66 @@ export function mapSession(
   fn: (session: SessionDraft) => SessionDraft,
 ): ProgramDraft {
   return mapSlots(draft, (slot) =>
-    slot.session?.uid === sessionUid
-      ? { ...slot, session: fn(slot.session) }
+    slot.sessions.some((s) => s.uid === sessionUid)
+      ? { ...slot, sessions: slot.sessions.map((s) => (s.uid === sessionUid ? fn(s) : s)) }
       : slot,
   );
+}
+
+// =============================================================================
+// sessions between days — shared by the coach's gestures and the assistant's
+// ops, so both follow one rule
+// =============================================================================
+
+/** Why a day won't take a session moved or placed onto it. */
+export const DAY_HAS_SESSION = "That day already has a session";
+
+type SessionMove = { ok: true; draft: ProgramDraft } | { ok: false; reason: string };
+
+/**
+ * Remove one session from its day; a day left with none is a rest day. The
+ * same draft when no day holds the session.
+ */
+export function removeSessionFromDay(draft: ProgramDraft, sessionUid: string): ProgramDraft {
+  const at = findSessionPlace(draft, sessionUid);
+  if (!at) return draft;
+  return mapSlots(draft, (slot) =>
+    slot.uid === at.slot.uid
+      ? { ...slot, sessions: slot.sessions.filter((s) => s.uid !== sessionUid) }
+      : slot,
+  );
+}
+
+/**
+ * Move a session onto a day. Onto its own day nothing changes (the same
+ * draft). Onto a rest day it moves, and the day it left keeps its other
+ * sessions. Onto a day holding one session, when the moving session is the
+ * only one on its own day, the two swap. Any other day refuses it.
+ */
+export function moveSessionToDay(
+  draft: ProgramDraft,
+  sessionUid: string,
+  targetSlotUid: string,
+): SessionMove {
+  const from = findSessionPlace(draft, sessionUid);
+  if (!from) return { ok: false, reason: "That session no longer exists" };
+  const target = findSlot(draft, targetSlotUid);
+  if (!target) return { ok: false, reason: "The target day no longer exists" };
+  if (target.uid === from.slot.uid) return { ok: true, draft };
+  const swap = target.sessions.length === 1 && from.slot.sessions.length === 1;
+  if (target.sessions.length > 0 && !swap) return { ok: false, reason: DAY_HAS_SESSION };
+  const moving = from.slot.sessions[from.index];
+  return {
+    ok: true,
+    draft: mapSlots(draft, (slot) => {
+      if (slot.uid === target.uid) return { ...slot, sessions: [moving] };
+      if (slot.uid !== from.slot.uid) return slot;
+      return {
+        ...slot,
+        sessions: swap ? target.sessions : slot.sessions.filter((s) => s.uid !== sessionUid),
+      };
+    }),
+  };
 }
 
 // =============================================================================

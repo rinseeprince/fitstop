@@ -1,10 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientWeekAnchor } from "./check-in-week-service";
-import {
-  DateOccupiedError,
-  occupiedMessage,
-  rethrowIfAnyDateOccupied,
-} from "./training-event-occupancy";
 import { getTrainingWeekEnd, getTrainingWeekStart } from "@/lib/date-helpers";
 import { getLogWindow } from "./daily-log-permissions-service";
 
@@ -44,16 +39,11 @@ export const LAYOUT_DRIFT_MESSAGE = "Your week changed since you opened it — r
  *    session cannot be pushed forward for ever;
  *  - neither end of a move may land in a period a check-in has closed: the same
  *    day rule the client's log writes obey (`lib/daily-log-permissions.ts`).
- *    A week the client has reported on does not change shape afterwards;
- *  - a target day may not hold any event that is not itself moving — status-
- *    agnostic, the `assertDateFree` posture — so a swap passes and a drop onto
- *    a logged day does not.
+ *    A week the client has reported on does not change shape afterwards.
  *
- * The old "a past target is allowed only when that day has no logged workout"
- * clause is GONE with the logged-day lock it belonged to. It refused nothing the
- * rest of the policy does not already refuse: a logged day holds a completed
- * event, which the status-agnostic occupancy check below rejects on its own, and
- * a logged session is pinned by the first rule.
+ * Nothing refuses a day for holding a session (migration 179): a session moved
+ * onto a day joins it after the sessions already there, and several moving
+ * onto one day land in the order `moves` lists them — so a swap is two moves.
  *
  * Concurrency is the RPC's job: it re-checks ownership, status and the
  * from-date under row locks, so a coach move racing this call surfaces as
@@ -113,22 +103,6 @@ export async function applyClientLayout(
     }
   }
 
-  // Occupancy, status-agnostic, ignoring the moving set. A read failure must
-  // never be mistaken for "the day is free".
-  const targets = [...new Set(real.map((m) => m.toDate))];
-  const { data: occupants, error: occupantsError } = await supabaseAdmin
-    .from("training_events")
-    .select("id, date")
-    .eq("client_id", clientId)
-    .in("date", targets)
-    .order("date", { ascending: true });
-  if (occupantsError) {
-    throw new Error(`Failed to check target days for layout: ${occupantsError.message}`);
-  }
-  const moving = new Set(ids);
-  const blocker = (occupants ?? []).find((o) => !moving.has(o.id));
-  if (blocker) throw new DateOccupiedError(occupiedMessage(blocker.date));
-
   const { error: rpcError } = await supabaseAdmin.rpc("move_training_events_atomic", {
     p_client_id: clientId,
     p_moves: real.map((m) => ({
@@ -145,26 +119,20 @@ export async function applyClientLayout(
 /** The error `supabaseAdmin.rpc("move_training_events_atomic", …)` returns. */
 export type MoveRpcError = { code?: string; message: string; details?: string };
 
-/** What the RPC refused, read from its message; only `occupied` names a day. */
-type MoveRpcFailure =
-  | { kind: "occupied"; date: string }
-  | { kind: "drift" | "not_found" | "not_scheduled" | "duplicate" | "other" };
+/** What the RPC refused, read from its message. */
+type MoveRpcFailure = {
+  kind: "drift" | "not_found" | "not_scheduled" | "duplicate" | "other";
+};
 
 /**
- * The RPC's message prefixes are its error contract (see migration 150), read
- * here for both of its callers — this service and the coach's `moveEvent` — so
- * the two cannot parse it differently; each answers the kind in its own
- * sentences. The index backstop is translated first: a raw 23505 from
- * `idx_training_events_one_scheduled_per_day` is thrown as the same sentence
- * the pre-check produces (CONVENTIONS §8).
+ * The RPC's message prefixes are its error contract (migrations 150, 179),
+ * read here for both of its callers — this service and the coach's
+ * `moveEvent` — so the two cannot parse it differently; each answers the kind
+ * in its own sentences.
  */
 export function readMoveRpcError(error: MoveRpcError): MoveRpcFailure {
-  rethrowIfAnyDateOccupied(error);
   const message = error.message ?? "";
   if (message.startsWith("drift:")) return { kind: "drift" };
-  if (message.startsWith("occupied:")) {
-    return { kind: "occupied", date: message.slice("occupied:".length).trim() };
-  }
   if (message.startsWith("not_found:")) return { kind: "not_found" };
   if (message.startsWith("not_scheduled:")) return { kind: "not_scheduled" };
   if (message.startsWith("duplicate_")) return { kind: "duplicate" };
@@ -177,14 +145,12 @@ function translateRpcError(error: MoveRpcError): Error {
   switch (failure.kind) {
     case "drift":
       return new LayoutDriftError(LAYOUT_DRIFT_MESSAGE);
-    case "occupied":
-      return new DateOccupiedError(occupiedMessage(failure.date));
     case "not_found":
       return new LayoutNotFoundError("Session not found");
     case "not_scheduled":
       return new LayoutPolicyError("A session that has been logged can't be moved");
     case "duplicate":
-      return new LayoutPolicyError("Two sessions can't land on the same day");
+      return new LayoutPolicyError("A session can't be moved twice at once");
     case "other":
       return new Error(`Failed to apply layout: ${error.message ?? ""}`);
   }

@@ -42,7 +42,6 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getTodayDateString } from "@/lib/date-helpers";
-import { DateOccupiedError } from "./training-event-occupancy";
 import {
   CalendarMoveDriftError,
   CalendarMoveNotFoundError,
@@ -190,17 +189,16 @@ describe("training-event-calendar-service", () => {
     });
 
     /**
-     * Wires the training_events reads moveEvent issues, in order: the event
-     * itself, then assertDateFree's probe of the target day. The read count
-     * shows where a refusal stopped; a direct write would be a third read.
+     * Wires the one training_events read moveEvent issues: the event itself.
+     * Nothing asks what the target day holds — a day can hold several sessions
+     * — so a second read would be a probe that must not exist, and a direct
+     * write would be one too.
      */
-    function wire(event: Record<string, unknown> | null, occupants: { id: string }[] = []) {
+    function wire(event: Record<string, unknown> | null) {
       let reads = 0;
       mockFrom.mockImplementation(() => {
         reads += 1;
-        return createMockQuery<unknown>(
-          reads === 1 ? { data: event, error: null } : { data: occupants, error: null },
-        ) as never;
+        return createMockQuery<unknown>({ data: event, error: null }) as never;
       });
       return { reads: () => reads };
     }
@@ -227,8 +225,8 @@ describe("training-event-calendar-service", () => {
         p_client_id: clientId,
         p_moves: [{ event_id: "event-1", from_date: LOADED, to_date: TARGET }],
       });
-      // The event read and the occupancy probe only: nothing writes the table directly.
-      expect(reads()).toBe(2);
+      // The event read only: no probe of the target day, and nothing writes the table directly.
+      expect(reads()).toBe(1);
     });
 
     it("refuses a session that moved since the calendar loaded, before calling the function", async () => {
@@ -240,7 +238,7 @@ describe("training-event-calendar-service", () => {
       await expect(attempt).rejects.toBeInstanceOf(CalendarMoveDriftError);
       await expect(attempt).rejects.toMatchObject({ message: DRIFT });
       expect(mockRpc).not.toHaveBeenCalled();
-      // Refused on the event read alone, before the occupancy probe.
+      // Refused on the event read alone.
       expect(reads()).toBe(1);
     });
 
@@ -264,21 +262,6 @@ describe("training-event-calendar-service", () => {
           CalendarMoveNotFoundError,
         );
       }
-      expect(mockRpc).not.toHaveBeenCalled();
-    });
-
-    it("refuses a move onto a day that already holds a session", async () => {
-      // The guard this replaces matched on training_session_id, so it could
-      // never fire once every placed day owned its own cloned session row —
-      // which is how two sessions ended up stacked on dates no UI could clear.
-      // The occupancy probe: a DIFFERENT session already sits on the target.
-      wire(storedEvent({ training_session_id: "session-a" }), [{ id: "event-2" }]);
-
-      await expect(moveEvent("event-1", LOADED, TARGET, clientId, planId)).rejects.toThrow(
-        /already has a session/,
-      );
-
-      // Nothing was written: the function is never reached.
       expect(mockRpc).not.toHaveBeenCalled();
     });
 
@@ -321,33 +304,12 @@ describe("training-event-calendar-service", () => {
       await expect(drift).rejects.toBeInstanceOf(CalendarMoveDriftError);
       await expect(drift).rejects.toMatchObject({ message: DRIFT });
 
-      const occupied = attempt("occupied:2026-04-30");
-      await expect(occupied).rejects.toBeInstanceOf(DateOccupiedError);
-      await expect(occupied).rejects.toMatchObject({ message: "Thu, Apr 30 already has a session" });
-
       await expect(attempt("not_found: event event-1 is not this client's")).rejects.toBeInstanceOf(
         CalendarMoveNotFoundError,
       );
       await expect(
         attempt("not_scheduled: event event-1 has left the scheduled state"),
       ).rejects.toThrow("Only scheduled events can be moved");
-    });
-
-    it("translates the index backstop (a raw 23505) into the same sentence as the pre-check", async () => {
-      wire(storedEvent());
-      mockRpc.mockResolvedValue({
-        data: null,
-        error: {
-          code: "23505",
-          message: 'duplicate key value violates unique constraint "idx_training_events_one_scheduled_per_day"',
-          details: "Key (client_id, date)=(client-1, 2026-04-30) already exists.",
-        },
-      } as never);
-
-      const attempt = moveEvent("event-1", LOADED, TARGET, clientId, planId);
-
-      await expect(attempt).rejects.toBeInstanceOf(DateOccupiedError);
-      await expect(attempt).rejects.toMatchObject({ message: "Thu, Apr 30 already has a session" });
     });
   });
 

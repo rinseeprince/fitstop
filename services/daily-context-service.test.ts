@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./nutrition-days-service", () => ({ getNutritionTargetsForDateRange: vi.fn() }));
-vi.mock("./training-event-service", () => ({ getEventForDate: vi.fn() }));
+vi.mock("./training-event-service", () => ({ getFirstEventForDate: vi.fn() }));
 vi.mock("./nutrition-plan-service", () => ({
   getNutritionPlanIdForDate: vi.fn(),
 }));
@@ -13,7 +13,7 @@ import {
   getNutritionTargetsForDateRange,
   type NutritionDayTarget,
 } from "./nutrition-days-service";
-import { getEventForDate } from "./training-event-service";
+import { getFirstEventForDate } from "./training-event-service";
 import { getNutritionPlanIdForDate } from "./nutrition-plan-service";
 import { getActiveTrainingPlanId } from "./training-service";
 import {
@@ -44,7 +44,7 @@ function wireTargets(target: NutritionDayTarget | null) {
 describe("resolvePlanContextForDate", () => {
   it("stamps nutrition from the version covering the LOG's date — a computed day has no row to prefer", async () => {
     vi.mocked(getNutritionPlanIdForDate).mockResolvedValue("np-covering");
-    vi.mocked(getEventForDate).mockResolvedValue({ trainingPlanId: "tp-1" } as never);
+    vi.mocked(getFirstEventForDate).mockResolvedValue({ trainingPlanId: "tp-1" } as never);
 
     const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
 
@@ -61,7 +61,7 @@ describe("resolvePlanContextForDate", () => {
 
   it("training falls back to the active plan on a no-event day", async () => {
     vi.mocked(getNutritionPlanIdForDate).mockResolvedValue("np-covering");
-    vi.mocked(getEventForDate).mockResolvedValue(null);
+    vi.mocked(getFirstEventForDate).mockResolvedValue(null);
     vi.mocked(getActiveTrainingPlanId).mockResolvedValue("tp-active");
 
     const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
@@ -74,7 +74,7 @@ describe("resolvePlanContextForDate", () => {
   // a gap after a delete — has no stamp, and the meal still saves without
   // one (owner, 2026-09-11): the log is never read for a stamp of its own.
   it("a day no version covers gets a NULL nutrition stamp, and the log is not read for one", async () => {
-    vi.mocked(getEventForDate).mockResolvedValue(null);
+    vi.mocked(getFirstEventForDate).mockResolvedValue(null);
     // Only a future version is queued, which resolvePlanContextForDate
     // deliberately does NOT consult: a queued plan is not a target for today.
     vi.mocked(getNutritionPlanIdForDate).mockResolvedValue(null);

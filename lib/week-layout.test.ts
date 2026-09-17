@@ -40,9 +40,15 @@ describe("buildWeekLayout — the week as read", () => {
     expect(layout.days[5].entries.map((e) => e.session.name)).toEqual(["Upper"]);
     expect(layout.days[1].entries).toEqual([]);
     expect(layout.moves).toEqual([]);
-    expect(layout.conflictDates).toEqual([]);
     expect(layout.isDirty).toBe(false);
-    expect(layout.canSave).toBe(false);
+  });
+
+  it("lists a day already holding several sessions in the week's order", () => {
+    const run = session({ eventId: "ev-sat-am", name: "Run", date: SAT });
+    const layout = buildWeekLayout(week([legs, run, upper]), {});
+
+    expect(layout.days[5].entries.map((e) => e.session.name)).toEqual(["Run", "Upper"]);
+    expect(layout.isDirty).toBe(false);
   });
 
   it("flags today and the days already behind the client", () => {
@@ -60,28 +66,44 @@ describe("buildWeekLayout — unsaved moves", () => {
     expect(layout.days[1].entries).toEqual([{ session: legs, pendingFrom: THU }]);
     expect(layout.days[3].entries).toEqual([]);
     expect(layout.moves).toEqual([{ eventId: "ev-thu", fromDate: THU, toDate: TUE }]);
-    expect(layout.conflictDates).toEqual([]);
-    expect(layout.canSave).toBe(true);
+    expect(layout.isDirty).toBe(true);
   });
 
-  it("dropping onto an occupied day stacks the two and blocks saving", () => {
+  it("a session moved onto a day that holds one joins it, last — and the week can be saved", () => {
     const layout = buildWeekLayout(week([legs, upper]), { "ev-thu": SAT });
 
     expect(layout.days[5].entries.map((e) => e.session.name)).toEqual(["Upper", "Legs"]);
-    expect(layout.conflictDates).toEqual([SAT]);
+    expect(layout.moves).toEqual([{ eventId: "ev-thu", fromDate: THU, toDate: SAT }]);
     expect(layout.isDirty).toBe(true);
-    expect(layout.canSave).toBe(false);
   });
 
-  it("completing the swap clears the stack and yields both moves", () => {
+  it("a swap is two moves", () => {
     const layout = buildWeekLayout(week([legs, upper]), { "ev-thu": SAT, "ev-sat": THU });
 
-    expect(layout.conflictDates).toEqual([]);
+    expect(layout.days[3].entries.map((e) => e.session.name)).toEqual(["Upper"]);
+    expect(layout.days[5].entries.map((e) => e.session.name)).toEqual(["Legs"]);
+    expect(layout.moves).toEqual([
+      { eventId: "ev-sat", fromDate: SAT, toDate: THU },
+      { eventId: "ev-thu", fromDate: THU, toDate: SAT },
+    ]);
+  });
+
+  it("sessions moved onto one day follow the sessions staying there, in the order they were moved", () => {
+    const run = session({ eventId: "ev-tue", name: "Run", date: TUE });
+    // Legs was moved to Saturday first, then Run.
+    const layout = buildWeekLayout(week([run, legs, upper]), { "ev-thu": SAT, "ev-tue": SAT });
+
+    expect(layout.days[5].entries.map((e) => e.session.name)).toEqual(["Upper", "Legs", "Run"]);
+    // The write lists them in that order: the server lands them in it.
     expect(layout.moves).toEqual([
       { eventId: "ev-thu", fromDate: THU, toDate: SAT },
-      { eventId: "ev-sat", fromDate: SAT, toDate: THU },
+      { eventId: "ev-tue", fromDate: TUE, toDate: SAT },
     ]);
-    expect(layout.canSave).toBe(true);
+
+    // Moved the other way round, they land the other way round.
+    const reversed = buildWeekLayout(week([run, legs, upper]), { "ev-tue": SAT, "ev-thu": SAT });
+    expect(reversed.days[5].entries.map((e) => e.session.name)).toEqual(["Upper", "Run", "Legs"]);
+    expect(reversed.moves.map((m) => m.eventId)).toEqual(["ev-tue", "ev-thu"]);
   });
 
   it("a session put back on its own day is not a move", () => {
@@ -92,12 +114,12 @@ describe("buildWeekLayout — unsaved moves", () => {
     expect(layout.isDirty).toBe(false);
   });
 
-  it("a stack on a done day can only be undone — the done session never moves", () => {
-    const layout = buildWeekLayout(week([pushDone, legs]), { "ev-thu": MON });
+  it("a session moved onto a day with a done session joins it; the done one never moves", () => {
+    const layout = buildWeekLayout(week([pushDone, legs]), { "ev-thu": MON, "ev-mon": TUE });
 
     expect(layout.days[0].entries.map((e) => e.session.name)).toEqual(["Push", "Legs"]);
-    expect(layout.conflictDates).toEqual([MON]);
-    expect(layout.canSave).toBe(false);
+    expect(layout.days[1].entries).toEqual([]);
+    expect(layout.moves).toEqual([{ eventId: "ev-thu", fromDate: THU, toDate: MON }]);
   });
 
   it("ignores a placement for a session that is no longer scheduled", () => {

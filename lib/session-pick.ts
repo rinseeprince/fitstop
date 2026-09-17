@@ -16,11 +16,13 @@ import type {
 //     a duplicate log;
 //   * picked on a rest day, it MOVES to that day and opens there — one date
 //     per workout;
-//   * picked on a prescribed, unlogged day, it SWAPS days with that day's
-//     session — the cleanest calendar for "I'll do Push today and Pull on
-//     Thursday";
-//   * picked once today is already logged, it is an ALT: today's log is
-//     rewritten as that session. Logged days never move.
+//   * picked from the same day as the session in hand, it OPENS — a day can
+//     hold several sessions, each its own workout, so there is nothing to move;
+//   * picked from another day while the session in hand is unlogged, the two
+//     SWAP days — the cleanest calendar for "I'll do Push today and Pull on
+//     Thursday"; each joins its new day after the sessions already there;
+//   * picked from another day once the session in hand is logged, it is an
+//     ALT: that log is rewritten as the picked session. Logged days never move.
 // =============================================================================
 
 type SessionPickContext =
@@ -60,7 +62,8 @@ export function resolveSessionPick(
 
   if (pick.eventId === ctx.eventId) return { action: "open", eventId: pick.eventId };
   if (!pick.isScheduled) return { action: "unavailable", reason: ALREADY_DONE };
-  if (ctx.logged || pick.date === ctx.eventDate) {
+  if (pick.date === ctx.eventDate) return { action: "open", eventId: pick.eventId };
+  if (ctx.logged) {
     if (pick.sessionId === null) return { action: "unavailable", reason: NO_SESSION_ROW };
     return { action: "alt", sessionId: pick.sessionId };
   }

@@ -82,19 +82,20 @@ export async function generateTrainingEvents(
     if (!sessionsForDay) continue;
 
     const dateStr = getDateString(d);
-    for (const session of sessionsForDay) {
+    sessionsForDay.forEach((session, dayOrder) => {
       rows.push({
         client_id: clientId,
         training_plan_id: planId,
         training_session_id: session.id,
         date: dateStr,
+        day_order: dayOrder,
         session_name: session.name,
         session_focus: session.focus ?? null,
         estimated_calories: session.estimatedCalories ?? null,
         calorie_surplus_percentage: session.calorieSurplusPercentage ?? null,
         status: "scheduled",
       });
-    }
+    });
   }
 
   if (rows.length === 0) return;
@@ -241,7 +242,8 @@ export async function getNextPlanStartCap(
 // --- Query functions ---
 
 /**
- * Get all events for a client within a date range, ordered by date ascending.
+ * Get all events for a client within a date range, in calendar order: by date,
+ * and a day's sessions in the day's order (`day_order`, migration 179).
  */
 export async function getEventsForDateRange(
   clientId: string,
@@ -254,17 +256,20 @@ export async function getEventsForDateRange(
     .eq("client_id", clientId)
     .gte("date", startDate)
     .lte("date", endDate)
-    .order("date", { ascending: true });
+    .order("date", { ascending: true })
+    .order("day_order", { ascending: true })
+    .order("id", { ascending: true });
 
   if (error) throw error;
   return (data ?? []).map(mapEventRow);
 }
 
 /**
- * Get a single event for a client on a specific date.
- * Returns null if no event exists.
+ * The first session of a client's day, in the day's order, or null when the
+ * day holds none. A day can hold several sessions; this answers for the day as
+ * a whole where one answer is wanted (a log's plan stamp).
  */
-export async function getEventForDate(
+export async function getFirstEventForDate(
   clientId: string,
   date: string
 ): Promise<TrainingEvent | null> {
@@ -273,6 +278,8 @@ export async function getEventForDate(
     .select("*")
     .eq("client_id", clientId)
     .eq("date", date)
+    .order("day_order", { ascending: true })
+    .order("id", { ascending: true })
     .limit(1)
     .maybeSingle();
 

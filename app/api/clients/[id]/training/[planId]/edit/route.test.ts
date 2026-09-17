@@ -98,31 +98,36 @@ const planForEditing: PlanForEditing = {
   firstEditableDate: "2026-09-10",
   limit: { endsOn: "2026-09-24", source: "next_block" },
   days: [
-    { date: "2026-09-07", isRest: true },
+    { date: "2026-09-07", sessions: [] },
     {
       date: "2026-09-08",
-      isRest: false,
-      name: "Push",
-      focus: null,
-      estimatedDurationMinutes: 60,
-      notes: null,
-      calorieSurplusPercentage: 10,
-      groups: [],
+      sessions: [
+        {
+          eventId: "e0000000-0000-4000-8000-000000000001",
+          name: "Push",
+          focus: null,
+          estimatedDurationMinutes: 60,
+          notes: null,
+          calorieSurplusPercentage: 10,
+          groups: [],
+        },
+      ],
     },
   ],
   version: "eyJmcm9tIjoiMjAyNi0wOS0xMCJ9",
 };
 
-// One whole week, the fewest days a save carries.
-const sessions = Array.from({ length: 7 }, (_, i) => ({
-  name: i === 0 ? "Push" : "Rest",
-  orderIndex: i,
-  weekIndex: 0,
-  isRest: i !== 0,
-  groups: i === 0 ? [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench press", sets: 3 }] }] : [],
-}));
+// One whole week, the fewest days a save carries: two sessions on its first
+// day, rest after.
+const push = {
+  eventId: "e0000000-0000-4000-8000-000000000001",
+  name: "Push",
+  groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench press", sets: 3 }] }],
+};
+const run = { eventId: null, name: "Run", groups: [] };
+const days = Array.from({ length: 7 }, (_, i) => ({ sessions: i === 0 ? [push, run] : [] }));
 const validBody = {
-  sessions,
+  days,
   plan: { name: "Block A", splitType: "Strength" },
   version: planForEditing.version,
 };
@@ -249,7 +254,7 @@ describe("PUT /api/clients/[id]/training/[planId]/edit", () => {
       clientId: CLIENT_ID,
       coachId: COACH_ID,
       planId: PLAN_ID,
-      sessions,
+      days,
       name: "Block A",
       splitType: "Strength",
       version: planForEditing.version,
@@ -333,7 +338,8 @@ describe("PUT /api/clients/[id]/training/[planId]/edit", () => {
     for (const body of [
       noVersion,
       { ...validBody, version: "" },
-      { ...validBody, sessions: sessions.slice(0, 6) },
+      { ...validBody, days: days.slice(0, 6) },
+      { ...validBody, days: [{ sessions: [{ ...push, eventId: "not-an-id" }] }, ...days.slice(1)] },
       { ...validBody, plan: { name: "" } },
     ]) {
       const response = await PUT(makePut(body), params());

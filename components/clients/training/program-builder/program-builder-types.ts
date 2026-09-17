@@ -73,18 +73,17 @@ export type SessionDraft = {
   groups: ExerciseGroupDraft[];
 };
 
-// One positional day slot (Day 1–7, never weekdays). `session` is singular by
-// design — the two-a-days seam is `session: SessionDraft | null` becoming
-// `sessions: SessionDraft[]`; keep every consumer on slot-level helpers so
-// that flip stays mechanical. A slot with session === null IS a rest day:
-// empty === rest, there is no third state. Slots themselves never move — drag
-// operations move/swap the `session` payloads between slots.
+// One positional day slot (Day 1–7, never weekdays). A day holds its sessions
+// in the day's order, each its own workout; a day holding none IS a rest day:
+// empty === rest, there is no third state. Slots themselves never move — moves
+// carry sessions between slots (program-builder-model.ts finds and moves them).
 export type DaySlotDraft = {
   uid: string;
   // Mirrors the slot's array position (0–6); normalizeDraft keeps it in sync.
   orderIndex: number;
+  // Mirrors sessions.length === 0; normalizeDraft keeps it in sync.
   isRest: boolean;
-  session: SessionDraft | null;
+  sessions: SessionDraft[];
 };
 
 export type WeekDraft = {
@@ -117,7 +116,7 @@ export function newUid(prefix: "wk" | "slot" | "sess" | "grp" | "ex"): string {
 }
 
 export function makeRestSlot(orderIndex: number): DaySlotDraft {
-  return { uid: newUid("slot"), orderIndex, isRest: true, session: null };
+  return { uid: newUid("slot"), orderIndex, isRest: true, sessions: [] };
 }
 
 export function makeRestWeek(weekIndex: number): WeekDraft {

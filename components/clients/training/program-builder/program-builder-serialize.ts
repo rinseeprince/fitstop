@@ -28,8 +28,8 @@ import {
 // API. draftToOverwriteBody targets POST /api/training/saved-plans/[id]/overwrite
 // and draftToInlinePlanBody targets the client-apply inline placement — both
 // off the shared draftToSessionInputs, with a globally monotonic order_index
-// (weekIndex * 7 + dayPosition) so the library read — which sorts by
-// order_index ALONE — returns slots in program order without a backend change.
+// per day (weekIndex * 7 + dayPosition) so the library read — which sorts by
+// order_index ALONE — returns days in program order without a backend change.
 // This builder is the only editor for a client's draft, so weekIndex/setSpecs/
 // videoUrl must survive every path through here.
 
@@ -100,7 +100,7 @@ function slotFromSession(
     uid: newUid("slot"),
     orderIndex,
     isRest: false,
-    session: sessionToDraft(session),
+    sessions: [sessionToDraft(session)],
   };
 }
 
@@ -229,30 +229,48 @@ export function sessionDraftToStandalonePayload(
 }
 
 /**
- * Serialize the whole draft tree into the API session-input array — every slot
- * becomes a real session row, rest rows included (the placement date-walk needs
- * all 7 rows per week or every later date slides). Globally-monotonic
- * orderIndex (weekIndex * 7 + dayPosition). Shared by BOTH write paths — the
- * library overwrite body and the client-apply inline body — so a field missed
- * on one side can't silently drop per-set data on the other. Throws rather than
- * emit an empty array (normalize's min-1-week invariant makes this unreachable):
- * overwrite is delete-then-reinsert and inline placement of nothing is equally
- * wrong.
+ * Serialize the whole draft tree into the API session-input array — every
+ * session of every day becomes a real session row, and every rest day one rest
+ * row (the placement date-walk needs every day of every week or every later
+ * date slides). A day's sessions share its globally-monotonic orderIndex
+ * (weekIndex * 7 + dayPosition), in the day's order. Shared by BOTH write
+ * paths — the library overwrite body and the client-apply inline body — so a
+ * field missed on one side can't silently drop per-set data on the other.
+ * Throws rather than emit an empty array (normalize's min-1-week invariant
+ * makes this unreachable): overwrite is delete-then-reinsert and inline
+ * placement of nothing is equally wrong.
  */
-export function draftToSessionInputs(draft: ProgramDraft): ProgramOverwriteBody["sessions"] {
+function draftToSessionInputs(draft: ProgramDraft): ProgramOverwriteBody["sessions"] {
   const sessions = draft.weeks.flatMap((week) =>
-    week.days.map((slot, day) => ({
-      name: slot.session?.name ?? "Rest",
-      focus: slot.session?.focus ?? null,
-      orderIndex: week.weekIndex * DAYS_PER_WEEK + day,
-      weekIndex: week.weekIndex,
-      isRest: slot.session == null,
-      estimatedDurationMinutes: slot.session?.estimatedDurationMinutes ?? null,
-      calorieSurplusPercentage: slot.session?.calorieSurplusPercentage ?? null,
-      notes: slot.session?.notes ?? null,
-      sessionType: slot.session?.sessionType ?? "training",
-      groups: (slot.session?.groups ?? []).map(groupDraftToInput),
-    })),
+    week.days.flatMap((slot, day) => {
+      const place = { orderIndex: week.weekIndex * DAYS_PER_WEEK + day, weekIndex: week.weekIndex };
+      if (slot.sessions.length === 0) {
+        return [
+          {
+            name: "Rest",
+            focus: null,
+            ...place,
+            isRest: true,
+            estimatedDurationMinutes: null,
+            calorieSurplusPercentage: null,
+            notes: null,
+            sessionType: "training",
+            groups: [],
+          },
+        ];
+      }
+      return slot.sessions.map((session) => ({
+        name: session.name,
+        focus: session.focus,
+        ...place,
+        isRest: false,
+        estimatedDurationMinutes: session.estimatedDurationMinutes,
+        calorieSurplusPercentage: session.calorieSurplusPercentage,
+        notes: session.notes,
+        sessionType: session.sessionType,
+        groups: session.groups.map(groupDraftToInput),
+      }));
+    }),
   );
   if (sessions.length === 0) {
     throw new Error("Refusing to serialize an empty program (nothing to place or save)");

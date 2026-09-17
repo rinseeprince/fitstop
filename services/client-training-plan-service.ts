@@ -14,24 +14,25 @@ import {
 } from "@/utils/exercise-groups";
 import { fetchAllByChunkedIds, fetchAllPages } from "@/lib/paged-fetch";
 import { expandDateRange } from "@/lib/date-helpers";
-import { eventByDay } from "./calendar-day-events";
+import { sessionsByDay } from "./calendar-day-events";
 import { coversDate } from "./training-plan-window";
 import { getNextFutureTrainingPlan, type NextFutureTrainingPlan } from "./training-service";
 import { getClientTodayString } from "./today-service";
 
 const DAYS_PER_WEEK = 7;
 
-/** One of the client's events in the program's window — what a day holds. */
+/** One of the client's events in the program's window — a session a day holds. */
 type DayEventRow = {
   id: string;
   date: string;
+  day_order: number;
   status: string;
   training_session_id: string | null;
   session_name: string;
   session_focus: string | null;
 };
 
-/** The session row a day's event points at. */
+/** The session row an event points at. */
 type DaySessionRow = {
   id: string;
   name: string;
@@ -157,9 +158,10 @@ async function fetchStartedPlan(
  * labelled with `state` so the caller decides what to render. `null` means the
  * client has no active, non-deleted plan at all.
  *
- * The entries are the program as it is on the client's calendar — one per day
- * of the window, rest days carried as `isRest` entries — so a moved day shows
- * on its new date (`fetchPlanEntries`).
+ * The entries are the program as it is on the client's calendar — one per
+ * session on each day of the window, in the day's order, rest days carried as
+ * `isRest` entries — so a moved session shows on its new date
+ * (`fetchPlanEntries`).
  * No library-template join is needed.
  */
 export async function getClientTrainingPlan(
@@ -222,22 +224,25 @@ async function buildQueuedPlan(
 }
 
 /**
- * The program as it is on the client's calendar: one entry per day of the
- * window `[effective_from, effective_until]`, in date order — `orderIndex` is
- * the day's position, `weekIndex` the week holding it.
+ * The program as it is on the client's calendar: one entry per session on each
+ * day of the window `[effective_from, effective_until]`, in date order and each
+ * day's sessions in the day's order — `orderIndex` is the day's position (a day
+ * holding several sessions gives each the same one), `weekIndex` the week
+ * holding it.
  *
  * A day is what the calendar holds on its date, whichever plan wrote it: a
- * program's days are dates, never plan ids. The day's event (`eventByDay`)
- * names the session row the day shows, read by id with no `is_active` filter —
- * whatever row a day points at is what that day holds — and scoped to the
- * client through the row's plan. When that row cannot be read, the day lays
- * from the event's own snapshot. A day the calendar holds nothing on is a rest
- * day, identified by the plan's own rest row at that day, or by the plan and
- * the position when there is none (a day whose session was moved away or
- * removed) — so no rest day borrows the id of a session showing elsewhere.
+ * program's days are dates, never plan ids. Each session on the day
+ * (`sessionsByDay`) names the session row it shows, read by id with no
+ * `is_active` filter — whatever row an event points at is what that session
+ * holds — and scoped to the client through the row's plan. When that row cannot
+ * be read, the entry lays from the event's own snapshot. A day the calendar
+ * holds nothing on is a rest day, identified by the plan's own rest row at that
+ * day, or by the plan and the position when there is none (a day whose sessions
+ * were moved away or removed) — so no rest day borrows the id of a session
+ * showing elsewhere.
  *
- * So a moved session shows on its new date only, and a day shows the row its
- * event points at, whatever other row sits at the same coordinates.
+ * So a moved session shows on its new date only, and each session shows the
+ * row its event points at, whatever other row sits at the same coordinates.
  *
  * Four reads, two at a time: the window's events beside the plan's own rows,
  * then the days' rows beside their exercises.
@@ -251,11 +256,12 @@ async function fetchPlanEntries(
       (from, to) =>
         supabaseAdmin
           .from("training_events")
-          .select("id, date, status, training_session_id, session_name, session_focus")
+          .select("id, date, day_order, status, training_session_id, session_name, session_focus")
           .eq("client_id", clientId)
           .gte("date", plan.effective_from)
           .lte("date", plan.effective_until)
           .order("date", { ascending: true })
+          .order("day_order", { ascending: true })
           .order("id", { ascending: true })
           .range(from, to),
       { errorLabel: "training events" }
@@ -276,10 +282,10 @@ async function fetchPlanEntries(
     ),
   ]);
 
-  const eventsByDay = eventByDay(eventRows);
+  const eventsByDay = sessionsByDay(eventRows);
   const sessionIds = [
     ...new Set(
-      [...eventsByDay.values()]
+      eventRows
         .map((event) => event.training_session_id)
         .filter((id): id is string => id !== null)
     ),
@@ -336,51 +342,55 @@ async function fetchPlanEntries(
     if (!planRowIdByDay.has(day)) planRowIdByDay.set(day, row.id);
   }
 
-  return expandDateRange(plan.effective_from, plan.effective_until).map(
-    (date, position): ClientTrainingSessionEntry => {
+  return expandDateRange(plan.effective_from, plan.effective_until).flatMap(
+    (date, position): ClientTrainingSessionEntry[] => {
       const orderIndex = position;
       const weekIndex = Math.floor(position / DAYS_PER_WEEK);
-      const event = eventsByDay.get(date);
+      const events = eventsByDay.get(date) ?? [];
 
-      if (!event) {
-        return {
-          id: planRowIdByDay.get(position) ?? `${plan.id}:${position}`,
-          name: "Rest",
-          focus: null,
-          orderIndex,
-          weekIndex,
-          isRest: true,
-          estimatedDurationMinutes: null,
-          groups: [],
-        };
+      if (events.length === 0) {
+        return [
+          {
+            id: planRowIdByDay.get(position) ?? `${plan.id}:${position}`,
+            name: "Rest",
+            focus: null,
+            orderIndex,
+            weekIndex,
+            isRest: true,
+            estimatedDurationMinutes: null,
+            groups: [],
+          },
+        ];
       }
 
-      const row = event.training_session_id
-        ? rowsById.get(event.training_session_id)
-        : undefined;
-      if (!row) {
+      return events.map((event): ClientTrainingSessionEntry => {
+        const row = event.training_session_id
+          ? rowsById.get(event.training_session_id)
+          : undefined;
+        if (!row) {
+          return {
+            id: event.id,
+            name: event.session_name,
+            focus: event.session_focus,
+            orderIndex,
+            weekIndex,
+            isRest: false,
+            estimatedDurationMinutes: null,
+            groups: [],
+          };
+        }
+
         return {
-          id: event.id,
-          name: event.session_name,
-          focus: event.session_focus,
+          id: row.id,
+          name: row.name,
+          focus: row.focus,
           orderIndex,
           weekIndex,
           isRest: false,
-          estimatedDurationMinutes: null,
-          groups: [],
+          estimatedDurationMinutes: row.estimated_duration_minutes,
+          groups: groupsBySession.get(row.id) ?? [],
         };
-      }
-
-      return {
-        id: row.id,
-        name: row.name,
-        focus: row.focus,
-        orderIndex,
-        weekIndex,
-        isRest: false,
-        estimatedDurationMinutes: row.estimated_duration_minutes,
-        groups: groupsBySession.get(row.id) ?? [],
-      };
+      });
     }
   );
 }

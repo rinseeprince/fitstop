@@ -35,8 +35,9 @@ function setup(weekCount = 1) {
   return hook;
 }
 
+// A day's first session (these days hold one unless a test says otherwise).
 const sessionAt = (draft: ProgramDraft, w: number, d: number): SessionDraft | null =>
-  draft.weeks[w].days[d].session;
+  draft.weeks[w].days[d].sessions[0] ?? null;
 
 describe("useProgramBuilderState — weeks", () => {
   it("seed is clean; addWeek appends 7 rest slots, renumbers, and dirties", () => {
@@ -48,7 +49,7 @@ describe("useProgramBuilderState — weeks", () => {
     expect(result.current.isDirty).toBe(true);
     expect(draft.weeks).toHaveLength(2);
     expect(draft.weeks[1].days).toHaveLength(DAYS_PER_WEEK);
-    expect(draft.weeks[1].days.every((s) => s.isRest && s.session === null)).toBe(true);
+    expect(draft.weeks[1].days.every((s) => s.isRest && s.sessions.length === 0)).toBe(true);
     expect(draft.weeks.map((w) => w.weekIndex)).toEqual([0, 1]);
   });
 
@@ -73,13 +74,13 @@ describe("useProgramBuilderState — weeks", () => {
     const clone = draft.weeks[1];
     expect(clone.uid).not.toBe(source.uid);
     expect(clone.days[0].uid).not.toBe(source.days[0].uid);
-    expect(clone.days[0].session!.uid).not.toBe(draft.weeks[0].days[0].session!.uid);
-    expect(clone.days[0].session!.name).toBe(draft.weeks[0].days[0].session!.name);
+    expect(sessionAt(draft, 1, 0)!.uid).not.toBe(sessionAt(draft, 0, 0)!.uid);
+    expect(sessionAt(draft, 1, 0)!.name).toBe(sessionAt(draft, 0, 0)!.name);
     expect(draft.weeks.map((w) => w.weekIndex)).toEqual([0, 1, 2]);
 
     // Mutating the clone leaves the source untouched.
     act(() =>
-      result.current.updateSession(clone.days[0].session!.uid, { name: "Changed" }),
+      result.current.updateSession(clone.days[0].sessions[0].uid, { name: "Changed" }),
     );
     expect(sessionAt(result.current.draft!, 0, 0)!.name).not.toBe("Changed");
     expect(sessionAt(result.current.draft!, 1, 0)!.name).toBe("Changed");
@@ -132,41 +133,43 @@ describe("useProgramBuilderState — weeks", () => {
       incoming.days[0] = {
         ...incoming.days[0],
         isRest: false,
-        session: {
-          uid: "sess-in",
-          name: "Incoming",
-          focus: null,
-          estimatedDurationMinutes: null,
-          calorieSurplusPercentage: null,
-          notes: null,
-          sessionType: "training",
-          groups: [
-            {
-              uid: "grp-in",
-              ...STRAIGHT_SETS,
-              exercises: [
-                {
-                  uid: "ex-in",
-                  exerciseId: null,
-                  name: "Row",
-                  setSpecs: [],
-                  sets: 3,
-                  repsMin: 8,
-                  repsMax: 10,
-                  repsTarget: null,
-                  rpeTarget: null,
-                  percentage1rm: null,
-                  tempo: null,
-                  restSeconds: null,
-                  isWarmup: false,
-                  notes: null,
-                  videoUrl: null,
-                  prescribedFields: null,
-                },
-              ],
-            },
-          ],
-        },
+        sessions: [
+          {
+            uid: "sess-in",
+            name: "Incoming",
+            focus: null,
+            estimatedDurationMinutes: null,
+            calorieSurplusPercentage: null,
+            notes: null,
+            sessionType: "training",
+            groups: [
+              {
+                uid: "grp-in",
+                ...STRAIGHT_SETS,
+                exercises: [
+                  {
+                    uid: "ex-in",
+                    exerciseId: null,
+                    name: "Row",
+                    setSpecs: [],
+                    sets: 3,
+                    repsMin: 8,
+                    repsMax: 10,
+                    repsTarget: null,
+                    rpeTarget: null,
+                    percentage1rm: null,
+                    tempo: null,
+                    restSeconds: null,
+                    isWarmup: false,
+                    notes: null,
+                    videoUrl: null,
+                    prescribedFields: null,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
       };
       result.current.insertWeekAfter(source.uid, incoming);
     });
@@ -205,24 +208,24 @@ describe("useProgramBuilderState — day slots", () => {
     act(() => result.current.addSessionToSlot(slot.uid));
     let updated = result.current.draft!.weeks[0].days[2];
     expect(updated.isRest).toBe(false);
-    expect(updated.session!.name).toBe("Day 3");
+    expect(updated.sessions.map((s) => s.name)).toEqual(["Day 3"]);
 
-    // Adding onto an occupied slot is a no-op.
-    const uid = updated.session!.uid;
+    // Adding onto a day holding a session is a no-op.
+    const uid = updated.sessions[0].uid;
     act(() => result.current.addSessionToSlot(slot.uid));
-    expect(result.current.draft!.weeks[0].days[2].session!.uid).toBe(uid);
+    expect(result.current.draft!.weeks[0].days[2].sessions.map((s) => s.uid)).toEqual([uid]);
 
     act(() => result.current.clearSlot(slot.uid));
     updated = result.current.draft!.weeks[0].days[2];
     expect(updated.isRest).toBe(true);
-    expect(updated.session).toBeNull();
+    expect(updated.sessions).toEqual([]);
   });
 
   it("moveSession to a rest slot moves (source becomes rest)", () => {
     const { result } = setup(2);
     const source = result.current.draft!.weeks[0].days[0];
     act(() => result.current.addSessionToSlot(source.uid));
-    const sessionUid = result.current.draft!.weeks[0].days[0].session!.uid;
+    const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
     const target = result.current.draft!.weeks[1].days[6];
 
     act(() => result.current.moveSession(sessionUid, target.uid));
@@ -256,6 +259,94 @@ describe("useProgramBuilderState — day slots", () => {
   });
 });
 
+describe("useProgramBuilderState — a day holding several sessions", () => {
+  const blank = (uid: string, name: string): SessionDraft => ({
+    uid,
+    name,
+    focus: null,
+    estimatedDurationMinutes: null,
+    calorieSurplusPercentage: null,
+    notes: null,
+    sessionType: "training",
+    groups: [],
+  });
+
+  // Day 1 holds a morning run then an evening lift, day 4 holds Upper, and
+  // every other day is rest.
+  function seedTwoADay() {
+    const draft = makeDraft(1);
+    const days = draft.weeks[0].days;
+    days[0] = {
+      ...days[0],
+      isRest: false,
+      sessions: [blank("sess-run", "AM run"), blank("sess-lift", "PM lift")],
+    };
+    days[3] = { ...days[3], isRest: false, sessions: [blank("sess-upper", "Upper")] };
+    const hook = renderHook(() => useProgramBuilderState());
+    act(() => hook.result.current.seed(draft));
+    return hook;
+  }
+
+  const namesOn = (draft: ProgramDraft, d: number) =>
+    draft.weeks[0].days[d].sessions.map((s) => s.name);
+
+  it("removeSession takes one of two sessions off its day, and the day keeps the other", () => {
+    const { result } = seedTwoADay();
+    act(() => result.current.removeSession("sess-run"));
+    const draft = result.current.draft!;
+    expect(namesOn(draft, 0)).toEqual(["PM lift"]);
+    expect(draft.weeks[0].days[0].isRest).toBe(false);
+    expect(namesOn(draft, 3)).toEqual(["Upper"]);
+    expect(result.current.isDirty).toBe(true);
+  });
+
+  it("removeSession of a day's last session makes it a rest day; a vanished session is a clean no-op", () => {
+    const { result } = seedTwoADay();
+    act(() => result.current.removeSession("sess-upper"));
+    expect(result.current.draft!.weeks[0].days[3]).toMatchObject({ isRest: true, sessions: [] });
+    expect(namesOn(result.current.draft!, 0)).toEqual(["AM run", "PM lift"]);
+
+    act(() => {
+      result.current.markSaved(result.current.getRevision());
+    });
+    act(() => result.current.removeSession("sess-upper"));
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it("clearSlot empties the whole day, every session on it", () => {
+    const { result } = seedTwoADay();
+    act(() => result.current.clearSlot(result.current.draft!.weeks[0].days[0].uid));
+    expect(result.current.draft!.weeks[0].days[0]).toMatchObject({ isRest: true, sessions: [] });
+    expect(namesOn(result.current.draft!, 3)).toEqual(["Upper"]);
+  });
+
+  it("moveSession takes one session of a day holding two onto a rest day; the day it left keeps the other", () => {
+    const { result } = seedTwoADay();
+    act(() => result.current.moveSession("sess-lift", result.current.draft!.weeks[0].days[5].uid));
+    const draft = result.current.draft!;
+    expect(namesOn(draft, 5)).toEqual(["PM lift"]);
+    expect(draft.weeks[0].days[5].isRest).toBe(false);
+    expect(namesOn(draft, 0)).toEqual(["AM run"]);
+    expect(draft.weeks[0].days[0].isRest).toBe(false);
+  });
+
+  it("moveSession refuses a day holding two, a swap for a session that isn't alone on its day, and its own day", () => {
+    const { result } = seedTwoADay();
+    const before = result.current.draft;
+    const [dayOne, , , dayFour] = before!.weeks[0].days;
+
+    // Upper is alone on its day, but day 1 holds two: no swap, no join.
+    act(() => result.current.moveSession("sess-upper", dayOne.uid));
+    // The run shares its day: it can't swap with Upper.
+    act(() => result.current.moveSession("sess-run", dayFour.uid));
+    // Its own day holding two changes nothing.
+    act(() => result.current.moveSession("sess-lift", dayOne.uid));
+
+    expect(result.current.draft).toBe(before);
+    expect(result.current.isDirty).toBe(false);
+  });
+});
+
 describe("useProgramBuilderState — placeSession (library insert)", () => {
   const makeLibraryClone = (): SessionDraft => ({
     uid: "sess-lib",
@@ -280,7 +371,7 @@ describe("useProgramBuilderState — placeSession (library insert)", () => {
     expect(result.current.isDirty).toBe(true);
   });
 
-  it("occupied slots are a clean no-op (one session per day-cell)", () => {
+  it("a day holding a session is a clean no-op (it takes a session only when rest)", () => {
     const { result } = setup(1);
     const slot = result.current.draft!.weeks[0].days[0];
     act(() => result.current.addSessionToSlot(slot.uid));
@@ -430,16 +521,18 @@ describe("useProgramBuilderState — exercises sit in groups", () => {
     draft.weeks[0].days[0] = {
       ...draft.weeks[0].days[0],
       isRest: false,
-      session: {
-        uid: SESSION_UID,
-        name: "Upper",
-        focus: null,
-        estimatedDurationMinutes: null,
-        calorieSurplusPercentage: null,
-        notes: null,
-        sessionType: "training",
-        groups,
-      },
+      sessions: [
+        {
+          uid: SESSION_UID,
+          name: "Upper",
+          focus: null,
+          estimatedDurationMinutes: null,
+          calorieSurplusPercentage: null,
+          notes: null,
+          sessionType: "training",
+          groups,
+        },
+      ],
     };
     const hook = renderHook(() => useProgramBuilderState());
     act(() => hook.result.current.seed(draft));
@@ -616,7 +709,7 @@ describe("useProgramBuilderState — no-op mutations + revision tracking", () =>
     });
     expect(result.current.isDirty).toBe(false);
 
-    const sessionUid = result.current.draft!.weeks[0].days[0].session!.uid;
+    const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
     // Self-drop (drag released over its own slot).
     act(() => result.current.moveSession(sessionUid, slot.uid));
     // Blur-without-change commits.
@@ -690,7 +783,7 @@ describe("useProgramBuilderState — assistant additions (builder S6a)", () => {
   it("applyAssistantOps applies a whole turn as ONE revision bump and surfaces skips", () => {
     const { result } = setup(1);
     act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
-    const sessionUid = result.current.draft!.weeks[0].days[0].session!.uid;
+    const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
 
     const before = result.current.getRevision();
     let opsResult: ReturnType<typeof result.current.applyAssistantOps> = null;
@@ -702,7 +795,7 @@ describe("useProgramBuilderState — assistant additions (builder S6a)", () => {
     expect(opsResult!.applied).toBe(1);
     expect(opsResult!.skipped).toHaveLength(1);
     expect(opsResult!.skipped[0].reason).toMatch(/no longer exists/);
-    expect(result.current.draft!.weeks[0].days[0].session!.notes).toBe("from the assistant");
+    expect(sessionAt(result.current.draft!, 0, 0)!.notes).toBe("from the assistant");
     // One bump for the whole turn — markSaved semantics identical to a hand edit.
     expect(result.current.getRevision()).toBe(before + 1);
     expect(result.current.isDirty).toBe(true);
@@ -728,7 +821,7 @@ describe("useProgramBuilderState — assistant additions (builder S6a)", () => {
       clean = result.current.markSaved(saveRevision);
     });
     expect(clean).toBe(false);
-    expect(result.current.draft!.weeks[0].days[1].session).toBeNull(); // restored tree
-    expect(result.current.draft!.weeks[0].days[0].session).not.toBeNull();
+    expect(result.current.draft!.weeks[0].days[1].sessions).toEqual([]); // restored tree
+    expect(sessionAt(result.current.draft!, 0, 0)).not.toBeNull();
   });
 });

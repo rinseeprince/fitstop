@@ -724,6 +724,32 @@ describe("library-placement-service", () => {
       return trainingSessionsQuery;
     }
 
+    it("joins a day that already holds sessions, last — the day is read before anything is cloned", async () => {
+      mockPlaceSession({ templateWeekIndex: 0, templateOrderIndex: 0, lastSlot: null });
+      // The day's last session sits at place 1: the drop takes place 2.
+      const eventsQuery = {
+        ...createMockQuery({ data: { id: "evt-new" }, error: null }),
+        maybeSingle: vi.fn().mockResolvedValue({ data: { day_order: 1 }, error: null }),
+        single: vi.fn().mockResolvedValue({ data: { id: "evt-new" }, error: null }),
+      };
+      const fallback = mockFrom.getMockImplementation()!;
+      mockFrom.mockImplementation(((table: string) =>
+        table === "training_events"
+          ? eventsQuery
+          : fallback(table as Parameters<typeof fallback>[0])) as never);
+
+      await placeSessionOnCalendar({
+        savedSessionId: "ss-1", coachId: "coach-1", clientId: "client-1", planId: "plan-1", targetDate: "2026-04-20",
+      });
+
+      expect(eventsQuery.eq).toHaveBeenCalledWith("client_id", "client-1");
+      expect(eventsQuery.eq).toHaveBeenCalledWith("date", "2026-04-20");
+      expect(eventsQuery.order).toHaveBeenCalledWith("day_order", { ascending: false });
+      expect(eventsQuery.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ date: "2026-04-20", day_order: 2, status: "scheduled" }),
+      );
+    });
+
     it("appends after the target plan's last slot instead of copying the template's indices", async () => {
       const q = mockPlaceSession({
         templateWeekIndex: 0, templateOrderIndex: 3,

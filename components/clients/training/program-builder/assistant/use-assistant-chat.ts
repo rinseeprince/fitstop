@@ -19,8 +19,8 @@ import { useProgramDraft } from "../program-draft-provider";
 //   provider's applyAssistantOps — one revision bump, same semantics as a
 //   hand edit);
 // - preview gating when a turn contains destructive ops (week deletes, day
-//   clears) OR the coach edited mid-turn (revision drift): ops render as
-//   chips with Apply all / Dismiss so surprises never auto-land.
+//   clears, session removals) OR the coach edited mid-turn (revision drift):
+//   ops render as chips with Apply all / Dismiss so surprises never auto-land.
 // Chat state dies with the provider remount (template switch) by design —
 // the conversation is about THIS draft.
 
@@ -48,6 +48,7 @@ const opFallbackLabel: Record<DraftOp["type"], string> = {
   move_week: "Move a week",
   place_session: "Add a session",
   clear_slot: "Clear a day to rest",
+  remove_session: "Remove a session",
   move_session: "Move a session",
   update_session: "Update a session",
   add_exercise: "Add an exercise",

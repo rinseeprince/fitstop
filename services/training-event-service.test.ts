@@ -53,7 +53,7 @@ import { getTodayDateString } from "@/lib/date-helpers";
 import {
   generateTrainingEvents,
   getEventsForDateRange,
-  getEventForDate,
+  getFirstEventForDate,
   countEventsInRange,
   linkSessionLogToEvent,
   getEventSummariesForDate,
@@ -191,22 +191,26 @@ describe("training-event-service", () => {
       expect(result[0].trainingPlanId).toBe(row1.training_plan_id);
 
       expect(mockQuery.order).toHaveBeenCalledWith("date", { ascending: true });
+      // A day's sessions come in the day's order (migration 179).
+      expect(mockQuery.order).toHaveBeenCalledWith("day_order", { ascending: true });
     });
   });
 
   // =========================================================================
-  // getEventForDate
+  // getFirstEventForDate
   // =========================================================================
 
-  describe("getEventForDate", () => {
+  describe("getFirstEventForDate", () => {
     it("returns null when no event exists", async () => {
       const mockQuery = createMockQuery({ data: null, error: null });
       mockFrom.mockReturnValue(mockQuery as any);
 
-      const result = await getEventForDate("client-1", "2026-04-08");
+      const result = await getFirstEventForDate("client-1", "2026-04-08");
 
       expect(result).toBeNull();
       expect(mockQuery.maybeSingle).toHaveBeenCalled();
+      // The FIRST session of the day, in the day's order.
+      expect(mockQuery.order).toHaveBeenCalledWith("day_order", { ascending: true });
     });
 
     it("returns mapped event when found", async () => {
@@ -214,7 +218,7 @@ describe("training-event-service", () => {
       const mockQuery = createMockQuery({ data: row, error: null });
       mockFrom.mockReturnValue(mockQuery as any);
 
-      const result = await getEventForDate("client-1", "2026-04-08");
+      const result = await getFirstEventForDate("client-1", "2026-04-08");
 
       expect(result).not.toBeNull();
       expect(result!.sessionName).toBe("Push");

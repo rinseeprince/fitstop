@@ -9,7 +9,6 @@ import {
   CalendarMoveNotFoundError,
   moveEvent,
 } from "@/services/training-event-calendar-service";
-import { DateOccupiedError } from "@/services/training-event-occupancy";
 import { z } from "zod";
 
 const moveEventSchema = z.object({
@@ -62,7 +61,7 @@ export async function POST(
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    if (error instanceof DateOccupiedError || error instanceof CalendarMoveDriftError) {
+    if (error instanceof CalendarMoveDriftError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
     if (error instanceof CalendarMoveNotFoundError) {

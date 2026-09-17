@@ -3,6 +3,7 @@
 import { ChevronDown, Copy, GripVertical, Trash2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WeekDraft } from "./program-builder-types";
+import { weekSessions } from "./program-builder-model";
 import { MONO, TEXT_MUTED, TEXT_SECONDARY } from "./builder-tokens";
 
 // The slim 42px week column (reference `.wk`): a `W#` teal chip + the week's
@@ -48,7 +49,8 @@ export function WeekCard({
   onDelete,
   dragHandleProps,
 }: WeekCardProps) {
-  const trainingCount = week.days.filter((d) => !d.isRest).length;
+  // Sessions, not training days: a day can hold several.
+  const trainingCount = weekSessions(week).length;
   const editControls = mode === "edit" && !collapsed;
 
   return (

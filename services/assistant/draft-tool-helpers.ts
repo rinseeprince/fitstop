@@ -28,9 +28,10 @@ import {
 import type { ExerciseGroupDraft } from "@/components/clients/training/program-builder/program-builder-types";
 import type { DraftWorkspace } from "./draft-workspace";
 
-// Shared plumbing for the assistant's tool executors: 1-based week/day/exercise
-// addressing (the model speaks "week 3, day 5"), compact draft rendering for
-// read tools, and the single commit path every write tool goes through.
+// Shared plumbing for the assistant's tool executors: 1-based week/day/session/
+// exercise addressing (the model speaks "week 3, day 5"), compact draft
+// rendering for read tools, and the single commit path every write tool goes
+// through.
 
 /**
  * Execute one op against the workspace. Returns the skip reason (the executor
@@ -111,20 +112,45 @@ export function resolveSlot(
   return { ok: true, value: slot };
 }
 
+/**
+ * Every tool that addresses a session by its day takes this: a day on a
+ * client's calendar can hold several sessions, named by their place in it.
+ */
+export const sessionPlaceProperty = {
+  type: "integer",
+  minimum: 1,
+  description: "1-based place of the session within its day, when the day holds several (default 1)",
+} as const;
+
+/** The session at 1-based place `session` on a day (the day's first by default). */
 export function resolveSession(
   ws: DraftWorkspace,
   week: number,
   day: number,
+  session = 1,
 ): Resolved<SessionDraft> {
   const slot = resolveSlot(ws, week, day);
   if (!slot.ok) return slot;
-  if (!slot.value.session) {
+  const { sessions } = slot.value;
+  if (sessions.length === 0) {
     return {
       ok: false,
       error: `Week ${week} day ${day} is a rest day — add a session there first.`,
     };
   }
-  return { ok: true, value: slot.value.session };
+  const found = sessions[session - 1];
+  if (!found) {
+    return {
+      ok: false,
+      error: `Week ${week} day ${day} has only ${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}.`,
+    };
+  }
+  return { ok: true, value: found };
+}
+
+/** " · session 2" for a session on a day holding several; "" for a day's only one. */
+export function sessionPlaceLabel(place: number, sessionsOnDay: number): string {
+  return sessionsOnDay > 1 ? ` · session ${place}` : "";
 }
 
 export function resolveExerciseRef(
@@ -312,9 +338,15 @@ export function sessionExerciseLines(
   return lines;
 }
 
-export function sessionDetail(session: SessionDraft, week: number, day: number): string {
+/** `placeLabel` names the session's place on a day holding several (sessionPlaceLabel). */
+export function sessionDetail(
+  session: SessionDraft,
+  week: number,
+  day: number,
+  placeLabel = "",
+): string {
   const header = [
-    `Week ${week} day ${day}: "${session.name}"`,
+    `Week ${week} day ${day}${placeLabel}: "${session.name}"`,
     session.focus ? `focus ${session.focus}` : null,
     session.estimatedDurationMinutes != null
       ? `${session.estimatedDurationMinutes}min`
@@ -335,8 +367,8 @@ export function sessionDetail(session: SessionDraft, week: number, day: number):
 function weekOneLiner(week: WeekDraft): string {
   const days = week.days
     .map((slot, i) =>
-      slot.session
-        ? `D${i + 1} ${slot.session.name}(${countSessionExercises(slot.session)}ex)`
+      slot.sessions.length > 0
+        ? `D${i + 1} ${slot.sessions.map((s) => `${s.name}(${countSessionExercises(s)}ex)`).join(" + ")}`
         : `D${i + 1} rest`,
     )
     .join(" | ");
@@ -372,19 +404,21 @@ function programFullDetail(draft: ProgramDraft): string {
   draft.weeks.forEach((week, w) => {
     lines.push(`Week ${w + 1}:`);
     week.days.forEach((slot, d) => {
-      if (!slot.session) {
+      if (slot.sessions.length === 0) {
         lines.push(`  Day ${d + 1}: rest`);
         return;
       }
-      const s = slot.session;
-      const meta = [
-        s.focus ? s.focus : null,
-        s.calorieSurplusPercentage != null ? `surplus ${s.calorieSurplusPercentage}%` : null,
-      ]
-        .filter(Boolean)
-        .join(", ");
-      lines.push(`  Day ${d + 1}: "${s.name}"${meta ? ` (${meta})` : ""}`);
-      lines.push(...sessionExerciseLines(s, "    "));
+      slot.sessions.forEach((s, p) => {
+        const meta = [
+          s.focus ? s.focus : null,
+          s.calorieSurplusPercentage != null ? `surplus ${s.calorieSurplusPercentage}%` : null,
+        ]
+          .filter(Boolean)
+          .join(", ");
+        const place = sessionPlaceLabel(p + 1, slot.sessions.length);
+        lines.push(`  Day ${d + 1}${place}: "${s.name}"${meta ? ` (${meta})` : ""}`);
+        lines.push(...sessionExerciseLines(s, "    "));
+      });
     });
   });
   return lines.join("\n");

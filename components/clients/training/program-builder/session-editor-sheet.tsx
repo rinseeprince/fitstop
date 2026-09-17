@@ -13,11 +13,11 @@ import { SessionEditorBody, type SessionEditorBodyProps } from "./session-editor
 import { SessionHero } from "./session-hero";
 import { countSessionExercises } from "@/utils/exercise-groups";
 
-// Click-to-edit chrome for one day cell's session: the editor body in a right
-// slide-over. Write-through — "Save program" on the page is the commit point,
-// so the footer's Done just closes. "Save as workout" copies the day into the
-// standalone session library without touching the draft, so it renders in view
-// mode too. (A day is made rest by clearing its session from the grid.)
+// Click-to-edit chrome for one of a day cell's sessions: the editor body in a
+// right slide-over. Write-through — "Save program" on the page is the commit
+// point, so the footer's Done just closes. "Save as workout" copies the
+// session into the standalone session library without touching the draft, so
+// it renders in view mode too. (A session is removed from its day on the grid.)
 //
 // The band at the top is the builder's own hero grammar at sheet scale: it
 // carries the session NAME and the calorie SURPLUS, which is why the body is

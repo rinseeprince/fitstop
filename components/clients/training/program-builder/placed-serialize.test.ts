@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { PlanEditDay, PlanForEditing } from "@/services/plan-edit-service";
+import type { PlanEditDay, PlanEditSession, PlanForEditing } from "@/services/plan-edit-service";
 import type { TrainingExercise, TrainingExerciseGroup } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import {
@@ -16,8 +16,8 @@ import {
   sessionDraftToPlacedPayload,
   trainingSessionToDraft,
 } from "./placed-serialize";
-import { draftToSessionInputs } from "./program-builder-serialize";
-import { DAYS_PER_WEEK } from "./program-builder-types";
+import { cloneWeek, normalizeDraft } from "./program-builder-model";
+import { DAYS_PER_WEEK, type ProgramDraft } from "./program-builder-types";
 
 const PLAN_START = "2026-07-15";
 const isTrainingPos = (i: number) => i % 7 === 0 || i % 7 === 2 || i % 7 === 4;
@@ -76,22 +76,31 @@ function lone(exercise: TrainingExercise, orderIndex = 0): TrainingExerciseGroup
   return makeGroup(`row-grp-${exercise.id}`, orderIndex, STRAIGHT_SETS, [exercise]);
 }
 
-/** The plan's day at `position`: training on days 1, 3 and 5 of each week. */
-function makeDay(
-  position: number,
-  groups: TrainingExerciseGroup[] = position === 0 ? [lone(makeExercise())] : [],
-): PlanEditDay {
-  if (!isTrainingPos(position)) return { date: dateAt(position), isRest: true };
+/** The calendar entry of the session at `place` on the day at `position`. */
+const eventAt = (position: number, place = 1) =>
+  `e0000000-0000-4000-8000-${String(position * 10 + place).padStart(12, "0")}`;
+
+/** The session at `place` (1, 2, …) on the day at `position`, read from its entry. */
+function makeSession(position: number, groups: TrainingExerciseGroup[], place = 1): PlanEditSession {
+  const suffix = place === 1 ? "" : `-${place}`;
   return {
-    date: dateAt(position),
-    isRest: false,
-    name: `Session ${position}`,
+    eventId: eventAt(position, place),
+    name: `Session ${position}${suffix}`,
     focus: "strength",
     estimatedDurationMinutes: 60,
     notes: "note",
     calorieSurplusPercentage: 15,
     groups,
   };
+}
+
+/** The plan's day at `position`: training on days 1, 3 and 5 of each week. */
+function makeDay(
+  position: number,
+  groups: TrainingExerciseGroup[] = position === 0 ? [lone(makeExercise())] : [],
+): PlanEditDay {
+  if (!isTrainingPos(position)) return { date: dateAt(position), sessions: [] };
+  return { date: dateAt(position), sessions: [makeSession(position, groups)] };
 }
 
 /** A two-week plan from 2026-07-15; today is 07-22 (position 7), and a
@@ -126,13 +135,14 @@ describe("planForEditingToDraft", () => {
         expect(slot.isRest).toBe(!isTrainingPos(w * DAYS_PER_WEEK + d));
       });
     });
-    expect(draft.weeks[1].days[2].session?.name).toBe("Session 9");
+    expect(draft.weeks[1].days[2].sessions.map((s) => s.name)).toEqual(["Session 9"]);
   });
 
   it("clones a session day with fresh uids: name, focus, duration, notes, surplus, exercises", () => {
     const read = makeRead();
     const slot = planForEditingToDraft(read).draft.weeks[0].days[0];
-    expect(slot.session).toMatchObject({
+    expect(slot.sessions).toHaveLength(1);
+    expect(slot.sessions[0]).toMatchObject({
       name: "Session 0",
       focus: "strength",
       estimatedDurationMinutes: 60,
@@ -140,7 +150,7 @@ describe("planForEditingToDraft", () => {
       calorieSurplusPercentage: 15,
       sessionType: "training",
     });
-    const [exercise] = sessionExercises(slot.session!);
+    const [exercise] = sessionExercises(slot.sessions[0]);
     expect(exercise).toMatchObject({
       name: "Bench Press",
       exerciseId: "cat-1",
@@ -158,9 +168,9 @@ describe("planForEditingToDraft", () => {
     // Every seed mints its own uids.
     const again = planForEditingToDraft(read).draft.weeks[0].days[0];
     expect(again.uid).not.toBe(slot.uid);
-    expect(again.session!.uid).not.toBe(slot.session!.uid);
-    expect(again.session!.groups[0].uid).not.toBe(slot.session!.groups[0].uid);
-    expect(sessionExercises(again.session!)[0].uid).not.toBe(exercise.uid);
+    expect(again.sessions[0].uid).not.toBe(slot.sessions[0].uid);
+    expect(again.sessions[0].groups[0].uid).not.toBe(slot.sessions[0].groups[0].uid);
+    expect(sessionExercises(again.sessions[0])[0].uid).not.toBe(exercise.uid);
   });
 
   it("lays rest days and greyed days as empty slots", () => {
@@ -168,15 +178,15 @@ describe("planForEditingToDraft", () => {
     const read = makeRead({
       limit: { endsOn: dateAt(10), source: "block" },
       days: Array.from({ length: 14 }, (_, i): PlanEditDay =>
-        i > 10 ? { date: dateAt(i), isRest: true } : makeDay(i),
+        i > 10 ? { date: dateAt(i), sessions: [] } : makeDay(i),
       ),
     });
     const slots = planForEditingToDraft(read).draft.weeks.flatMap((w) => w.days);
     // Rest on 1 and 3; 11 is a training day the limit greyed.
     for (const position of [1, 3, 11, 12, 13]) {
-      expect(slots[position]).toMatchObject({ isRest: true, session: null });
+      expect(slots[position]).toMatchObject({ isRest: true, sessions: [] });
     }
-    expect(slots[9].session?.name).toBe("Session 9");
+    expect(slots[9].sessions.map((s) => s.name)).toEqual(["Session 9"]);
   });
 
   it("counts the editable days from the plan's start", () => {
@@ -212,35 +222,150 @@ describe("planForEditingToDraft", () => {
   });
 });
 
-describe("draftToPlanEditBody", () => {
-  it("sends the whole grid, the plan's name and focus, and the version unchanged", () => {
-    const { draft } = planForEditingToDraft(makeRead());
-    const version = "eyJwbGFuX3VwZGF0ZWRfYXQiOiIyMDI2LTA3LTIwIn0";
-    const body = draftToPlanEditBody(draft, version);
+describe("planForEditingToDraft on a day holding several sessions", () => {
+  it("lays a day's sessions in its order and remembers each one's calendar entry by uid", () => {
+    // Position 2 holds a morning run then an evening lift.
+    const read = makeRead({
+      days: Array.from({ length: 14 }, (_, i): PlanEditDay =>
+        i === 2
+          ? {
+              date: dateAt(2),
+              sessions: [
+                { ...makeSession(2, []), name: "AM run" },
+                { ...makeSession(2, [lone(makeExercise())], 2), name: "PM lift" },
+              ],
+            }
+          : makeDay(i),
+      ),
+    });
+    const { draft, sessionEvents } = planForEditingToDraft(read);
 
+    const day = draft.weeks[0].days[2];
+    expect(day.isRest).toBe(false);
+    expect(day.sessions.map((s) => s.name)).toEqual(["AM run", "PM lift"]);
+    expect(sessionExercises(day.sessions[1]).map((e) => e.name)).toEqual(["Bench Press"]);
+    expect(sessionEvents[day.sessions[0].uid]).toBe(eventAt(2));
+    expect(sessionEvents[day.sessions[1].uid]).toBe(eventAt(2, 2));
+
+    // Every seeded session, and only those, has its entry.
+    const seeded = draft.weeks.flatMap((w) => w.days.flatMap((d) => d.sessions));
+    expect(Object.keys(sessionEvents).sort()).toEqual(seeded.map((s) => s.uid).sort());
+    expect(seeded).toHaveLength(7);
+  });
+});
+
+describe("draftToPlanEditBody", () => {
+  // Position 2 holds two sessions; training otherwise on days 1, 3 and 5. The
+  // bench's catalog id is a uuid, so the body can pass its schema.
+  function openTwoADay() {
+    return planForEditingToDraft(
+      makeRead({
+        days: Array.from({ length: 14 }, (_, i): PlanEditDay =>
+          i === 0
+            ? makeDay(0, [lone(makeExercise({ exerciseId: BENCH_ID }))])
+            : i === 2
+              ? { date: dateAt(2), sessions: [makeSession(2, []), makeSession(2, [], 2)] }
+              : makeDay(i),
+        ),
+      }),
+    );
+  }
+
+  it("sends every day in order, each holding its sessions in order; a rest day holds none", () => {
+    const { draft, sessionEvents } = openTwoADay();
+    const version = "eyJwbGFuX3VwZGF0ZWRfYXQiOiIyMDI2LTA3LTIwIn0";
+    const body = draftToPlanEditBody(draft, version, sessionEvents);
+
+    expect(Object.keys(body).sort()).toEqual(["days", "plan", "version"]);
     expect(body.version).toBe(version);
     expect(body.plan).toEqual({ name: "PPL Block", splitType: "Push/Pull" });
-    expect(body.sessions).toEqual(draftToSessionInputs(draft));
-    expect(body.sessions).toHaveLength(14);
-    body.sessions.forEach((s, i) => {
-      expect(s.orderIndex).toBe(i);
-      expect(s.weekIndex).toBe(Math.floor(i / DAYS_PER_WEEK));
-      expect(s.isRest).toBe(!isTrainingPos(i));
+    expect(body.days).toHaveLength(14);
+    expect(body.days.map((day) => day.sessions.map((s) => s.name))).toEqual(
+      Array.from({ length: 14 }, (_, i) =>
+        i === 2 ? ["Session 2", "Session 2-2"] : isTrainingPos(i) ? [`Session ${i}`] : [],
+      ),
+    );
+    expect(body.days[2].sessions.map((s) => s.eventId)).toEqual([eventAt(2), eventAt(2, 2)]);
+    // A session's fields and per-set fidelity survive verbatim.
+    expect(body.days[0].sessions[0]).toMatchObject({
+      eventId: eventAt(0),
+      focus: "strength",
+      estimatedDurationMinutes: 60,
+      calorieSurplusPercentage: 15,
+      notes: "note",
     });
-    // Per-set fidelity survives verbatim.
-    const [bench] = sessionExercises(body.sessions[0]);
+    const [bench] = sessionExercises(body.days[0].sessions[0]);
     expect(bench.setSpecs).toEqual(BENCH_SPECS);
     expect(bench.videoUrl).toBe("https://example.com/bench");
+
+    const parsed = planEditSaveSchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual(body);
   });
 
-  it("caps the name and focus at 100 characters; no focus stays null", () => {
-    const { draft } = planForEditingToDraft(makeRead());
-    const long = "x".repeat(150);
-    expect(draftToPlanEditBody({ ...draft, name: long, splitType: long }, "v-1").plan).toEqual({
-      name: "x".repeat(100),
-      splitType: "x".repeat(100),
+  it("claims an entry by uid wherever its session now is; a copy and a new session claim none", () => {
+    const { draft, sessionEvents } = openTwoADay();
+    const [week0, week1] = draft.weeks;
+    const evening = week0.days[2].sessions[1];
+    // The evening lift moves to position 3; week 1 is replaced by a copy of week 0.
+    const edited: ProgramDraft = normalizeDraft({
+      ...draft,
+      weeks: [
+        {
+          ...week0,
+          days: week0.days.map((slot, d) =>
+            d === 2
+              ? { ...slot, sessions: [slot.sessions[0]] }
+              : d === 3
+                ? { ...slot, sessions: [evening] }
+                : d === 6
+                  ? { ...slot, sessions: [{ ...evening, uid: "sess-new", name: "New" }] }
+                  : slot,
+          ),
+        },
+        { ...cloneWeek(week0), uid: week1.uid },
+      ],
     });
-    expect(draftToPlanEditBody({ ...draft, splitType: null }, "v-1").plan.splitType).toBeNull();
+
+    const body = draftToPlanEditBody(edited, "v-1", sessionEvents);
+    expect(body.days[2].sessions.map((s) => s.eventId)).toEqual([eventAt(2)]);
+    expect(body.days[3].sessions.map((s) => s.eventId)).toEqual([eventAt(2, 2)]);
+    expect(body.days[6].sessions.map((s) => s.eventId)).toEqual([null]);
+    // Every session of the copied week is new to the calendar.
+    expect(body.days.slice(7).flatMap((day) => day.sessions.map((s) => s.eventId))).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(body.days.slice(7).map((day) => day.sessions.length)).toEqual([1, 0, 2, 0, 1, 0, 0]);
+  });
+
+  it("with no entries to claim, every session names none", () => {
+    const { draft } = openTwoADay();
+    const body = draftToPlanEditBody(draft, "v-1", {});
+    expect(body.days.every((day) => day.sessions.every((s) => s.eventId === null))).toBe(true);
+  });
+
+  it("caps session names, the plan name and focus at 100 characters; no focus stays null", () => {
+    const { draft, sessionEvents } = planForEditingToDraft(makeRead());
+    const long = "x".repeat(150);
+    const renamed = normalizeDraft({
+      ...draft,
+      name: long,
+      splitType: long,
+      weeks: draft.weeks.map((week) => ({
+        ...week,
+        days: week.days.map((slot) => ({
+          ...slot,
+          sessions: slot.sessions.map((s) => ({ ...s, name: long })),
+        })),
+      })),
+    });
+    const body = draftToPlanEditBody(renamed, "v-1", sessionEvents);
+    expect(body.plan).toEqual({ name: "x".repeat(100), splitType: "x".repeat(100) });
+    expect(body.days[0].sessions[0].name).toBe("x".repeat(100));
+    expect(draftToPlanEditBody({ ...draft, splitType: null }, "v-1", sessionEvents).plan.splitType).toBeNull();
   });
 });
 
@@ -418,13 +543,13 @@ describe("groups through the placed paths", () => {
         i === 9 ? makeDay(9, makeGroupedGroups()) : makeDay(i, []),
       ),
     });
-    const { draft } = planForEditingToDraft(read);
-    const day = draft.weeks[1].days[2].session!;
+    const { draft, sessionEvents } = planForEditingToDraft(read);
+    const day = draft.weeks[1].days[2].sessions[0];
     expect(day.groups.map((g) => groupSettingsOf(g))).toEqual([EVERY_SETTING, STRAIGHT_SETS]);
 
-    const body = draftToPlanEditBody(draft, read.version);
-    expect(body.sessions[9].groups).toEqual(GROUPED_INPUT);
-    expect(body.sessions.filter((s) => s.groups.length > 0)).toHaveLength(1);
+    const body = draftToPlanEditBody(draft, read.version, sessionEvents);
+    expect(body.days[9].sessions[0].groups).toEqual(GROUPED_INPUT);
+    expect(body.days.flatMap((d) => d.sessions).filter((s) => s.groups.length > 0)).toHaveLength(1);
 
     const parsed = planEditSaveSchema.safeParse(body);
     expect(parsed.success).toBe(true);

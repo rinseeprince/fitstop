@@ -24,7 +24,12 @@ import {
   type SessionDraft,
 } from "./program-builder-types";
 import { savedSessionToDraft } from "./program-builder-serialize";
-import { defaultExerciseDraftFromCatalog, findSession } from "./program-builder-model";
+import {
+  defaultExerciseDraftFromCatalog,
+  findSession,
+  findSlot,
+  weekSessions,
+} from "./program-builder-model";
 import { isSessionLocked } from "./program-builder-lock-model";
 import { PlanEditConfirmDialog, PlanEditStaleDialog } from "./plan-edit-dialogs";
 import { useProgramDnd } from "./use-program-dnd";
@@ -102,7 +107,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     deleteWeek,
     reorderWeek,
     placeSession,
-    clearSlot,
+    removeSession,
     moveSession,
     updateSession,
     addExercise,
@@ -154,21 +159,20 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const placeLibrarySession = (session: SavedSession, slotUid: string) => {
-    // Clone-by-value with fresh uids; occupied slots no-op (locked one
-    // session per day-cell — collision already filters them out).
+    // Clone-by-value with fresh uids onto a rest day; a day holding sessions
+    // no-ops (collision already filters those days out).
     placeSession(slotUid, savedSessionToDraft(session));
   };
 
   const placeLibraryExercise = (exercise: Exercise, slotUid: string) => {
-    // Append a catalog exercise to the slot's existing session. Collision
-    // already restricts library-exercise drops to OCCUPIED cells; the session
-    // lookup is the belt (a rest slot has no session to append to).
-    const session = draft?.weeks
-      .flatMap((w) => w.days)
-      .find((s) => s.uid === slotUid)?.session;
-    if (!session) return;
+    // Append a catalog exercise to the day's only session. Collision already
+    // restricts library-exercise drops to a day holding exactly one session;
+    // the lookup is the belt (a rest day has no session to append to, and on
+    // a day holding several the coach picks the session in its editor).
+    const slot = findSlot(draft, slotUid);
+    if (slot?.sessions.length !== 1) return;
     addExercise(
-      session.uid,
+      slot.sessions[0].uid,
       defaultExerciseDraftFromCatalog({
         name: exercise.name,
         exerciseId: exercise.id,
@@ -244,10 +248,8 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
       ? (draft.weeks.find((w) => w.uid === progressionWeekUid) ?? null)
       : null;
 
-  const trainingCount = draft.weeks.reduce(
-    (sum, w) => sum + w.days.filter((d) => !d.isRest).length,
-    0,
-  );
+  // Sessions, not training days: a day can hold several.
+  const trainingCount = draft.weeks.reduce((sum, w) => sum + weekSessions(w).length, 0);
 
   const requestAddSession = (slot: DaySlotDraft, anchorEl: HTMLElement) => {
     const weekIndex = draft.weeks.findIndex((week) =>
@@ -478,7 +480,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 onAddWeek={addWeek}
                 onOpenSession={sessionSheet.show}
                 onRequestAddSession={requestAddSession}
-                onClearSlot={clearSlot}
+                onRemoveSession={removeSession}
               />
             </div>
           </div>

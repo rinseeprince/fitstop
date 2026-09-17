@@ -5,10 +5,7 @@ import type {
 } from "@/lib/validations/training";
 import type { TrainingExercise, TrainingExerciseGroup } from "@/types/training";
 import type { PlanForEditing } from "@/services/plan-edit-service";
-import {
-  draftToSessionInputs,
-  groupDraftToInput,
-} from "./program-builder-serialize";
+import { groupDraftToInput } from "./program-builder-serialize";
 import type { EditableDays } from "./program-builder-lock-model";
 import { toPrescribedFields } from "@/utils/prescribed-fields";
 import { groupSettingsOf } from "@/utils/exercise-groups";
@@ -33,7 +30,7 @@ import {
 type PlacedSessionPayload = z.infer<typeof replaceSessionSchema>;
 
 // Structural source both the tray's TrainingSession and the plan editor's
-// session day satisfy — one conversion serves both surfaces.
+// sessions satisfy — one conversion serves both surfaces.
 type PlacedSessionSource = {
   name: string;
   focus?: string | null;
@@ -130,25 +127,28 @@ type PlanEditorSeed = {
   editableDays: EditableDays;
   /** The client's today as a position; null when outside the grid. */
   todayPosition: number | null;
+  /** Each seeded session's draft uid → the calendar entry it was read from. */
+  sessionEvents: Record<string, string>;
 };
 
 /**
  * Build the editable draft from the plan editor's read: one slot per day,
  * weeks of seven, slot i = the plan's day effective_from + i — the position
- * the lock model and the save both count in. Session days clone the day's row
- * (trainingSessionToDraft); rest days and greyed days are empty slots.
+ * the lock model and the save both count in. A day's sessions clone its rows
+ * in the day's order (trainingSessionToDraft), each remembered with the
+ * calendar entry it came from; rest days and greyed days are empty slots.
  */
 export function planForEditingToDraft(read: PlanForEditing): PlanEditorSeed {
-  const days: DaySlotDraft[] = read.days.map((day, i) =>
-    day.isRest
-      ? makeRestSlot(i % DAYS_PER_WEEK)
-      : {
-          uid: newUid("slot"),
-          orderIndex: i % DAYS_PER_WEEK,
-          isRest: false,
-          session: trainingSessionToDraft(day).draft,
-        },
-  );
+  const sessionEvents: Record<string, string> = {};
+  const days: DaySlotDraft[] = read.days.map((day, i) => {
+    if (day.sessions.length === 0) return makeRestSlot(i % DAYS_PER_WEEK);
+    const sessions = day.sessions.map((session) => {
+      const { draft } = trainingSessionToDraft(session);
+      sessionEvents[draft.uid] = session.eventId;
+      return draft;
+    });
+    return { uid: newUid("slot"), orderIndex: i % DAYS_PER_WEEK, isRest: false, sessions };
+  });
   const weeks: WeekDraft[] = [];
   for (let w = 0; w * DAYS_PER_WEEK < days.length; w++) {
     weeks.push({
@@ -179,17 +179,37 @@ export function planForEditingToDraft(read: PlanForEditing): PlanEditorSeed {
     },
     todayPosition:
       todayPosition >= 0 && todayPosition < days.length ? todayPosition : null,
+    sessionEvents,
   };
 }
 
 /**
- * The plan editor's save body: the whole grid (draftToSessionInputs, the
- * canonical weekIndex*7+day slots the server counts in), the plan's name and
- * focus, and the read's version, unchanged.
+ * The plan editor's save body: the whole grid, one day per slot in order (day
+ * i is the plan's day effective_from + i) holding its sessions in the day's
+ * order — a rest day holds none; the plan's name and focus; and the read's
+ * version, unchanged. A session read from the calendar names its entry
+ * (`sessionEvents`, by uid) so the save keeps that entry while it stays on
+ * the day; a copy or a new session names none.
  */
-export function draftToPlanEditBody(draft: ProgramDraft, version: string): PlanEditSaveBody {
+export function draftToPlanEditBody(
+  draft: ProgramDraft,
+  version: string,
+  sessionEvents: Readonly<Record<string, string>>,
+): PlanEditSaveBody {
   return {
-    sessions: draftToSessionInputs(draft),
+    days: draft.weeks.flatMap((week) =>
+      week.days.map((slot) => ({
+        sessions: slot.sessions.map((session) => ({
+          eventId: sessionEvents[session.uid] ?? null,
+          name: session.name.slice(0, 100),
+          focus: session.focus,
+          estimatedDurationMinutes: session.estimatedDurationMinutes,
+          calorieSurplusPercentage: session.calorieSurplusPercentage,
+          notes: session.notes,
+          groups: session.groups.map(groupDraftToInput),
+        })),
+      })),
+    ),
     plan: {
       name: draft.name.slice(0, 100),
       splitType: draft.splitType ? draft.splitType.slice(0, 100) : draft.splitType,

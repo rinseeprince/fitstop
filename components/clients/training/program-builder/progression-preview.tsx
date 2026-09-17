@@ -10,21 +10,22 @@ import {
   TEXT_SECONDARY,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
-import type { ProgressionPreviewDay } from "./progression-preview-model";
+import type { ProgressionPreviewSession } from "./progression-preview-model";
 
-// Presentational preview for the duplicate-week progression dialog: day
-// groups with per-exercise before → after diff lines. Checkboxes appear only
-// under the "Pick exercises" scope and toggle by scope KEY — the same
-// exercise placed on two days moves together (identity semantics).
+// Presentational preview for the duplicate-week progression dialog: one
+// section per session, day by day, with per-exercise before → after diff
+// lines. Checkboxes appear only under the "Pick exercises" scope and toggle by
+// scope KEY — the same exercise placed on two days moves together (identity
+// semantics).
 type ProgressionPreviewProps = {
-  days: ProgressionPreviewDay[];
+  sessions: ProgressionPreviewSession[];
   showCheckboxes: boolean;
   selectedKeys: ReadonlySet<string>;
   onToggleKey: (key: string) => void;
 };
 
 export function ProgressionPreview({
-  days,
+  sessions,
   showCheckboxes,
   selectedKeys,
   onToggleKey,
@@ -36,16 +37,20 @@ export function ProgressionPreview({
         TRAINING_CARD_BORDER,
       )}
     >
-      {days.map((day) => (
-        <div key={day.dayIndex} className="border-b border-[rgba(13,148,136,0.06)] last:border-b-0">
+      {sessions.map((session) => (
+        // A day can hold several sessions: its day and place key the section.
+        <div
+          key={`${session.dayIndex}-${session.place}`}
+          className="border-b border-[rgba(13,148,136,0.06)] last:border-b-0"
+        >
           <div className={cn("px-3 pb-1 pt-2.5", MONO_LABEL_CLASS)}>
-            Day {day.dayIndex + 1} · {day.sessionName}
+            Day {session.dayIndex + 1} · {session.sessionName}
           </div>
-          {day.rows.map((row) => (
+          {session.rows.map((row) => (
             <div key={row.uid} className="flex items-center gap-2 px-3 py-1.5">
               {showCheckboxes && (
                 <Checkbox
-                  aria-label={`Include ${row.name} (Day ${day.dayIndex + 1})`}
+                  aria-label={`Include ${row.name} (Day ${session.dayIndex + 1})`}
                   checked={selectedKeys.has(row.scopeKey)}
                   onCheckedChange={() => onToggleKey(row.scopeKey)}
                   className="h-3.5 w-3.5"

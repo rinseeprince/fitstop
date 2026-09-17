@@ -11,14 +11,16 @@ import type { ProgramBuilderState } from "./use-program-builder-state";
 // The plan editor's draft source for ProgramDraftProvider: seeds the working
 // tree ONCE from the editor's read (the read is fresh per open, and the
 // overlay keys the provider by plan), and holds what the seed brought with
-// it: the editable days, today's position, the plan's limit and the version
-// the save sends back.
+// it: the editable days, today's position, the plan's limit, and the version
+// and the calendar entry of each session the save sends back.
 
 type PlanEditorSeedInfo = {
   editableDays: EditableDays | null;
   todayPosition: number | null;
   limit: WindowCap | null;
   version: string | null;
+  /** Each seeded session's draft uid → the calendar entry it was read from. */
+  sessionEvents: Readonly<Record<string, string>>;
 };
 
 const EMPTY_SEED: PlanEditorSeedInfo = {
@@ -26,6 +28,7 @@ const EMPTY_SEED: PlanEditorSeedInfo = {
   todayPosition: null,
   limit: null,
   version: null,
+  sessionEvents: {},
 };
 
 /** The server's own sentence when it sent one, else the generic one. */
@@ -60,6 +63,7 @@ export function usePlacedPlanSource(params: {
         todayPosition: seeded.todayPosition,
         limit: read.limit,
         version: read.version,
+        sessionEvents: seeded.sessionEvents,
       });
       // The editor opens ready to edit — view is one toggle away.
       setMode("edit");
@@ -86,7 +90,8 @@ export function usePlacedPlanSource(params: {
 
   // After a save that edits landed during: the save wrote the calendar, so the
   // held version is stale. Take the fresh one WITHOUT re-seeding, or the edits
-  // kept for a second save would go.
+  // kept for a second save would go. The draft keeps its uids, and with them
+  // the calendar entries the seed brought.
   const refreshVersion = useCallback(async () => {
     const next = await mutate();
     if (next?.data) {

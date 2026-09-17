@@ -60,7 +60,7 @@ const DANGER_OUTLINE_BUTTON =
 // one day two ways. **Both spell `EEE, MMM d` because that is the app-wide
 // convention** — this panel's own header does too — not because either is
 // matching the other; if the convention moves, both move
-// (`training-event-occupancy.ts` -> formatDay).
+// (`training-session-lock.ts` -> formatDay).
 //
 // Naming the day matters: the lock is on the SESSION, so a coach can open a day
 // whose own event is still scheduled and find it locked by an occurrence they

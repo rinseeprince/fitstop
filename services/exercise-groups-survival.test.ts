@@ -27,9 +27,8 @@ vi.mock("./training-event-service", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./training-event-service")>()),
   cancelFutureEventsForPlans: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("./training-event-occupancy", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./training-event-occupancy")>()),
-  assertDateFree: vi.fn().mockResolvedValue(undefined),
+vi.mock("./training-session-lock", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./training-session-lock")>()),
   assertSessionUnlogged: vi.fn().mockResolvedValue(undefined),
 }));
 

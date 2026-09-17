@@ -110,12 +110,12 @@ describe("SessionPicker", () => {
         date="2026-08-26"
         onPick={vi.fn()}
         onCancel={vi.fn()}
-        error="Sat, Aug 29 already has a session"
+        error="A session can only move within its own week"
         busy
       />,
     );
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Sat, Aug 29 already has a session");
+    expect(screen.getByRole("alert")).toHaveTextContent("A session can only move within its own week");
     expect(screen.getByText("Legs").closest("button")).toBeDisabled();
   });
 

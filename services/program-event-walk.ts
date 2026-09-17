@@ -1,7 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getNextPlanStartCap } from "./training-event-service";
 import { getBlockBoundForDate } from "./client-blocks-service";
-import { rethrowIfAnyDateOccupied } from "./training-event-occupancy";
 import { getDateString } from "@/lib/date-helpers";
 import type { TrainingEventInsert } from "@/lib/database-helpers";
 
@@ -79,15 +78,7 @@ export async function generateProgramEvents(params: {
       ignoreDuplicates: true,
     });
 
-  if (error) {
-    // The arbiter above does NOT cover migration 136's one-scheduled-per-day
-    // index, so a collision there arrives as a raw 23505. Placement clears its
-    // window of scheduled events first, which is why it doesn't pre-check with
-    // assertDateFree — but a concurrent write between that clear and this
-    // upsert can still land one, and a coach must never read Postgres.
-    rethrowIfAnyDateOccupied(error);
-    throw new Error(`Failed to generate events: ${error.message}`);
-  }
+  if (error) throw new Error(`Failed to generate events: ${error.message}`);
 
   return rows.length;
 }

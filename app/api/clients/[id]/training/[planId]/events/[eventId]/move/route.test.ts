@@ -1,12 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-vi.mock("@/services/training-event-occupancy", () => ({
-  // The route imports this only for the error class; the real module pulls in
-  // supabase-admin at load, which has no env in tests.
-  DateOccupiedError: class DateOccupiedError extends Error {},
-}));
-
 vi.mock("@/services/client-service", () => ({
   getClientById: vi.fn(),
 }));
@@ -40,7 +34,6 @@ import {
   CalendarMoveNotFoundError,
   moveEvent,
 } from "@/services/training-event-calendar-service";
-import { DateOccupiedError } from "@/services/training-event-occupancy";
 import { POST } from "./route";
 
 const clientId = "client-1";
@@ -112,17 +105,6 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move", () =>
 
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: DRIFT });
-  });
-
-  it("answers 409 with the sentence when the target day already holds a session", async () => {
-    vi.mocked(moveEvent).mockRejectedValueOnce(
-      new DateOccupiedError("Thu, Apr 30 already has a session"),
-    );
-
-    const res = await callRoute({ targetDate: "2026-04-30", fromDate: "2026-04-27" });
-
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "Thu, Apr 30 already has a session" });
   });
 
   it("answers 404 'Event not found' for an event that is missing or not this client's", async () => {

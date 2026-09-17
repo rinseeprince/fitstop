@@ -97,7 +97,8 @@ export function CreateSessionSlideOver() {
   // reorder while the overlay is up, so the indices are stable for the
   // flow's lifetime.
   const slot = hasTarget ? draft?.weeks[w]?.days[d] : undefined;
-  const session = slot?.session ?? null;
+  // A library program's day holds at most the one session this flow edits.
+  const session = slot?.sessions[0] ?? null;
 
   // Ensure-effect: force edit mode and create the optimistic card once the
   // draft is ready. Re-runs on draft changes but only acts while the slot is
@@ -114,7 +115,7 @@ export function CreateSessionSlideOver() {
     }
     slotUidRef.current = slot.uid;
     if (mode !== "edit") setMode("edit");
-    if (!slot.session && !savedRef.current) {
+    if (slot.sessions.length === 0 && !savedRef.current) {
       // Snapshot the dirty flag BEFORE the optimistic card dirties the tree,
       // so a full unwind (cancel) can restore it — a previously-clean saved
       // program must not stay flagged dirty by a cancelled create.

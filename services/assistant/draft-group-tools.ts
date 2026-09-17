@@ -17,6 +17,7 @@ import {
   groupLine,
   resolveExerciseRef,
   resolveSession,
+  sessionPlaceProperty,
 } from "./draft-tool-helpers";
 
 // Group WRITE tools: supersets, circuits and linked straight sets, the coach's
@@ -112,6 +113,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
       properties: {
         week: { type: "integer", minimum: 1 },
         day: { type: "integer", minimum: 1, maximum: 7 },
+        session: sessionPlaceProperty,
         exercisePositions: {
           type: "array",
           minItems: 2,
@@ -125,7 +127,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
       additionalProperties: false,
     } as const,
     run: (input) => {
-      const session = resolveSession(ws, input.week, input.day);
+      const session = resolveSession(ws, input.week, input.day, input.session);
       if (!session.ok) return session.error;
       const picked = resolvePositions(session.value, input.exercisePositions);
       if (!picked.ok) return picked.error;
@@ -171,6 +173,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
       properties: {
         week: { type: "integer", minimum: 1 },
         day: { type: "integer", minimum: 1, maximum: 7 },
+        session: sessionPlaceProperty,
         exercisePosition: { type: "integer", minimum: 1, description: "The exercise to move" },
         exerciseName: { type: "string", maxLength: 200 },
         groupExercisePosition: {
@@ -183,7 +186,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
       additionalProperties: false,
     } as const,
     run: (input) => {
-      const session = resolveSession(ws, input.week, input.day);
+      const session = resolveSession(ws, input.week, input.day, input.session);
       if (!session.ok) return session.error;
       const ref = resolveExerciseRef(session.value, input);
       if (!ref.ok) return ref.error;
@@ -218,6 +221,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
       properties: {
         week: { type: "integer", minimum: 1 },
         day: { type: "integer", minimum: 1, maximum: 7 },
+        session: sessionPlaceProperty,
         exercisePositions: {
           type: "array",
           minItems: 1,
@@ -229,7 +233,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
       additionalProperties: false,
     } as const,
     run: (input) => {
-      const session = resolveSession(ws, input.week, input.day);
+      const session = resolveSession(ws, input.week, input.day, input.session);
       if (!session.ok) return session.error;
       const picked = resolvePositions(session.value, input.exercisePositions);
       if (!picked.ok) return picked.error;
@@ -273,6 +277,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
       properties: {
         week: { type: "integer", minimum: 1 },
         day: { type: "integer", minimum: 1, maximum: 7 },
+        session: sessionPlaceProperty,
         exercisePosition: { type: "integer", minimum: 1 },
         toPosition: { type: "integer", minimum: 1, maximum: MAX_POSITION },
       },
@@ -280,7 +285,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
       additionalProperties: false,
     } as const,
     run: (input) => {
-      const session = resolveSession(ws, input.week, input.day);
+      const session = resolveSession(ws, input.week, input.day, input.session);
       if (!session.ok) return session.error;
       const ref = resolveExerciseRef(session.value, { exercisePosition: input.exercisePosition });
       if (!ref.ok) return ref.error;
@@ -311,6 +316,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
       properties: {
         week: { type: "integer", minimum: 1 },
         day: { type: "integer", minimum: 1, maximum: 7 },
+        session: sessionPlaceProperty,
         exercisePosition: { type: "integer", minimum: 1 },
         format: { type: "string", enum: ["superset_or_circuit", "straight_sets"] },
         ...groupSettingsProperties,
@@ -319,7 +325,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
       additionalProperties: false,
     } as const,
     run: (input) => {
-      const session = resolveSession(ws, input.week, input.day);
+      const session = resolveSession(ws, input.week, input.day, input.session);
       if (!session.ok) return session.error;
       const ref = resolveExerciseRef(session.value, { exercisePosition: input.exercisePosition });
       if (!ref.ok) return ref.error;

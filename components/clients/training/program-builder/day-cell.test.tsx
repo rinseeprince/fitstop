@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 import { DndContext } from "@dnd-kit/core";
 import { PAST_LOCKED } from "./program-builder-lock-model";
 import { DayCell } from "./day-cell";
@@ -31,14 +31,14 @@ function lone(exercise: ExerciseDraft): ExerciseGroupDraft {
 }
 
 function makeSlot(overrides: Partial<DaySlotDraft> = {}): DaySlotDraft {
-  return { uid: "slot-1", orderIndex: 0, isRest: true, session: null, ...overrides };
+  return { uid: "slot-1", orderIndex: 0, isRest: true, sessions: [], ...overrides };
 }
 
 function renderCell(props: Partial<Parameters<typeof DayCell>[0]> = {}) {
   const handlers = {
     onOpenSession: vi.fn(),
     onRequestAddSession: vi.fn(),
-    onClearSlot: vi.fn(),
+    onRemoveSession: vi.fn(),
   };
   render(
     <DndContext>
@@ -83,19 +83,21 @@ describe("DayCell — session state", () => {
   const sessionSlot = () =>
     makeSlot({
       isRest: false,
-      session: makeSession({
-        groups: [
-          lone({
-            uid: "ex-1",
-            name: "Bench",
-            sets: 3,
-            repsMin: 8,
-            repsMax: 12,
-          } as ExerciseDraft),
-          lone({ uid: "ex-2", name: "Fly", sets: 3, repsMin: 8, repsMax: 12 } as ExerciseDraft),
-        ],
-        calorieSurplusPercentage: 12,
-      }),
+      sessions: [
+        makeSession({
+          groups: [
+            lone({
+              uid: "ex-1",
+              name: "Bench",
+              sets: 3,
+              repsMin: 8,
+              repsMax: 12,
+            } as ExerciseDraft),
+            lone({ uid: "ex-2", name: "Fly", sets: 3, repsMin: 8, repsMax: 12 } as ExerciseDraft),
+          ],
+          calorieSurplusPercentage: 12,
+        }),
+      ],
     });
 
   it("shows name, the exercise list with sets×reps, and count; click opens the editor", () => {
@@ -117,28 +119,30 @@ describe("DayCell — session state", () => {
     renderCell({
       slot: makeSlot({
         isRest: false,
-        session: makeSession({
-          groups: [
-            lone(ex("ex-1", "Back Squat", { repsMin: 5, repsMax: 5 })),
-            {
-              uid: "grp-circuit",
-              ...STRAIGHT_SETS,
-              format: "circuit",
-              rounds: 3,
-              exercises: [
-                ex("ex-2", "Thruster", {
-                  setSpecs: [
-                    { set_number: 1, set_type: "working", reps_min: 21, reps_max: 21 },
-                    { set_number: 2, set_type: "working", reps_min: 15, reps_max: 15 },
-                    { set_number: 3, set_type: "working", reps_min: 9, reps_max: 9 },
-                  ],
-                }),
-                ex("ex-3", "Pull Up"),
-                ex("ex-4", "Burpee"),
-              ],
-            },
-          ],
-        }),
+        sessions: [
+          makeSession({
+            groups: [
+              lone(ex("ex-1", "Back Squat", { repsMin: 5, repsMax: 5 })),
+              {
+                uid: "grp-circuit",
+                ...STRAIGHT_SETS,
+                format: "circuit",
+                rounds: 3,
+                exercises: [
+                  ex("ex-2", "Thruster", {
+                    setSpecs: [
+                      { set_number: 1, set_type: "working", reps_min: 21, reps_max: 21 },
+                      { set_number: 2, set_type: "working", reps_min: 15, reps_max: 15 },
+                      { set_number: 3, set_type: "working", reps_min: 9, reps_max: 9 },
+                    ],
+                  }),
+                  ex("ex-3", "Pull Up"),
+                  ex("ex-4", "Burpee"),
+                ],
+              },
+            ],
+          }),
+        ],
       }),
     });
     const rail = screen.getByTestId("day-cell-group-rail");
@@ -157,7 +161,7 @@ describe("DayCell — session state", () => {
     renderCell({
       slot: makeSlot({
         isRest: false,
-        session: makeSession({ calorieSurplusPercentage: null }),
+        sessions: [makeSession({ calorieSurplusPercentage: null })],
       }),
       defaultSurplusPercentage: 20,
     });
@@ -169,23 +173,23 @@ describe("DayCell — session state", () => {
     renderCell({
       slot: makeSlot({
         isRest: false,
-        session: makeSession({ calorieSurplusPercentage: null }),
+        sessions: [makeSession({ calorieSurplusPercentage: null })],
       }),
       defaultSurplusPercentage: null,
     });
     expect(screen.queryByText(/^\+\d+%$/)).toBeNull();
   });
 
-  it("quick-clear turns the cell back into rest without opening the editor", () => {
+  it("the card's X removes its session without opening the editor", () => {
     const handlers = renderCell({ slot: sessionSlot() });
-    fireEvent.click(screen.getByLabelText("Clear session (back to rest)"));
-    expect(handlers.onClearSlot).toHaveBeenCalledWith("slot-1");
+    fireEvent.click(screen.getByLabelText("Remove session"));
+    expect(handlers.onRemoveSession).toHaveBeenCalledWith("sess-1");
     expect(handlers.onOpenSession).not.toHaveBeenCalled();
   });
 
-  it("view mode hides the clear + drag affordances", () => {
+  it("view mode hides the remove + drag affordances", () => {
     renderCell({ slot: sessionSlot(), mode: "view" });
-    expect(screen.queryByLabelText("Clear session (back to rest)")).toBeNull();
+    expect(screen.queryByLabelText("Remove session")).toBeNull();
     expect(screen.queryByLabelText("Drag session")).toBeNull();
   });
 
@@ -207,15 +211,13 @@ describe("DayCell — the plan editor's locked, greyed and today days", () => {
     expect(screen.queryByText("Add session")).not.toBeInTheDocument();
   });
 
-  it("a locked session card shows the lock marker and hides clear/grip", () => {
+  it("a locked session card shows the lock marker and hides remove/grip", () => {
     renderCell({
       locked: true,
-      slot: makeSlot({ isRest: false, session: makeSession() }),
+      slot: makeSlot({ isRest: false, sessions: [makeSession()] }),
     });
     expect(screen.getByTitle(PAST_LOCKED)).toBeInTheDocument();
-    expect(
-      screen.queryByLabelText("Clear session (back to rest)"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Remove session")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Drag session")).not.toBeInTheDocument();
   });
 
@@ -246,7 +248,7 @@ describe("DayCell — the plan editor's locked, greyed and today days", () => {
 
     renderCell({
       isToday: true,
-      slot: makeSlot({ isRest: false, session: makeSession() }),
+      slot: makeSlot({ isRest: false, sessions: [makeSession()] }),
     });
     expect(screen.getByLabelText("Open session Push")).toHaveClass(
       "ring-1",
@@ -256,7 +258,7 @@ describe("DayCell — the plan editor's locked, greyed and today days", () => {
     cleanup();
 
     // Any other day carries no ring.
-    renderCell({ slot: makeSlot({ isRest: false, session: makeSession() }) });
+    renderCell({ slot: makeSlot({ isRest: false, sessions: [makeSession()] }) });
     expect(screen.getByLabelText("Open session Push")).not.toHaveClass("ring-1");
     expect(screen.getByLabelText("Open session Push")).not.toHaveClass("ring-inset");
   });
@@ -264,7 +266,7 @@ describe("DayCell — the plan editor's locked, greyed and today days", () => {
   it("a locked session card STAYS clickable (opens the editor read-only)", () => {
     const handlers = renderCell({
       locked: true,
-      slot: makeSlot({ isRest: false, session: makeSession() }),
+      slot: makeSlot({ isRest: false, sessions: [makeSession()] }),
     });
     fireEvent.click(screen.getByLabelText("Open session Push"));
     expect(handlers.onOpenSession).toHaveBeenCalledWith("sess-1");
@@ -272,11 +274,79 @@ describe("DayCell — the plan editor's locked, greyed and today days", () => {
 
   it("an unlocked session card keeps its edit affordances", () => {
     renderCell({
-      slot: makeSlot({ isRest: false, session: makeSession() }),
+      slot: makeSlot({ isRest: false, sessions: [makeSession()] }),
     });
     expect(screen.queryByTitle(PAST_LOCKED)).not.toBeInTheDocument();
-    expect(
-      screen.getByLabelText("Clear session (back to rest)"),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Remove session")).toBeInTheDocument();
+  });
+});
+
+describe("DayCell — a day holding several sessions", () => {
+  beforeEach(() => cleanup());
+
+  // A morning run with its exercise, then an evening lift with its own.
+  const twoADay = () =>
+    makeSlot({
+      isRest: false,
+      sessions: [
+        makeSession({
+          uid: "sess-am",
+          name: "AM run",
+          groups: [lone({ uid: "ex-run", name: "Easy run", sets: 1, repsMin: 1, repsMax: 1 } as ExerciseDraft)],
+        }),
+        makeSession({
+          uid: "sess-pm",
+          name: "PM lift",
+          calorieSurplusPercentage: 10,
+          groups: [lone({ uid: "ex-squat", name: "Squat", sets: 5, repsMin: 5, repsMax: 5 } as ExerciseDraft)],
+        }),
+      ],
+    });
+
+  const cards = () => screen.getAllByLabelText(/^Open session /);
+
+  it("renders one full card per session, in the day's order", () => {
+    renderCell({ slot: twoADay() });
+    expect(cards().map((card) => card.getAttribute("aria-label"))).toEqual([
+      "Open session AM run",
+      "Open session PM lift",
+    ]);
+    expect(within(cards()[0]).getByText("Easy run")).toBeInTheDocument();
+    expect(within(cards()[1]).getByText("Squat")).toBeInTheDocument();
+    expect(within(cards()[1]).getByText("5×5")).toBeInTheDocument();
+    expect(within(cards()[1]).getByText("+10%")).toBeInTheDocument();
+    expect(screen.queryByText("Rest")).toBeNull();
+  });
+
+  it("each card opens its own session", () => {
+    const handlers = renderCell({ slot: twoADay() });
+    fireEvent.click(screen.getByText("PM lift"));
+    expect(handlers.onOpenSession).toHaveBeenCalledWith("sess-pm");
+    fireEvent.click(screen.getByText("AM run"));
+    expect(handlers.onOpenSession).toHaveBeenLastCalledWith("sess-am");
+    expect(handlers.onOpenSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("each card's X removes its own session, and each card has its own grip", () => {
+    const handlers = renderCell({ slot: twoADay() });
+    expect(screen.getAllByLabelText("Drag session")).toHaveLength(2);
+    fireEvent.click(within(cards()[1]).getByLabelText("Remove session"));
+    expect(handlers.onRemoveSession).toHaveBeenCalledWith("sess-pm");
+    fireEvent.click(within(cards()[0]).getByLabelText("Remove session"));
+    expect(handlers.onRemoveSession).toHaveBeenLastCalledWith("sess-am");
+    expect(handlers.onOpenSession).not.toHaveBeenCalled();
+  });
+
+  it("collapsed, each card is just its name", () => {
+    renderCell({ slot: twoADay(), collapsed: true });
+    expect(cards().map((card) => card.textContent)).toEqual(["AM run", "PM lift"]);
+  });
+
+  it("locked, every card carries the lock and none removes or drags; today rings every card", () => {
+    renderCell({ slot: twoADay(), locked: true, isToday: true });
+    expect(screen.getAllByTitle(PAST_LOCKED)).toHaveLength(2);
+    expect(screen.queryByLabelText("Remove session")).toBeNull();
+    expect(screen.queryByLabelText("Drag session")).toBeNull();
+    for (const card of cards()) expect(card).toHaveClass("ring-1", "ring-inset");
   });
 });

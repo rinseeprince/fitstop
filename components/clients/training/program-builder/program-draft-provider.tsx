@@ -176,6 +176,7 @@ export function ProgramDraftProvider({
     getRevision,
     markSaved,
     version: placed.version,
+    sessionEvents: placed.sessionEvents,
     reload: placed.reload,
     refreshVersion: placed.refreshVersion,
     onSaved,

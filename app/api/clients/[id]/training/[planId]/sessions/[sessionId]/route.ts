@@ -5,7 +5,7 @@ import { replaceSessionFull } from "@/services/training-session-replace-service"
 import {
   getSessionEventLinks,
   SessionLoggedError,
-} from "@/services/training-event-occupancy";
+} from "@/services/training-session-lock";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";

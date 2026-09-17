@@ -6,6 +6,7 @@ import {
 import {
   cloneWeek,
   progressWeek,
+  weekSessions,
 } from "@/components/clients/training/program-builder/program-builder-model";
 import {
   buildScopePredicate,
@@ -29,26 +30,29 @@ import { commitOp, resolveWeek } from "./draft-tool-helpers";
  * calculated.
  *
  * Positional pairing is safe — progressWeek never adds, removes, or reorders
- * exercises. Capped so a 12-week fan-out can't flood the tool result.
+ * sessions or exercises. Capped so a 12-week fan-out can't flood the tool
+ * result.
  */
 const MAX_REPORTED_EXERCISES = 5;
 
 function loadChanges(before: WeekDraft, after: WeekDraft): string[] {
   const seen = new Map<string, string>();
   before.days.forEach((slot, d) => {
-    const afterSession = after.days[d]?.session;
-    if (!slot.session || !afterSession) return;
-    const afterExercises = sessionExercises(afterSession);
-    sessionExercises(slot.session).forEach((ex, i) => {
-      const next = afterExercises[i];
-      if (!next || seen.has(ex.name)) return;
-      // Pinned to metric, NOT the coach's preference: the assistant speaks
-      // canonical kilograms everywhere (this file's own WireRule "load_kg",
-      // draft-agent-service's prompt, draft-exercise-tools' loadKg field). An
-      // lbs string reaching the model would corrupt its arithmetic silently.
-      const from = formatLoads(ex, "metric");
-      const to = formatLoads(next, "metric");
-      if (from !== to) seen.set(ex.name, `${ex.name} ${from} → ${to}`);
+    slot.sessions.forEach((session, p) => {
+      const afterSession = after.days[d]?.sessions[p];
+      if (!afterSession) return;
+      const afterExercises = sessionExercises(afterSession);
+      sessionExercises(session).forEach((ex, i) => {
+        const next = afterExercises[i];
+        if (!next || seen.has(ex.name)) return;
+        // Pinned to metric, NOT the coach's preference: the assistant speaks
+        // canonical kilograms everywhere (this file's own WireRule "load_kg",
+        // draft-agent-service's prompt, draft-exercise-tools' loadKg field). An
+        // lbs string reaching the model would corrupt its arithmetic silently.
+        const from = formatLoads(ex, "metric");
+        const to = formatLoads(next, "metric");
+        if (from !== to) seen.set(ex.name, `${ex.name} ${from} → ${to}`);
+      });
     });
   });
   const all = [...seen.values()];
@@ -209,14 +213,9 @@ export function buildWeekTools(ws: DraftWorkspace) {
           generated = result.week;
           changedCount = Math.max(changedCount, result.changedExerciseUids.size);
         }
-        const inScope = generated.days.reduce(
-          (sum, slot) =>
-            sum +
-            (slot.session
-              ? sessionExercises(slot.session).filter((e) => !e.isWarmup && predicate(e)).length
-              : 0),
-          0,
-        );
+        const inScope = weekSessions(generated)
+          .flatMap(sessionExercises)
+          .filter((e) => !e.isWarmup && predicate(e)).length;
         const label =
           due.length > 0
             ? `Week ${week} duplicated (${due.map(ruleSummary).join(", ")})`

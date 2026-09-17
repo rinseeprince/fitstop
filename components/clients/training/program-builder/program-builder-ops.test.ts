@@ -105,9 +105,10 @@ function makeDraft(weeks: WeekDraft[]): ProgramDraft {
   });
 }
 
-function weekWithSession(session: SessionDraft, weekIndex = 0): WeekDraft {
+// A week whose first day holds `sessions`, in order; the other six are rest.
+function weekWithSession(session: SessionDraft, weekIndex = 0, ...more: SessionDraft[]): WeekDraft {
   const week = makeRestWeek(weekIndex);
-  week.days[0] = { ...makeRestSlot(0), isRest: false, session };
+  week.days[0] = { ...makeRestSlot(0), isRest: false, sessions: [session, ...more] };
   return week;
 }
 
@@ -119,7 +120,7 @@ describe("applyDraftOp", () => {
 
     const placed = applyDraftOp(draft, { type: "place_session", slotUid, session }, LIB);
     expect(placed.skipped).toBeUndefined();
-    expect(placed.draft.weeks[0].days[2].session?.uid).toBe(session.uid);
+    expect(placed.draft.weeks[0].days[2].sessions.map((s) => s.uid)).toEqual([session.uid]);
 
     const normalized = normalizeDraft(placed.draft);
     const again = applyDraftOp(
@@ -164,7 +165,7 @@ describe("applyDraftOp", () => {
 
   it("rejects template-identity edits in client-draft mode but allows them in library mode", () => {
     const draft = makeDraft([weekWithSession(makeSession())]);
-    const sessionUid = draft.weeks[0].days[0].session!.uid;
+    const sessionUid = draft.weeks[0].days[0].sessions[0].uid;
 
     const metaClient = applyDraftOp(
       draft,
@@ -203,8 +204,8 @@ describe("applyDraftOp", () => {
       groups: [lone(makeExercise()), lone(makeExercise({ name: "Row" }))],
     });
     const week = makeRestWeek(0);
-    week.days[0] = { ...makeRestSlot(0), session: a, isRest: false };
-    week.days[3] = { ...makeRestSlot(3), session: b, isRest: false };
+    week.days[0] = { ...makeRestSlot(0), sessions: [a], isRest: false };
+    week.days[3] = { ...makeRestSlot(3), sessions: [b], isRest: false };
     const draft = makeDraft([week]);
     const targetSlotUid = draft.weeks[0].days[3].uid;
 
@@ -213,8 +214,8 @@ describe("applyDraftOp", () => {
       { type: "move_session", sessionUid: a.uid, targetSlotUid },
       LIB,
     );
-    expect(swapped.draft.weeks[0].days[3].session?.name).toBe("A");
-    expect(swapped.draft.weeks[0].days[0].session?.name).toBe("B");
+    expect(swapped.draft.weeks[0].days[3].sessions.map((s) => s.name)).toEqual(["A"]);
+    expect(swapped.draft.weeks[0].days[0].sessions.map((s) => s.name)).toEqual(["B"]);
 
     const reordered = applyDraftOp(
       draft,
@@ -227,7 +228,7 @@ describe("applyDraftOp", () => {
       },
       LIB,
     );
-    const session = reordered.draft.weeks[0].days[3].session!;
+    const [session] = reordered.draft.weeks[0].days[3].sessions;
     expect(sessionExercises(session).map((e) => e.name)).toEqual(["Row", "Bench Press"]);
   });
 
@@ -250,12 +251,122 @@ describe("applyDraftOp", () => {
   });
 });
 
+describe("applyDraftOp on a day holding several sessions", () => {
+  // Day 1 holds AM then PM, day 4 holds Solo, and the other days are rest.
+  function fixture() {
+    const week = weekWithSession(makeSession({ name: "AM" }), 0, makeSession({ name: "PM" }));
+    week.days[3] = { ...makeRestSlot(3), isRest: false, sessions: [makeSession({ name: "Solo" })] };
+    const draft = makeDraft([week]);
+    const [dayOne, , , dayFour, , daySix] = draft.weeks[0].days;
+    const [am, pm] = dayOne.sessions;
+    return { draft, am, pm, solo: dayFour.sessions[0], dayOne, dayFour, daySix };
+  }
+  const namesOn = (draft: ProgramDraft, d: number) => draft.weeks[0].days[d].sessions.map((s) => s.name);
+
+  it("remove_session takes one of two sessions off the day, and the day keeps the other", () => {
+    const { draft, am } = fixture();
+    const result = applyDraftOps(draft, [{ type: "remove_session", sessionUid: am.uid }], LIB);
+    expect(result.skipped).toEqual([]);
+    expect(namesOn(result.draft, 0)).toEqual(["PM"]);
+    expect(result.draft.weeks[0].days[0].isRest).toBe(false);
+    expect(namesOn(result.draft, 3)).toEqual(["Solo"]);
+  });
+
+  it("remove_session of a day's last session leaves a rest day; a vanished session skips", () => {
+    const { draft, solo } = fixture();
+    const result = applyDraftOps(draft, [{ type: "remove_session", sessionUid: solo.uid }], LIB);
+    expect(result.draft.weeks[0].days[3]).toMatchObject({ isRest: true, sessions: [] });
+
+    const gone = applyDraftOp(result.draft, { type: "remove_session", sessionUid: solo.uid }, LIB);
+    expect(gone.skipped).toBe("That session no longer exists");
+    expect(gone.draft).toBe(result.draft);
+  });
+
+  it("clear_slot empties the whole day, both sessions", () => {
+    const { draft, dayOne } = fixture();
+    const result = applyDraftOps(draft, [{ type: "clear_slot", slotUid: dayOne.uid }], LIB);
+    expect(result.skipped).toEqual([]);
+    expect(result.draft.weeks[0].days[0]).toMatchObject({ isRest: true, sessions: [] });
+  });
+
+  it("place_session skips a day holding one session or two, with one reason", () => {
+    const { draft, dayOne, dayFour } = fixture();
+    for (const slot of [dayOne, dayFour]) {
+      const out = applyDraftOp(draft, { type: "place_session", slotUid: slot.uid, session: makeSession() }, LIB);
+      expect(out.skipped).toBe("That day already has a session");
+      expect(out.draft).toBe(draft);
+    }
+  });
+
+  it("move_session takes one session of two onto a rest day; the day it left keeps the other", () => {
+    const { draft, pm, daySix } = fixture();
+    const result = applyDraftOps(
+      draft,
+      [{ type: "move_session", sessionUid: pm.uid, targetSlotUid: daySix.uid }],
+      LIB,
+    );
+    expect(result.skipped).toEqual([]);
+    expect(namesOn(result.draft, 5)).toEqual(["PM"]);
+    expect(namesOn(result.draft, 0)).toEqual(["AM"]);
+  });
+
+  it("move_session refuses a day holding two, and a swap for a session that shares its day", () => {
+    const { draft, am, solo, dayOne, dayFour } = fixture();
+    const ontoTwo = applyDraftOp(
+      draft,
+      { type: "move_session", sessionUid: solo.uid, targetSlotUid: dayOne.uid },
+      LIB,
+    );
+    expect(ontoTwo.skipped).toBe("That day already has a session");
+    expect(ontoTwo.draft).toBe(draft);
+
+    const sharedSwap = applyDraftOp(
+      draft,
+      { type: "move_session", sessionUid: am.uid, targetSlotUid: dayFour.uid },
+      LIB,
+    );
+    expect(sharedSwap.skipped).toBe("That day already has a session");
+    expect(sharedSwap.draft).toBe(draft);
+
+    // Onto its own day holding two: nothing changes, nothing skips.
+    const ownDay = applyDraftOp(
+      draft,
+      { type: "move_session", sessionUid: am.uid, targetSlotUid: dayOne.uid },
+      LIB,
+    );
+    expect(ownDay).toEqual({ draft });
+  });
+
+  it("remove_session on a history day skips with PAST_LOCKED, the day's second session too", () => {
+    const { draft, am, pm, solo } = fixture();
+    // History before position 3: day 1 is history, day 4 is editable.
+    const placed = { target: "placed-plan" as const, editableDays: { from: 3, through: null } };
+    for (const session of [am, pm]) {
+      const out = applyDraftOp(draft, { type: "remove_session", sessionUid: session.uid }, placed);
+      expect(out.skipped).toBe(PAST_LOCKED);
+      expect(out.draft).toBe(draft);
+    }
+    expect(applyDraftOp(draft, { type: "remove_session", sessionUid: solo.uid }, placed).skipped).toBeUndefined();
+  });
+
+  it("a uid held by a day's second session counts as present: a replayed add skips", () => {
+    const { draft, am, pm } = fixture();
+    const out = applyDraftOp(
+      draft,
+      { type: "add_exercise", sessionUid: am.uid, group: pm.groups[0] },
+      LIB,
+    );
+    expect(out.skipped).toBe("Exercise already added");
+    expect(out.draft).toBe(draft);
+  });
+});
+
 describe("applyDraftOps", () => {
   it("applies sequentially with renumbering, so later ops can address the inserted week's content", () => {
     const session = makeSession();
     const draft = makeDraft([weekWithSession(session)]);
     const newWeek = weekWithSession(makeSession({ name: "Week 2 session" }), 5);
-    const insertedSessionUid = newWeek.days[0].session!.uid;
+    const insertedSessionUid = newWeek.days[0].sessions[0].uid;
 
     const result = applyDraftOps(
       draft,
@@ -273,7 +384,7 @@ describe("applyDraftOps", () => {
     expect(result.skipped).toEqual([]);
     // normalizeDraft resynced the payload's stale weekIndex (5 → 1).
     expect(result.draft.weeks[1].weekIndex).toBe(1);
-    expect(result.draft.weeks[1].days[0].session?.notes).toBe("added this turn");
+    expect(result.draft.weeks[1].days[0].sessions[0].notes).toBe("added this turn");
   });
 
   it("collects skips without aborting the rest of the turn", () => {
@@ -294,9 +405,11 @@ describe("applyDraftOps", () => {
 });
 
 describe("isDestructiveOp", () => {
-  it("flags week deletes and slot clears only", () => {
+  it("flags week deletes, slot clears and session removals only", () => {
     expect(isDestructiveOp({ type: "remove_week", weekUid: "w" })).toBe(true);
     expect(isDestructiveOp({ type: "clear_slot", slotUid: "s" })).toBe(true);
+    expect(isDestructiveOp({ type: "remove_session", sessionUid: "sess" })).toBe(true);
+    expect(isDestructiveOp({ type: "remove_exercise", sessionUid: "sess", exerciseUid: "ex" })).toBe(false);
     const benign: DraftOp = { type: "set_program_meta", patch: { name: "x" } };
     expect(isDestructiveOp(benign)).toBe(false);
   });
@@ -382,6 +495,26 @@ describe("wire-schema round trip (drift belt)", () => {
     expect(normalizeDraft(parsed as ProgramDraft)).toEqual(maximal);
   });
 
+  it("keeps a day's sessions and their order; refuses a day holding more than twenty", () => {
+    const am = makeSession({ name: "AM run" });
+    const pm = makeSession({ name: "PM lift", calorieSurplusPercentage: 10 });
+    const draft = makeDraft([weekWithSession(am, 0, pm)]);
+    const parsed = programDraftSnapshotSchema.parse(draft);
+    expect(normalizeDraft(parsed as ProgramDraft)).toEqual(draft);
+    expect(parsed.weeks[0].days[0].sessions.map((s) => s.name)).toEqual(["AM run", "PM lift"]);
+
+    const crowded = makeDraft([
+      weekWithSession(makeSession(), 0, ...Array.from({ length: 20 }, () => makeSession())),
+    ]);
+    expect(programDraftSnapshotSchema.safeParse(crowded).success).toBe(false);
+  });
+
+  it("accepts a remove_session op and nothing without its session", () => {
+    const op: DraftOp = { type: "remove_session", sessionUid: "sess-1", label: "W1 D1: removed \"AM run\"" };
+    expect(draftOpSchema.parse(op)).toEqual(op);
+    expect(draftOpSchema.safeParse({ type: "remove_session" }).success).toBe(false);
+  });
+
   it("rejects a week that is not exactly 7 slots (uid-minting hazard)", () => {
     const draft = makeDraft([makeRestWeek(0)]);
     const short = {
@@ -402,7 +535,7 @@ describe("wire-schema round trip (drift belt)", () => {
     ]);
 
     const parsed = programDraftSnapshotSchema.parse(draft);
-    const [parsedCircuit] = parsed.weeks[0].days[0].session!.groups;
+    const [parsedCircuit] = parsed.weeks[0].days[0].sessions[0].groups;
     expect(parsedCircuit).toEqual(circuit);
     expect(groupSettingsOf(parsedCircuit)).toEqual(CIRCUIT);
   });
@@ -427,9 +560,9 @@ describe("add_exercise appends a whole group", () => {
     const result = applyDraftOps(draft, [op], LIB);
     expect(result.applied).toBe(1);
     expect(result.skipped).toEqual([]);
-    const groups = result.draft.weeks[0].days[0].session!.groups;
+    const groups = result.draft.weeks[0].days[0].sessions[0].groups;
     expect(groups).toHaveLength(2);
-    expect(groups[0]).toEqual(draft.weeks[0].days[0].session!.groups[0]);
+    expect(groups[0]).toEqual(draft.weeks[0].days[0].sessions[0].groups[0]);
     expect(groups[1]).toEqual(group);
 
     // The same op replayed.
@@ -474,9 +607,9 @@ describe("exercise ops on a session holding a circuit", () => {
     return { draft, sessionUid: session.uid, circuit, benchGroup, squat, row, bench };
   }
 
-  const groupsOf = (draft: ProgramDraft) => draft.weeks[0].days[0].session!.groups;
+  const groupsOf = (draft: ProgramDraft) => draft.weeks[0].days[0].sessions[0].groups;
   const namesOf = (draft: ProgramDraft) =>
-    sessionExercises(draft.weeks[0].days[0].session!).map((e) => e.name);
+    sessionExercises(draft.weeks[0].days[0].sessions[0]).map((e) => e.name);
 
   // The circuit is still ONE group, with its uid, its settings and both its
   // exercises.
@@ -663,12 +796,12 @@ describe("place_session and insert_week carry every group setting", () => {
     expect(result.skipped).toEqual([]);
     expect(result.applied).toBe(2);
 
-    const placedGroups = result.draft.weeks[0].days[2].session!.groups;
+    const placedGroups = result.draft.weeks[0].days[2].sessions[0].groups;
     expect(placedGroups).toEqual(session.groups);
     expect(groupSettingsOf(placedGroups[0])).toEqual(EVERY_SETTING);
 
-    const insertedGroups = result.draft.weeks[1].days[0].session!.groups;
-    expect(insertedGroups).toEqual(week.days[0].session!.groups);
+    const insertedGroups = result.draft.weeks[1].days[0].sessions[0].groups;
+    expect(insertedGroups).toEqual(week.days[0].sessions[0].groups);
     expect(groupSettingsOf(insertedGroups[0])).toEqual(EVERY_SETTING);
   });
 });
@@ -733,8 +866,8 @@ describe("applyDraftOp on the plan editor's days (placed-plan)", () => {
     const draft = makeDraft(weeks);
     return {
       draft,
-      past: draft.weeks[0].days[0].session!,
-      future: draft.weeks[1].days[0].session!,
+      past: draft.weeks[0].days[0].sessions[0],
+      future: draft.weeks[1].days[0].sessions[0],
     };
   }
 
@@ -772,7 +905,7 @@ describe("applyDraftOp on the plan editor's days (placed-plan)", () => {
       placed(7),
     );
     expect(placedOut.skipped).toBeUndefined();
-    expect(placedOut.draft.weeks[1].days[3].session?.uid).toBe(session.uid);
+    expect(placedOut.draft.weeks[1].days[3].sessions.map((s) => s.uid)).toEqual([session.uid]);
 
     const cleared = applyDraftOp(
       draft,
@@ -780,7 +913,7 @@ describe("applyDraftOp on the plan editor's days (placed-plan)", () => {
       placed(7),
     );
     expect(cleared.skipped).toBeUndefined();
-    expect(cleared.draft.weeks[1].days[0].session).toBeNull();
+    expect(cleared.draft.weeks[1].days[0].sessions).toEqual([]);
   });
 
   it("move_session refuses a history source or target with PAST_LOCKED, and moves between editable days", () => {
@@ -805,7 +938,7 @@ describe("applyDraftOp on the plan editor's days (placed-plan)", () => {
       placed(7),
     );
     expect(moved.skipped).toBeUndefined();
-    expect(moved.draft.weeks[1].days[4].session?.uid).toBe(future.uid);
+    expect(moved.draft.weeks[1].days[4].sessions.map((s) => s.uid)).toEqual([future.uid]);
   });
 
   it("session and exercise ops on a history session skip with PAST_LOCKED; on an editable one they apply", () => {
@@ -925,7 +1058,7 @@ describe("applyDraftOp on the plan editor's days (placed-plan)", () => {
     // Appended, the week starts on 21 and its own session sits on 24.
     const lateSession = () => {
       const week = makeRestWeek(3);
-      week.days[3] = { ...makeRestSlot(3), isRest: false, session: makeSession() };
+      week.days[3] = { ...makeRestSlot(3), isRest: false, sessions: [makeSession()] };
       return week;
     };
     const append = applyDraftOp(

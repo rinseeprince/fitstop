@@ -14,7 +14,9 @@ import {
   createStandaloneSessionSchema,
   planEditSaveSchema,
   moveTrainingPlanSchema,
+  clientLayoutSchema,
 } from './training'
+import { MAX_PLAN_EDIT_SESSIONS, MAX_WEEK_LAYOUT_MOVES } from '@/lib/training-constants'
 import { MAX_PRESCRIBED_ROWS } from '@/utils/set-spec-rows'
 import { STRAIGHT_SETS, sessionExercises } from '@/utils/exercise-groups'
 
@@ -638,17 +640,13 @@ describe('Training Validation Schemas', () => {
         'planEditSaveSchema',
         (groups) => {
           const r = planEditSaveSchema.safeParse({
-            sessions: Array.from({ length: 7 }, (_, i) => ({
-              name: i === 0 ? 'Day' : 'Rest',
-              orderIndex: i,
-              weekIndex: 0,
-              isRest: i !== 0,
-              groups: i === 0 ? groups : [],
+            days: Array.from({ length: 7 }, (_, i) => ({
+              sessions: i === 0 ? [{ name: 'Day', groups }] : [],
             })),
             plan: { name: 'Block A' },
             version: 'v1',
           })
-          return r.success ? r.data.sessions[0].groups : null
+          return r.success ? r.data.days[0].sessions[0].groups : null
         },
       ],
     ]
@@ -772,5 +770,54 @@ describe('Training Validation Schemas', () => {
         expect(exercise).toStrictEqual({ name: 'Squat', sets: 3 })
       }
     })
+  })
+})
+
+describe('several sessions a day', () => {
+  const session = (name: string) => ({ name, groups: [] })
+
+  it('planEditSaveSchema takes a day holding several sessions, each naming the entry it was opened from or none', () => {
+    const r = planEditSaveSchema.safeParse({
+      days: Array.from({ length: 7 }, (_, i) => ({
+        sessions:
+          i === 0
+            ? [{ ...session('Run'), eventId: 'e0000000-0000-4000-8000-000000000001' }, session('Lift')]
+            : [],
+      })),
+      plan: { name: 'Block A' },
+      version: 'v1',
+    })
+
+    expect(r.success).toBe(true)
+    if (r.success) {
+      expect(r.data.days[0].sessions.map((s) => [s.name, s.eventId ?? null])).toEqual([
+        ['Run', 'e0000000-0000-4000-8000-000000000001'],
+        ['Lift', null],
+      ])
+    }
+  })
+
+  it('planEditSaveSchema refuses more sessions than an editor can carry, however they spread over the days', () => {
+    const days = (perDay: number) =>
+      Array.from({ length: 14 }, () => ({ sessions: Array.from({ length: perDay }, () => session('S')) }))
+    const parse = (perDay: number) =>
+      planEditSaveSchema.safeParse({ days: days(perDay), plan: { name: 'Block A' }, version: 'v1' }).success
+
+    const most = Math.floor(MAX_PLAN_EDIT_SESSIONS / 14)
+    expect(parse(most)).toBe(true)
+    expect(parse(most + 1)).toBe(false)
+  })
+
+  it('clientLayoutSchema takes more than seven moves in a week, up to its bound', () => {
+    const moves = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        eventId: `e0000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+        fromDate: '2026-08-24',
+        toDate: '2026-08-25',
+      }))
+
+    expect(clientLayoutSchema.safeParse({ moves: moves(8) }).success).toBe(true)
+    expect(clientLayoutSchema.safeParse({ moves: moves(MAX_WEEK_LAYOUT_MOVES) }).success).toBe(true)
+    expect(clientLayoutSchema.safeParse({ moves: moves(MAX_WEEK_LAYOUT_MOVES + 1) }).success).toBe(false)
   })
 })

@@ -32,7 +32,7 @@ import {
 import type { TrainingGroupWrite } from "./training-group-writes";
 import type { TrainingExerciseWithGroupRow } from "./training-mappers";
 import { replaceSessionFull } from "./training-session-replace-service";
-import { SessionLoggedError } from "./training-event-occupancy";
+import { SessionLoggedError } from "./training-session-lock";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockBulkReplace = vi.mocked(bulkReplaceExercises);

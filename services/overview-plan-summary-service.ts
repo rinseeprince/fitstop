@@ -141,7 +141,8 @@ async function getNextSession(
   clientId: string,
   clientToday: string
 ): Promise<{ name: string; date: string; isToday: boolean } | null> {
-  // Upcoming, still scheduled, unlinked.
+  // Upcoming, still scheduled, unlinked: the first in calendar order, a day's
+  // sessions in the day's order.
   const { data, error } = await supabaseAdmin
     .from("training_events")
     .select("session_name, date")
@@ -150,7 +151,8 @@ async function getNextSession(
     .eq("status", "scheduled")
     .is("session_log_id", null)
     .order("date", { ascending: true })
-    .order("created_at", { ascending: true })
+    .order("day_order", { ascending: true })
+    .order("id", { ascending: true })
     .limit(1)
     .maybeSingle();
 

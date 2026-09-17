@@ -255,7 +255,8 @@ export async function getTrainingEventDetailsForPeriod(
     }
   }
 
-  // events are already ordered by date ascending (getEventsForDateRange).
+  // Events are already in calendar order — by date, a day's sessions in the
+  // day's order (getEventsForDateRange) — so a day holding several lists each.
   return events.map((e) => {
     const log = e.sessionLogId ? logById.get(e.sessionLogId) : undefined;
     const detail: CheckInTrainingEventDetail = {
