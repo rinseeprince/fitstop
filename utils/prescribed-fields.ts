@@ -110,3 +110,20 @@ export function resolvePrescribedFields(
 ): ReadonlySet<PrescribedField> {
   return new Set(toPrescribedFields(stored));
 }
+
+/**
+ * The columns a prescription snapshot names (`prescribed_exercise_snapshot`, or
+ * the live exercise written in its shape), as the set a renderer asks. A
+ * snapshot is JSON: anything but a list of strings reads as no list, and so as
+ * today's five.
+ */
+export function snapshotPrescribedFields(
+  snapshot: Record<string, unknown> | null | undefined,
+): ReadonlySet<PrescribedField> {
+  const listed = snapshot?.prescribed_fields;
+  return resolvePrescribedFields(
+    Array.isArray(listed)
+      ? listed.filter((field): field is string => typeof field === "string")
+      : null,
+  );
+}

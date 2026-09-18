@@ -3,7 +3,15 @@ import {
   MAX_PRESCRIBED_ROWS,
   type PrescribedRow,
 } from "./set-spec-rows";
-import { pickLoggedActuals, type LoggedActuals } from "./set-log-measures";
+import {
+  LOGGED_BOXES,
+  pickLoggedActuals,
+  type LoggedActuals,
+  type LoggedBox,
+} from "./set-log-measures";
+import { formatBoxActual, formatBoxTarget } from "./measure-readout";
+import type { PrescribedField } from "./prescribed-fields";
+import type { UnitSystem } from "./unit-conversions";
 
 // The prescription paired with what was actually logged against it — the model
 // behind the coach's logged-workout readout.
@@ -91,4 +99,32 @@ export function buildLoggedSetRows(
     prescribed: prescribedRows[i] ?? null,
     actual: byIndex.get(i) ?? null,
   }));
+}
+
+/**
+ * The columns a logged exercise reads in, in the prescribed columns' order:
+ * every box the coach prescribed, and any other box one of its rows has a
+ * target or a value in — so history never hides something recorded, and a
+ * snapshot from before the column list existed still shows what it holds
+ * (owner, 2026-09-18: "columns follow the data"). Rest is not a box: its column
+ * is there when a set recorded the rest taken, which only the React Native
+ * app's timer does. The coach's table and the check-in AI's lines both walk
+ * these, so the two describe the same measures.
+ */
+export function loggedColumns(
+  fields: ReadonlySet<PrescribedField>,
+  rows: readonly LoggedSetRow[],
+  viewer: UnitSystem,
+): { boxes: LoggedBox[]; rest: boolean } {
+  const shows = (box: LoggedBox) =>
+    fields.has(box) ||
+    rows.some(
+      (row) =>
+        formatBoxTarget(box, row.prescribed, viewer) != null ||
+        formatBoxActual(box, row.actual, viewer) != null,
+    );
+  return {
+    boxes: LOGGED_BOXES.filter(shows),
+    rest: rows.some((row) => row.actual?.restSeconds != null),
+  };
 }

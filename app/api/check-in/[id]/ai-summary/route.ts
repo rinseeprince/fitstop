@@ -50,8 +50,15 @@ export async function POST(
     }
     const { focus } = parsed.data;
 
-    // Get client name for AI prompt
-    const client = await getClientById(currentCheckIn.clientId);
+    // The client's name for the prompt, and the COACH's unit system: they read
+    // this summary, so it renders in THEIR unit — resolved from the authed
+    // principal here, and from the check-in's owning coach on the client-submit
+    // path (services/client-check-in-service.ts). Resolved before the period's
+    // reads, because the exercise lines are written in it too.
+    const [client, viewer] = await Promise.all([
+      getClientById(currentCheckIn.clientId),
+      getCoachUnitPreference(auth.coachId),
+    ]);
     const clientName = client?.name ?? "Client";
 
     // Previous check-ins for the prompt's trend block: the ones up to this
@@ -92,8 +99,8 @@ export async function POST(
     // failure so the AI training block degrades to the legacy workout count.
     let dailyLogs, habitLogs, nutritionSummary;
     let trainingEventDetails: Awaited<ReturnType<typeof getTrainingEventDetailsForPeriod>> = [];
-    // Session 6.3: per-exercise top-set lines, keyed by session_log_id (see the
-    // submit path in client-check-in-service for the contract). Empty Map on any
+    // Per-exercise lines, keyed by session_log_id: what was prescribed beside
+    // what was done, measure by measure, in the coach's units. Empty Map on any
     // failure so the prompt degrades to per-event detail (non-blocking).
     let exerciseSummaries: Map<string, string[]> = new Map();
     try {
@@ -115,7 +122,7 @@ export async function POST(
         .filter((d) => d.logStatus === "logged")
         .map((d) => d.sessionLogId)
         .filter((id): id is string => Boolean(id));
-      exerciseSummaries = await getExerciseSummariesForPeriod(loggedSessionLogIds);
+      exerciseSummaries = await getExerciseSummariesForPeriod(loggedSessionLogIds, viewer);
     } catch (error) {
       // If daily tracking fetch fails, continue without it
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
@@ -125,11 +132,6 @@ export async function POST(
       trainingEventDetails = [];
       exerciseSummaries = new Map();
     }
-
-    // The COACH reads this summary, so it renders in THEIR unit — resolved from
-    // the authed principal here, and from the check-in's owning coach on the
-    // client-submit path (services/client-check-in-service.ts).
-    const viewer = await getCoachUnitPreference(auth.coachId);
 
     // Generate or regenerate AI summary
     const aiSummary = focus

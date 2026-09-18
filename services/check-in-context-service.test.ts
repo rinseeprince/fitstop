@@ -57,30 +57,54 @@ function sessionNamesQuery(
   return q;
 }
 
-// exercise_logs read (.select(...).in(...)).
+// exercise_logs read (.select(...).in(...)). An exercise with no
+// training_exercise_id was logged outside the plan.
 function exerciseLogsQuery(
   data: Array<{
     id: string;
     session_log_id: string;
+    training_exercise_id?: string | null;
     performed_name: string | null;
-    prescribed_exercise_snapshot: { name?: string } | null;
+    prescribed_exercise_snapshot: Record<string, unknown> | null;
   }> | null,
   error: { message: string } | null = null,
 ) {
   const q: Record<string, unknown> = {};
   q.select = vi.fn(() => q);
-  q.in = vi.fn(() => Promise.resolve({ data, error }));
+  q.in = vi.fn(() =>
+    Promise.resolve({
+      data: data?.map((row) => ({ training_exercise_id: null, ...row })) ?? null,
+      error,
+    }),
+  );
   return q;
+}
+
+/** A set_logs row: its identity, and every actual null but the ones given. */
+function setRow(
+  exerciseLogId: string,
+  setNumber: number,
+  actuals: Partial<Record<string, number | string | null>> = {},
+) {
+  return {
+    id: `${exerciseLogId}-${setNumber}`,
+    exercise_log_id: exerciseLogId,
+    set_number: setNumber,
+    set_type: "working",
+    reps: null, weight: null, rpe: null, rir: null, tempo: null,
+    distance_meters: null, duration_seconds: null, pace_seconds_per_km: null,
+    split_seconds_per_500m: null, calories: null, cadence: null, stroke_rate: null,
+    resistance: null, heart_rate_zone: null, heart_rate: null, power: null,
+    ftp_percent: null, rest_seconds: null,
+    created_at: "2026-04-08T10:00:00Z",
+    updated_at: "2026-04-08T10:00:00Z",
+    ...actuals,
+  };
 }
 
 // set_logs read (.select('*').in(...).order(...)).
 function setLogsQuery(
-  data: Array<{
-    exercise_log_id: string;
-    reps: number | null;
-    weight: number | null;
-    rpe: number | null;
-  }> | null,
+  data: ReturnType<typeof setRow>[] | null,
   error: { message: string } | null = null,
 ) {
   const q: Record<string, unknown> = {};
@@ -88,6 +112,25 @@ function setLogsQuery(
   q.in = vi.fn(() => q);
   q.order = vi.fn(() => Promise.resolve({ data, error }));
   return q;
+}
+
+/** A prescription as logged: working sets of reps, a kilogram load range and an RPE. */
+function strengthSnapshot(name: string, sets: number) {
+  return {
+    name,
+    prescribed_fields: ["set_type", "load", "reps", "rpe", "rest"],
+    set_specs: Array.from({ length: sets }, (_, i) => ({
+      set_number: i + 1,
+      set_type: "working",
+      reps_min: 5,
+      reps_max: 5,
+      load_type: "absolute",
+      load_min: 100,
+      load_max: 105,
+      rpe_min: 8,
+      rpe_max: 8,
+    })),
+  };
 }
 
 describe("check-in-context-service", () => {
@@ -296,113 +339,177 @@ describe("check-in-context-service", () => {
   });
 
   // =========================================================================
-  // getExerciseSummariesForPeriod — per-session top-set lines (Session 6.3)
+  // getExerciseSummariesForPeriod — the prescription beside the result, per
+  // logged exercise, in the coach's units
   // =========================================================================
   describe("getExerciseSummariesForPeriod", () => {
     it("returns an empty Map for empty input without querying", async () => {
-      const result = await getExerciseSummariesForPeriod([]);
+      const result = await getExerciseSummariesForPeriod([], "metric");
       expect(result.size).toBe(0);
       expect(mockFrom).not.toHaveBeenCalled();
     });
 
-    it("picks the heaviest set as the top set and counts all sets", async () => {
+    it("writes one line per logged exercise, measure by measure, naming what fell outside its target", async () => {
       mockFrom
         .mockReturnValueOnce(
           exerciseLogsQuery([
             {
               id: "ex-1",
               session_log_id: "log-1",
-              performed_name: "Bench Press",
-              prescribed_exercise_snapshot: null,
-            },
-          ]) as never,
-        )
-        .mockReturnValueOnce(
-          setLogsQuery([
-            { exercise_log_id: "ex-1", reps: 8, weight: 80, rpe: 7 },
-            { exercise_log_id: "ex-1", reps: 5, weight: 100, rpe: 9 },
-            { exercise_log_id: "ex-1", reps: 6, weight: 90, rpe: 8 },
-          ]) as never,
-        );
-
-      const result = await getExerciseSummariesForPeriod(["log-1"]);
-
-      expect(result.get("log-1")).toEqual(["Bench Press — 3 sets, top 100x5 @ RPE 9"]);
-    });
-
-    it("omits ' @ RPE' when the top set's rpe is null", async () => {
-      mockFrom
-        .mockReturnValueOnce(
-          exerciseLogsQuery([
-            {
-              id: "ex-1",
-              session_log_id: "log-1",
+              training_exercise_id: "te-1",
               performed_name: null,
-              prescribed_exercise_snapshot: { name: "Squat" },
+              prescribed_exercise_snapshot: strengthSnapshot("Back Squat", 3),
             },
           ]) as never,
         )
         .mockReturnValueOnce(
           setLogsQuery([
-            { exercise_log_id: "ex-1", reps: 5, weight: 140, rpe: null },
-            { exercise_log_id: "ex-1", reps: 5, weight: 120, rpe: 8 },
+            setRow("ex-1", 1, { reps: 5, weight: 102.5, rpe: 8 }),
+            setRow("ex-1", 2, { reps: 5, weight: 102.5, rpe: 9 }),
+            setRow("ex-1", 3, { reps: 4, weight: 102.5, rpe: 10 }),
           ]) as never,
         );
 
-      const result = await getExerciseSummariesForPeriod(["log-1"]);
+      const result = await getExerciseSummariesForPeriod(["log-1"], "metric");
 
-      // Top set is the heaviest (140, rpe null) — no RPE suffix.
-      expect(result.get("log-1")).toEqual(["Squat — 2 sets, top 140x5"]);
+      expect(result.get("log-1")).toEqual([
+        "Back Squat — 3 of 3 working sets: " +
+          "Load (kg) 102.5, 102.5, 102.5 (target 100–105 kg); " +
+          "Reps 5, 5, 4 (target 5; 1 of 3 below target); " +
+          "RPE 8, 9, 10 (target 8; 2 of 3 above target)",
+      ]);
     });
 
-    it("breaks a weight tie by higher reps", async () => {
+    it("writes the line in the coach's units", async () => {
       mockFrom
         .mockReturnValueOnce(
           exerciseLogsQuery([
             {
               id: "ex-1",
               session_log_id: "log-1",
-              performed_name: "Row",
-              prescribed_exercise_snapshot: null,
+              training_exercise_id: "te-1",
+              performed_name: null,
+              prescribed_exercise_snapshot: strengthSnapshot("Back Squat", 1),
+            },
+          ]) as never,
+        )
+        .mockReturnValueOnce(setLogsQuery([setRow("ex-1", 1, { reps: 5, weight: 102.5 })]) as never);
+
+      const result = await getExerciseSummariesForPeriod(["log-1"], "imperial");
+
+      expect(result.get("log-1")?.[0]).toContain("Load (lbs) 225 (target 220–232.5 lbs)");
+    });
+
+    it("reads every measure a set recorded, not just reps, weight and RPE", async () => {
+      mockFrom
+        .mockReturnValueOnce(
+          exerciseLogsQuery([
+            {
+              id: "ex-1",
+              session_log_id: "log-1",
+              training_exercise_id: "te-1",
+              performed_name: null,
+              prescribed_exercise_snapshot: {
+                name: "Running",
+                prescribed_fields: ["set_type", "distance", "duration", "pace", "rest"],
+                set_specs: [
+                  {
+                    set_number: 1,
+                    set_type: "working",
+                    distance_meters_min: 5000,
+                    distance_meters_max: 5000,
+                    pace_seconds_per_km_min: 300,
+                    pace_seconds_per_km_max: 320,
+                  },
+                ],
+              },
             },
           ]) as never,
         )
         .mockReturnValueOnce(
           setLogsQuery([
-            { exercise_log_id: "ex-1", reps: 6, weight: 80, rpe: 7 },
-            { exercise_log_id: "ex-1", reps: 10, weight: 80, rpe: 8 },
+            setRow("ex-1", 1, { distance_meters: 5000, duration_seconds: 1570, pace_seconds_per_km: 330 }),
           ]) as never,
         );
 
-      const result = await getExerciseSummariesForPeriod(["log-1"]);
+      const result = await getExerciseSummariesForPeriod(["log-1"], "metric");
 
-      expect(result.get("log-1")).toEqual(["Row — 2 sets, top 80x10 @ RPE 8"]);
+      expect(result.get("log-1")).toEqual([
+        "Running — 1 of 1 working set: Distance 5 km (target 5 km); Duration 26:10; " +
+          "Pace 5:30 /km (target 5:00–5:20 /km; above target)",
+      ]);
     });
 
-    it("groups multiple exercises under their session_log_id", async () => {
+    it("reads the exercises in the order the coach wrote the session, anything outside the plan after", async () => {
+      // A save's exercise logs share one created_at, so the read returns them
+      // in no order that means anything; each snapshot records its place.
+      const placed = (name: string, group: number, exercise: number) => ({
+        name,
+        order_index: exercise,
+        group: { id: `g-${group}`, order_index: group, format: group === 1 ? "circuit" : "straight_sets", rounds: group === 1 ? 1 : null },
+        set_specs: [{ set_number: 1, set_type: "working", reps_min: 5, reps_max: 5 }],
+        prescribed_fields: ["set_type", "reps"],
+      });
+      mockFrom
+        .mockReturnValueOnce(
+          exerciseLogsQuery([
+            { id: "ex-u", session_log_id: "log-1", performed_name: "Curl", prescribed_exercise_snapshot: { name: "Curl" } },
+            { id: "ex-c", session_log_id: "log-1", training_exercise_id: "te-c", performed_name: null, prescribed_exercise_snapshot: placed("Row", 1, 1) },
+            { id: "ex-d", session_log_id: "log-1", training_exercise_id: "te-d", performed_name: null, prescribed_exercise_snapshot: placed("Plank", 2, 0) },
+            { id: "ex-a", session_log_id: "log-1", training_exercise_id: "te-a", performed_name: null, prescribed_exercise_snapshot: placed("Squat", 0, 0) },
+            { id: "ex-b", session_log_id: "log-1", training_exercise_id: "te-b", performed_name: null, prescribed_exercise_snapshot: placed("Press", 1, 0) },
+          ]) as never,
+        )
+        .mockReturnValueOnce(
+          setLogsQuery(["ex-u", "ex-c", "ex-d", "ex-a", "ex-b"].map((id) => setRow(id, 1, { reps: 5 }))) as never,
+        );
+
+      const result = await getExerciseSummariesForPeriod(["log-1"], "metric");
+
+      expect(result.get("log-1")?.map((line) => line.split(" — ")[0])).toEqual([
+        "Squat",
+        "Press",
+        "Row",
+        "Plank",
+        "Curl",
+      ]);
+    });
+
+    it("reads each exercise's sets by their number", async () => {
+      const setQuery = setLogsQuery([setRow("ex-1", 1, { reps: 5 })]);
       mockFrom
         .mockReturnValueOnce(
           exerciseLogsQuery([
             { id: "ex-1", session_log_id: "log-1", performed_name: "Bench", prescribed_exercise_snapshot: null },
-            { id: "ex-2", session_log_id: "log-1", performed_name: "OHP", prescribed_exercise_snapshot: null },
+          ]) as never,
+        )
+        .mockReturnValueOnce(setQuery as never);
+
+      await getExerciseSummariesForPeriod(["log-1"], "metric");
+
+      expect(setQuery.order).toHaveBeenCalledWith("set_number", { ascending: true });
+    });
+
+    it("groups exercises under their session_log_id, and skips one with no set", async () => {
+      mockFrom
+        .mockReturnValueOnce(
+          exerciseLogsQuery([
+            { id: "ex-1", session_log_id: "log-1", performed_name: "Bench", prescribed_exercise_snapshot: null },
+            { id: "ex-2", session_log_id: "log-1", performed_name: "Skipped Row", prescribed_exercise_snapshot: null },
             { id: "ex-3", session_log_id: "log-2", performed_name: "Squat", prescribed_exercise_snapshot: null },
           ]) as never,
         )
         .mockReturnValueOnce(
           setLogsQuery([
-            { exercise_log_id: "ex-1", reps: 5, weight: 100, rpe: 8 },
-            { exercise_log_id: "ex-2", reps: 6, weight: 60, rpe: null },
-            { exercise_log_id: "ex-3", reps: 5, weight: 140, rpe: 9 },
+            setRow("ex-1", 1, { reps: 5, weight: 100 }),
+            setRow("ex-3", 1, { reps: 5, weight: 140 }),
           ]) as never,
         );
 
-      const result = await getExerciseSummariesForPeriod(["log-1", "log-2"]);
+      const result = await getExerciseSummariesForPeriod(["log-1", "log-2"], "metric");
 
-      expect(result.get("log-1")).toEqual([
-        "Bench — 1 sets, top 100x5 @ RPE 8",
-        "OHP — 1 sets, top 60x6",
-      ]);
-      expect(result.get("log-2")).toEqual(["Squat — 1 sets, top 140x5 @ RPE 9"]);
+      expect(result.get("log-1")).toEqual(["Bench — 1 set, not in the plan: Load (kg) 100; Reps 5"]);
+      expect(result.get("log-2")).toEqual(["Squat — 1 set, not in the plan: Load (kg) 140; Reps 5"]);
     });
 
     it("falls back to 'Unknown exercise' when both name sources are absent", async () => {
@@ -412,13 +519,11 @@ describe("check-in-context-service", () => {
             { id: "ex-1", session_log_id: "log-1", performed_name: null, prescribed_exercise_snapshot: null },
           ]) as never,
         )
-        .mockReturnValueOnce(
-          setLogsQuery([{ exercise_log_id: "ex-1", reps: 5, weight: 50, rpe: null }]) as never,
-        );
+        .mockReturnValueOnce(setLogsQuery([setRow("ex-1", 1, { reps: 5 })]) as never);
 
-      const result = await getExerciseSummariesForPeriod(["log-1"]);
+      const result = await getExerciseSummariesForPeriod(["log-1"], "metric");
 
-      expect(result.get("log-1")).toEqual(["Unknown exercise — 1 sets, top 50x5"]);
+      expect(result.get("log-1")).toEqual(["Unknown exercise — 1 set, not in the plan: Reps 5"]);
     });
 
     it("caps at 8 lines per session and appends '…and N more'", async () => {
@@ -428,32 +533,38 @@ describe("check-in-context-service", () => {
         performed_name: `Exercise ${i}`,
         prescribed_exercise_snapshot: null,
       }));
-      const setLogs = exLogs.map((ex) => ({
-        exercise_log_id: ex.id,
-        reps: 5,
-        weight: 50,
-        rpe: null,
-      }));
       mockFrom
         .mockReturnValueOnce(exerciseLogsQuery(exLogs) as never)
-        .mockReturnValueOnce(setLogsQuery(setLogs) as never);
+        .mockReturnValueOnce(setLogsQuery(exLogs.map((ex) => setRow(ex.id, 1, { reps: 5 }))) as never);
 
-      const result = await getExerciseSummariesForPeriod(["log-1"]);
+      const result = await getExerciseSummariesForPeriod(["log-1"], "metric");
       const lines = result.get("log-1")!;
 
       // 8 kept lines + the overflow marker = 9 total.
       expect(lines).toHaveLength(9);
-      expect(lines[0]).toBe("Exercise 0 — 1 sets, top 50x5");
-      expect(lines[7]).toBe("Exercise 7 — 1 sets, top 50x5");
+      expect(lines[0]).toBe("Exercise 0 — 1 set, not in the plan: Reps 5");
+      expect(lines[7]).toBe("Exercise 7 — 1 set, not in the plan: Reps 5");
       expect(lines[8]).toBe("…and 3 more");
     });
 
     it("returns an empty Map (non-blocking) when the exercise_logs read errors", async () => {
-      mockFrom.mockReturnValueOnce(
-        exerciseLogsQuery(null, { message: "boom" }) as never,
-      );
+      mockFrom.mockReturnValueOnce(exerciseLogsQuery(null, { message: "boom" }) as never);
 
-      const result = await getExerciseSummariesForPeriod(["log-1"]);
+      const result = await getExerciseSummariesForPeriod(["log-1"], "metric");
+
+      expect(result.size).toBe(0);
+    });
+
+    it("returns an empty Map (non-blocking) when the set_logs read errors", async () => {
+      mockFrom
+        .mockReturnValueOnce(
+          exerciseLogsQuery([
+            { id: "ex-1", session_log_id: "log-1", performed_name: "Bench", prescribed_exercise_snapshot: null },
+          ]) as never,
+        )
+        .mockReturnValueOnce(setLogsQuery(null, { message: "boom" }) as never);
+
+      const result = await getExerciseSummariesForPeriod(["log-1"], "metric");
 
       expect(result.size).toBe(0);
     });

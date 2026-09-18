@@ -298,4 +298,37 @@ describe('AI summary unit resolution', () => {
     const args = vi.mocked(generateCheckInSummary).mock.calls.at(-1)!
     expect(args[args.length - 1]).toBe('imperial')
   })
+
+  it("writes the exercise lines in the owning coach's unit too", async () => {
+    vi.mocked(getCheckInWithDetails).mockResolvedValue({
+      id: 'check-in-123',
+      clientId: 'client-123',
+      createdAt: '2024-01-15T10:00:00Z',
+    } as never)
+    vi.mocked(getClientCheckIns).mockResolvedValue({ checkIns: [] } as never)
+    vi.mocked(getClientById).mockResolvedValue({ id: 'client-123', coachId: 'coach-9' } as never)
+    vi.mocked(generateCheckInSummary).mockResolvedValue({} as never)
+    vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
+    vi.mocked(getDailyLogs).mockResolvedValue([])
+    vi.mocked(getHabitLogs).mockResolvedValue([])
+    vi.mocked(getCheckInNutritionSummary).mockResolvedValue(null as never)
+    vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([
+      {
+        eventId: 'ev-1',
+        date: '2024-01-12',
+        sessionName: 'Lower',
+        status: 'completed',
+        logStatus: 'logged',
+        completionQuality: 'partial',
+        trainingSessionId: 'ts-1',
+        sessionLogId: 'sl-1',
+      },
+    ])
+    vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map())
+    getCoachUnitPreferenceMock.mockResolvedValue('imperial')
+
+    await triggerAISummaryGeneration('check-in-123', 'client-123', 'John Doe')
+
+    expect(getExerciseSummariesForPeriod).toHaveBeenCalledWith(['sl-1'], 'imperial')
+  })
 })

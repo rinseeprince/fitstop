@@ -53,9 +53,16 @@ export async function triggerAISummaryGeneration(
     });
     const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
 
+    const client = await getClientById(clientId);
+    // This path is CLIENT-authenticated (the client just submitted), but the
+    // coach is who reads the summary — so resolve the owning coach's unit, not
+    // the request's principal. getViewerUnitPreference(request) would render a
+    // coach's summary in whichever unit their client happens to prefer.
+    // Resolved before the period's reads: the exercise lines are written in it.
+    const viewer = await getCoachUnitPreference(client?.coachId);
+
     // Calculate date range using the fixed 7-day period ending on the weekday
     // of the client's check-in due date
-    const client = await getClientById(clientId);
     let startDate: Date;
     let endDate: Date;
 
@@ -85,9 +92,10 @@ export async function triggerAISummaryGeneration(
     // failure so the AI training block degrades to the legacy workout count.
     let dailyLogs, habitLogs, nutritionSummary;
     let trainingEventDetails: Awaited<ReturnType<typeof getTrainingEventDetailsForPeriod>> = [];
-    // Session 6.3: per-exercise top-set lines, keyed by session_log_id. Derived
-    // from the logged events' session_log ids; defaults to an empty Map so the
-    // prompt degrades to per-event detail on any failure (non-blocking).
+    // Per-exercise lines, keyed by session_log_id: what was prescribed beside
+    // what was done, measure by measure, in the coach's units. Derived from the
+    // logged events' session_log ids; defaults to an empty Map so the prompt
+    // degrades to per-event detail on any failure (non-blocking).
     let exerciseSummaries: Map<string, string[]> = new Map();
     try {
       const [logs, habits, periodSummary, eventDetails] = await Promise.all([
@@ -107,7 +115,7 @@ export async function triggerAISummaryGeneration(
         .filter((d) => d.logStatus === "logged")
         .map((d) => d.sessionLogId)
         .filter((id): id is string => Boolean(id));
-      exerciseSummaries = await getExerciseSummariesForPeriod(loggedSessionLogIds);
+      exerciseSummaries = await getExerciseSummariesForPeriod(loggedSessionLogIds, viewer);
     } catch (error) {
       // If daily tracking fetch fails, continue without it
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
@@ -120,12 +128,6 @@ export async function triggerAISummaryGeneration(
 
     // Read period snapshot if it was generated during submission
     const periodSnapshot = readPeriodSnapshot(currentCheckIn.periodSnapshot);
-
-    // This path is CLIENT-authenticated (the client just submitted), but the
-    // coach is who reads the summary — so resolve the owning coach's unit, not
-    // the request's principal. getViewerUnitPreference(request) would render a
-    // coach's summary in whichever unit their client happens to prefer.
-    const viewer = await getCoachUnitPreference(client?.coachId);
 
     // Generate AI summary with enhanced data including daily tracking
     const aiSummary = await generateCheckInSummary(

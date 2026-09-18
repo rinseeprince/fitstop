@@ -98,9 +98,10 @@ export function buildCheckInAnalysisPrompt(
         prompt += `    Note: ${sanitizeForAIPrompt(d.notes)}\n`;
       }
 
-      // Session 6.3 enrichment: per-exercise top-set lines + alt-session swap
-      // signal. Only workouts the client LOGGED carry an exercise block; a
-      // session they never logged keeps its 6.2 line only.
+      // Each logged exercise's line — the prescription beside the result,
+      // measure by measure, in the coach's units (utils/logged-exercise-line.ts)
+      // — plus the alt-session swap signal. Only workouts the client LOGGED
+      // carry an exercise block; a session they never logged keeps its line only.
       if (quality === "full" || quality === "partial") {
         const exerciseLines = d.sessionLogId
           ? exerciseSummaries?.get(d.sessionLogId)
@@ -115,8 +116,9 @@ export function buildCheckInAnalysisPrompt(
         }
         if (exerciseLines?.length) {
           exerciseLines.forEach((line) => {
-            // Lines are pre-sanitized in the service (names) but contain a
-            // composed em-dash format string; re-sanitizing would strip it.
+            // The line builder sanitises the text a person typed (names, a
+            // legacy free-text rep target); everything else in a line is
+            // composed from stored numbers and validated tempos.
             prompt += `      ${line}\n`;
           });
         }

@@ -1,166 +1,60 @@
 "use client";
 
-import { Check } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
-  MONO_CELL_CLASS,
   TEXT_MUTED,
   TEXT_PRIMARY,
-  TEXT_SECONDARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { useUnits } from "@/contexts/units-context";
-import { formatLoad } from "@/utils/unit-conversions";
 import { snapshotToSpecs } from "@/utils/exercise-set-specs";
-import {
-  buildPrescribedRows,
-  formatPrescribedLoad,
-  formatPrescribedRpe,
-} from "@/utils/set-spec-rows";
-import { buildLoggedSetRows, type LoggedSetRow } from "@/utils/logged-set-rows";
-import { formatRepsRange } from "@/utils/reps-range";
-import type { SetType } from "@/utils/exercise-set-specs";
+import { buildPrescribedRows } from "@/utils/set-spec-rows";
+import { buildLoggedSetRows, loggedColumns } from "@/utils/logged-set-rows";
+import { snapshotPrescribedFields } from "@/utils/prescribed-fields";
+import { LONE_EXERCISE, type ExerciseGroupPlace } from "@/utils/exercise-group-display";
 import type { ExerciseLog, SessionLogPrescribedExercise } from "@/types/training";
+import { SessionLogSetTable } from "./session-log-set-table";
 
 // One exercise inside the coach's logged-workout dialog: the whole prescription,
-// with what the client did against each set.
+// with what the client did against each set, measure by measure — the target
+// over the value (session-log-set-table.tsx).
 //
-// The PRESCRIPTION drives the row list (utils/logged-set-rows.ts). This card used
-// to render `log.sets` directly and build a single "Prescribed 3x8-12" chip from
-// the compact snapshot columns — which cannot express warm-ups, per-set loads,
-// drop sets or AMRAP, and made a prescribed set the client never reached simply
-// disappear.
-
-/**
- * Every non-working set names its type in full. Working sets are untagged: they
- * are the default, and a tag on every row is noise.
- *
- * The word, not an initial. `W` / `D` / `A` read as a code a coach has to learn,
- * and this dialog is where an unfamiliar set type most needs explaining. It fits
- * here because a 672px dialog has the room; the client's grid is 44px of Set
- * column on a phone and keeps its letters, which is also RN's call to remake.
- *
- * Colours are the design system's own (docs/newdesignsystem.md): warning for a
- * warm-up, the teal chip for drop/AMRAP, destructive-soft for failure. The
- * client tracker has a twin of this map; it is not shared because the two sit on
- * opposite sides of the coach/client audience split (CONVENTIONS §6) and the
- * client's copy is web-harness code on the RN-replacement path.
- */
-const TYPE_TAG: Record<SetType, { word: string; title: string; className: string } | null> = {
-  warmup: {
-    word: "Warm-up",
-    title: "Warm-up — recorded but never scored",
-    className: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
-  },
-  drop: {
-    word: "Drop",
-    title: "Drop set",
-    className: "bg-[rgba(13,148,136,0.08)] text-[#0a5c55]",
-  },
-  amrap: {
-    word: "AMRAP",
-    title: "As many reps as possible",
-    className: "bg-[rgba(13,148,136,0.08)] text-[#0a5c55]",
-  },
-  failure: {
-    word: "Failure",
-    title: "Taken to failure",
-    className: "bg-[rgba(192,96,96,0.08)] text-[#c06060]",
-  },
-  working: null,
-};
-
-function SetTypeTag({ setType }: { setType: SetType }) {
-  const tag = TYPE_TAG[setType];
-  if (!tag) return null;
-  return (
-    <span
-      title={tag.title}
-      className={cn(
-        "whitespace-nowrap rounded-[4px] px-1.5 text-[10px] font-semibold leading-[16px]",
-        tag.className,
-      )}
-    >
-      {tag.word}
-    </span>
-  );
-}
-
-/**
- * RPE colour, against the prescribed target for THIS set: how far the actual
- * sits above the top of the prescribed range (a single value is its own top).
- */
-function rpeToneClass(
-  actual: number,
-  prescribed: { rpeMin: number | null; rpeMax: number | null } | null,
-): string {
-  const top = prescribed?.rpeMax ?? prescribed?.rpeMin ?? null;
-  if (top == null) return TEXT_PRIMARY;
-  const diff = actual - top;
-  if (diff >= 2) return "font-semibold text-[#c06060]";
-  if (diff >= 1) return "text-[#d97706]";
-  return TEXT_PRIMARY;
-}
-
-const Dash = () => <span className="text-[#c2d0cc]">—</span>;
-
-/**
- * The coach's instruction for one set, as one data string: reps, load, RPE —
- * each one value or a range ("8-10 @ 100–105 kg · RPE 7–8").
- *
- * The load may be absolute (converted to the VIEWER's unit and snapped, because
- * this is a read-only readout) or a percentage, which is unitless and never
- * converts.
- */
-function prescribedText(
-  row: LoggedSetRow["prescribed"],
-  unitLabel: string,
-  toDisplayLoad: (kg: number) => string,
-): string | null {
-  if (!row) return null;
-  const reps =
-    row.repsTarget ?? formatRepsRange({ min: row.repsMin, max: row.repsMax });
-  const load = formatPrescribedLoad(row, toDisplayLoad, unitLabel);
-  const rpe = formatPrescribedRpe(row);
-  const head = reps && load ? `${reps} @ ${load}` : (reps || load);
-  if (!head) return rpe != null ? `RPE ${rpe}` : null;
-  return rpe != null ? `${head} · RPE ${rpe}` : head;
-}
+// The PRESCRIPTION drives the row list (utils/logged-set-rows.ts): a prescribed
+// set the client never reached still shows, as not done. Its columns follow the
+// exercise's own — every box the coach prescribed — and the DATA, so a value
+// recorded in a column the prescription doesn't name still shows
+// (`loggedColumns`); a snapshot from before the column list existed reads as
+// today's five.
 
 type SessionLogExerciseCardProps = {
   /** The client's log, or null for a prescribed exercise they never touched. */
   log: ExerciseLog | null;
   /** The live prescription, or null for an exercise with no prescription left. */
   prescribed: SessionLogPrescribedExercise | null;
-  /** In a superset or circuit each row is one round, and the first column says so. */
-  roundsAreRows?: boolean;
+  /**
+   * Where the exercise sits in its group: in a superset or circuit each row is
+   * one round, and the group's rests apply rather than the exercise's own.
+   * Absent reads as a lone exercise.
+   */
+  place?: Readonly<ExerciseGroupPlace>;
   onExerciseDrillDown?: (exerciseId: string | null, exerciseName: string) => void;
 };
 
 export function SessionLogExerciseCard({
   log,
   prescribed,
-  roundsAreRows = false,
+  place = LONE_EXERCISE,
   onExerciseDrillDown,
 }: SessionLogExerciseCardProps) {
   const { preference } = useUnits();
-  const unitLabel = formatLoad(0, preference).unit;
-  const toDisplayLoad = (kg: number) => String(formatLoad(kg, preference).value);
 
   // The log's own snapshot is preferred over the live prescription: it is what
   // was prescribed AT LOG TIME, and a coach reading history wants that rather
   // than what the plan says today. The live row is the fallback for an exercise
   // with no log at all.
   const snapshot = log?.prescribedExerciseSnapshot ?? prescribed?.snapshot ?? null;
-  const prescribedRows = buildPrescribedRows(snapshotToSpecs(snapshot));
-  const rows = buildLoggedSetRows(prescribedRows, log?.sets ?? []);
+  const rows = buildLoggedSetRows(buildPrescribedRows(snapshotToSpecs(snapshot)), log?.sets ?? []);
+  const fields = snapshotPrescribedFields(snapshot);
+  const columns = loggedColumns(fields, rows, preference);
 
   const prescribedName =
     (typeof snapshot?.name === "string" ? snapshot.name : null) ??
@@ -171,17 +65,6 @@ export function SessionLogExerciseCard({
     log?.performedName != null &&
     prescribedName != null &&
     log.performedName !== prescribedName;
-
-  // Columns follow the DATA, not the coach's prescribed_fields: a historical
-  // readout must never hide something that was actually recorded, and every
-  // snapshot written before migration 149 carries no field list at all.
-  const showPrescribed = rows.some((r) => r.prescribed !== null);
-  const showRpe = rows.some(
-    (r) =>
-      r.actual?.rpe != null ||
-      r.prescribed?.rpeMin != null ||
-      r.prescribed?.rpeMax != null,
-  );
 
   return (
     <div className="overflow-hidden rounded-[6px] border border-[rgba(13,148,136,0.08)]">
@@ -206,88 +89,13 @@ export function SessionLogExerciseCard({
       </div>
 
       {rows.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="w-8 pl-4" />
-              <TableHead className="w-[132px]">{roundsAreRows ? "Round" : "Set"}</TableHead>
-              {showPrescribed && <TableHead>Prescribed</TableHead>}
-              <TableHead>Weight ({unitLabel})</TableHead>
-              <TableHead>Reps</TableHead>
-              {showRpe && <TableHead className="pr-4 text-right">RPE</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row, index) => {
-              const done = row.actual !== null;
-              // A warm-up is recorded but never scored, so it must not read as
-              // performance: muted values and a muted tick, beside the W tag.
-              const isWarmup = row.prescribed?.setType === "warmup";
-              const valueTone = isWarmup ? TEXT_MUTED : TEXT_PRIMARY;
-              const text = prescribedText(row.prescribed, unitLabel, toDisplayLoad);
-
-              return (
-                <TableRow key={index} data-testid="logged-set-row">
-                  <TableCell className="w-8 pl-4">
-                    {done ? (
-                      <>
-                        <Check
-                          className={cn(
-                            "h-3.5 w-3.5",
-                            isWarmup ? TEXT_MUTED : "text-[#0d9488]",
-                          )}
-                          strokeWidth={1.5}
-                          aria-hidden
-                        />
-                        <span className="sr-only">Logged</span>
-                      </>
-                    ) : (
-                      <span className="sr-only">Not done</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="w-[132px]">
-                    <span className="flex items-center gap-1">
-                      <span className={cn(MONO_CELL_CLASS, TEXT_SECONDARY)}>
-                        {/* A drop shares its top set's number, so repeating it
-                            would read as a duplicate — the tag identifies it. */}
-                        {row.prescribed?.dropIndex != null ? "" : row.displayNumber}
-                      </span>
-                      {row.prescribed && <SetTypeTag setType={row.prescribed.setType} />}
-                    </span>
-                  </TableCell>
-                  {showPrescribed && (
-                    <TableCell className={cn(MONO_CELL_CLASS, TEXT_MUTED)}>
-                      {text ?? <Dash />}
-                    </TableCell>
-                  )}
-                  <TableCell className={cn(MONO_CELL_CLASS, valueTone)}>
-                    {row.actual?.weight != null ? (
-                      formatLoad(row.actual.weight, preference).value
-                    ) : (
-                      <Dash />
-                    )}
-                  </TableCell>
-                  <TableCell className={cn(MONO_CELL_CLASS, valueTone)}>
-                    {row.actual?.reps ?? <Dash />}
-                  </TableCell>
-                  {showRpe && (
-                    <TableCell
-                      className={cn(
-                        MONO_CELL_CLASS,
-                        "pr-4 text-right",
-                        row.actual?.rpe != null && !isWarmup
-                          ? rpeToneClass(row.actual.rpe, row.prescribed)
-                          : valueTone,
-                      )}
-                    >
-                      {row.actual?.rpe ?? <Dash />}
-                    </TableCell>
-                  )}
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+        <SessionLogSetTable
+          rows={rows}
+          columns={columns}
+          place={place}
+          ownRestApplies={fields.has("rest") && !place.roundsAreRows}
+          viewer={preference}
+        />
       )}
 
       {log?.notes && (

@@ -530,7 +530,7 @@ type LogTrainingEventInput = {
       heartRate?: number            // 30–250 bpm, whole
       power?: number                // 1–3,000 W, whole
       ftpPercent?: number           // 1–300, to a tenth
-      restSeconds?: number          // 0–3,600 s, whole: the rest the client TOOK, from the app's timer
+      restSeconds?: number          // 0–3,600 s, whole: the rest the client TOOK after this set, from the app's timer
       setType?: string              // accepted and ignored
     }>
     weightUnit: "lbs" | "kg"        // applies to `weight` alone
@@ -567,8 +567,9 @@ type LogTrainingEventInput = {
 > from distance and duration), a split to seconds per 500 m; round to the resolution above
 > or the save is a 400. A unit the client types ("400 m", "800 yd", "7:39 /mi") wins over
 > their preference. Rest has no box: send `restSeconds` from the rest timer when the app ran
-> one. The web client's grammar is `parseEntry` / `formatEntry` (`utils/unit-conversions.ts`)
-> and the one table of actuals is `utils/set-log-measures.ts`.
+> one — the rest taken AFTER that set, which the coach's logged-workout view reads against the
+> rest the set prescribes. The web client's grammar is `parseEntry` / `formatEntry`
+> (`utils/unit-conversions.ts`) and the one table of actuals is `utils/set-log-measures.ts`.
 
 > **RN contract — any value counts, and a save never erases a value.** A set with any box
 > filled is a set that was done: send it. Reopening a logged workout must put EVERY value the

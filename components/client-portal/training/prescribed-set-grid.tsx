@@ -13,8 +13,8 @@ import {
   type ExerciseGroupPlace,
 } from "@/utils/exercise-group-display";
 import { useUnits } from "@/contexts/units-context";
-import { formatLoad } from "@/utils/unit-conversions";
-import { BOX_LABELS, loggedBoxesFor, type LoggedBox } from "@/utils/set-log-measures";
+import { boxHeader } from "@/utils/measure-readout";
+import { loggedBoxesFor, type LoggedBox } from "@/utils/set-log-measures";
 import {
   pinnedCellClass,
   SET_CELL_OFFSET_PX,
@@ -109,11 +109,6 @@ export function PrescribedSetGrid({
   // of this log, which has to agree about which row is "set 3".
   const displayNumbers = buildSetDisplayNumbers(rows, rowCount);
 
-  // The header names the unit a bare load is typed in; every other box's value
-  // carries its own unit or has none.
-  const header = (box: LoggedBox) =>
-    box === "load" ? `${BOX_LABELS.load} (${formatLoad(0, preference).unit})` : BOX_LABELS[box];
-
   return (
     <div className="overflow-x-auto">
       <div
@@ -124,9 +119,10 @@ export function PrescribedSetGrid({
         <div className={`${HEADER_CLASS} h-full ${pinnedCellClass(withTick ? SET_CELL_OFFSET_PX : 0, false)}`}>
           {rowNoun}
         </div>
+        {/* Load's header names the unit a bare load is typed in. */}
         {boxes.map((box) => (
           <div key={box} className={HEADER_CLASS}>
-            {header(box)}
+            {boxHeader(box, preference)}
           </div>
         ))}
         <div />

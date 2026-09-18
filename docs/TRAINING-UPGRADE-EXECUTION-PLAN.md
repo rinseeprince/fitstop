@@ -907,7 +907,7 @@ NOT IN THIS COMMIT: logged values and the client's boxes for the new measurement
   that the new validators would — library RPE outside 1–10, a non-numeric `rpe_target` or
   `load_value`, a tempo that isn't four phases.
 
-### Commit 11b — Measurement columns 2: the actuals
+### Commit 11b — Measurement columns 2: the actuals — SHIPPED 2026-09-18
 
 ```text
 Implement commit 11b of 22 — Measurement columns 2: the actuals — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

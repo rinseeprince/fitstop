@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SessionLogDetailDialog } from "./session-log-detail-dialog";
@@ -15,9 +15,11 @@ import { STRAIGHT_SETS, type GroupSettings } from "@/utils/exercise-groups";
 
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars. Any
-// test rendering a component that calls useUnits() must stub this module.
+// test rendering a component that calls useUnits() must stub this module. The
+// viewer's units are switchable per test; every test starts metric.
+const units = vi.hoisted(() => ({ preference: "metric" as "metric" | "imperial" }));
 vi.mock("@/contexts/units-context", () => ({
-  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+  useUnits: () => ({ preference: units.preference, isLoading: false, error: null }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -157,11 +159,41 @@ const defaultProps = {
 
 const rows = () => screen.getAllByTestId("logged-set-row");
 
+/**
+ * The cell under `header` in a set row: the coach's target (its top line) and
+ * what the client did (its bottom line, whose text carries the words a screen
+ * reader hears when it is outside the target).
+ */
+function measure(row: HTMLElement, header: string) {
+  const table = row.closest("table") as HTMLElement;
+  const headers = within(table)
+    .getAllByRole("columnheader")
+    .map((h) => h.textContent);
+  const index = headers.indexOf(header);
+  if (index < 0) throw new Error(`no "${header}" column in [${headers.join(", ")}]`);
+  const [target, actual] = Array.from(within(row).getAllByRole("cell")[index].children) as HTMLElement[];
+  return { target: (target.textContent ?? "").trim(), actual };
+}
+
+/** One lone exercise, logged against its snapshot. */
+function setupExercise(snapshot: Record<string, unknown>, sets: SetLog[]) {
+  setupSWR({
+    exerciseLogs: [makeExerciseLog({ prescribedExerciseSnapshot: snapshot, sets })],
+  });
+}
+
+const AMBER = "text-[#d97706]";
+const RED = "text-[#c06060]";
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe("SessionLogDetailDialog", () => {
+  beforeEach(() => {
+    units.preference = "metric";
+  });
+
   describe("the fetch", () => {
     // A closing card is re-rendered from live props for its exit animation
     // (CONVENTIONS §7 → "No frame disagrees"), so the close must not drop the key.
@@ -351,125 +383,209 @@ describe("SessionLogDetailDialog", () => {
     });
   });
 
-  describe("the prescription itself", () => {
-    it("renders an absolute load in the viewer's unit", () => {
-      setupSWR({
-        exerciseLogs: [
-          makeExerciseLog({
-            prescribedExerciseSnapshot: {
-              name: "Squat",
-              sets: 1,
-              set_specs: [
-                spec({
-                  set_number: 1,
-                  reps_min: 5,
-                  reps_max: 5,
-                  load_type: "absolute",
-                  load_min: 100, load_max: 100,
-                }),
-              ],
-            },
-            sets: [makeSetLog({ setNumber: 1, reps: 5, weight: 100 })],
-          }),
-        ],
-      });
+  describe("target over actual", () => {
+    it("gives each measure a column, the coach's target over what the client did", () => {
+      setupExercise(
+        {
+          name: "Squat",
+          sets: 1,
+          set_specs: [
+            spec({
+              set_number: 1,
+              reps_min: 5,
+              reps_max: 5,
+              load_type: "absolute",
+              load_min: 100, load_max: 105,
+              rpe_min: 8, rpe_max: 8,
+            }),
+          ],
+        },
+        [makeSetLog({ setNumber: 1, reps: 5, weight: 102.5, rpe: 8 })],
+      );
 
       render(<SessionLogDetailDialog {...defaultProps} />);
 
-      expect(screen.getByText("5 @ 100 kg")).toBeInTheDocument();
-      expect(screen.getByText("Weight (kg)")).toBeInTheDocument();
+      const [set] = rows();
+      expect(measure(set, "Load (kg)")).toMatchObject({ target: "100–105 kg" });
+      expect(measure(set, "Load (kg)").actual).toHaveTextContent(/^102\.5$/);
+      expect(measure(set, "Reps").target).toBe("5");
+      expect(measure(set, "Reps").actual).toHaveTextContent(/^5$/);
+      expect(measure(set, "RPE").target).toBe("8");
+      // Inside every target: nothing is marked.
+      for (const header of ["Load (kg)", "Reps", "RPE"]) {
+        expect(measure(set, header).actual).not.toHaveClass(AMBER);
+      }
+      // The separate Prescribed column is gone.
+      expect(screen.queryByText("Prescribed")).toBeNull();
     });
 
-    it("renders a percentage load unconverted, with its RPE target", () => {
-      setupSWR({
-        exerciseLogs: [
-          makeExerciseLog({
-            prescribedExerciseSnapshot: {
-              name: "Squat",
-              sets: 2,
-              set_specs: [
-                spec({
-                  set_number: 1,
-                  reps_min: 10,
-                  reps_max: 12,
-                  load_type: "pct_1rm",
-                  load_min: 60, load_max: 60,
-                  rpe_min: 8, rpe_max: 8,
-                }),
-                spec({
-                  set_number: 2,
-                  reps_min: 10,
-                  reps_max: 12,
-                  load_type: "pct_top",
-                  load_min: 80, load_max: 80,
-                }),
-              ],
-            },
-            sets: [makeSetLog({ setNumber: 1, reps: 8, weight: 60, rpe: 8 })],
-          }),
-        ],
-      });
+    it("marks a value outside its target amber, below as well as above", () => {
+      setupExercise(
+        {
+          name: "Squat",
+          sets: 1,
+          set_specs: [
+            spec({ set_number: 1, reps_min: 5, reps_max: 5, load_type: "absolute", load_min: 100, load_max: 105 }),
+          ],
+        },
+        [makeSetLog({ setNumber: 1, reps: 4, weight: 107.5 })],
+      );
 
       render(<SessionLogDetailDialog {...defaultProps} />);
 
-      expect(screen.getByText("10-12 @ 60% 1RM · RPE 8")).toBeInTheDocument();
-      expect(screen.getByText("10-12 @ 80% top set")).toBeInTheDocument();
+      const [set] = rows();
+      expect(measure(set, "Reps").actual).toHaveClass(AMBER);
+      expect(measure(set, "Reps").actual).toHaveTextContent("4, below target");
+      expect(measure(set, "Load (kg)").actual).toHaveClass(AMBER);
+      expect(measure(set, "Load (kg)").actual).toHaveTextContent("107.5, above target");
     });
 
-    it("shows no prescribed reps for an AMRAP row, only its load and RPE", () => {
-      setupSWR({
-        exerciseLogs: [
-          makeExerciseLog({
-            prescribedExerciseSnapshot: {
-              name: "Bench Press",
-              sets: 2,
-              set_specs: [
-                spec({ set_number: 1, reps_min: 8, reps_max: 12 }),
-                // A stale range the editor left behind when the coach switched
-                // this set to AMRAP. It must not reach the coach as though it
-                // were prescribed.
-                spec({
-                  set_number: 2,
-                  set_type: "amrap",
-                  reps_min: 7,
-                  reps_max: 11,
-                  load_type: "pct_1rm",
-                  load_min: 60, load_max: 60,
-                  rpe_min: 9, rpe_max: 9,
-                }),
-              ],
-            },
-            sets: [],
-          }),
+    it("keeps today's red for an RPE two or more above, and amber for less", () => {
+      setupExercise(
+        {
+          name: "Squat",
+          sets: 3,
+          set_specs: [1, 2, 3].map((n) => spec({ set_number: n, rpe_min: 7, rpe_max: 8 })),
+        },
+        [
+          makeSetLog({ id: "s1", setNumber: 1, rpe: 8 }),
+          makeSetLog({ id: "s2", setNumber: 2, rpe: 9.5 }),
+          makeSetLog({ id: "s3", setNumber: 3, rpe: 10 }),
         ],
-      });
+      );
 
       render(<SessionLogDetailDialog {...defaultProps} />);
 
-      expect(screen.getByText("60% 1RM · RPE 9")).toBeInTheDocument();
-      expect(screen.queryByText(/7-11/)).not.toBeInTheDocument();
-      // The working set above it still states its range.
-      expect(screen.getByText("8-12")).toBeInTheDocument();
+      const [inside, oneAbove, twoAbove] = rows();
+      expect(measure(inside, "RPE").actual).not.toHaveClass(AMBER);
+      expect(measure(oneAbove, "RPE").actual).toHaveClass(AMBER);
+      expect(measure(twoAbove, "RPE").actual).toHaveClass(RED);
+      expect(measure(twoAbove, "RPE").actual).toHaveClass("font-semibold");
+    });
+
+    it("never marks a % load, which can't be compared with kilograms", () => {
+      setupExercise(
+        {
+          name: "Squat",
+          sets: 2,
+          set_specs: [
+            spec({ set_number: 1, reps_min: 10, reps_max: 12, load_type: "pct_1rm", load_min: 60, load_max: 60, rpe_min: 8, rpe_max: 8 }),
+            spec({ set_number: 2, reps_min: 10, reps_max: 12, load_type: "pct_top", load_min: 80, load_max: 80 }),
+          ],
+        },
+        [
+          makeSetLog({ id: "s1", setNumber: 1, reps: 10, weight: 140, rpe: 8 }),
+          makeSetLog({ id: "s2", setNumber: 2, reps: 10, weight: 5 }),
+        ],
+      );
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const [first, second] = rows();
+      expect(measure(first, "Load (kg)").target).toBe("60% 1RM");
+      expect(measure(second, "Load (kg)").target).toBe("80% top set");
+      expect(measure(first, "Load (kg)").actual).not.toHaveClass(AMBER);
+      expect(measure(second, "Load (kg)").actual).not.toHaveClass(AMBER);
+      expect(measure(first, "Reps").target).toBe("10–12");
+    });
+
+    it("marks a tempo that differs from the prescribed one", () => {
+      setupExercise(
+        {
+          name: "Squat",
+          sets: 2,
+          prescribed_fields: ["set_type", "reps", "tempo"],
+          set_specs: [1, 2].map((n) => spec({ set_number: n, reps_min: 5, reps_max: 5, tempo: "3-1-X-0" })),
+        },
+        [
+          makeSetLog({ id: "s1", setNumber: 1, reps: 5, weight: null, tempo: "3-1-X-0" }),
+          makeSetLog({ id: "s2", setNumber: 2, reps: 5, weight: null, tempo: "2-0-X-0" }),
+        ],
+      );
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const [same, differs] = rows();
+      expect(measure(same, "Tempo")).toMatchObject({ target: "3-1-X-0" });
+      expect(measure(same, "Tempo").actual).not.toHaveClass(AMBER);
+      expect(measure(differs, "Tempo").actual).toHaveClass(AMBER);
+      expect(measure(differs, "Tempo").actual).toHaveTextContent("2-0-X-0, differs from target");
+    });
+
+    it("mutes a warm-up and never marks it, whatever it records", () => {
+      setupExercise(
+        {
+          name: "Bench Press",
+          sets: 2,
+          set_specs: [
+            spec({ set_number: 1, set_type: "warmup", reps_min: 15, reps_max: 15, load_type: "absolute", load_min: 20, load_max: 20 }),
+            spec({ set_number: 2, reps_min: 8, reps_max: 12 }),
+          ],
+        },
+        [makeSetLog({ setNumber: 1, reps: 10, weight: 30 })],
+      );
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const [warmupRow] = rows();
+      expect(within(warmupRow).getByText("Warm-up")).toBeInTheDocument();
+      expect(within(warmupRow).getByText("Logged")).toBeInTheDocument();
+      // Recorded but never scored: muted rather than primary ink, and not amber
+      // though both values are outside the warm-up's target.
+      expect(measure(warmupRow, "Load (kg)").actual).toHaveClass("text-[#93b0b4]");
+      expect(measure(warmupRow, "Load (kg)").actual).not.toHaveClass(AMBER);
+      expect(measure(warmupRow, "Reps").actual).toHaveTextContent(/^10$/);
+    });
+
+    it("shows no rep target for an AMRAP row, only its load and RPE", () => {
+      setupExercise(
+        {
+          name: "Bench Press",
+          sets: 2,
+          set_specs: [
+            spec({ set_number: 1, reps_min: 8, reps_max: 12 }),
+            // A stale range the editor left behind when the coach switched
+            // this set to AMRAP. It must not reach the coach as though it
+            // were prescribed.
+            spec({
+              set_number: 2,
+              set_type: "amrap",
+              reps_min: 7,
+              reps_max: 11,
+              load_type: "pct_1rm",
+              load_min: 60, load_max: 60,
+              rpe_min: 9, rpe_max: 9,
+            }),
+          ],
+        },
+        [makeSetLog({ id: "s2", setNumber: 2, reps: 14, weight: 60, rpe: 9 })],
+      );
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const [working, amrap] = rows();
+      expect(measure(working, "Reps").target).toBe("8–12");
+      expect(measure(amrap, "Reps").target).toBe("");
+      expect(measure(amrap, "Reps").actual).not.toHaveClass(AMBER);
+      expect(measure(amrap, "Load (kg)").target).toBe("60% 1RM");
+      expect(measure(amrap, "RPE").target).toBe("9");
+      expect(screen.queryByText(/7–11|7-11/)).not.toBeInTheDocument();
     });
 
     it("tags non-working set types and leaves working sets untagged", () => {
-      setupSWR({
-        exerciseLogs: [
-          makeExerciseLog({
-            prescribedExerciseSnapshot: {
-              name: "Bench Press",
-              sets: 4,
-              set_specs: [
-                spec({ set_number: 1, set_type: "warmup" }),
-                spec({ set_number: 2 }),
-                spec({ set_number: 3, set_type: "amrap" }),
-                spec({ set_number: 4, set_type: "failure" }),
-              ],
-            },
-            sets: [],
-          }),
-        ],
-      });
+      setupExercise(
+        {
+          name: "Bench Press",
+          sets: 4,
+          set_specs: [
+            spec({ set_number: 1, set_type: "warmup" }),
+            spec({ set_number: 2 }),
+            spec({ set_number: 3, set_type: "amrap" }),
+            spec({ set_number: 4, set_type: "failure" }),
+          ],
+        },
+        [],
+      );
 
       render(<SessionLogDetailDialog {...defaultProps} />);
 
@@ -482,31 +598,29 @@ describe("SessionLogDetailDialog", () => {
     });
 
     it("flattens a drop set into its sibling rows", () => {
-      setupSWR({
-        exerciseLogs: [
-          makeExerciseLog({
-            prescribedExerciseSnapshot: {
-              name: "Lat Pulldown",
-              sets: 2,
-              set_specs: [
-                spec({ set_number: 1, reps_min: 10, reps_max: 10 }),
-                spec({
-                  set_number: 2,
-                  set_type: "drop",
-                  reps_min: 10,
-                  reps_max: 10,
-                  drops: [
-                    { weight: 60, reps: 8 },
-                    { weight: 40, reps: 6 },
-                  ],
-                }),
+      setupExercise(
+        {
+          name: "Lat Pulldown",
+          sets: 2,
+          set_specs: [
+            spec({ set_number: 1, reps_min: 10, reps_max: 10, load_type: "absolute", load_min: 80, load_max: 80 }),
+            spec({
+              set_number: 2,
+              set_type: "drop",
+              reps_min: 10,
+              reps_max: 10,
+              load_type: "absolute",
+              load_min: 80, load_max: 80,
+              drops: [
+                { weight: 60, reps: 8 },
+                { weight: 40, reps: 6 },
               ],
-            },
-            // The wire numbers the FLATTENED list, so the second drop is set 4.
-            sets: [makeSetLog({ setNumber: 4, reps: 6, weight: 40 })],
-          }),
-        ],
-      });
+            }),
+          ],
+        },
+        // The wire numbers the FLATTENED list, so the second drop is set 4.
+        [makeSetLog({ setNumber: 4, reps: 6, weight: 40 })],
+      );
 
       render(<SessionLogDetailDialog {...defaultProps} />);
 
@@ -515,42 +629,170 @@ describe("SessionLogDetailDialog", () => {
       expect(screen.getAllByText("Drop")).toHaveLength(3);
       const [, dropTop, firstDrop, lastDrop] = rows();
       expect(within(lastDrop).getByText("Logged")).toBeInTheDocument();
-      expect(within(lastDrop).getByText("6 @ 40 kg")).toBeInTheDocument();
+      expect(measure(lastDrop, "Load (kg)").target).toBe("40 kg");
+      expect(measure(lastDrop, "Reps").target).toBe("6");
 
       // buildSetDisplayNumbers returns the PARENT's number for a drop
       // continuation and leaves blanking to each renderer, so the extraction
       // does NOT guarantee this: the top set keeps its number, the two
       // continuation rows show none, or they read as duplicate set 2s.
-      const setCell = (row: HTMLElement) => within(row).getAllByRole("cell")[1];
-      expect(setCell(dropTop)).toHaveTextContent("2");
-      expect(setCell(firstDrop).textContent).toBe("Drop");
-      expect(setCell(lastDrop).textContent).toBe("Drop");
+      const setNumber = (row: HTMLElement) => within(row).getByTestId("logged-set-number");
+      expect(setNumber(dropTop)).toHaveTextContent("2");
+      expect(setNumber(firstDrop).textContent).toBe("Drop");
+      expect(setNumber(lastDrop).textContent).toBe("Drop");
     });
+  });
 
-    it("shows a warm-up but does not count it as a working set", () => {
-      setupSWR({
-        exerciseLogs: [
-          makeExerciseLog({
-            prescribedExerciseSnapshot: {
-              name: "Bench Press",
-              sets: 2,
-              set_specs: [
-                spec({ set_number: 1, set_type: "warmup", reps_min: 15, reps_max: 15 }),
-                spec({ set_number: 2, reps_min: 8, reps_max: 12 }),
-              ],
-            },
-            sets: [makeSetLog({ setNumber: 1, reps: 15, weight: 20 })],
-          }),
-        ],
-      });
+  describe("the columns follow the exercise, and the data", () => {
+    it("gives a run its own columns: Set, Distance, Duration, Pace", () => {
+      setupExercise(
+        {
+          name: "Running",
+          sets: 1,
+          prescribed_fields: ["set_type", "distance", "duration", "pace", "rest"],
+          set_specs: [
+            spec({
+              set_number: 1,
+              distance_meters_min: 5000, distance_meters_max: 5000,
+              duration_seconds_min: 1500, duration_seconds_max: 1620,
+              pace_seconds_per_km_min: 300, pace_seconds_per_km_max: 320,
+              rest_seconds: 60,
+            }),
+          ],
+        },
+        [makeSetLog({ setNumber: 1, reps: null, weight: null, distanceMeters: 5020, durationSeconds: 1570, paceSecondsPerKm: 313 })],
+      );
 
       render(<SessionLogDetailDialog {...defaultProps} />);
 
-      const [warmupRow] = rows();
-      expect(within(warmupRow).getByText("Warm-up")).toBeInTheDocument();
-      expect(within(warmupRow).getByText("Logged")).toBeInTheDocument();
-      // Recorded but never scored: its values are muted rather than primary ink.
-      expect(within(warmupRow).getByText("20")).toHaveClass("text-[#93b0b4]");
+      const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+      expect(headers).toEqual(["Set", "Distance", "Duration", "Pace"]);
+      const [set] = rows();
+      expect(measure(set, "Distance")).toMatchObject({ target: "5 km" });
+      expect(measure(set, "Distance").actual).toHaveTextContent("5.02 km, above target");
+      expect(measure(set, "Duration").target).toBe("25:00–27:00");
+      expect(measure(set, "Duration").actual).toHaveTextContent(/^26:10$/);
+      expect(measure(set, "Pace").target).toBe("5:00–5:20 /km");
+      expect(measure(set, "Pace").actual).toHaveTextContent(/^5:13 \/km$/);
+    });
+
+    it("shows a column a set recorded a value in, though the coach didn't prescribe it", () => {
+      setupExercise(
+        {
+          name: "Push Up",
+          sets: 1,
+          prescribed_fields: ["set_type", "reps", "rest"],
+          set_specs: [spec({ set_number: 1, reps_min: 15, reps_max: 15 })],
+        },
+        [makeSetLog({ setNumber: 1, reps: 15, weight: null, rir: 2 })],
+      );
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+      expect(headers).toEqual(["Set", "Reps", "RIR"]);
+      const [set] = rows();
+      expect(measure(set, "RIR")).toMatchObject({ target: "" });
+      expect(measure(set, "RIR").actual).toHaveTextContent(/^2$/);
+    });
+
+    it("reads an old snapshot with no column list as today's five", () => {
+      setupExercise(
+        { name: "Bench Press", sets: 1, reps_min: 8, reps_max: 12 },
+        [makeSetLog({ setNumber: 1, reps: 10, weight: 60 })],
+      );
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+      expect(headers).toEqual(["Set", "Load (kg)", "Reps", "RPE"]);
+    });
+
+    it("shows Rest only when a rest was recorded, the rest taken under the rest prescribed", () => {
+      const snapshot = {
+        name: "Squat",
+        sets: 2,
+        set_specs: [1, 2].map((n) => spec({ set_number: n, reps_min: 5, reps_max: 5, rest_seconds: 120 })),
+      };
+      setupExercise(snapshot, [makeSetLog({ setNumber: 1, reps: 5 })]);
+      const { unmount } = render(<SessionLogDetailDialog {...defaultProps} />);
+      expect(screen.queryByRole("columnheader", { name: "Rest" })).toBeNull();
+      unmount();
+
+      setupExercise(snapshot, [
+        makeSetLog({ id: "s1", setNumber: 1, reps: 5, restSeconds: 120 }),
+        makeSetLog({ id: "s2", setNumber: 2, reps: 5, restSeconds: 150 }),
+      ]);
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const [onTime, long] = rows();
+      expect(measure(onTime, "Rest")).toMatchObject({ target: "2m" });
+      expect(measure(onTime, "Rest").actual).not.toHaveClass(AMBER);
+      expect(measure(long, "Rest").actual).toHaveClass(AMBER);
+      expect(measure(long, "Rest").actual).toHaveTextContent("2m 30s, above target");
+    });
+
+    it("reads loads in an imperial viewer's pounds, snapped, the header naming the unit", () => {
+      units.preference = "imperial";
+      setupExercise(
+        {
+          name: "Squat",
+          sets: 1,
+          set_specs: [spec({ set_number: 1, load_type: "absolute", load_min: 100, load_max: 100 })],
+        },
+        // What an imperial client's "220 lbs" hint asks for: 99.79 kg.
+        [makeSetLog({ setNumber: 1, reps: 5, weight: 99.79 })],
+      );
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const [set] = rows();
+      expect(measure(set, "Load (lbs)")).toMatchObject({ target: "220 lbs" });
+      // Two numbers that read the same are never outside each other.
+      expect(measure(set, "Load (lbs)").actual).toHaveTextContent(/^220$/);
+      expect(measure(set, "Load (lbs)").actual).not.toHaveClass(AMBER);
+    });
+  });
+
+  describe("the frame", () => {
+    it("keeps the Set column in place while the measures scroll sideways inside the card", () => {
+      setupExercise(
+        {
+          name: "Stationary Bike",
+          sets: 1,
+          prescribed_fields: [
+            "set_type", "distance", "duration", "calories", "cadence", "resistance",
+            "heart_rate", "power", "ftp_percent", "rest",
+          ],
+          set_specs: [spec({ set_number: 1 })],
+        },
+        [makeSetLog({ setNumber: 1, reps: null, weight: null, power: 250 })],
+      );
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const [set] = rows();
+      // The Table primitive's own container is what scrolls, inside the card.
+      expect(set.closest("[data-slot='table-container']")).toHaveClass("overflow-x-auto");
+      expect(within(set).getAllByRole("cell")[0]).toHaveClass("sticky", "left-0", "bg-white");
+      expect(screen.getByRole("columnheader", { name: "Set" })).toHaveClass("sticky", "left-0");
+      expect(screen.getAllByRole("columnheader")).toHaveLength(9);
+    });
+
+    it("is the tray's 780px, and only its body scrolls", () => {
+      setupSWR({ exerciseLogs: [makeExerciseLog()] });
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const content = screen.getByRole("dialog");
+      expect(content).toHaveClass("sm:max-w-[780px]", "max-h-[85vh]", "grid-rows-[auto_minmax(0,1fr)]");
+      // Never on the DialogContent itself, which would scroll its padding and
+      // title away with the body.
+      expect(content).not.toHaveClass("overflow-y-auto");
+      const body = rows()[0].closest(".overflow-y-auto");
+      expect(body).toHaveClass("min-h-0");
+      expect(content).toContainElement(body as HTMLElement);
+      expect(body).not.toContainElement(screen.getByText("Push Day"));
     });
   });
 
@@ -581,8 +823,9 @@ describe("SessionLogDetailDialog", () => {
       render(<SessionLogDetailDialog {...defaultProps} />);
 
       expect(screen.getByText("Lat Raise")).toBeInTheDocument();
-      // Every one of its rows is not done — it never reached exercise_logs.
-      expect(screen.getAllByText("12-15")).toHaveLength(3);
+      // Every one of its rows is not done — it never reached exercise_logs —
+      // and each still states its target.
+      expect(screen.getAllByText("12–15")).toHaveLength(3);
       expect(screen.getAllByText("Not done")).toHaveLength(4);
     });
 

@@ -208,7 +208,16 @@ export function SessionLogDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto p-0 sm:max-w-2xl">
+      {/* The tray's 780px, so a strength exercise's four columns and a run's
+          fit side by side; an exercise with more scrolls sideways inside its
+          own card. Never taller than the screen: the header stays put and only
+          the body (the second grid row) scrolls — never the DialogContent
+          itself, which would scroll its padding and title away. No
+          description: the title and the line under it say what this is. */}
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[85vh] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-[780px]"
+      >
         {/* Header zone */}
         <DialogHeader className="gap-0 px-6 pb-0 pt-6">
           <DialogTitle className={cn("text-[20px] font-bold leading-tight", TEXT_PRIMARY)}>
@@ -254,92 +263,94 @@ export function SessionLogDetailDialog({
                 </span>
               </p>
             )}
+          {/* Hairline divider — the header's last line, so the body below it
+              is the grid's scrolling row. */}
+          {!isLoading && sessionLog && (
+            <div className="border-t border-[rgba(13,148,136,0.08)]" />
+          )}
         </DialogHeader>
 
-        {/* Hairline divider */}
-        {!isLoading && sessionLog && (
-          <div className="mx-6 border-t border-[rgba(13,148,136,0.08)]" />
-        )}
+        <div className="min-h-0 overflow-y-auto px-6 pb-6">
+          {/* Loading */}
+          {isLoading && (
+            <div className="space-y-5 pt-2">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          )}
 
-        {/* Loading */}
-        {isLoading && (
-          <div className="space-y-5 px-6 pb-6 pt-2">
-            <Skeleton className="h-4 w-48" />
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-32 w-full" />
-          </div>
-        )}
+          {/* Error */}
+          {!isLoading && (error || (data && !data.success)) && (
+            <div className="flex items-center justify-center pb-6 pt-12">
+              <p className="text-sm text-[#c06060]">Failed to load session details.</p>
+            </div>
+          )}
 
-        {/* Error */}
-        {!isLoading && (error || (data && !data.success)) && (
-          <div className="flex items-center justify-center px-6 py-12">
-            <p className="text-sm text-[#c06060]">Failed to load session details.</p>
-          </div>
-        )}
+          {/* Loaded body */}
+          {!isLoading && sessionLog && (
+            <>
+              {/* Client notes — quoted block */}
+              {sessionLog.notes && (
+                <div className="mt-3">
+                  <p className={cn(LABEL_CLASS, "mb-2 font-semibold")}>Client Notes</p>
+                  <div className="rounded-r-[4px] border-l-2 border-[#0d9488] bg-[rgba(13,148,136,0.03)] px-4 py-3">
+                    <p className={cn("text-[13px] italic leading-relaxed", TEXT_PRIMARY)}>
+                      {sessionLog.notes}
+                    </p>
+                  </div>
+                </div>
+              )}
 
-        {/* Loaded body */}
-        {!isLoading && sessionLog && (
-          <div className="px-6 pb-6">
-            {/* Client notes — quoted block */}
-            {sessionLog.notes && (
-              <div className="mt-3">
-                <p className={cn(LABEL_CLASS, "mb-2 font-semibold")}>Client Notes</p>
-                <div className="rounded-r-[4px] border-l-2 border-[#0d9488] bg-[rgba(13,148,136,0.03)] px-4 py-3">
-                  <p className={cn("text-[13px] italic leading-relaxed", TEXT_PRIMARY)}>
-                    {sessionLog.notes}
+              {/* Quick-logged state: nothing prescribed to show, and nothing logged
+                  against it. */}
+              {!hasEntries && (
+                <div className="mt-[22px] rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[rgba(13,148,136,0.03)] p-4 text-center">
+                  <p className={cn("text-[13px]", TEXT_MUTED)}>
+                    Client logged this session as complete without per-set detail.
                   </p>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Quick-logged state: nothing prescribed to show, and nothing logged
-                against it. */}
-            {!hasEntries && (
-              <div className="mt-[22px] rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[rgba(13,148,136,0.03)] p-4 text-center">
-                <p className={cn("text-[13px]", TEXT_MUTED)}>
-                  Client logged this session as complete without per-set detail.
-                </p>
-              </div>
-            )}
-
-            {hasEntries && (
-              <div className="mt-[28px]">
-                <p className={cn(LABEL_CLASS, "mb-3 font-semibold")}>Exercises</p>
-                <div className="flex flex-col gap-[10px]">
-                  {entries.groups.flatMap(({ group, entries: groupEntries }) => {
-                    const cards = groupEntries.map((entry, position) => (
+              {hasEntries && (
+                <div className="mt-[28px]">
+                  <p className={cn(LABEL_CLASS, "mb-3 font-semibold")}>Exercises</p>
+                  <div className="flex flex-col gap-[10px]">
+                    {entries.groups.flatMap(({ group, entries: groupEntries }) => {
+                      const cards = groupEntries.map((entry, position) => (
+                        <SessionLogExerciseCard
+                          key={entry.key}
+                          log={entry.log}
+                          prescribed={entry.prescribed}
+                          place={exerciseGroupPlace(group, position)}
+                          onExerciseDrillDown={onExerciseDrillDown}
+                        />
+                      ));
+                      // A lone exercise is a plain card; only a linked group reads
+                      // as a group.
+                      return isLinkedGroup(group)
+                        ? [
+                            <SessionLogGroup key={group.id} group={group}>
+                              {cards}
+                            </SessionLogGroup>,
+                          ]
+                        : cards;
+                    })}
+                    {entries.extras.map((entry) => (
                       <SessionLogExerciseCard
                         key={entry.key}
                         log={entry.log}
                         prescribed={entry.prescribed}
-                        roundsAreRows={exerciseGroupPlace(group, position).roundsAreRows}
                         onExerciseDrillDown={onExerciseDrillDown}
                       />
-                    ));
-                    // A lone exercise is a plain card; only a linked group reads
-                    // as a group.
-                    return isLinkedGroup(group)
-                      ? [
-                          <SessionLogGroup key={group.id} group={group}>
-                            {cards}
-                          </SessionLogGroup>,
-                        ]
-                      : cards;
-                  })}
-                  {entries.extras.map((entry) => (
-                    <SessionLogExerciseCard
-                      key={entry.key}
-                      log={entry.log}
-                      prescribed={entry.prescribed}
-                      onExerciseDrillDown={onExerciseDrillDown}
-                    />
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

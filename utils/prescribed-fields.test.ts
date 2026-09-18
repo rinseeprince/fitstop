@@ -7,6 +7,7 @@ import {
   PRESCRIBED_FIELD_LABELS,
   PRESCRIBED_FIELDS,
   resolvePrescribedFields,
+  snapshotPrescribedFields,
   toPrescribedFields,
 } from "./prescribed-fields";
 
@@ -84,5 +85,29 @@ describe("resolvePrescribedFields", () => {
     const fields = resolvePrescribedFields(["pace", "split", "nonsense"]);
     expect([...fields]).toEqual(["pace", "split"]);
     expect(resolvePrescribedFields(null).size).toBe(5);
+  });
+});
+
+describe("snapshotPrescribedFields", () => {
+  it("reads a snapshot's list", () => {
+    expect([...snapshotPrescribedFields({ prescribed_fields: ["distance", "pace"] })]).toEqual([
+      "distance",
+      "pace",
+    ]);
+  });
+
+  it("reads a snapshot with no list, a null one or a malformed one as today's five", () => {
+    const five = [...DEFAULT_PRESCRIBED_FIELDS].sort();
+    expect([...snapshotPrescribedFields({ name: "Squat" })].sort()).toEqual(five);
+    expect([...snapshotPrescribedFields({ prescribed_fields: null })].sort()).toEqual(five);
+    expect([...snapshotPrescribedFields({ prescribed_fields: "reps" })].sort()).toEqual(five);
+    expect([...snapshotPrescribedFields(null)].sort()).toEqual(five);
+  });
+
+  it("keeps the strings of a mixed list and drops the rest", () => {
+    expect([...snapshotPrescribedFields({ prescribed_fields: ["reps", 7, null, "rpe"] })]).toEqual([
+      "reps",
+      "rpe",
+    ]);
   });
 });

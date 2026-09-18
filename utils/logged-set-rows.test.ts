@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { SetSpec } from "./exercise-set-specs";
 import { buildPrescribedRows, MAX_PRESCRIBED_ROWS } from "./set-spec-rows";
 import { emptyLoggedActuals } from "./set-log-measures";
-import { buildLoggedSetRows, type LoggedSetInput } from "./logged-set-rows";
+import { buildLoggedSetRows, loggedColumns, type LoggedSetInput } from "./logged-set-rows";
+import { resolvePrescribedFields } from "./prescribed-fields";
 
 function spec(overrides: Partial<SetSpec> & { set_number: number }): SetSpec {
   return {
@@ -144,5 +145,61 @@ describe("buildLoggedSetRows", () => {
     ]);
 
     expect(rows[1].actual?.reps).toBe(11);
+  });
+});
+
+// The columns the coach's table and the check-in AI's lines walk: the boxes the
+// coach prescribed, and anything else the rows carry, so history hides nothing.
+describe("loggedColumns", () => {
+  const run = resolvePrescribedFields(["set_type", "distance", "duration", "pace", "rest"]);
+
+  it("gives every prescribed box, in the columns' order, and never set type or rest", () => {
+    const rows = buildLoggedSetRows(buildPrescribedRows([spec({ set_number: 1 })]), []);
+    expect(loggedColumns(run, rows, "metric")).toEqual({
+      boxes: ["distance", "duration", "pace"],
+      rest: false,
+    });
+    expect(
+      loggedColumns(resolvePrescribedFields(["rpe", "load", "set_type", "reps"]), rows, "metric").boxes,
+    ).toEqual(["load", "reps", "rpe"]);
+  });
+
+  it("adds a box a row sets a target in, though the columns don't name it", () => {
+    const rows = buildLoggedSetRows(
+      buildPrescribedRows([spec({ set_number: 1, rpe_min: 8, rpe_max: 8 })]),
+      [],
+    );
+    expect(loggedColumns(run, rows, "metric").boxes).toEqual(["rpe", "distance", "duration", "pace"]);
+  });
+
+  it("adds a box a set recorded a value in, so a value is never hidden", () => {
+    const rows = buildLoggedSetRows(buildPrescribedRows([spec({ set_number: 1 })]), [
+      log({ setNumber: 1, heartRateZone: 3 }),
+    ]);
+    expect(loggedColumns(run, rows, "metric").boxes).toEqual([
+      "distance",
+      "duration",
+      "pace",
+      "heart_rate_zone",
+    ]);
+  });
+
+  it("shows Rest only when a set recorded the rest taken", () => {
+    const prescription = buildPrescribedRows([spec({ set_number: 1, rest_seconds: 90 })]);
+    expect(loggedColumns(run, buildLoggedSetRows(prescription, [log({ setNumber: 1 })]), "metric").rest).toBe(
+      false,
+    );
+    expect(
+      loggedColumns(run, buildLoggedSetRows(prescription, [log({ setNumber: 1, restSeconds: 95 })]), "metric")
+        .rest,
+    ).toBe(true);
+  });
+
+  it("does not add a load a row stores with no unit, which reads as nothing", () => {
+    const rows = buildLoggedSetRows(
+      buildPrescribedRows([spec({ set_number: 1, load_type: null, load_min: 100, load_max: 100 })]),
+      [],
+    );
+    expect(loggedColumns(run, rows, "metric").boxes).not.toContain("load");
   });
 });

@@ -7,14 +7,17 @@ import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helper
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { getClientTodayString } from "./today-service";
 import { getClientWeekAnchor } from "./check-in-week-service";
-import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
 import type {
   CheckInTrainingContext,
   CheckInNutritionContext,
   CheckInTrainingEventDetail,
   DayOfWeek,
 } from "@/types/check-in";
-import { sessionExercises } from "@/utils/exercise-groups";
+import { sessionExercises, snapshotGroup } from "@/utils/exercise-groups";
+import { describeLoggedExercise } from "@/utils/logged-exercise-line";
+import type { LoggedSetInput } from "@/utils/logged-set-rows";
+import { actualsFromSetLogRow } from "@/utils/set-log-measures";
+import type { UnitSystem } from "@/utils/unit-conversions";
 
 /**
  * Get training context for the check-in form
@@ -212,22 +215,52 @@ export async function getTrainingEventDetailsForPeriod(
 // size bounded; overflow collapses to a "…and N more" line (Session 6.3).
 const MAX_EXERCISE_LINES_PER_SESSION = 8;
 
+type ExerciseLogLine = {
+  id: string;
+  session_log_id: string;
+  training_exercise_id: string | null;
+  performed_name: string | null;
+  prescribed_exercise_snapshot: unknown;
+};
+
+/** After every place a snapshot can record: an exercise logged outside the plan. */
+const OUTSIDE_THE_PLAN = Number.MAX_SAFE_INTEGER;
+
 /**
- * Per-session exercise summary lines for the check-in AI prompt (Session 6.3).
+ * An exercise log's place in its session as the coach wrote it — its group's
+ * place, then its own in the group (`snapshotGroup`, the one reader of a
+ * snapshot's place). Every exercise log of one save shares its `created_at`
+ * (one batched insert), so the read's own order is not the session's.
+ */
+function sessionPlace(ex: ExerciseLogLine): [group: number, exercise: number] {
+  const snapshot = ex.prescribed_exercise_snapshot;
+  if (ex.training_exercise_id == null || snapshot == null || typeof snapshot !== "object") {
+    return [OUTSIDE_THE_PLAN, OUTSIDE_THE_PLAN];
+  }
+  const place = snapshotGroup(snapshot as Record<string, unknown>, ex.training_exercise_id);
+  return [place.orderIndex, place.exerciseOrderIndex];
+}
+
+/**
+ * Per-session exercise lines for the check-in AI prompt.
  *
- * For each logged session (keyed by session_log_id) returns a compact list of
- * one line per logged exercise: `"{name} — {n} sets, top {weight}x{reps} @ RPE
- * {rpe}"` (the ` @ RPE {rpe}` suffix is omitted when the top set's rpe is null).
- * The "top" set is the heaviest (max weight), tie-broken by higher reps —
- * mirroring training-log-service's exercise_logs/set_logs aggregation.
+ * For each logged session (keyed by session_log_id), one line per logged
+ * exercise, in the order the coach wrote the session (anything logged outside
+ * the plan after it): its working sets done against those prescribed, then
+ * measure by measure what the client did beside what the coach set, naming
+ * every measure outside its target — the coach's
+ * logged-workout table in words (`describeLoggedExercise`,
+ * utils/logged-exercise-line.ts). `viewer` is the COACH's unit system: they
+ * read the summary, so both callers resolve it before asking for the lines.
  *
  * Non-blocking (CONVENTIONS §11): any failure returns an empty Map so the AI
- * prompt degrades to the per-event 6.2 detail rather than failing the summary.
+ * prompt degrades to the per-event detail rather than failing the summary.
  * At most two queries regardless of input size: one batched exercise_logs read,
  * one batched set_logs read.
  */
 export async function getExerciseSummariesForPeriod(
-  sessionLogIds: string[]
+  sessionLogIds: string[],
+  viewer: UnitSystem
 ): Promise<Map<string, string[]>> {
   const result = new Map<string, string[]>();
   if (sessionLogIds.length === 0) return result;
@@ -236,13 +269,17 @@ export async function getExerciseSummariesForPeriod(
     // supabaseAdmin: client portal reading own exercise_logs (RLS exception 3)
     const { data: exerciseRows, error: exErr } = await supabaseAdmin
       .from("exercise_logs")
-      .select("id, session_log_id, performed_name, prescribed_exercise_snapshot")
+      .select("id, session_log_id, training_exercise_id, performed_name, prescribed_exercise_snapshot")
       .in("session_log_id", sessionLogIds);
     if (exErr) {
       console.error("Error fetching exercise_logs for check-in summary:", exErr.message);
       return result;
     }
-    const exLogs = exerciseRows ?? [];
+    const exLogs: ExerciseLogLine[] = [...(exerciseRows ?? [])].sort((a, b) => {
+      const [groupA, exerciseA] = sessionPlace(a);
+      const [groupB, exerciseB] = sessionPlace(b);
+      return groupA - groupB || exerciseA - exerciseB;
+    });
     if (exLogs.length === 0) return result;
 
     const exLogIds = exLogs.map((r) => r.id);
@@ -257,42 +294,27 @@ export async function getExerciseSummariesForPeriod(
       return result;
     }
 
-    // Group set_logs by exercise_log_id.
-    const setsByExLog = new Map<
-      string,
-      Array<{ reps: number | null; weight: number | null; rpe: number | null }>
-    >();
-    for (const s of setRows ?? []) {
-      const list = setsByExLog.get(s.exercise_log_id) ?? [];
-      list.push({ reps: s.reps, weight: s.weight, rpe: s.rpe });
-      setsByExLog.set(s.exercise_log_id, list);
+    // Every actual a set recorded, by wire key, beside its place in the
+    // flattened prescription.
+    const setsByExLog = new Map<string, LoggedSetInput[]>();
+    for (const row of setRows ?? []) {
+      const list = setsByExLog.get(row.exercise_log_id) ?? [];
+      list.push({ setNumber: row.set_number, ...actualsFromSetLogRow(row) });
+      setsByExLog.set(row.exercise_log_id, list);
     }
 
-    // Build per-session lines, preserving exercise_logs order.
+    // Build per-session lines, in the session's order.
     const linesBySession = new Map<string, string[]>();
     for (const ex of exLogs) {
       const sets = setsByExLog.get(ex.id) ?? [];
-      if (sets.length === 0) continue; // no per-set data → nothing to summarize
+      if (sets.length === 0) continue; // an exercise with no set was not done
 
-      const snapshot = ex.prescribed_exercise_snapshot as { name?: string } | null;
-      const name = sanitizeForAIPrompt(
-        ex.performed_name ?? snapshot?.name ?? "Unknown exercise"
-      );
-
-      // Top set: heaviest weight, tie-broken by higher reps. Treat null as -1
-      // so sets with data always win over empty ones.
-      const topSet = sets.reduce((best, cur) => {
-        const bestW = best.weight ?? -1;
-        const curW = cur.weight ?? -1;
-        if (curW > bestW) return cur;
-        if (curW === bestW && (cur.reps ?? -1) > (best.reps ?? -1)) return cur;
-        return best;
+      const line = describeLoggedExercise({
+        performedName: ex.performed_name,
+        snapshot: (ex.prescribed_exercise_snapshot as Record<string, unknown> | null) ?? null,
+        sets,
+        viewer,
       });
-
-      const weight = topSet.weight ?? 0;
-      const reps = topSet.reps ?? 0;
-      let line = `${name} — ${sets.length} sets, top ${weight}x${reps}`;
-      if (topSet.rpe != null) line += ` @ RPE ${topSet.rpe}`;
 
       const list = linesBySession.get(ex.session_log_id) ?? [];
       list.push(line);

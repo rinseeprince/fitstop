@@ -4,9 +4,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { LogFormValues } from "./log-form-types";
 import { useUnits } from "@/contexts/units-context";
-import type { UnitSystem } from "@/utils/unit-conversions";
-import { formatMeasureReadout } from "@/utils/measure-readout";
-import { formatTargetReadout } from "@/utils/target-range";
+import { formatBoxTarget } from "@/utils/measure-readout";
 import type { PrescribedRow } from "@/utils/set-spec-rows";
 import type { PrescribedField } from "@/utils/prescribed-fields";
 import { BOX_WORDS, boxEntry, type LoggedBox } from "@/utils/set-log-measures";
@@ -15,7 +13,8 @@ import { BOX_WORDS, boxEntry, type LoggedBox } from "@/utils/set-log-measures";
 // template is derived once from the same box list both are given.
 //
 // One box per column the coach prescribes (utils/set-log-measures.ts): the
-// coach's target is the box's hint and the client types what they did. Load's
+// coach's target is the box's hint (`formatBoxTarget`, the same words the
+// coach's table reads over what was done) and the client types what they did. Load's
 // box is the weight box — what they lifted, with the prescribed load as its
 // hint — so Weight shows only when Load is on; there is no separate read-only
 // Load cell. Set is the row's identity and is never a box; set_type gates the
@@ -79,36 +78,6 @@ function SetTypeTag({ row }: { row?: PrescribedRow }) {
       {tag.letter}
     </span>
   );
-}
-
-/**
- * The coach's target as the box's hint: a range reads with an en dash ("7–8",
- * "100–105 kg", "3:45–3:50 /km"). Boxes whose header already carries the word
- * (reps, RPE, RIR, cadence, resistance) hint the bare number; the converting
- * and unit-bearing measures hint with their unit, which is also how the box
- * reads back what it recorded.
- */
-function boxHint(
-  box: LoggedBox,
-  prescribed: PrescribedRow | undefined,
-  viewer: UnitSystem,
-): string {
-  if (!prescribed) return "";
-  switch (box) {
-    case "tempo":
-      return prescribed.tempo ?? "";
-    case "reps":
-      return prescribed.repsTarget ?? formatTargetReadout(prescribed.ranges.reps) ?? "";
-    case "rpe":
-    case "rir":
-    case "cadence":
-    case "resistance":
-      return formatTargetReadout(prescribed.ranges[box]) ?? "";
-    case "load":
-      return formatMeasureReadout("load", prescribed.ranges.load, viewer, prescribed.loadType) ?? "";
-    default:
-      return formatMeasureReadout(box, prescribed.ranges[box], viewer) ?? "";
-  }
 }
 
 function inputModeFor(box: LoggedBox): "numeric" | "decimal" | "text" {
@@ -239,7 +208,7 @@ export function SetRow({
       >
         {setCell}
         {boxes.map((box) => (
-          <ReadOnlyCell key={box} text={boxHint(box, prescribed, preference) || null} />
+          <ReadOnlyCell key={box} text={formatBoxTarget(box, prescribed, preference)} />
         ))}
         <span />
       </div>
@@ -278,7 +247,7 @@ export function SetRow({
           {...withBlur(register(`${namePrefix}.${box}`), onBlurBox ? () => onBlurBox(box) : undefined)}
           inputMode={inputModeFor(box)}
           type="text"
-          placeholder={boxHint(box, prescribed, preference)}
+          placeholder={formatBoxTarget(box, prescribed, preference) ?? ""}
           aria-label={`${rowNoun} ${setNumber} ${BOX_WORDS[box]}`}
           aria-invalid={invalidBox === box || undefined}
           data-testid={`box-${box}-${exerciseIndex}-${setIndex}`}

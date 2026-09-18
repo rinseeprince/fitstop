@@ -265,8 +265,8 @@ export function restAfterRow(
 }
 
 /**
- * The read-only Load cell's text: one value or a range — "100 kg",
- * "100–105 kg", "70–75% 1RM", "80% top set".
+ * A load target as it reads (utils/measure-readout.ts): one value or a range —
+ * "100 kg", "100–105 kg", "70–75% 1RM", "80% top set".
  *
  * `absoluteDisplay` converts one canonical kilogram value into the viewer's
  * unit as a string, and `unitLabel` names that unit, so this stays pure: the
@@ -297,11 +297,4 @@ export function formatPrescribedLoad(
     case "pct_top":
       return `${range}% top set`;
   }
-}
-
-/** The read-only RPE cell's text: "8", "7–8", or null when none is prescribed. */
-export function formatPrescribedRpe(
-  row: Pick<PrescribedRow, "rpeMin" | "rpeMax">,
-): string | null {
-  return formatTargetReadout({ min: row.rpeMin, max: row.rpeMax });
 }

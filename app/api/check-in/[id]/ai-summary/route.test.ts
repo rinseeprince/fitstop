@@ -55,6 +55,11 @@ import { POST } from "./route";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 import { getClientCheckIns } from "@/services/check-in-service";
 import { generateCheckInSummary } from "@/services/ai-service";
+import {
+  getExerciseSummariesForPeriod,
+  getTrainingEventDetailsForPeriod,
+} from "@/services/check-in-context-service";
+import { getCoachUnitPreference } from "@/lib/viewer-preferences";
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 const req = (body: unknown = {}) =>
@@ -106,5 +111,45 @@ describe("POST /api/check-in/[id]/ai-summary — the previous check-ins are the 
 
     const [, previous] = vi.mocked(generateCheckInSummary).mock.calls[0];
     expect(previous.map((ci) => ci.id)).toEqual(["ci-24-may"]);
+  });
+});
+
+describe("POST /api/check-in/[id]/ai-summary — the exercise lines are written in the coach's units", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(requireCoachOwnsCheckIn).mockResolvedValue({
+      authorized: true,
+      coachId: "coach-1",
+      checkIn: mayCheckIn,
+    } as never);
+    vi.mocked(getClientCheckIns).mockResolvedValue({
+      checkIns: [mayCheckIn],
+      total: 1,
+      nextCursor: null,
+    } as never);
+    vi.mocked(getCoachUnitPreference).mockResolvedValue("imperial");
+    vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([
+      {
+        eventId: "ev-1",
+        date: "2026-05-27",
+        sessionName: "Lower",
+        status: "completed",
+        logStatus: "logged",
+        completionQuality: "full",
+        trainingSessionId: "ts-1",
+        sessionLogId: "sl-1",
+      },
+    ]);
+    vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map());
+  });
+
+  it("resolves the authed coach's unit and hands it to the lines and the prompt alike", async () => {
+    const res = await POST(req(), params("ci-may"));
+
+    expect(res.status).toBe(200);
+    expect(getCoachUnitPreference).toHaveBeenCalledWith("coach-1");
+    expect(getExerciseSummariesForPeriod).toHaveBeenCalledWith(["sl-1"], "imperial");
+    const args = vi.mocked(generateCheckInSummary).mock.calls[0];
+    expect(args[args.length - 1]).toBe("imperial");
   });
 });

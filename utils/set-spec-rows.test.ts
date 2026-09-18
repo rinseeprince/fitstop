@@ -4,7 +4,6 @@ import {
   buildPrescribedRows,
   buildSetDisplayNumbers,
   formatPrescribedLoad,
-  formatPrescribedRpe,
   isContinuationOfDropSet,
   restAfterRow,
 } from "./set-spec-rows";
@@ -439,14 +438,6 @@ describe("formatPrescribedLoad", () => {
     expect(
       formatPrescribedLoad({ loadType: "absolute", loadMin: null, loadMax: null }, display, "kg"),
     ).toBeNull();
-  });
-});
-
-describe("formatPrescribedRpe", () => {
-  it("reads one value or a range, and nothing when none is prescribed", () => {
-    expect(formatPrescribedRpe({ rpeMin: 8, rpeMax: 8 })).toBe("8");
-    expect(formatPrescribedRpe({ rpeMin: 7, rpeMax: 8 })).toBe("7–8");
-    expect(formatPrescribedRpe({ rpeMin: null, rpeMax: null })).toBeNull();
   });
 });
 

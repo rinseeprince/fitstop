@@ -517,9 +517,9 @@ move when its workout does, so a moved workout used to be counted in the week it
 ### The coach's logged-workout readout
 
 `GET /api/clients/[id]/training/session-logs/[sessionLogId]` → `getSessionLogDetail` →
-`components/clients/training/session-log-detail-dialog.tsx` + `session-log-exercise-card.tsx`. The
-coach-side twin of the client's log form, and it obeys one inversion: **the PRESCRIPTION drives the
-row list, not the log.**
+`components/clients/training/session-log-detail-dialog.tsx` → `session-log-exercise-card.tsx` →
+`session-log-set-table.tsx`. The coach-side twin of the client's log form, and it obeys one
+inversion: **the PRESCRIPTION drives the row list, not the log.**
 
 - **Rows come from `buildPrescribedRows(snapshotToSpecs(snapshot))`** — the same flattening kernel
   the client grid and the `set_logs.set_type` stamping use, reached through the shared
@@ -548,13 +548,38 @@ row list, not the log.**
   (`session-log-group.tsx`; see "Groups" → "How a group reads"), and where its rows are rounds the
   first column reads Round. Exercises logged outside the prescription follow the groups, in none of
   them.
-- **Warm-ups are shown and never scored**: tagged `W`, values muted, tick muted. Set types render as
-  single-letter tags (`W`/`D`/`A`/`F`, working untagged) and drop sets as their flattened sibling
-  rows, matching what the client logged against.
-- **Columns follow the DATA, not `prescribed_fields`.** A historical readout must never hide
-  something actually recorded, and a snapshot written before migration 149 carries no field list.
-  The Prescribed cell reads each set's reps, load and RPE as one value or a range ("8-10 @ 100–105 kg
-  · RPE 7–8"), and the RPE colour judges the actual against the top of the prescribed range.
+- **Target over actual, one column per measure** (owner, 2026-09-18). Each exercise's table is the
+  Set column, then a column per box — Load, Reps, RPE, RIR, Tempo, Distance … % FTP, in the
+  prescribed columns' order (`LOGGED_BOXES`) — and each cell reads the coach's target over what the
+  client did: "100–105 kg" over "102.5", "5" over "4", "5 km" over "5.02 km". A strength exercise is
+  Set, Load, Reps, RPE; a run is Set, Distance, Duration, Pace. The target is the words the client's
+  box hinted (`formatBoxTarget`, `utils/measure-readout.ts`), the value what the box read back
+  (`formatBoxActual` — the entry grammar's `formatEntry`, and a load as a bare number in the
+  viewer's unit, snapped like every read-only load), and the headers are the client grid's
+  (`boxHeader`: Load names the unit its bare values are in). There is no separate Prescribed column.
+- **The columns follow the exercise and the data** (`loggedColumns`, `utils/logged-set-rows.ts`):
+  every box the coach prescribed (`snapshotPrescribedFields`; a snapshot with no list reads as
+  today's five), and any other box a row sets a target in or a set recorded a value in, so history
+  never hides something recorded. Set type is the Set column's tag, never a column. Rest is not a
+  box: a Rest column — the rest taken under the rest the set prescribes — appears only when a set
+  recorded the rest taken, which only the React Native app's timer does.
+- **A value outside its target reads amber, below as well as above; an RPE two or more above the
+  top of its target reads red; a % load is never marked, because a percentage can't be compared
+  with the kilograms lifted; a tempo that differs from the prescribed one reads amber**
+  (`utils/target-gap.ts`, the judgement the check-in AI's lines name too). It is made at the
+  precision both are shown, in the viewer's units, so a value and a target that read the same are
+  never outside each other: an imperial client who types the "220 lbs" their hint showed has lifted
+  99.79 kg against a 100 kg target, and a run recorded as 5,004 m reads "5 km". The rest taken is
+  judged against the rest the set prescribes where the exercise's own rest applies — its Rest column
+  on and its rows not a superset's or circuit's rounds, whose rests are the group's — and, rest being
+  one number, any other rest taken is outside it. A marked value carries its words for a screen
+  reader and on hover ("Above target").
+- **Warm-ups are shown and never scored**: tagged "Warm-up", values and tick muted, never marked. A
+  set type is named in full (Warm-up, Drop, AMRAP, Failure; a working set is untagged), and a drop
+  set reads as its flattened sibling rows, matching what the client logged against.
+- **The frame.** The dialog is the tray's 780px, capped at 85vh; its header stays put and only its
+  body scrolls (`grid-rows-[auto_minmax(0,1fr)]` — never overflow on the `DialogContent` itself).
+  An exercise whose columns don't fit scrolls sideways inside its own card, the Set column pinned.
 - Two things were deliberately **removed** when this shipped: a "Prescribed 3x8-12" chip built from
   the compact snapshot columns (which cannot express warm-ups, per-set loads, drop sets or AMRAP —
   the exact lossiness `set_specs` exists to fix), and an "Incomplete" badge off the vestigial
@@ -566,7 +591,7 @@ row list, not the log.**
 - **Signals:** a planned-day swap = `session_log.training_session_id != event.training_session_id` (the client chose "Do a different session" on a logged or already-done pick), read off the log embedded on the workout. The coach history table renders an "Alt" badge (`is_alternative`); the drill-down dialog shows a session-level "Prescribed X · Performed Y" line. `session_log.training_event_id IS NULL` no longer arises from the product (no event-less writer); rows carrying it are pre-retirement history and **appear on no screen** — the coach's history table is one row per calendar workout, and a log with no workout is not merged onto a day.
 - `exercise_logs.training_exercise_id` is SET NULL on delete (nullable). History preserved via `prescribed_exercise_snapshot` JSONB — the exercise's prescription as logged: its compact columns, `set_specs`, `prescribed_fields`, its place in its group (`order_index`) and the group it sat in (`group`: its id, its place in the session, its format and every setting). `services/training-log-service.test.ts` pins both key sets
 - Snapshots are written at completion time and backfilled for existing data
-- `set_logs` holds per-set actuals — **one real column per measure a coach can prescribe** (migration 090 for `reps`, `weight`, `rpe`; migration 184 for `rir`, `tempo`, `distance_meters`, `duration_seconds`, `pace_seconds_per_km`, `split_seconds_per_500m`, `calories`, `cadence`, `stroke_rate`, `resistance`, `heart_rate_zone`, `heart_rate`, `power`, `ftp_percent` and `rest_seconds`, the rest the client actually took). Every one nullable, in its canonical unit (CONVENTIONS §20), CHECKed to its target's limit and scaled to its resolution. `SET_LOG_MEASURES` (`utils/set-log-measures.ts`) is the one table of them — keyed by the prescribed column, so Load's actual is `weight` and Rest's is `rest_seconds` — and the migration test, the wire schema, the log writer, the row mapper (`SetLog` carries every one, by wire key) and the client's boxes derive from it. Replaces the legacy scalar aggregates `actual_sets`/`actual_reps`(csv)/`actual_weight` that lived on `exercise_logs` before 090. ON DELETE CASCADE from `exercise_logs`.
+- `set_logs` holds per-set actuals — **one real column per measure a coach can prescribe** (migration 090 for `reps`, `weight`, `rpe`; migration 184 for `rir`, `tempo`, `distance_meters`, `duration_seconds`, `pace_seconds_per_km`, `split_seconds_per_500m`, `calories`, `cadence`, `stroke_rate`, `resistance`, `heart_rate_zone`, `heart_rate`, `power`, `ftp_percent` and `rest_seconds`, the rest the client actually took). Every one nullable, in its canonical unit (CONVENTIONS §20), CHECKed to its target's limit and scaled to its resolution. `SET_LOG_MEASURES` (`utils/set-log-measures.ts`) is the one table of them — keyed by the prescribed column, so Load's actual is `weight` and Rest's is `rest_seconds` — and the migration test, the wire schema, the log writer, the row mapper (`SetLog` carries every one, by wire key), the client's boxes, the coach's logged-workout table and the check-in AI's exercise lines derive from it. Replaces the legacy scalar aggregates `actual_sets`/`actual_reps`(csv)/`actual_weight` that lived on `exercise_logs` before 090. ON DELETE CASCADE from `exercise_logs`.
 - `set_logs.set_type` (migration 119) — `TEXT NOT NULL DEFAULT 'working' CHECK (set_type IN ('warmup','working','amrap','drop','failure'))`. The per-set type of a logged set. It is **coach-prescribed** (seeded from the prescription's `set_specs` at log time), not client-chosen — the log schema accepts-but-ignores any client value, and the writer seeds each row from the prescription snapshot's per-set specs. Warm-up / AMRAP / drop rows are written today. The analytics RPCs (`get_exercise_progression_window` returns it; `get_exercise_prs` filters on it — migration 120) exclude warm-up sets from volume/compliance/PRs; `services/exercise-analytics-service.ts` counts only non-warmup sets and reads the prescribed working-set count from the snapshot's `set_specs`.
 - `exercise_logs.exercise_id` (added in 090) is a nullable FK to the global `exercises` catalog. Populated when the client picked an exercise from the typeahead picker (Add unplanned, Swap). NULL for prescribed-without-swap (catalog identity is reachable via `training_exercise_id → training_exercises.exercise_id`) and for freehand entries.
 - `exercise_logs.performed_name` (added in 090) is the canonical display name for the logged exercise. Differs from `prescribed_exercise_snapshot.name` when the client swapped a prescribed exercise or added a freehand unplanned one. Display rule: `performed_name ?? prescribed_exercise_snapshot?.name ?? "Unknown exercise"`. This is the per-**exercise** swap (Session 1.5), independent of the per-**session** swap above.
@@ -638,7 +663,7 @@ coach_saved_plans              -- plan templates (status: draft / saved)
 - The compact columns: `sets`, `reps_min`/`reps_max`/`reps_target`, `rpe_target`, `percentage_1rm`, `tempo`, `rest_seconds`, `is_warmup` — one number each, the summary of an exercise with no per-set list. Every range lives in `set_specs`; `expandSetSpecs` synthesizes the pairs from these when the list is absent. `rpe_target` is CHECKed 1–10 on both tables (migrations 015, 183) and `tempo` takes the four-phase grammar below.
 - `prescribed_fields` (`TEXT[] NOT NULL`, migrations 149 and 183; **also on `training_exercises`**) — **the measurement columns the coach prescribes for the exercise**: a non-empty subset of the nineteen defined once as `PRESCRIBED_FIELDS` in `utils/prescribed-fields.ts`, which the CHECK on both tables mirrors (`utils/prescribed-fields.test.ts` reads the migration and fails if the two differ). Strength: `load`, `reps`, `rpe`, `rir`, `tempo`. Endurance: `distance`, `duration`, `pace`, `split`, `calories`, `cadence`, `stroke_rate`, `resistance` (damper), `heart_rate_zone`, `heart_rate` (target HR), `power`, `ftp_percent`. Framework: `set_type`, `rest` — those two gate the row tag and the rest timer rather than being boxes of the client's grid. **No default and never null or empty**: every write schema requires the list, `projectExerciseCompact` takes it, and a writer that forgets it is refused rather than silently given the strength columns. A new exercise starts on today's five (`DEFAULT_PRESCRIBED_FIELDS`: set type, reps, load, RPE, rest); a log snapshot written before migration 149 carries no list and reads as today's five (`toPrescribedFields` / `resolvePrescribedFields`, which also drop an unknown name). The builder's Columns menu offers today's five, writes the explicit list, and keeps any column it doesn't offer — an endurance column an exercise carries survives every edit and save.
 - **`is_warmup` has no program-builder authoring path.** The builder's draft model seeds `false`, and it round-trips untouched through save, placement and `getClientTrainingPlan`. In the builder a warm-up is a `set_type: 'warmup'` entry inside an exercise's `set_specs`, not a separate exercise. `is_warmup` is still rendered in the client tracker (`exercise-tracker-block.tsx`); its last writer (the legacy calendar drawer's add-exercise dialog) was deleted with the drawer in the placed-plan editing overhaul, so it only round-trips. Add no new UI for it.
-- `set_specs` (JSONB, migration 119; ranges and every measure since migration 183) + `video_url` (TEXT, migration 119) — **also on `training_exercises`** (same shape in both tiers). `set_specs` is the authoritative per-set prescription list: `{ set_number, set_type, reps_target?, load_type?, tempo?, rest_seconds?, drops?, … }[]` plus **every numeric target as a `<measure>_min` / `<measure>_max` pair** — `reps`, `load` (kilograms or a percentage, by `load_type`), `rpe`, `rir`, `distance_meters`, `duration_seconds`, `pace_seconds_per_km`, `split_seconds_per_500m`, `calories`, `cadence`, `stroke_rate`, `resistance`, `heart_rate_zone`, `heart_rate`, `power`, `ftp_percent`. A single value is the same number at both ends; a range runs low to high. `SET_SPEC_MEASURES` (`utils/exercise-set-specs.ts`) is the one table of measures — each one's two keys, floor, ceiling and whether it is whole numbers — and the zod schema (`setSpecSchema`), the flattened rows (`PrescribedRow.ranges`) and the assistant's program view all derive from it, so a measure is added there once. Units are canonical (CONVENTIONS §20): metres, seconds, seconds per km, seconds per 500 m, kilograms. **Tempo is one compound value** — four phases, seconds (0–99) or `X` for explosive, written `3-1-X-0` (`TEMPO_PATTERN`, the same grammar on the exercise-level column). **Rest is one number**: it is what the rest timer counts down. A drop keeps its one `load_value` and one rep count. **RPE is 1–10 on every path** — both ends of the pair, the exercise-level column on both tables, the assistant's tools. Every stored spec — library and client exercises and the log snapshots alike — carries the pairs and no single-value `rpe_target` or `load_value` key, so nothing reads two spellings. When NULL the compact columns are the source of truth and `expandSetSpecs()` synthesizes N `working` specs from them, so every prescription yields per-set rows carrying a `set_type`. In the builder Reps, Load and RPE are range boxes ("8-12", "100-105", "7-8" — `utils/target-range.ts`, the one grammar); where the client's grid and the coach's logged-workout view show RPE and load, a range reads with an en dash: "7–8", "100–105 kg", "70–75% 1RM" (`formatPrescribedRpe`, `formatPrescribedLoad`). Duplicate-with-progression moves both ends of a load or rep range.
+- `set_specs` (JSONB, migration 119; ranges and every measure since migration 183) + `video_url` (TEXT, migration 119) — **also on `training_exercises`** (same shape in both tiers). `set_specs` is the authoritative per-set prescription list: `{ set_number, set_type, reps_target?, load_type?, tempo?, rest_seconds?, drops?, … }[]` plus **every numeric target as a `<measure>_min` / `<measure>_max` pair** — `reps`, `load` (kilograms or a percentage, by `load_type`), `rpe`, `rir`, `distance_meters`, `duration_seconds`, `pace_seconds_per_km`, `split_seconds_per_500m`, `calories`, `cadence`, `stroke_rate`, `resistance`, `heart_rate_zone`, `heart_rate`, `power`, `ftp_percent`. A single value is the same number at both ends; a range runs low to high. `SET_SPEC_MEASURES` (`utils/exercise-set-specs.ts`) is the one table of measures — each one's two keys, floor, ceiling and whether it is whole numbers — and the zod schema (`setSpecSchema`), the flattened rows (`PrescribedRow.ranges`) and the assistant's program view all derive from it, so a measure is added there once. Units are canonical (CONVENTIONS §20): metres, seconds, seconds per km, seconds per 500 m, kilograms. **Tempo is one compound value** — four phases, seconds (0–99) or `X` for explosive, written `3-1-X-0` (`TEMPO_PATTERN`, the same grammar on the exercise-level column). **Rest is one number**: it is what the rest timer counts down. A drop keeps its one `load_value` and one rep count. **RPE is 1–10 on every path** — both ends of the pair, the exercise-level column on both tables, the assistant's tools. Every stored spec — library and client exercises and the log snapshots alike — carries the pairs and no single-value `rpe_target` or `load_value` key, so nothing reads two spellings. When NULL the compact columns are the source of truth and `expandSetSpecs()` synthesizes N `working` specs from them, so every prescription yields per-set rows carrying a `set_type`. In the builder Reps, Load and RPE are range boxes ("8-12", "100-105", "7-8" — `utils/target-range.ts`, the one grammar); where the client's grid and the coach's logged-workout table read a target, a range reads with an en dash: "7–8", "100–105 kg", "70–75% 1RM" (`formatBoxTarget`, `utils/measure-readout.ts`). Duplicate-with-progression moves both ends of a load or rep range.
 
   **Three rules the flattening kernel owns, because every renderer would otherwise re-derive them:**
   - **A drop's load type belongs to its PARENT spec.** `drops` is `{ load_value, reps }` — there is deliberately no per-drop `load_type`, so every drop of one set shares the set's unit and "80kg, drop to 60%" is unexpressible. `buildPrescribedRows` copies the parent's type onto each drop row, the same way drop children already inherit `setNumber`. `weight` is the pre-`load_value` spelling (canonical kg, from when a drop could only be absolute); read both through `dropLoadValue`, write only `load_value`. Removing the `weight` key is destructive and needs a **prod** probe, not a dev one.
@@ -1512,6 +1537,23 @@ same run the KPI ribbon and the pills beside it read, so the three cannot disagr
 check-ins in the trend block carry no count at all: they are bare `CheckIn` rows, so the only figure
 available on them is the column each froze when it was sent — which does not move with the calendar,
 unlike the live figure above it — and deriving one per row would be a query per check-in.
+
+**Each logged workout carries its exercises, the prescription beside the result.**
+`getExerciseSummariesForPeriod` (`services/check-in-context-service.ts`, two batched reads for the
+period) writes one line per logged exercise, in the order the coach wrote the session — each at the
+place its snapshot records (`snapshotGroup`), because a save's exercise logs share one `created_at`
+— with anything logged outside the plan after them, through `describeLoggedExercise`
+(`utils/logged-exercise-line.ts`): the working sets done against those prescribed, then measure by
+measure — the coach's logged-workout table's columns, words and judgement (`loggedColumns`,
+`utils/measure-readout.ts`, `utils/target-gap.ts`) — the values set by set beside the target, naming
+every measure outside it: "Barbell Back Squat — 3 of 3 working sets: Load (kg) 102.5, 102.5, 107.5
+(target 100–105 kg; 1 of 3 above target); Reps 5, 5, 4 (target 5; 1 of 3 below target); RPE 8, 9,
+10 (target 8; 2 of 3 above target)". The lines are in the COACH's units: both callers resolve them
+before the period's reads — the Regenerate route from the authed coach, the client-submit path from
+the check-in's owning coach — and hand them in. Warm-ups are left out, recorded and never scored; a
+measure nobody recorded reads "not recorded", never a zero; a swapped exercise names the one it
+replaced, so its load is never read against another exercise's target; an exercise logged outside
+the plan is described by what was recorded. At most eight lines a workout.
 
 **The task asks for a read, not a recap**: the week's story and what drove it, observations that
 carry what they connect to, and co-occurrence across metrics and across days. An uncertain
