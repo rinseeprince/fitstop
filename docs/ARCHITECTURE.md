@@ -1538,15 +1538,20 @@ gpt-4o, with `CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS` of room and `CHECK_IN_REVIEW_TI
 cut the call off first. `npm run print:check-in-prompt -- <check-in id>` prints what the model is given
 for one check-in without calling it.
 
-**The brief is a coach's job, not a rulebook** (`CHECK_IN_REVIEW_BRIEF`, `utils/ai-system-prompt.ts`;
-owner decision 2026-09-18). The model is told it is an experienced coach reviewing the client's week for
-the coach who trains them, what it is given, and what to produce — what happened, what matters, what to
-do, and a message to the client — in British English, plain text, with one duty-of-care line: injury,
-persistent pain or disordered eating raised first, gently. There are no if-then rules, no sentence or
-item counts, and no "N of M days logged" count anywhere in what it is given. The output shape
-(`describeReviewShape`, `utils/ai-analysis-format.ts`) names the card's parts — summary, watch items with
-a type, themes, coach actions with a priority, the client message — and sets no length; the parser
-(`lib/validations/check-in-review.ts`) caps no list either.
+**The brief is a coach's job, described in full, not a rulebook** (`CHECK_IN_REVIEW_BRIEF`,
+`utils/ai-system-prompt.ts`; owner decisions 2026-09-18). The model is told it is an experienced coach
+reviewing the client's week for the coach who trains them, what it is given, and the report wanted: the full
+report a coach would write for a fellow coach, not a summary — what happened; what is most likely driving
+each thing and why, connecting days and measures; what to expect next week if nothing changes and what would
+change that; what to do, with the reasoning behind every recommendation; an explanation offered as a
+question where it cannot be sure; as much as the week deserves, in paragraphs — in British English, plain
+text with paragraph breaks and short plain section lines, with one duty-of-care line: injury, persistent pain
+or disordered eating raised first, gently. There are no if-then rules, no sentence or item counts, and no
+"N of M days logged" count anywhere in what it is given. The output shape (`describeReviewShape`,
+`utils/ai-analysis-format.ts`) names the card's parts — summary, watch items with a type, themes, coach
+actions with a priority, the client message — and says what depth each carries, never a length; an
+`analysis` field comes first, the model's working written before its conclusions, which the parser
+(`lib/validations/check-in-review.ts`) drops and which caps no list either.
 
 **The week is given day by day, every figure the page's own.** First the client's weight and body fat
 with the change the ribbon shows (`metricComparison`) and the goal strip as it is drawn — the rows, the

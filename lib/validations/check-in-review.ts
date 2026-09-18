@@ -18,6 +18,9 @@ const coachActionSchema = z.object({
   text: z.string().min(1),
 });
 
+// The model writes an `analysis` field first — its working, never rendered
+// (`describeReviewShape`). `z.object` strips unknown keys, so it is dropped
+// here rather than stored.
 const checkInReviewSchema = z.object({
   summary: z.string(),
   watchItems: z.array(watchItemSchema).default([]),

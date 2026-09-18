@@ -788,7 +788,7 @@
   ### OpenAI (one-shot generation + analysis)
   - **`gpt-4o`**: The check-in AI review (`services/ai-service.ts`) - higher quality reasoning for nuanced client feedback
   - The check-in review is the **only** OpenAI feature in the product. Everything else AI-facing is the Anthropic assistant below.
-  - Every OpenAI call must specify an explicit timeout on the call (not the client): `CHECK_IN_REVIEW_TIMEOUT_MS` (60s, `lib/constants.ts`) for check-in reviews, with the Regenerate route's `maxDuration` above it so the platform cannot cut the call off before the timeout reports.
+  - Every OpenAI call must specify an explicit timeout on the call (not the client): `CHECK_IN_REVIEW_TIMEOUT_MS` (120s, `lib/constants.ts`, sized with `CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS` so the longest allowed output finishes inside it) for check-in reviews, with the Regenerate route's `maxDuration` above it so the platform cannot cut the call off before the timeout reports.
   - Env: `OPENAI_API_KEY`.
 
   ### Anthropic (the program assistant — `services/assistant/`)

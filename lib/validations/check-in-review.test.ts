@@ -57,3 +57,20 @@ describe("parseCheckInReview — no list caps", () => {
     expect(parsed.summary).toBe("A full week.");
   });
 });
+
+describe("parseCheckInReview — the model's working", () => {
+  it("drops the analysis the model writes first and keeps the card's parts", () => {
+    const parsed = parseCheckInReview(
+      JSON.stringify({
+        analysis: "Sleep fell on Monday, the Tuesday session was cut short...",
+        summary: "Training\nA hard week.\n\nRecovery\nSleep dipped midweek.",
+        watchItems: [],
+        themes: [],
+        coachActions: [],
+        clientMessage: "Hi",
+      })
+    );
+    expect(parsed).not.toHaveProperty("analysis");
+    expect(parsed.summary).toBe("Training\nA hard week.\n\nRecovery\nSleep dipped midweek.");
+  });
+});

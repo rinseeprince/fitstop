@@ -224,10 +224,12 @@ export const DEFAULT_WORK_ACTIVITY_LEVEL: ActivityLevel = "sedentary";
 export const DEFAULT_BMR_AGE_YEARS = 30;
 // The check-in AI review (services/ai-service.ts, CONVENTIONS §11). One review
 // is one gpt-4o call: the room it has to write, and how long the call may run
-// before it is abandoned. A full coach read of a logged week runs past the
-// 2,000 tokens and 25 s the summary used to get.
-export const CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS = 4000;
-export const CHECK_IN_REVIEW_TIMEOUT_MS = 60_000;
+// before it is abandoned. The brief asks for a full written report preceded by
+// the model's working, and gpt-4o writes roughly seventy tokens a second, so
+// the ceiling and the timeout are sized together: the longest output the
+// ceiling allows still finishes inside the timeout.
+export const CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS = 6000;
+export const CHECK_IN_REVIEW_TIMEOUT_MS = 120_000;
 // The most of any typed string the review prompt passes through the sanitiser:
 // above every check-in form limit (`submitCheckInSchema`'s 5,000-character
 // reflection is the longest), so a client's own words reach the model whole.

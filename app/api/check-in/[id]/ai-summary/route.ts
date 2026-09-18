@@ -11,7 +11,7 @@ import { aiSummaryRequestSchema } from "@/lib/validations/check-in";
 // The model call alone may run to CHECK_IN_REVIEW_TIMEOUT_MS; the reads before
 // it need the rest. Without this the platform's default would cut a long
 // review off before our own timeout could report it.
-export const maxDuration = 90;
+export const maxDuration = 150;
 
 /**
  * Regenerate: the coach asks for the review of one check-in to be written

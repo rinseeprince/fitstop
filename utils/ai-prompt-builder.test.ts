@@ -227,13 +227,14 @@ Your questions:
   Q: How was your energy in the gym?
   A: "Low on Wednesday, fine otherwise"
 
-Return a JSON object with exactly these keys and nothing else:
+Return a JSON object with exactly these keys, in this order, and nothing else:
 {
-  "summary": "what happened this week and what drove it, as prose",
-  "watchItems": [{ "type": "win | risk | trend | flag", "text": "one observation and why it matters" }],
+  "analysis": "your working, written first: think the week through here day by day and measure by measure before you write anything else; the coach never sees this field",
+  "summary": "the full report, in several paragraphs under short plain section lines: what happened, what is most likely driving it and why, how the days and measures connect, and what you expect next week if nothing changes",
+  "watchItems": [{ "type": "win | risk | trend | flag", "text": "the observation, its likely cause, and what it connects to" }],
   "themes": ["a short phrase in the client's own words"],
-  "coachActions": [{ "priority": "high | medium | low", "text": "what the coach should do" }],
-  "clientMessage": "a message to Jane Doe, ready to send"
+  "coachActions": [{ "priority": "high | medium | low", "text": "what to do, why, and how to raise it with the client" }],
+  "clientMessage": "a message to Jane Doe, as long as it needs to be, ready to send"
 }
 Use as many items as the week warrants, or none.`;
 
@@ -315,8 +316,14 @@ describe("buildCheckInReviewPrompt — the fixture week, pinned", () => {
 });
 
 describe("the brief and the shape carry no rule and no count", () => {
-  it("the brief is one coach's job, in British English, plain text, with the duty-of-care line", () => {
+  it("the brief asks for the full report: causes, connections, what to expect, the reasoning, at length", () => {
     expect(CHECK_IN_REVIEW_BRIEF).toContain("experienced coach");
+    expect(CHECK_IN_REVIEW_BRIEF).toContain("not a summary");
+    expect(CHECK_IN_REVIEW_BRIEF).toContain("what is most likely driving each thing you see and why");
+    expect(CHECK_IN_REVIEW_BRIEF).toContain("what you expect to happen next week if nothing changes");
+    expect(CHECK_IN_REVIEW_BRIEF).toContain("reasoning behind every recommendation");
+    expect(CHECK_IN_REVIEW_BRIEF).toContain("as a question");
+    expect(CHECK_IN_REVIEW_BRIEF).toContain("a few sentences is not a review");
     expect(CHECK_IN_REVIEW_BRIEF).toContain("British English");
     expect(CHECK_IN_REVIEW_BRIEF).toContain("injury, persistent pain or disordered eating");
     expect(CHECK_IN_REVIEW_BRIEF).not.toMatch(/logged notes on only/i);
@@ -326,7 +333,7 @@ describe("the brief and the shape carry no rule and no count", () => {
 
   it("the shape names the card's parts and sets no length", () => {
     const shape = describeReviewShape("Jane");
-    for (const key of ["summary", "watchItems", "themes", "coachActions", "clientMessage"]) {
+    for (const key of ["analysis", "summary", "watchItems", "themes", "coachActions", "clientMessage"]) {
       expect(shape).toContain(`"${key}"`);
     }
     expect(shape).not.toMatch(/\d+ to \d+/);
