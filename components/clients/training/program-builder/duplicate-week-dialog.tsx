@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -162,18 +161,18 @@ export function DuplicateWeekDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-xl">
+      {/* Narrow, and never taller than the screen: the preview inside caps
+          itself at 40vh and the dialog scrolls past that, so the footer stays
+          reachable on a 15-exercise week. No description — the title and the
+          controls say what it does (owner, 2026-09-18). */}
+      <DialogContent aria-describedby={undefined} className="max-h-[85vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Duplicate Week {week.weekIndex + 1}</DialogTitle>
-          <DialogDescription>
-            Adds a copy of this week right after it. Pick how the new week should
-            progress — this week and everything before it stay exactly as they are.
-          </DialogDescription>
         </DialogHeader>
 
         {hasExercises ? (
           <div className="space-y-4 py-1">
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col items-start gap-1.5">
               <span className={LABEL_CLASS}>Progression</span>
               <SegmentedControl
                 options={[
@@ -253,7 +252,7 @@ export function DuplicateWeekDialog({
               )}
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col items-start gap-1.5">
               <span className={LABEL_CLASS}>Apply to</span>
               <SegmentedControl
                 options={[
