@@ -43,7 +43,7 @@ export function PersistentSidebar() {
   return (
     <aside className="hidden lg:flex w-20 flex-col border-r border-[rgba(255,255,255,0.06)] bg-[#0f2027] fixed inset-y-0 left-0 z-20">
       <div className="flex h-[72px] items-center justify-center border-b border-[rgba(255,255,255,0.06)]">
-        <img src="/monogram-af.png" alt="Atletafit" className="h-8 w-8" />
+        <img src="/monogram-af.png" alt="Atletafit" className="h-12 w-12" />
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">

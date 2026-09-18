@@ -775,7 +775,7 @@ Follow the **Overlays** recipes: session editor & create-session are 780px right
 
 #### Far left: Icon strip — 52px wide
 
-- Background `#0f2027`; logo = `/monogram-af.png` (the "af." monogram on a `#0f2027` ground, so it sits flat on the rail with no box) drawn 32px square here and on the 80px `PersistentSidebar` rail.
+- Background `#0f2027`; logo = `/monogram-af.png` (the "af." monogram on a `#0f2027` ground, so it sits flat on the rail with no box) drawn 44px square here and 48px on the 80px `PersistentSidebar` rail.
 - Nav icons 36px square, 6px radius. Active `bg-[rgba(13,148,136,0.15)]` + `#0d9488` stroke; inactive `rgba(255,255,255,0.35)` stroke, hover `rgba(255,255,255,0.05)` bg.
 - Notification bell at bottom with teal badge.
 
