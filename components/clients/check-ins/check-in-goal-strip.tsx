@@ -1,7 +1,6 @@
 "use client";
 
 import { Target, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/programs/shared/section-label";
@@ -11,8 +10,12 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
-import { shouldShowRegenerationBanner } from "@/utils/nutrition-helpers";
-import type { CheckInComparison, GoalPosition, GoalProgress } from "@/types/check-in";
+import {
+  buildGoalRows,
+  describeGoalDeadline,
+  resolveGoalFooter,
+} from "@/lib/check-in/review-figures";
+import type { CheckInComparison, GoalProgress } from "@/types/check-in";
 
 type CheckInGoalStripProps = {
   goalProgress: GoalProgress;
@@ -25,55 +28,6 @@ type CheckInGoalStripProps = {
   onSetNewGoals?: () => void;
 };
 
-type RowState = { text: string; tone: "good" | "attention" | "neutral" };
-
-type GoalRow = {
-  name: string;
-  percentComplete: number;
-  start?: string;
-  goal: string;
-  state: RowState;
-  /** False when no reading existed as of the check-in's day: nothing to judge. */
-  judged: boolean;
-};
-
-// The goal exists; no reading existed as of the check-in's day. Neutral rather
-// than a warning: the coach's next move is to record one, not to worry.
-const NO_READING: RowState = { text: "No reading yet", tone: "neutral" };
-
-/**
- * Where the client stands, then how far — joined by a middot.
- *
- * The verdict half reads `status` before `paceStatus` before `isOnTrack`, and
- * that order is the point. `paceStatus` judges whether the RATE REQUIRED to hit
- * the deadline is safe; `isOnTrack` judges whether the client is moving TOWARDS
- * the goal. Letting the first mask the second put "On track" on a client 5 kg
- * past a weight-loss target whose `isOnTrack` was already, correctly, false.
- *
- * Weight and body fat both resolve here, so the two rows cannot reach different
- * verdicts about one client — body fat carries no `paceStatus` and falls
- * through to the trend legs.
- */
-function resolveState(goal: GoalPosition, distance: string): RowState {
-  // `remaining` is signed: its magnitude is the distance BACK to the target
-  // once the goal has been passed, so `status` decides which sentence it is in.
-  if (goal.status === "overshot") {
-    return { text: `Reached · ${distance} past target`, tone: "good" };
-  }
-  if (goal.status === "achieved") return { text: "Reached", tone: "good" };
-
-  const toGo = `${distance} to go`;
-  if (goal.paceStatus === "on_track") return { text: `On track · ${toGo}`, tone: "good" };
-  if (goal.paceStatus === "behind_pace") {
-    return { text: `Behind pace · ${toGo}`, tone: "attention" };
-  }
-  if (goal.paceStatus === "unrealistic") {
-    return { text: `Deadline unrealistic · ${toGo}`, tone: "attention" };
-  }
-  if (goal.isOnTrack) return { text: `On track · ${toGo}`, tone: "good" };
-  return { text: `Needs attention · ${toGo}`, tone: "attention" };
-}
-
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 export const CheckInGoalStrip = ({
@@ -83,7 +37,7 @@ export const CheckInGoalStrip = ({
   onSetNewGoals,
 }: CheckInGoalStripProps) => {
   const { preference } = useUnits();
-  const { weight, bodyFat, deadline, goalIsCurrent } = goalProgress;
+  const { deadline, goalIsCurrent } = goalProgress;
 
   // Body weights: formatWeight converts freely and never snaps.
   const kg = (value: number): string => {
@@ -91,40 +45,11 @@ export const CheckInGoalStrip = ({
     return `${round1(v)} ${unit}`;
   };
 
-  const rows: GoalRow[] = [];
-
-  // A row per goal that is set. `position` is the reading as of the check-in's
-  // day against it, or null when there was none — the goal is still shown,
-  // with an empty track and no verdict.
-  if (weight) {
-    const { position } = weight;
-    rows.push({
-      name: "Weight",
-      percentComplete: position?.percentComplete ?? 0,
-      start: weight.startingWeight !== undefined ? kg(weight.startingWeight) : undefined,
-      goal: kg(weight.goal),
-      state: position ? resolveState(position, kg(Math.abs(position.remaining))) : NO_READING,
-      judged: position !== null,
-    });
-  }
-
-  if (bodyFat) {
-    const { position } = bodyFat;
-    rows.push({
-      name: "Body fat",
-      percentComplete: position?.percentComplete ?? 0,
-      start: bodyFat.startingBodyFat !== undefined ? `${bodyFat.startingBodyFat} %` : undefined,
-      goal: `${bodyFat.goal} %`,
-      state: position ? resolveState(position, `${round1(Math.abs(position.remaining))}%`) : NO_READING,
-      judged: position !== null,
-    });
-  }
-
-  const deadlineMeta = deadline
-    ? deadline.isPastDeadline
-      ? `Overdue by ${Math.abs(deadline.daysRemaining)} days`
-      : `deadline ${format(new Date(deadline.date), "d MMM")} · ${deadline.daysRemaining} days`
-    : undefined;
+  // The rows, the deadline and the footer are worded once, in
+  // lib/check-in/review-figures.ts, which the AI review's prompt reads too —
+  // so the strip and the model never describe one goal two ways.
+  const rows = buildGoalRows(goalProgress, kg);
+  const deadlineMeta = describeGoalDeadline(deadline);
 
   // Rows come from the goals themselves, so an empty list means none is set. A
   // goal the record cannot judge yet is a row above, never this state.
@@ -143,44 +68,15 @@ export const CheckInGoalStrip = ({
     );
   }
 
-  // Only once there is nothing left to approach, and only while the goal
-  // judged is still the client's live one: a page about a goal since replaced
-  // never invites replacing it again (commit 8b). A note telling a coach to
-  // set new targets while one goal is still being worked towards is advice
-  // about a job that is not finished. A goal with no reading is neither met
-  // nor unmet, so it neither earns the note nor blocks it (owner decision
-  // 2026-09-02) — and with nothing judged there is nothing to call met.
-  const judged = rows.filter((row) => row.judged);
-  const allMet =
-    judged.length > 0 &&
-    judged.every((row) => row.state.tone === "good" && row.state.text.startsWith("Reached"));
-  const offerNewGoals = allMet && goalIsCurrent;
-
-  // The reading as of the check-in's day has moved far enough from the base
-  // weight of the nutrition version covering that day that the plan no longer
-  // described them. Symmetric: a gain invalidates the targets as surely as a
-  // loss.
-  const baseWeight = clientData.nutritionPlanBaseWeightKg;
-  const hasDrifted =
-    clientData.currentWeight !== undefined &&
-    baseWeight !== undefined &&
-    shouldShowRegenerationBanner(clientData.currentWeight, baseWeight);
-
-  // ONE footer, and goals outrank nutrition: targets built for a goal the
-  // client has passed need the goal reset first, and the plan rebuilt from it.
-  // Advising a nutrition review before that is advice in the wrong order.
-  const footer: { tone: "good" | "attention"; text: string } | null = offerNewGoals
-    ? { tone: "good", text: "Goal met - consider setting a new target." }
-    : hasDrifted && clientData.currentWeight !== undefined && baseWeight !== undefined
-      ? {
-          tone: "attention",
-          text: `Weight has moved ${kg(Math.abs(clientData.currentWeight - baseWeight))} since these targets took effect${
-            clientData.nutritionPlanEffectiveDate
-              ? ` on ${format(new Date(clientData.nutritionPlanEffectiveDate), "d MMM")}`
-              : ""
-          } - consider reviewing their nutrition plan.`,
-        }
-      : null;
+  const footer = resolveGoalFooter({
+    rows,
+    goalIsCurrent,
+    currentWeightKg: clientData.currentWeight,
+    nutritionPlanBaseWeightKg: clientData.nutritionPlanBaseWeightKg,
+    nutritionPlanEffectiveDate: clientData.nutritionPlanEffectiveDate,
+    formatWeight: kg,
+  });
+  const offerNewGoals = footer?.offerNewGoals ?? false;
 
   return (
     <div>

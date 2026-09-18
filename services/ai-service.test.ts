@@ -1,120 +1,79 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { CheckInWithDetails, CheckInTrainingEventDetail } from "@/types/check-in";
 
-// Mock the OpenAI SDK: capture the create() call so we can assert the request
-// shape (model, max_tokens) and the per-request timeout option. vi.hoisted keeps
+// `vi.hoisted` runs before the hoisted `vi.mock` factory below, which makes
 // the mock fn available inside the (hoisted) vi.mock factory.
 const { mockCreate } = vi.hoisted(() => ({ mockCreate: vi.fn() }));
+
 vi.mock("openai", () => {
-  return {
-    default: class MockOpenAI {
-      chat = { completions: { create: mockCreate } };
-    },
-  };
+  class OpenAI {
+    chat = { completions: { create: mockCreate } };
+  }
+  return { default: OpenAI };
 });
 
-import { generateCheckInSummary } from "./ai-service";
+import { generateCheckInReview } from "./ai-service";
+import { buildCheckInReviewPrompt } from "@/utils/ai-prompt-builder";
+import { CHECK_IN_REVIEW_BRIEF } from "@/utils/ai-system-prompt";
+import { CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS, CHECK_IN_REVIEW_TIMEOUT_MS } from "@/lib/constants";
+import type { CheckInReviewInput } from "@/types/check-in-review-input";
 
-// Minimal check-in: only the fields the prompt header / training block read.
-function checkIn(overrides: Partial<CheckInWithDetails> = {}): CheckInWithDetails {
-  return {
-    id: "ci-1",
-    clientId: "client-1",
-    status: "pending",
-    createdAt: "2026-04-13T10:00:00Z",
-    updatedAt: "2026-04-13T10:00:00Z",
-    ...overrides,
-  } as CheckInWithDetails;
-}
+const input = {
+  checkIn: { id: "ci-1", clientId: "client-1", createdAt: "2026-09-17T08:30:00Z" },
+  clientName: "Jane",
+  submittedOn: "2026-09-17",
+  viewer: "metric",
+  dates: ["2026-09-17"],
+  loggedDates: [],
+  workouts: [],
+  exerciseLines: new Map(),
+  nutrition: { days: [], summary: { periodDays: 1, loggedDays: 0, targetedDays: 0, judgedDays: 0, loggedNoTargetDays: 0, onTarget: 0, over: 0, under: 0, daysOnTargetPct: null, targetTotals: null, consumedOnTargetedDays: null, calorieAdherencePct: null, periodVerdict: null, perJudgedDay: null, intakePerLoggedDay: null, netCaloriesOnJudgedDays: null } },
+  habits: [],
+  dailyLogs: [],
+  comparison: null,
+} as unknown as CheckInReviewInput;
 
-describe("ai-service — generateCheckInSummary (Session 6.3)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCreate.mockResolvedValue({
-      choices: [{ message: { content: "" } }],
-    });
-  });
+const review = {
+  summary: "A quiet week.",
+  watchItems: [{ type: "flag", text: "Nothing logged." }],
+  themes: [],
+  coachActions: [{ priority: "high", text: "Call them." }],
+  clientMessage: "Hi Jane",
+};
 
-  it("calls OpenAI with gpt-4o, max_tokens 2000, and a 25000ms timeout", async () => {
-    await generateCheckInSummary(checkIn({ workoutsCompleted: 3 }), [], "Jane");
+beforeEach(() => {
+  mockCreate.mockReset();
+  mockCreate.mockResolvedValue({ choices: [{ message: { content: JSON.stringify(review) } }] });
+});
 
+describe("generateCheckInReview", () => {
+  it("calls gpt-4o with the brief, the assembled week, the output room and the timeout the constants set", async () => {
+    await generateCheckInReview(input);
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const [request, options] = mockCreate.mock.calls[0];
     expect(request.model).toBe("gpt-4o");
-    expect(request.max_tokens).toBe(2000);
-    expect(options).toEqual({ timeout: 25000 });
-  });
-
-  it("composes with an exercise-summary Map appended to the prompt", async () => {
-    const details: CheckInTrainingEventDetail[] = [
-      {
-        eventId: "ev-1",
-        date: "2026-04-07",
-        sessionName: "Push Day",
-        status: "completed",
-        logStatus: "logged",
-        completionQuality: "full",
-        trainingSessionId: "sess-1",
-        sessionLogId: "log-1",
-      },
-    ];
-    const summaries = new Map<string, string[]>([
-      ["log-1", ["Bench Press — 3 sets, top 100x5 @ RPE 8"]],
+    expect(request.max_tokens).toBe(CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS);
+    expect(request.response_format).toEqual({ type: "json_object" });
+    expect(options).toEqual({ timeout: CHECK_IN_REVIEW_TIMEOUT_MS });
+    expect(request.messages).toEqual([
+      { role: "system", content: CHECK_IN_REVIEW_BRIEF },
+      { role: "user", content: buildCheckInReviewPrompt(input) },
     ]);
-
-    await generateCheckInSummary(
-      checkIn(),
-      [],
-      "Jane",
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      null,
-      null,
-      details,
-      summaries,
-    );
-
-    const [request] = mockCreate.mock.calls[0];
-    const userMessage = request.messages.find((m: { role: string }) => m.role === "user");
-    expect(userMessage.content).toContain("Bench Press — 3 sets, top 100x5 @ RPE 8");
   });
 
-  it("composes gracefully when the exercise-summary Map is empty", async () => {
-    const details: CheckInTrainingEventDetail[] = [
-      {
-        eventId: "ev-1",
-        date: "2026-04-07",
-        sessionName: "Push Day",
-        status: "completed",
-        logStatus: "logged",
-        completionQuality: "full",
-        trainingSessionId: "sess-1",
-        sessionLogId: "log-1",
-      },
-    ];
+  it("returns the parsed review", async () => {
+    await expect(generateCheckInReview(input)).resolves.toEqual(review);
+  });
 
-    await expect(
-      generateCheckInSummary(
-        checkIn(),
-        [],
-        "Jane",
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        null,
-        null,
-        details,
-        new Map(),
-      ),
-    ).resolves.toBeDefined();
+  it("falls back to the safe review when the model returns something the card cannot render", async () => {
+    mockCreate.mockResolvedValue({ choices: [{ message: { content: "not json" } }] });
+    const result = await generateCheckInReview(input);
+    expect(result.summary).toMatch(/Unable to generate/);
+  });
 
-    const [request] = mockCreate.mock.calls[0];
-    const userMessage = request.messages.find((m: { role: string }) => m.role === "user");
-    // Per-event 6.2 detail still present; no exercise lines.
-    expect(userMessage.content).toContain("Push Day: (full)");
-    expect(userMessage.content).not.toContain("top ");
+  it("throws, with the cause attached, when the call fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockCreate.mockRejectedValue(new Error("timeout"));
+    await expect(generateCheckInReview(input)).rejects.toThrow("Failed to generate the check-in review");
+    error.mockRestore();
   });
 });

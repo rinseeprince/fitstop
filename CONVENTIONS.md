@@ -786,9 +786,9 @@
   **Two providers.** OpenAI serves the one-shot, single-call features. Anthropic serves the program assistant, which is an agentic tool loop rather than a single call — a different shape with different rules, so don't generalise one section onto the other.
 
   ### OpenAI (one-shot generation + analysis)
-  - **`gpt-4o`**: Check-in AI summaries (`services/ai-service.ts`) - higher quality reasoning for nuanced client feedback
-  - Check-in summaries are the **only** OpenAI feature in the product. Everything else AI-facing is the Anthropic assistant below.
-  - Every OpenAI call must specify an explicit timeout on the call (not the client): 25s for check-in summaries.
+  - **`gpt-4o`**: The check-in AI review (`services/ai-service.ts`) - higher quality reasoning for nuanced client feedback
+  - The check-in review is the **only** OpenAI feature in the product. Everything else AI-facing is the Anthropic assistant below.
+  - Every OpenAI call must specify an explicit timeout on the call (not the client): `CHECK_IN_REVIEW_TIMEOUT_MS` (60s, `lib/constants.ts`) for check-in reviews, with the Regenerate route's `maxDuration` above it so the platform cannot cut the call off before the timeout reports.
   - Env: `OPENAI_API_KEY`.
 
   ### Anthropic (the program assistant — `services/assistant/`)

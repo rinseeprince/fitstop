@@ -8,7 +8,9 @@ import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { deriveGoalProgress } from "@/lib/goals/goal-progress";
 import { getTodayDateStringInTimezone, getTodayInTimezone, differenceInDays } from "@/lib/date-helpers";
 import type {
+  CheckIn,
   CheckInComparison,
+  Client,
   GetCheckInComparisonResponse,
   GoalProgress,
 } from "@/types/check-in";
@@ -39,6 +41,18 @@ export const getCheckInComparison = async (
     throw new Error("Client not found");
   }
 
+  return buildCheckInComparison(currentCheckIn, client);
+};
+
+/**
+ * The same comparison for a check-in and its client already in hand — the AI
+ * review's input builder holds both and reads nothing twice.
+ */
+export const buildCheckInComparison = async (
+  currentCheckIn: CheckIn,
+  client: Client
+): Promise<GetCheckInComparisonResponse> => {
+  const checkInId = currentCheckIn.id;
   const previousCheckIn = await getPreviousCheckIn(
     currentCheckIn.clientId,
     checkInId

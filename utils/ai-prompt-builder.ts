@@ -1,266 +1,126 @@
-import type {
-  CheckInWithDetails,
-  CheckIn,
-  CheckInTrainingEventDetail,
-} from "@/types/check-in";
-import type { DailyLog } from "@/types/daily-log";
-import type { HabitLogWithDetails } from "@/types/daily-habit";
-import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
-import type { PeriodSnapshot } from "@/types/schedule";
-import { buildDailyContextForAI } from "@/utils/ai-daily-context-builder";
-import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
-import { summariseTraining } from "@/lib/training-adherence";
-import { loggedDisplayQuality } from "@/lib/training-display-state";
-import { buildAnalysisTaskPrompt } from "@/utils/ai-analysis-format";
-import {
-  DEFAULT_UNIT_SYSTEM,
-  formatLoad,
-  formatWeight,
-  type UnitSystem,
-} from "@/utils/unit-conversions";
+import { format } from "date-fns";
+import type { CheckInReviewInput } from "@/types/check-in-review-input";
+import type { CheckInExerciseHighlight } from "@/types/check-in";
+import { sanitizeForAIPrompt } from "./ai-prompt-sanitizer";
+import { describeDay, type ReviewDay } from "./ai-prompt-day";
+import { weekFigures, weightAndGoal } from "./ai-prompt-week";
+import { describeReviewShape } from "./ai-analysis-format";
+import { formatLoad, type UnitSystem } from "./unit-conversions";
+import { AI_PROMPT_TEXT_LIMIT } from "@/lib/constants";
 
-export { AI_SYSTEM_PROMPT } from "@/utils/ai-system-prompt";
+/**
+ * The week as the check-in AI reads it (owner decision 2026-09-18): the
+ * client's weight and goal as the ribbon and the goal strip show them, the
+ * week's figures as the ribbon and the cards show them, then every day in
+ * turn with what was prescribed and what was logged against it, then the
+ * client's own words, then the shape the card renders. Every figure is the
+ * review page's own, from the same code, in the coach's units; no count of
+ * days logged, no rule and no cap. Pure over `CheckInReviewInput`; the two
+ * headline blocks are utils/ai-prompt-week.ts, one day is utils/ai-prompt-day.ts.
+ */
 
-export function buildCheckInAnalysisPrompt(
-  current: CheckInWithDetails,
-  previous: CheckIn[],
-  clientName: string,
-  dailyLogs?: DailyLog[],
-  habitLogs?: HabitLogWithDetails[],
-  startDate?: Date,
-  endDate?: Date,
-  nutritionSummary?: NutritionPeriodSummary | null,
-  periodSnapshot?: PeriodSnapshot | null,
-  trainingEventDetails?: CheckInTrainingEventDetail[],
-  exerciseSummaries?: Map<string, string[]>,
-  /**
-   * The COACH's unit system — they are who reads the generated summary. Required
-   * rather than defaulted: a silent fallback here produces a plausible summary
-   * in the wrong unit, which is indistinguishable from a correct one.
-   */
-  viewer: UnitSystem = DEFAULT_UNIT_SYSTEM
-): string {
-  const weight = (kg: number) => {
-    const { value, unit } = formatWeight(kg, viewer);
-    return `${Math.round(value * 10) / 10} ${unit}`;
-  };
-  const load = (kg: number) => {
-    const { value, unit } = formatLoad(kg, viewer);
-    return `${value}${unit}`;
-  };
-  let prompt = `Analyze this check-in for ${sanitizeForAIPrompt(clientName)}:\n\n`;
+const text = (value: string) => sanitizeForAIPrompt(value, AI_PROMPT_TEXT_LIMIT);
+const longDate = (date: string) => format(new Date(`${date}T12:00:00`), "EEEE d MMMM yyyy");
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-  prompt += "**CURRENT CHECK-IN:**\n";
-  prompt += `Date: ${new Date(current.createdAt).toLocaleDateString()}\n`;
+function header(input: CheckInReviewInput): string[] {
+  const { dates, comparison } = input;
+  const week =
+    dates.length > 0 ? `Week ${longDate(dates[0])} to ${longDate(dates[dates.length - 1])}.` : "Week unknown.";
+  const gap = comparison
+    ? comparison.comparison.previous
+      ? `, ${plural(comparison.comparison.timeBetweenCheckIns ?? 0, "day")} since the last check-in`
+      : ", their first check-in"
+    : "";
+  return [`Check-in review for ${text(input.clientName)}`, `${week} Submitted ${longDate(input.submittedOn)}${gap}.`];
+}
 
-  if (current.mood || current.energy || current.sleep || current.stress || current.soreness) {
-    prompt += "\nSubjective Metrics:\n";
-    if (current.mood) prompt += `- Mood: ${current.mood}/5\n`;
-    if (current.energy) prompt += `- Energy: ${current.energy}/10\n`;
-    if (current.sleep) prompt += `- Sleep: ${current.sleep}/10\n`;
-    if (current.stress) prompt += `- Stress: ${current.stress}/10\n`;
-    if (current.soreness) prompt += `- Soreness: ${current.soreness}/10 (higher = more sore)\n`;
+function dayByDay(input: CheckInReviewInput): string[] {
+  const workoutsByDate = new Map<string, CheckInReviewInput["workouts"]>();
+  for (const workout of input.workouts) {
+    const list = workoutsByDate.get(workout.date) ?? [];
+    list.push(workout);
+    workoutsByDate.set(workout.date, list);
   }
+  const nutritionByDate = new Map(input.nutrition.days.map((day) => [day.date, day]));
+  const logsByDate = new Map(input.dailyLogs.map((log) => [log.date, log]));
+  const logged = input.loggedDates ? new Set(input.loggedDates) : null;
 
-  if (current.weight || current.bodyFatPercentage) {
-    prompt += "\nBody Metrics:\n";
-    if (current.weight)
-      prompt += `- Weight: ${weight(current.weight)}\n`;
-    if (current.bodyFatPercentage)
-      prompt += `- Body Fat: ${current.bodyFatPercentage}%\n`;
+  const blocks = input.dates.map((date, index) => {
+    const day: ReviewDay = {
+      date,
+      logged: logged ? logged.has(date) : null,
+      workouts: workoutsByDate.get(date) ?? [],
+      exerciseLines: input.exerciseLines,
+      nutrition: nutritionByDate.get(date) ?? null,
+      dailyLog: logsByDate.get(date) ?? null,
+      // Before its effective date the habit did not exist: null, never a miss.
+      habits: input.habits.flatMap((habit) => {
+        const ticked = habit.rail[index];
+        return ticked == null ? [] : [{ name: habit.name, ticked }];
+      }),
+    };
+    return describeDay(day);
+  });
+
+  return [
+    "DAY BY DAY",
+    "Wellness scores: mood out of 5; energy, sleep, stress and soreness out of 10, where higher stress or soreness is worse.",
+    "",
+    ...blocks.flatMap((block, index) => (index === 0 ? [block] : ["", block])),
+  ];
+}
+
+function highlightLine(highlight: CheckInExerciseHighlight, viewer: UnitSystem): string {
+  const type =
+    highlight.highlightType === "pr" ? "PR" : highlight.highlightType === "struggle" ? "Struggle" : "Note";
+  // A PR is a barbell load, so formatLoad — it snaps an imperial conversion to
+  // something loadable.
+  const load = highlight.weightValue
+    ? ` @ ${formatLoad(highlight.weightValue, viewer).value} ${formatLoad(highlight.weightValue, viewer).unit}`
+    : "";
+  const reps = highlight.reps ? ` x ${highlight.reps}` : "";
+  const details = highlight.details ? `, ${text(highlight.details)}` : "";
+  return `[${type}] ${text(highlight.exerciseName)}${load}${reps}${details}`;
+}
+
+function clientsOwnWords(input: CheckInReviewInput): string[] {
+  const { checkIn, viewer } = input;
+  const lines = ["CLIENT'S OWN WORDS"];
+  if (checkIn.notes) lines.push(`Reflection: "${text(checkIn.notes)}"`);
+  if (checkIn.prs) lines.push(`Wins: "${text(checkIn.prs)}"`);
+  if (checkIn.challenges) lines.push(`Challenges: "${text(checkIn.challenges)}"`);
+  const highlights = checkIn.exerciseHighlights ?? [];
+  if (highlights.length > 0) {
+    lines.push("Exercise highlights:");
+    for (const highlight of highlights) lines.push(`  ${highlightLine(highlight, viewer)}`);
   }
-
-  prompt += "\nTraining:\n";
-  // Source of truth (Session 6.2): per-workout detail from training_events,
-  // each carrying the quality on its own log.
-  if (trainingEventDetails?.length) {
-    // Through `summariseTraining`, exactly like the KPI ribbon and the pills
-    // beside it — a PARTIAL session counts towards the numerator. This line used
-    // to filter `status === "completed"` itself, which is a third spelling of
-    // the count and excluded partials: it told the model "2 out of 5" beneath a
-    // strip reading 3/5 for the same week.
-    const summary = summariseTraining(trainingEventDetails);
-    const detail = [
-      summary.partial > 0 ? `${summary.partial} partial` : null,
-      summary.missed > 0 ? `${summary.missed} missed` : null,
-    ].filter(Boolean);
-    prompt += `- Sessions: ${summary.completed}/${summary.planned} completed${
-      detail.length ? ` (${detail.join(", ")})` : ""
-    }\n`;
-    trainingEventDetails.forEach((d) => {
-      // How each session went is read off its LOG (`loggedDisplayQuality`), not
-      // off the event's status word, so the line under the count cannot
-      // contradict it.
-      const quality = loggedDisplayQuality(d);
-      const status = quality === null ? "(not logged)" : `(${quality})`;
-      prompt += `  - ${sanitizeForAIPrompt(d.sessionName)}: ${status}\n`;
-      if (d.notes) {
-        prompt += `    Note: ${sanitizeForAIPrompt(d.notes)}\n`;
-      }
-
-      // Each logged exercise's line — the prescription beside the result,
-      // measure by measure, in the coach's units (utils/logged-exercise-line.ts)
-      // — plus the alt-session swap signal. Only workouts the client LOGGED
-      // carry an exercise block; a session they never logged keeps its line only.
-      if (quality === "full" || quality === "partial") {
-        const exerciseLines = d.sessionLogId
-          ? exerciseSummaries?.get(d.sessionLogId)
-          : undefined;
-        // Alt-session swap header: prescribed vs performed session name.
-        if (
-          d.performedSessionName &&
-          d.performedSessionName !== d.sessionName
-        ) {
-          const k = exerciseLines?.length ?? 0;
-          prompt += `    Prescribed ${sanitizeForAIPrompt(d.sessionName)} · Performed ${sanitizeForAIPrompt(d.performedSessionName)} — ${k} exercises logged\n`;
-        }
-        if (exerciseLines?.length) {
-          exerciseLines.forEach((line) => {
-            // The line builder sanitises the text a person typed (names, a
-            // legacy free-text rep target); everything else in a line is
-            // composed from stored numbers and validated tempos.
-            prompt += `      ${line}\n`;
-          });
-        }
-      }
-    });
-  }
-  // No second branch: the period's workouts are the only source of a training
-  // figure, and both callers read them for the window they resolved. A week with
-  // no workouts leaves the section empty rather than printing a 0/0 count, and
-  // the day-by-day schedule block below describes it.
-
-  if (current.exerciseHighlights?.length) {
-    prompt += "\nExercise Highlights:\n";
-    current.exerciseHighlights.forEach((h) => {
-      const type = h.highlightType === "pr" ? "PR" : h.highlightType === "struggle" ? "Struggle" : "Note";
-      prompt += `- [${type}] ${sanitizeForAIPrompt(h.exerciseName)}`;
-      // Was `${h.weightValue}${h.weightUnit}` with NO fallback — an unmapped
-      // highlight emitted "100undefined" straight into the model's context.
-      if (h.weightValue) prompt += ` @ ${load(h.weightValue)}`;
-      if (h.reps) prompt += ` x ${h.reps}`;
-      prompt += "\n";
-      if (h.details) prompt += `  ${sanitizeForAIPrompt(h.details)}\n`;
-    });
-  }
-
-  // Nutrition — the kernel's figures (utils/nutrition-period-summary.ts): the
-  // same numbers the review and the client's card show, over the rows a
-  // submitted check-in froze.
-  //
-  // Three day sets, each named: the days LOGGED (coverage), the days a target
-  // was PRESCRIBED (adherence — a skipped targeted day is a miss, a day with
-  // no target is in no ratio) and the days with BOTH (the only intake that can
-  // be compared with a target). Presenting a coverage-shaped figure alone,
-  // under a "frame nutrition weekly" instruction, made the model report a
-  // client who hit target to the calorie on both days they logged as severely
-  // under-eating; an unlogged day is unknown, not a zero, and the prompt has
-  // to say so — the model cannot infer it from a percentage.
-  if (nutritionSummary) {
-    const s = nutritionSummary;
-    prompt += `\n**NUTRITION - ${s.loggedDays} of ${s.periodDays} days logged, ${s.targetedDays} with a target:**\n`;
-
-    if (s.intakePerLoggedDay) {
-      prompt += `- Intake on the ${s.loggedDays} day${s.loggedDays === 1 ? "" : "s"} they logged: ${s.intakePerLoggedDay.calories} cal/day\n`;
-      if (s.perJudgedDay) {
-        prompt += `- On the ${s.judgedDays} logged day${s.judgedDays === 1 ? "" : "s"} that had a target: ${s.perJudgedDay.consumed.calories} cal/day against ${s.perJudgedDay.target.calories} cal/day - ${s.onTarget} on target, ${s.over} over, ${s.under} under\n`;
-      }
-      if (s.loggedNoTargetDays > 0) {
-        prompt += `- ${s.loggedNoTargetDays} logged day${s.loggedNoTargetDays === 1 ? " had" : "s had"} no target: nothing was prescribed, so ${s.loggedNoTargetDays === 1 ? "it is" : "they are"} judged neither way.\n`;
-      }
-    } else {
-      prompt += "- No days were logged, so their intake cannot be assessed at all.\n";
-    }
-
-    if (s.targetTotals && s.consumedOnTargetedDays) {
-      prompt += `- Adherence over the ${s.targetedDays} targeted day${s.targetedDays === 1 ? "" : "s"}: ${s.consumedOnTargetedDays.calories} of ${s.targetTotals.calories} cal (${s.calorieAdherencePct?.toFixed(1) ?? "?"}%), ${s.onTarget}/${s.targetedDays} days on target\n`;
-    } else {
-      prompt += "- No target was prescribed on any day of the period, so adherence cannot be measured.\n";
-    }
-
-    const unloggedTargeted = s.targetedDays - s.judgedDays;
-    if (unloggedTargeted > 0) {
-      prompt += `- The ${unloggedTargeted} targeted day${unloggedTargeted === 1 ? "" : "s"} with no log hold NO data. They are unknown, not zero: they count against adherence because logging was expected, and against nothing else.\n`;
-      prompt += "- Describe their intake ONLY from the logged-day figures above, and say how many days those rest on. Never infer under-eating, low energy availability or poor recovery from the adherence figure - it measures logging as much as eating.\n";
-    }
-  } else {
-    prompt += "\nNutrition:\n";
-    if (current.nutritionDaysOnTarget !== undefined) {
-      // The stored count over the days it was counted on — the frozen rows
-      // with a target — else the period's own length, never a hardcoded week:
-      // a first check-in reports on a partial period, and telling the model
-      // 3/7 when the period was three days long invites it to describe a
-      // shortfall that never existed.
-      const periodDays =
-        startDate && endDate
-          ? Math.round((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1
-          : 7;
-      prompt += `- Days on target: ${current.nutritionDaysOnTarget}/${current.nutritionTargetedDays ?? periodDays}\n`;
-      if (current.nutritionNotes) prompt += `- Notes: ${sanitizeForAIPrompt(current.nutritionNotes)}\n`;
-    } else if (current.adherencePercentage !== undefined) {
-      prompt += `- Adherence: ${current.adherencePercentage}%\n`;
+  const answers = checkIn.customAnswers ?? [];
+  if (answers.length > 0) {
+    // Both halves sanitised: the prompt is coach-authored and the answer
+    // client-authored, and neither is trusted input to a model.
+    lines.push("Your questions:");
+    for (const answer of answers) {
+      lines.push(`  Q: ${text(answer.prompt)}`);
+      lines.push(`  A: "${text(answer.answer)}"`);
     }
   }
+  if (lines.length === 1) lines.push("The client wrote nothing this check-in.");
+  return lines;
+}
 
-  if (current.prs) prompt += `\nPersonal Records (free text): ${sanitizeForAIPrompt(current.prs)}\n`;
-  if (current.challenges) prompt += `\nChallenges (free text): ${sanitizeForAIPrompt(current.challenges)}\n`;
-  if (current.notes) prompt += `\nNotes: ${sanitizeForAIPrompt(current.notes)}\n`;
-
-  // The coach's own questions and this client's answers (D4.5). One sanitised
-  // line each, beside the other free text, because without them the Summary is
-  // blind to the questions the coach wrote — it would analyse a week the client
-  // partly described somewhere the model never sees. Both halves are sanitised:
-  // the prompt is coach-authored and the answer is client-authored, and neither
-  // is trusted input to a model.
-  if (current.customAnswers?.length) {
-    prompt += "\nCoach questions:\n";
-    current.customAnswers.forEach((a) => {
-      prompt += `- ${sanitizeForAIPrompt(a.prompt)} — ${sanitizeForAIPrompt(a.answer)}\n`;
-    });
-  }
-
-  // Prefer frozen snapshot for day-by-day detail when available
-  if (periodSnapshot) {
-    prompt += "\n**DAY-BY-DAY TRAINING SCHEDULE (from snapshot):**\n";
-    for (const day of periodSnapshot.training) {
-      const planned = day.plannedSessionName ? ` [Planned: ${sanitizeForAIPrompt(day.plannedSessionName)}]` : "";
-      const logged = day.loggedSessionName ? ` [Logged: ${sanitizeForAIPrompt(day.loggedSessionName)}]` : "";
-      prompt += `- ${day.date} (${day.dayOfWeek}): ${day.status}${planned}${logged}\n`;
-    }
-
-    prompt += "\n**DAY-BY-DAY NUTRITION (from snapshot):**\n";
-    for (const day of periodSnapshot.nutrition) {
-      const target = day.targetCalories != null ? `target=${day.targetCalories}` : "no target";
-      const actual = day.actualCalories != null ? `actual=${day.actualCalories}` : "not logged";
-      prompt += `- ${day.date} (${day.dayOfWeek}): ${day.status} (${target}, ${actual})\n`;
-    }
-  }
-
-  if (dailyLogs && dailyLogs.length > 0 && startDate && endDate) {
-    const dailyContext = buildDailyContextForAI(dailyLogs, habitLogs || [], startDate, endDate);
-    if (dailyContext) {
-      prompt += `\n${dailyContext}\n`;
-    }
-  }
-
-  if (previous.length > 0) {
-    prompt += "\n**PREVIOUS CHECK-INS (for trend analysis):**\n";
-    previous.slice(0, 3).forEach((prev, idx) => {
-      prompt += `\n${idx + 1}. ${new Date(prev.createdAt).toLocaleDateString()}\n`;
-      if (prev.weight) prompt += `   Weight: ${weight(prev.weight)}\n`;
-      if (prev.adherencePercentage) prompt += `   Adherence: ${prev.adherencePercentage}%\n`;
-      // No `Workouts:` line. These are bare `CheckIn` rows, so the only count on
-      // them is the stored column, frozen when each was sent — a figure that
-      // does not move with the calendar, unlike the current period's derived
-      // one above, and putting both in one prompt is what produced a
-      // contradiction. Deriving it per row would be a query per check-in
-      // (CONVENTIONS §2 item 7); the current period's training is already
-      // described in full by the schedule block.
-      if (prev.mood) prompt += `   Mood: ${prev.mood}/5\n`;
-    });
-  }
-
-  prompt += buildAnalysisTaskPrompt(clientName);
-
-  return prompt;
+export function buildCheckInReviewPrompt(input: CheckInReviewInput): string {
+  return [
+    ...header(input),
+    "",
+    ...weightAndGoal(input),
+    "",
+    ...weekFigures(input),
+    "",
+    ...dayByDay(input),
+    "",
+    ...clientsOwnWords(input),
+    "",
+    describeReviewShape(input.clientName),
+  ].join("\n");
 }

@@ -165,9 +165,10 @@ export const submitCheckInSchema = z.object({
 // the week's substance is derived server-side either way.
 
 // AI summary request validation
-export const aiSummaryRequestSchema = z.object({
-  focus: z.enum(["positive", "detailed", "concise"]).optional(),
-});
+// Regenerate takes no options: the review card posts an empty body, and the
+// old positive / detailed / concise steering went with the rulebook (owner
+// decision 2026-09-18). Kept as a schema so the route's chain still validates.
+export const aiSummaryRequestSchema = z.object({});
 
 export const reviewCheckInSchema = z.object({
   coachResponse: z.string().min(1, "Coach response is required").max(10000),

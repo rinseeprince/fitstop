@@ -7,11 +7,12 @@ import {
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { CheckIn, GetCheckInComparisonResponse } from "@/types/check-in";
-import { formatDeltaValue, type DeltaInfo } from "./delta-format";
+import type { DeltaInfo } from "./delta-format";
 import type { TrainingAdherence } from "@/lib/training-adherence";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
+import { metricComparison } from "@/lib/check-in/review-figures";
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
@@ -81,31 +82,9 @@ export const KPIRibbon = ({
   const changes = comparisonData?.comparison?.changes;
   const hasPreviousCheckIn = comparisonData?.comparison?.previous != null;
 
-  // Comparison line for a progress metric: the delta against the PREVIOUS
-  // CHECK-IN when one exists, otherwise the change from the starting value on a
-  // first check-in. Returns null when neither is available.
-  //
-  // A check-in is a periodic report, so it reports against the previous report;
-  // a measurement logged in between belongs to the Journey series and is
-  // deliberately not consulted here (owner decision, 2026-08-31). The label says
-  // "vs last check-in" rather than "vs previous week" because the gap between two
-  // check-ins is whatever it is — this cell once read "vs previous week" above a
-  // delta measured against a check-in 92 days old.
-  const buildComparison = (
-    current: number | undefined,
-    change: number | undefined,
-    startingValue: number | undefined,
-    invert: boolean
-  ): { label: string; delta: DeltaInfo } | null => {
-    if (hasPreviousCheckIn && change !== undefined) {
-      return { label: "vs last check-in", delta: formatDeltaValue(change, invert) };
-    }
-    if (!hasPreviousCheckIn && current !== undefined && startingValue !== undefined) {
-      return { label: "vs start", delta: formatDeltaValue(current - startingValue, invert) };
-    }
-    return null;
-  };
-
+  // The comparison line's rule (vs last check-in, else vs start on a first
+  // check-in) lives in lib/check-in/review-figures.ts, shared with the AI
+  // review's prompt so the strip and the model word one change the same way.
   // Days ON TARGET over the days a target was PRESCRIBED — the kernel's own
   // denominator, one definition shared with the Overview rail and the card
   // below. A skipped targeted day is a miss; a day with no target is in no
@@ -152,21 +131,23 @@ export const KPIRibbon = ({
     trainingPct >= 80 ? "success" :
     trainingPct >= 50 ? "warning" : "destructive";
 
-  const weightComparison = buildComparison(
-    checkIn.weight,
-    changes?.weight,
-    comparisonData?.goalProgress?.weight?.startingWeight,
-    true
-  );
+  const weightComparison = metricComparison({
+    current: checkIn.weight,
+    change: changes?.weight,
+    startingValue: comparisonData?.goalProgress?.weight?.startingWeight,
+    hasPreviousCheckIn,
+    invert: true,
+  });
 
   const hasBodyFat = checkIn.bodyFatPercentage !== undefined && checkIn.bodyFatPercentage !== null;
   const bodyFatComparison = hasBodyFat
-    ? buildComparison(
-        checkIn.bodyFatPercentage,
-        changes?.bodyFatPercentage,
-        comparisonData?.goalProgress?.bodyFat?.startingBodyFat,
-        true
-      )
+    ? metricComparison({
+        current: checkIn.bodyFatPercentage,
+        change: changes?.bodyFatPercentage,
+        startingValue: comparisonData?.goalProgress?.bodyFat?.startingBodyFat,
+        hasPreviousCheckIn,
+        invert: true,
+      })
     : null;
 
   const cards: KPICardData[] = [

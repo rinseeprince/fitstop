@@ -222,3 +222,13 @@ export const DEFAULT_WORK_ACTIVITY_LEVEL: ActivityLevel = "sedentary";
 // Mifflin-St Jeor needs an age. This was a silent `?? 30` inside the BMR
 // helper; named so it is auditable and so a UI nudge has something to cite.
 export const DEFAULT_BMR_AGE_YEARS = 30;
+// The check-in AI review (services/ai-service.ts, CONVENTIONS §11). One review
+// is one gpt-4o call: the room it has to write, and how long the call may run
+// before it is abandoned. A full coach read of a logged week runs past the
+// 2,000 tokens and 25 s the summary used to get.
+export const CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS = 4000;
+export const CHECK_IN_REVIEW_TIMEOUT_MS = 60_000;
+// The most of any typed string the review prompt passes through the sanitiser:
+// above every check-in form limit (`submitCheckInSchema`'s 5,000-character
+// reflection is the longest), so a client's own words reach the model whole.
+export const AI_PROMPT_TEXT_LIMIT = 5000;

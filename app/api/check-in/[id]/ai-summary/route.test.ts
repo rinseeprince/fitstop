@@ -4,152 +4,98 @@ import { NextRequest } from "next/server";
 vi.mock("@/lib/rate-limit", () => ({
   aiRateLimit: vi.fn().mockResolvedValue(null),
 }));
-
 vi.mock("@/lib/csrf-protection", () => ({
   requireCSRFProtection: vi.fn().mockResolvedValue(null),
 }));
-
 vi.mock("@/lib/require-coach-auth", () => ({
   requireCoachOwnsCheckIn: vi.fn(),
 }));
-
-// A factory mock replaces the module wholesale: an export the route imports and
-// this list omits arrives as undefined and the route 500s at call time, not at
-// import. Grow this list whenever the route's import list grows.
 vi.mock("@/services/check-in-service", () => ({
-  getClientCheckIns: vi.fn(),
   updateCheckInAISummary: vi.fn().mockResolvedValue(undefined),
 }));
-
-vi.mock("@/services/client-service", () => ({
-  getClientById: vi.fn().mockResolvedValue({ id: "client-1", name: "Sam", nextCheckInDue: null }),
-}));
-
 vi.mock("@/services/ai-service", () => ({
-  generateCheckInSummary: vi.fn().mockResolvedValue({ summary: "s", clientMessage: "m" }),
-  regenerateAISummary: vi.fn().mockResolvedValue({ summary: "s", clientMessage: "m" }),
+  generateCheckInReview: vi.fn(),
 }));
-
-vi.mock("@/services/daily-logs-service", () => ({
-  getDailyLogs: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock("@/services/daily-habits-service", () => ({
-  getHabitLogs: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock("@/services/nutrition-period-service", () => ({
-  getCheckInNutritionSummary: vi.fn().mockResolvedValue(null),
-}));
-
-vi.mock("@/services/check-in-context-service", () => ({
-  getExerciseSummariesForPeriod: vi.fn().mockResolvedValue(new Map()),
-  getTrainingEventDetailsForPeriod: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock("@/lib/viewer-preferences", () => ({
-  getCoachUnitPreference: vi.fn().mockResolvedValue("metric"),
+vi.mock("@/services/check-in-review-input-service", () => ({
+  getCheckInReviewInput: vi.fn(),
 }));
 
 import { POST } from "./route";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
-import { getClientCheckIns } from "@/services/check-in-service";
-import { generateCheckInSummary } from "@/services/ai-service";
-import {
-  getExerciseSummariesForPeriod,
-  getTrainingEventDetailsForPeriod,
-} from "@/services/check-in-context-service";
-import { getCoachUnitPreference } from "@/lib/viewer-preferences";
+import { aiRateLimit } from "@/lib/rate-limit";
+import { updateCheckInAISummary } from "@/services/check-in-service";
+import { generateCheckInReview } from "@/services/ai-service";
+import { getCheckInReviewInput } from "@/services/check-in-review-input-service";
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 const req = (body: unknown = {}) =>
-  new NextRequest("https://t.dev/api/check-in/ci-may/ai-summary", {
+  new NextRequest("https://t.dev/api/check-in/ci-1/ai-summary", {
     method: "POST",
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
   });
 
-/** A May check-in regenerated in September, when later check-ins exist. */
-const mayCheckIn = {
-  id: "ci-may",
-  clientId: "client-1",
-  createdAt: "2026-05-31T12:00:00+00:00",
-  periodStart: "2026-05-25",
-  periodEnd: "2026-05-31",
-};
+const input = { checkIn: { id: "ci-1" }, clientName: "Jane" };
+const review = { summary: "s", watchItems: [], themes: [], coachActions: [], clientMessage: "m" };
 
-describe("POST /api/check-in/[id]/ai-summary — the previous check-ins are the ones up to this one", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(requireCoachOwnsCheckIn).mockResolvedValue({
-      authorized: true,
-      coachId: "coach-1",
-      checkIn: mayCheckIn,
-    } as never);
-    vi.mocked(getClientCheckIns).mockResolvedValue({
-      checkIns: [
-        mayCheckIn,
-        { id: "ci-24-may", clientId: "client-1", createdAt: "2026-05-24T12:00:00+00:00" },
-      ],
-      total: 2,
-      nextCursor: null,
-    } as never);
-  });
-
-  it("bounds the read to the check-in's instant, so a regenerated old review is never told about later check-ins", async () => {
-    const res = await POST(req(), params("ci-may"));
-
-    expect(res.status).toBe(200);
-    expect(getClientCheckIns).toHaveBeenCalledWith("client-1", {
-      limit: 5,
-      upTo: "2026-05-31T12:00:00+00:00",
-    });
-  });
-
-  it("hands the prompt the earlier check-ins, with the one under review filtered out", async () => {
-    await POST(req(), params("ci-may"));
-
-    const [, previous] = vi.mocked(generateCheckInSummary).mock.calls[0];
-    expect(previous.map((ci) => ci.id)).toEqual(["ci-24-may"]);
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(requireCoachOwnsCheckIn).mockResolvedValue({
+    authorized: true,
+    coachId: "coach-1",
+    checkIn: { id: "ci-1", clientId: "client-1" },
+  } as never);
+  vi.mocked(getCheckInReviewInput).mockResolvedValue(input as never);
+  vi.mocked(generateCheckInReview).mockResolvedValue(review);
 });
 
-describe("POST /api/check-in/[id]/ai-summary — the exercise lines are written in the coach's units", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(requireCoachOwnsCheckIn).mockResolvedValue({
-      authorized: true,
-      coachId: "coach-1",
-      checkIn: mayCheckIn,
-    } as never);
-    vi.mocked(getClientCheckIns).mockResolvedValue({
-      checkIns: [mayCheckIn],
-      total: 1,
-      nextCursor: null,
-    } as never);
-    vi.mocked(getCoachUnitPreference).mockResolvedValue("imperial");
-    vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([
-      {
-        eventId: "ev-1",
-        date: "2026-05-27",
-        sessionName: "Lower",
-        status: "completed",
-        logStatus: "logged",
-        completionQuality: "full",
-        trainingSessionId: "ts-1",
-        sessionLogId: "sl-1",
-      },
-    ]);
-    vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map());
-  });
-
-  it("resolves the authed coach's unit and hands it to the lines and the prompt alike", async () => {
-    const res = await POST(req(), params("ci-may"));
+describe("POST /api/check-in/[id]/ai-summary — Regenerate", () => {
+  it("builds the review's input for the check-in and hands it to the generator unchanged, then stores the review", async () => {
+    const res = await POST(req(), params("ci-1"));
 
     expect(res.status).toBe(200);
-    expect(getCoachUnitPreference).toHaveBeenCalledWith("coach-1");
-    expect(getExerciseSummariesForPeriod).toHaveBeenCalledWith(["sl-1"], "imperial");
-    const args = vi.mocked(generateCheckInSummary).mock.calls[0];
-    expect(args[args.length - 1]).toBe("imperial");
+    expect(getCheckInReviewInput).toHaveBeenCalledWith("ci-1");
+    expect(generateCheckInReview).toHaveBeenCalledWith(input);
+    expect(updateCheckInAISummary).toHaveBeenCalledWith("ci-1", review);
+    await expect(res.json()).resolves.toEqual({ success: true, summary: review });
+  });
+
+  it("rate-limits by the authed coach before reading anything", async () => {
+    vi.mocked(aiRateLimit).mockResolvedValueOnce(new Response(null, { status: 429 }) as never);
+    const res = await POST(req(), params("ci-1"));
+    expect(res.status).toBe(429);
+    expect(getCheckInReviewInput).not.toHaveBeenCalled();
+  });
+
+  it("refuses a foreign coach before reading anything", async () => {
+    vi.mocked(requireCoachOwnsCheckIn).mockResolvedValue({
+      authorized: false,
+      response: new Response(null, { status: 403 }),
+    } as never);
+    const res = await POST(req(), params("ci-1"));
+    expect(res.status).toBe(403);
+    expect(getCheckInReviewInput).not.toHaveBeenCalled();
+  });
+
+  it("404s when the check-in has gone, and calls no model", async () => {
+    vi.mocked(getCheckInReviewInput).mockResolvedValue(null);
+    const res = await POST(req(), params("ci-1"));
+    expect(res.status).toBe(404);
+    expect(generateCheckInReview).not.toHaveBeenCalled();
+  });
+
+  it("400s a body that is not an object", async () => {
+    const res = await POST(req(null), params("ci-1"));
+    expect(res.status).toBe(400);
+    expect(getCheckInReviewInput).not.toHaveBeenCalled();
+  });
+
+  it("500s when the generator fails, and stores nothing", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(generateCheckInReview).mockRejectedValue(new Error("model down"));
+    const res = await POST(req(), params("ci-1"));
+    expect(res.status).toBe(500);
+    expect(updateCheckInAISummary).not.toHaveBeenCalled();
+    error.mockRestore();
   });
 });

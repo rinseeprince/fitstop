@@ -27,7 +27,7 @@ Since the kernel commit every nutrition figure comes from ONE computation,
 
 `services/nutrition-period-service.ts` runs it live (`getNutritionPeriod`)
 and, for a submitted check-in, over the rows it froze
-(`getCheckInNutritionSummary`). The submit (`submitCheckIn`) freezes the rows
+(`getCheckInNutritionPeriod`). The submit (`submitCheckIn`) freezes the rows
 in its INSERT from the same run its stored columns come from.
 
 ## What was found
@@ -110,7 +110,7 @@ dots move, while the client's card keeps the frozen count. The two can disagree
 about the same week.
 
 Recommendation: a submitted check-in's review runs the kernel over its frozen
-rows — `getCheckInNutritionSummary` already does this for the prompt, and
+rows — `getCheckInNutritionPeriod` already does this for the prompt, and
 `getCheckInPeriodAdherence` can take the same branch, building the rail from
 the frozen rows' standings. Only the open period (the wizard) computes live.
 The stored nutrition columns then duplicate what the rows give and can be
@@ -119,12 +119,12 @@ can go in a later migration — PROD holds no clients).
 
 ### 3. The prompt's inputs
 
-`buildCheckInAnalysisPrompt` takes twelve positional parameters, assembled
-separately in `services/client-check-in-service.ts` (client submit) and
-`app/api/check-in/[id]/ai-summary/route.ts` (coach Regenerate), and
-`regenerateAISummary` passes no snapshot while `generateCheckInSummary` does.
-One builder that takes a check-in and returns the prompt's inputs would
-remove the second assembly and the drift between the two paths.
+Fixed by the AI review rework (2026-09-18): one builder, `getCheckInReviewInput`
+(`services/check-in-review-input-service.ts`), takes a check-in id and returns
+everything the prompt needs from the review page's own reads; the client submit
+and the coach's Regenerate both call it, and the frozen snapshot rows reach the
+model on both paths. Current shape: `docs/ARCHITECTURE.md` → "What the review is
+given".
 
 ### 4. Training has its own two conventions
 

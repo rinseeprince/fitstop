@@ -5,7 +5,9 @@ import { stripInlineMarkdown } from "@/lib/check-in/markdown";
 // Schema for the v3 AI coach review. The model is asked to return exactly this
 // shape as JSON; anything that fails validation falls back to a safe default so
 // the rail always renders. Plain-text output plus the strip below means no
-// markdown can leak into any field.
+// markdown can leak into any field. The lists carry no maximum: the brief sets
+// no count (owner decision 2026-09-18), and a cap here would swap a full
+// review for the fallback text the moment the week warranted a seventh item.
 const watchItemSchema = z.object({
   type: z.enum(["win", "risk", "trend", "flag"]),
   text: z.string().min(1),
@@ -18,9 +20,9 @@ const coachActionSchema = z.object({
 
 const checkInReviewSchema = z.object({
   summary: z.string(),
-  watchItems: z.array(watchItemSchema).max(6).default([]),
-  themes: z.array(z.string().min(1)).max(6).default([]),
-  coachActions: z.array(coachActionSchema).max(5).default([]),
+  watchItems: z.array(watchItemSchema).default([]),
+  themes: z.array(z.string().min(1)).default([]),
+  coachActions: z.array(coachActionSchema).default([]),
   clientMessage: z.string(),
 });
 

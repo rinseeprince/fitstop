@@ -1,152 +1,31 @@
 /**
  * Client Check-in Processing Service
- * Handles AI summary generation and post-submission processing for client check-ins
+ * Writes the AI review after a client submits a check-in.
  */
 
-import { generateCheckInSummary } from "@/services/ai-service";
-import {
-  getCheckInWithDetails,
-  updateCheckInAISummary,
-  getClientCheckIns
-} from "@/services/check-in-service";
-import { getClientById } from "@/services/client-service";
-import { getDailyLogs } from "@/services/daily-logs-service";
-import { getHabitLogs } from "@/services/daily-habits-service";
-import { getCheckInNutritionSummary } from "@/services/nutrition-period-service";
-import {
-  getExerciseSummariesForPeriod,
-  getTrainingEventDetailsForPeriod,
-} from "@/services/check-in-context-service";
-import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
-import { readPeriodSnapshot } from "@/lib/check-in/period-snapshot";
-import { getCoachUnitPreference } from "@/lib/viewer-preferences";
-import { checkInWeekday } from "@/lib/check-in-week";
+import { generateCheckInReview } from "@/services/ai-service";
+import { updateCheckInAISummary } from "@/services/check-in-service";
+import { getCheckInReviewInput } from "@/services/check-in-review-input-service";
 
 /**
- * Triggers AI summary generation for a completed check-in
- * This is an async operation that runs independently of the main submission flow
- * 
- * @param checkInId - The ID of the completed check-in
- * @param clientId - The client who submitted the check-in  
- * @param clientName - The client's name for personalized AI summary
- * @throws Error if AI summary generation fails
+ * Writes the review for a check-in the client just submitted. Runs after the
+ * submit response, independently of it, and throws so the caller can log the
+ * failure.
+ *
+ * The input is `getCheckInReviewInput`'s — the same function the coach's
+ * Regenerate calls — so a review written at submit and one regenerated later
+ * start from the same week. It resolves the OWNING coach's unit system itself:
+ * this path is client-authenticated, but the coach is who reads the review.
  */
-export async function triggerAISummaryGeneration(
-  checkInId: string,
-  clientId: string,
-  clientName: string
-): Promise<void> {
+export async function triggerAISummaryGeneration(checkInId: string): Promise<void> {
   try {
-    // Get current check-in with all details (session completions, highlights, etc.)
-    const currentCheckIn = await getCheckInWithDetails(checkInId);
-
-    if (!currentCheckIn) {
+    const input = await getCheckInReviewInput(checkInId);
+    if (!input) {
       throw new Error("Check-in not found");
     }
 
-    // Previous check-ins for the prompt's trend block: the ones up to this
-    // check-in — at submit time that is every earlier one, and the same bound
-    // the coach's Regenerate applies to an old check-in (commit 8b).
-    const { checkIns } = await getClientCheckIns(clientId, {
-      limit: 5,
-      upTo: currentCheckIn.createdAt,
-    });
-    const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
-
-    const client = await getClientById(clientId);
-    // This path is CLIENT-authenticated (the client just submitted), but the
-    // coach is who reads the summary — so resolve the owning coach's unit, not
-    // the request's principal. getViewerUnitPreference(request) would render a
-    // coach's summary in whichever unit their client happens to prefer.
-    // Resolved before the period's reads: the exercise lines are written in it.
-    const viewer = await getCoachUnitPreference(client?.coachId);
-
-    // Calculate date range using the fixed 7-day period ending on the weekday
-    // of the client's check-in due date
-    let startDate: Date;
-    let endDate: Date;
-
-    if (currentCheckIn.periodStart && currentCheckIn.periodEnd) {
-      // Use stored period from check-in record
-      startDate = new Date(currentCheckIn.periodStart + "T00:00:00");
-      endDate = new Date(currentCheckIn.periodEnd + "T00:00:00");
-    } else if (client?.nextCheckInDue) {
-      const { periodStart, periodEnd } = calculateCheckInPeriod(
-        new Date(currentCheckIn.createdAt),
-        checkInWeekday(client)
-      );
-      startDate = new Date(periodStart + "T00:00:00");
-      endDate = new Date(periodEnd + "T00:00:00");
-    } else {
-      // Fallback: 7 days ending on check-in date
-      endDate = new Date(currentCheckIn.createdAt);
-      startDate = new Date(endDate);
-      startDate.setDate(startDate.getDate() - 6);
-    }
-
-    const startDateStr = getDateString(startDate);
-    const endDateStr = getDateString(endDate);
-    
-    // Fetch daily tracking context, weekly nutrition summary, and per-event
-    // training detail for the period. trainingEventDetails defaults to [] on
-    // failure so the AI training block degrades to the legacy workout count.
-    let dailyLogs, habitLogs, nutritionSummary;
-    let trainingEventDetails: Awaited<ReturnType<typeof getTrainingEventDetailsForPeriod>> = [];
-    // Per-exercise lines, keyed by session_log_id: what was prescribed beside
-    // what was done, measure by measure, in the coach's units. Derived from the
-    // logged events' session_log ids; defaults to an empty Map so the prompt
-    // degrades to per-event detail on any failure (non-blocking).
-    let exerciseSummaries: Map<string, string[]> = new Map();
-    try {
-      const [logs, habits, periodSummary, eventDetails] = await Promise.all([
-        getDailyLogs(clientId, startDateStr, endDateStr),
-        getHabitLogs(clientId, startDateStr, endDateStr),
-        // The kernel over the rows this check-in FROZE at submit, so the
-        // prompt reads the same numbers as the review and the client's card.
-        getCheckInNutritionSummary(currentCheckIn, startDateStr, endDateStr),
-        getTrainingEventDetailsForPeriod(clientId, startDateStr, endDateStr),
-      ]);
-      dailyLogs = logs;
-      habitLogs = habits;
-      nutritionSummary = periodSummary;
-      trainingEventDetails = eventDetails;
-
-      const loggedSessionLogIds = eventDetails
-        .filter((d) => d.logStatus === "logged")
-        .map((d) => d.sessionLogId)
-        .filter((id): id is string => Boolean(id));
-      exerciseSummaries = await getExerciseSummariesForPeriod(loggedSessionLogIds, viewer);
-    } catch (error) {
-      // If daily tracking fetch fails, continue without it
-      console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
-      dailyLogs = undefined;
-      habitLogs = undefined;
-      nutritionSummary = null;
-      trainingEventDetails = [];
-      exerciseSummaries = new Map();
-    }
-
-    // Read period snapshot if it was generated during submission
-    const periodSnapshot = readPeriodSnapshot(currentCheckIn.periodSnapshot);
-
-    // Generate AI summary with enhanced data including daily tracking
-    const aiSummary = await generateCheckInSummary(
-      currentCheckIn,
-      previousCheckIns,
-      clientName,
-      dailyLogs,
-      habitLogs,
-      startDate,
-      endDate,
-      nutritionSummary,
-      periodSnapshot,
-      trainingEventDetails,
-      exerciseSummaries,
-      viewer
-    );
-
-    // Update check-in with AI summary (v2 format)
-    await updateCheckInAISummary(checkInId, aiSummary);
+    const review = await generateCheckInReview(input);
+    await updateCheckInAISummary(checkInId, review);
   } catch (error) {
     console.error(`Error in AI summary generation for check-in ${checkInId}:`, error instanceof Error ? error.message : "Unknown error");
     throw error;

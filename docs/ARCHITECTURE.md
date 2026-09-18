@@ -1348,8 +1348,8 @@ The same index that enforces one check-in per period serves the boundary read
 
 The freeze is one INSERT: `submitCheckIn` derives the columns and builds `period_snapshot` from
 the same kernel run (`getNutritionPeriod` → `buildPeriodSnapshot`, `lib/check-in/period-snapshot.ts`),
-and the AI prompt's nutrition block — on the client-submit path and on the coach's Regenerate — is
-the kernel over those frozen rows (`getCheckInNutritionSummary`). The coach's review page still
+and the AI review's nutrition — on the client-submit path and on the coach's Regenerate — is those
+frozen rows and the kernel over them (`getCheckInNutritionPeriod`). The coach's review page still
 reads the period live, so a plan the coach changes after submit moves the review's targets while
 the client's card keeps the frozen count; that gap is the open item in `docs/CHECK-IN-FINDINGS.md`.
 
@@ -1521,43 +1521,60 @@ or the AI wrote, and their line breaks are content. It lives in the coach folder
 the mixed `components/check-in/` tree, which is deliberately not relocated (it still holds
 client-facing wizard steps with their own importers).
 
-**What the review is given.** `buildCheckInAnalysisPrompt` (`utils/ai-prompt-builder.ts`) assembles
-the prompt; `AI_SYSTEM_PROMPT` and `buildAnalysisTaskPrompt` carry the rules. Three of them are
-load-bearing.
+**What the review is given.** `getCheckInReviewInput` (`services/check-in-review-input-service.ts`)
+assembles ONE input per check-in (`CheckInReviewInput`, `types/check-in-review-input.ts`) from the
+page's own reads: the check-in with its answers and highlights, the period's workouts with their logs
+(`getTrainingEventDetailsForPeriod`) and their exercise lines (`getExerciseSummariesForPeriod`), the
+nutrition rows the check-in froze and the kernel over them (`getCheckInNutritionPeriod`), the habit
+figures and the logged days (`getCheckInPeriodAdherence`), the day-form rows (`getDailyLogs`) and the
+comparison behind the goal strip (`buildCheckInComparison`). `buildCheckInReviewPrompt`
+(`utils/ai-prompt-builder.ts`, with `utils/ai-prompt-week.ts` and `utils/ai-prompt-day.ts`) writes it
+out. The client's submit (`triggerAISummaryGeneration`) and the coach's Regenerate route both call the
+same two functions, so a review written at submit and one regenerated later start from the same week;
+the unit system is the owning coach's, resolved inside the input builder. `generateCheckInReview`
+(`services/ai-service.ts`) sends the brief as the system message and the week as the user message to
+gpt-4o, with `CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS` of room and `CHECK_IN_REVIEW_TIMEOUT_MS` on the call
+(`lib/constants.ts`); the Regenerate route's `maxDuration` sits above the timeout so the platform cannot
+cut the call off first. `npm run print:check-in-prompt -- <check-in id>` prints what the model is given
+for one check-in without calling it.
 
-**Nutrition carries both denominators, each named.** Intake is stated over the days the client
-LOGGED, against the targets that applied on those same days (`loggedDayMeanConsumed`,
-`loggedDayAdherencePercentage`); the whole-period figure is labelled *coverage*. The prompt states
-that unlogged days are unknown rather than zero, and forbids characterising intake from the coverage
-figure at all. A client who logs two of seven days and hits target on both is 34% adherent and 100%
-on target: only the first number describes anything, and what it describes is a logging problem.
+**The brief is a coach's job, not a rulebook** (`CHECK_IN_REVIEW_BRIEF`, `utils/ai-system-prompt.ts`;
+owner decision 2026-09-18). The model is told it is an experienced coach reviewing the client's week for
+the coach who trains them, what it is given, and what to produce — what happened, what matters, what to
+do, and a message to the client — in British English, plain text, with one duty-of-care line: injury,
+persistent pain or disordered eating raised first, gently. There are no if-then rules, no sentence or
+item counts, and no "N of M days logged" count anywhere in what it is given. The output shape
+(`describeReviewShape`, `utils/ai-analysis-format.ts`) names the card's parts — summary, watch items with
+a type, themes, coach actions with a priority, the client message — and sets no length; the parser
+(`lib/validations/check-in-review.ts`) caps no list either.
 
-**The session count is derived** through `summariseTraining` over the period's own workouts — the
-same run the KPI ribbon and the pills beside it read, so the three cannot disagree. Previous
-check-ins in the trend block carry no count at all: they are bare `CheckIn` rows, so the only figure
-available on them is the column each froze when it was sent — which does not move with the calendar,
-unlike the live figure above it — and deriving one per row would be a query per check-in.
+**The week is given day by day, every figure the page's own.** First the client's weight and body fat
+with the change the ribbon shows (`metricComparison`) and the goal strip as it is drawn — the rows, the
+deadline and the footer note through `lib/check-in/review-figures.ts`, which the strip and the ribbon
+import too, so the model and the page cannot word one verdict two ways. Then the week's figures: the
+session count through `summariseTraining` (a partial workout counts as done, the breakdown beside it),
+the Nutrition card's sentence figure for figure, the wellness changes since the last check-in
+(`formatDeltaValue`), and each habit's count over its eligible days. Then each day of the period: every
+workout on it — a logged one with the quality off its log, its note and one line per logged exercise,
+set by set, target beside result, measure by measure, in the coach's units, naming every measure outside
+its target (`describeLoggedExercise`, `utils/logged-exercise-line.ts`: "Barbell Back Squat — 3 of 3
+working sets: Load (kg) 102.5, 102.5, 107.5 (target 100–105 kg; 1 of 3 above target); Reps 5, 5, 4
+(target 5; 1 of 3 below target); RPE 8, 9, 10 (target 8; 2 of 3 above target)"), with no cap on lines;
+a workout never logged as its name, missed — then the food row the check-in froze (what was eaten beside
+the target, with the kernel's standing), the day's wellness scores, each habit ticked or not (by the
+habit list's rail, so a habit the client ignored all week still appears), and the client's day note.
+"Nothing logged" is written wherever nothing was, source by source, and a day with no log by the one
+definition (`loggedDates`, see "Daily Logs") opens with it. Last come the client's own words —
+Reflection, Wins, Challenges, exercise highlights, and the coach's questions with their answers — passed
+whole up to `AI_PROMPT_TEXT_LIMIT`, every typed string through `sanitizeForAIPrompt`. The previous
+check-in speaks only through the changes above. `utils/ai-prompt-builder.test.ts` pins the assembled
+text for a fixture week.
 
-**Each logged workout carries its exercises, the prescription beside the result.**
-`getExerciseSummariesForPeriod` (`services/check-in-context-service.ts`, two batched reads for the
-period) writes one line per logged exercise, in the order the coach wrote the session — each at the
-place its snapshot records (`snapshotGroup`), because a save's exercise logs share one `created_at`
-— with anything logged outside the plan after them, through `describeLoggedExercise`
-(`utils/logged-exercise-line.ts`): the working sets done against those prescribed, then measure by
-measure — the coach's logged-workout table's columns, words and judgement (`loggedColumns`,
-`utils/measure-readout.ts`, `utils/target-gap.ts`) — the values set by set beside the target, naming
-every measure outside it: "Barbell Back Squat — 3 of 3 working sets: Load (kg) 102.5, 102.5, 107.5
-(target 100–105 kg; 1 of 3 above target); Reps 5, 5, 4 (target 5; 1 of 3 below target); RPE 8, 9,
-10 (target 8; 2 of 3 above target)". The lines are in the COACH's units: both callers resolve them
-before the period's reads — the Regenerate route from the authed coach, the client-submit path from
-the check-in's owning coach — and hand them in. Warm-ups are left out, recorded and never scored; a
-measure nobody recorded reads "not recorded", never a zero; a swapped exercise names the one it
-replaced, so its load is never read against another exercise's target; an exercise logged outside
-the plan is described by what was recorded. At most eight lines a workout.
-
-**The task asks for a read, not a recap**: the week's story and what drove it, observations that
-carry what they connect to, and co-occurrence across metrics and across days. An uncertain
-explanation offered as a question is preferred to silence.
+**The nutrition rows are the frozen ones.** The model reads the rows the check-in froze at send, so an
+old review regenerates against that week as it stood; the page's Nutrition card reads the current plan
+(`getCheckInPeriodAdherence`), so the two agree unless the coach changed the client's targets after the
+check-in was sent — the open item in `docs/CHECK-IN-FINDINGS.md`. Everything else the review is given is
+read live, exactly as the page reads it.
 
 **Empty states.** When the AI half is wholly empty the card shows a single placeholder ("No AI
 review yet. Regenerate to write one.") rather than one per block. Regenerate reports a non-OK

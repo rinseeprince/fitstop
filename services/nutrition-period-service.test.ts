@@ -6,7 +6,7 @@ vi.mock("./nutrition-days-service", () => ({ getNutritionTargetsForDateRange: vi
 
 import { fetchNutritionLogsForPeriod } from "./schedule-data-service";
 import { getNutritionTargetsForDateRange } from "./nutrition-days-service";
-import { getCheckInNutritionSummary, getNutritionPeriod } from "./nutrition-period-service";
+import { getCheckInNutritionPeriod, getNutritionPeriod } from "./nutrition-period-service";
 import type { NutritionDay } from "@/types/schedule";
 
 const target = (date: string, calories: number): NutritionDayTarget => ({
@@ -73,7 +73,7 @@ describe("getNutritionPeriod — the live period through the kernel", () => {
   });
 });
 
-describe("getCheckInNutritionSummary — a submitted check-in reads its frozen rows", () => {
+describe("getCheckInNutritionPeriod — a submitted check-in reads its frozen rows", () => {
   const frozen: NutritionDay[] = [
     {
       date: "2026-05-08", dayOfWeek: "friday", status: "hit",
@@ -87,8 +87,8 @@ describe("getCheckInNutritionSummary — a submitted check-in reads its frozen r
     },
   ];
 
-  it("runs the kernel over the snapshot's rows and reads nothing live", async () => {
-    const summary = await getCheckInNutritionSummary(
+  it("hands back the snapshot's rows and the kernel over them, and reads nothing live", async () => {
+    const { days, summary } = await getCheckInNutritionPeriod(
       { clientId: "c1", periodSnapshot: { generatedAt: "2026-05-10T00:00:00Z", training: [], nutrition: frozen } },
       "2026-05-08",
       "2026-05-09"
@@ -96,6 +96,7 @@ describe("getCheckInNutritionSummary — a submitted check-in reads its frozen r
 
     expect(fetchNutritionLogsForPeriod).not.toHaveBeenCalled();
     expect(getNutritionTargetsForDateRange).not.toHaveBeenCalled();
+    expect(days).toBe(frozen);
     expect(summary).toMatchObject({ loggedDays: 2, targetedDays: 1, onTarget: 1, loggedNoTargetDays: 1, daysOnTargetPct: 100 });
   });
 
@@ -103,9 +104,10 @@ describe("getCheckInNutritionSummary — a submitted check-in reads its frozen r
     vi.mocked(fetchNutritionLogsForPeriod).mockResolvedValue([]);
     vi.mocked(getNutritionTargetsForDateRange).mockResolvedValue(new Map());
 
-    const summary = await getCheckInNutritionSummary({ clientId: "c1", periodSnapshot: undefined }, "2026-05-08", "2026-05-09");
+    const { days, summary } = await getCheckInNutritionPeriod({ clientId: "c1", periodSnapshot: undefined }, "2026-05-08", "2026-05-09");
 
     expect(fetchNutritionLogsForPeriod).toHaveBeenCalledWith("c1", "2026-05-08", "2026-05-09");
+    expect(days).toHaveLength(2);
     expect(summary.periodDays).toBe(2);
   });
 });

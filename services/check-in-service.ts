@@ -41,7 +41,6 @@ export {
   getCheckInAnswers,
   getCheckInExerciseHighlights,
   getCheckInPeriodAdherence,
-  getCheckInWithDetails,
   getTrainingEventDetailsForCheckIn,
   mapExerciseHighlight,
 } from "./check-in-details-service";

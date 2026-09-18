@@ -38,17 +38,20 @@ export async function getNutritionPeriod(
 }
 
 /**
- * A check-in's nutrition figures: the kernel over its FROZEN rows when it has
- * them — a submitted check-in reports on the week as it stood at submit, and
- * a plan the coach changes afterwards must not move it — else live over the
- * period, for a row written before the snapshot existed.
+ * A check-in's nutrition: its FROZEN rows and the kernel over them when it has
+ * them — a submitted check-in reports on the week as it stood at submit, and a
+ * plan the coach changes afterwards must not move it — else live over the
+ * period, for a row written before the snapshot existed. The AI review reads
+ * the rows day by day and the summary beside them, from this one call.
  */
-export async function getCheckInNutritionSummary(
+export async function getCheckInNutritionPeriod(
   checkIn: Pick<CheckIn, "clientId" | "periodSnapshot">,
   startDate: string,
   endDate: string
-): Promise<NutritionPeriodSummary> {
+): Promise<NutritionPeriod> {
   const frozen = readPeriodSnapshot(checkIn.periodSnapshot);
-  if (frozen) return summarizeNutritionPeriod(frozen.nutrition);
-  return (await getNutritionPeriod(checkIn.clientId, startDate, endDate)).summary;
+  if (frozen) {
+    return { days: frozen.nutrition, summary: summarizeNutritionPeriod(frozen.nutrition) };
+  }
+  return getNutritionPeriod(checkIn.clientId, startDate, endDate);
 }

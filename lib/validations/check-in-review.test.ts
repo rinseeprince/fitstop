@@ -40,3 +40,20 @@ describe("parseCheckInReview", () => {
     expect(review.coachActions).toEqual([]);
   });
 });
+
+describe("parseCheckInReview — no list caps", () => {
+  it("keeps a review with more watch items and actions than the old caps allowed", () => {
+    const review = {
+      summary: "A full week.",
+      watchItems: Array.from({ length: 8 }, (_, i) => ({ type: "trend", text: `item ${i + 1}` })),
+      themes: Array.from({ length: 7 }, (_, i) => `theme ${i + 1}`),
+      coachActions: Array.from({ length: 6 }, (_, i) => ({ priority: "low", text: `action ${i + 1}` })),
+      clientMessage: "Hi",
+    };
+    const parsed = parseCheckInReview(JSON.stringify(review));
+    expect(parsed.watchItems).toHaveLength(8);
+    expect(parsed.themes).toHaveLength(7);
+    expect(parsed.coachActions).toHaveLength(6);
+    expect(parsed.summary).toBe("A full week.");
+  });
+});

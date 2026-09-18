@@ -312,7 +312,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate AI summary asynchronously (don't wait for it)
-    triggerAISummaryGeneration(checkInId, clientId, client?.name ?? "Client")
+    triggerAISummaryGeneration(checkInId)
       .catch((error) => {
         console.error("Failed to generate AI summary:", error instanceof Error ? error.message : "Unknown error");
       });

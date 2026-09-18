@@ -1,120 +1,49 @@
 import OpenAI from "openai";
-import type {
-  CheckIn,
-  CheckInWithDetails,
-  CheckInReview,
-  CheckInTrainingEventDetail,
-} from "@/types/check-in";
-import type { DailyLog } from "@/types/daily-log";
-import type { HabitLogWithDetails } from "@/types/daily-habit";
-import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
-import type { PeriodSnapshot } from "@/types/schedule";
-import { AI_SYSTEM_PROMPT, buildCheckInAnalysisPrompt } from "@/utils/ai-prompt-builder";
+import type { CheckInReview } from "@/types/check-in";
+import type { CheckInReviewInput } from "@/types/check-in-review-input";
+import { CHECK_IN_REVIEW_BRIEF } from "@/utils/ai-system-prompt";
+import { buildCheckInReviewPrompt } from "@/utils/ai-prompt-builder";
 import { parseCheckInReview } from "@/lib/validations/check-in-review";
-import type { UnitSystem } from "@/utils/unit-conversions";
+import {
+  CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS,
+  CHECK_IN_REVIEW_TIMEOUT_MS,
+} from "@/lib/constants";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export const generateCheckInSummary = async (
-  currentCheckIn: CheckInWithDetails,
-  previousCheckIns: CheckIn[],
-  clientName: string,
-  dailyLogs?: DailyLog[],
-  habitLogs?: HabitLogWithDetails[],
-  startDate?: Date,
-  endDate?: Date,
-  nutritionSummary?: NutritionPeriodSummary | null,
-  periodSnapshot?: PeriodSnapshot | null,
-  trainingEventDetails?: CheckInTrainingEventDetail[],
-  exerciseSummaries?: Map<string, string[]>,
-  /** The COACH's unit system — they read the summary, whoever triggered it. */
-  viewer?: UnitSystem
+/**
+ * One check-in review: the brief as the system message, the week as the user
+ * message, gpt-4o (CONVENTIONS §11), parsed into the shape the card renders.
+ * The input is `getCheckInReviewInput`'s, whichever path asked — the client's
+ * submit and the coach's Regenerate call this with the same thing.
+ */
+export const generateCheckInReview = async (
+  input: CheckInReviewInput
 ): Promise<CheckInReview> => {
   try {
-    const prompt = buildCheckInAnalysisPrompt(
-      currentCheckIn,
-      previousCheckIns,
-      clientName,
-      dailyLogs,
-      habitLogs,
-      startDate,
-      endDate,
-      nutritionSummary,
-      periodSnapshot,
-      trainingEventDetails,
-      exerciseSummaries,
-      viewer
+    const completion = await openai.chat.completions.create(
+      {
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: CHECK_IN_REVIEW_BRIEF },
+          { role: "user", content: buildCheckInReviewPrompt(input) },
+        ],
+        temperature: 0.7,
+        max_tokens: CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS,
+        response_format: { type: "json_object" },
+      },
+      { timeout: CHECK_IN_REVIEW_TIMEOUT_MS }
     );
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: AI_SYSTEM_PROMPT },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 2000,
-      response_format: { type: "json_object" },
-    }, { timeout: 25000 });
 
     const responseText = completion.choices[0]?.message?.content || "";
     return parseCheckInReview(responseText);
   } catch (error) {
-    console.error("Error generating AI summary:", error instanceof Error ? error.message : "Unknown error");
-    throw new Error("Failed to generate AI summary", { cause: error });
-  }
-};
-
-export const regenerateAISummary = async (
-  checkIn: CheckIn,
-  previousCheckIns: CheckIn[],
-  clientName: string,
-  focus?: "positive" | "detailed" | "concise",
-  dailyLogs?: DailyLog[],
-  habitLogs?: HabitLogWithDetails[],
-  startDate?: Date,
-  endDate?: Date,
-  nutritionSummary?: NutritionPeriodSummary | null,
-  trainingEventDetails?: CheckInTrainingEventDetail[],
-  exerciseSummaries?: Map<string, string[]>,
-  /** The COACH's unit system — they read the summary. */
-  viewer?: UnitSystem
-): Promise<CheckInReview> => {
-  try {
-    const focusInstructions = {
-      positive: "Focus on positive aspects and wins. Be extra encouraging.",
-      detailed: "Provide very detailed analysis with specific metrics and comparisons.",
-      concise: "Keep analysis brief and to the point. Highlight only key items.",
-    };
-
-    const instruction = focus ? focusInstructions[focus] : "";
-    const prompt = buildCheckInAnalysisPrompt(
-      checkIn, previousCheckIns, clientName,
-      dailyLogs, habitLogs, startDate, endDate, nutritionSummary,
-      undefined, trainingEventDetails, exerciseSummaries, viewer
+    console.error(
+      "Error generating the check-in review:",
+      error instanceof Error ? error.message : "Unknown error"
     );
-    const modifiedPrompt = instruction ? `${instruction}\n\n${prompt}` : prompt;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: instruction ? `${AI_SYSTEM_PROMPT}\n\n${instruction}` : AI_SYSTEM_PROMPT,
-        },
-        { role: "user", content: modifiedPrompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 2000,
-      response_format: { type: "json_object" },
-    }, { timeout: 25000 });
-
-    const responseText = completion.choices[0]?.message?.content || "";
-    return parseCheckInReview(responseText);
-  } catch (error) {
-    console.error("Error regenerating AI summary:", error instanceof Error ? error.message : "Unknown error");
-    throw new Error("Failed to regenerate AI summary", { cause: error });
+    throw new Error("Failed to generate the check-in review", { cause: error });
   }
 };
