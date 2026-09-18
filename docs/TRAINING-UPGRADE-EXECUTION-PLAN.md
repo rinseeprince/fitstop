@@ -183,14 +183,23 @@ commit's plan.
 
 - **Columns are per exercise**, chosen in each exercise's column selector: presets at the top, every
   column below, each ticked or unticked freely.
-- **The columns:**
+- **The columns** (19 — Calories and Stroke rate added by the owner, 2026-09-18):
   - *Strength:* Load (kg or lb by the viewer's units, % 1RM or % top set — as today), Reps, RPE, RIR,
     Tempo.
   - *Endurance:* Distance, Duration, Pace (per km or mile, by the viewer's units), Split (per 500 m),
-    Cadence (SPM/RPM), Damper/Resistance, HR zone, Target HR (BPM), Power (watts), % FTP.
+    Calories (kcal, as the machine shows), Cadence (bike RPM or running steps per minute), Stroke rate
+    (strokes per minute: row, ski, swim), Damper/Resistance, HR zone (Z1–Z5), Target HR (BPM), Power
+    (watts), % FTP.
   - *Framework:* Set type, Rest. Rounds, time cap and intervals are group settings (§4.2).
-- **Ranges:** a target can be one value or a range where coaches use ranges (pace, heart rate,
-  watts), as reps can today.
+- **Prescribed and actual (owner, 2026-09-18):** every column has a target on each set and an actual
+  on the logged set, in the same measure, so the gap between what the coach set and what the client
+  did is a direct comparison — the signal the AI layer reads. Load's actual is the weight lifted; Set
+  type's is the type stamped on the log; Rest's is the rest taken, recorded by the React Native app's
+  timer (the web harness doesn't ask).
+- **Ranges and compound values (owner, 2026-09-18):** every numeric target can be one value or a
+  range — 8-10 reps, RPE 7-8, 70-75% 1RM, pace windows — RPE and Load included, which store one number
+  until commit 11a. Rest stays one number: it is what the rest timer counts down. Tempo is one compound
+  value: four phases, each seconds or X for explosive, written "3-1-X-0".
 - **Presets:** a fixed set — one per exercise type, plus Circuit. A preset applies to one exercise or
   a whole group. Coaches don't save their own. The exact columns in each preset are put to the owner
   in commit 12. *(confirm)*
@@ -202,16 +211,30 @@ commit's plan.
   and holds, which are picked out by name. The cardio and plyometric exercises are classified by hand
   with the owner's review. "Burpee Broad Jump", the one HYROX station missing, is added.
 - **Coach-made exercises** start as Strength and get a Type field in the exercise form.
-- **Client inputs follow the columns.** Weight shows only when Load is on — today it always shows —
-  so a run asks for distance and time, not weight.
+- **Client inputs follow the columns — one box per column (owner, 2026-09-18).** Each ticked column
+  is one box: the coach's target as its hint, the client types what they did. No column adds, fills
+  or works out another. Load's box is the weight lifted, so Weight shows only when Load is on — today
+  it always shows — and a run asks for what its columns ask for, not weight.
 - **Clients log every new measurement** from the moment it can be prescribed.
-- **Units:** stored canonically — metres and seconds, pace worked out from them, kg as today — and
-  converted only on screen by the viewer's units. The app sends canonical values; there is no new
-  unit tag (CONVENTIONS §20: "Do not add a third tag"). §20 gains the distance and time rules.
+- **Units:** stored canonically — metres, seconds, pace in seconds per km, split in seconds per
+  500 m, kg as today — and converted only on screen by the viewer's units. Nobody types or reads the
+  stored units (owner, 2026-09-18): distance is typed in km or miles (a bare number) or with its unit
+  ("400 m", "800 yd") and reads in m or yd under 1 km / 1 mile; duration is typed and read in hours
+  and minutes ("2:00:00", "1h30", "90 min" — a bare number means minutes); pace is typed and read in
+  minutes and seconds per km or mile ("4:45 /km") and stored as typed, not worked out from distance
+  and duration; split reads per 500 m for everyone. A box shows what it recorded when the client
+  leaves it. The app sends canonical values; there is no new unit tag (CONVENTIONS §20: "Do not add a
+  third tag"). §20 gains the distance and time rules.
 - **Data (decided):** the chosen columns stay a list on the exercise, extended to every column name
   and defined once; existing exercises whose list is empty get today's five, so empty never means
-  "all". Per-set targets are new fields in the per-set data (CONVENTIONS §8 names it as allowed JSON).
-  Logged results are real columns on the logged set, because they get charted.
+  "all", and every writer names the list. Per-set targets are new fields in the per-set data
+  (CONVENTIONS §8 names it as allowed JSON), every numeric one a min/max pair; RPE's and Load's single
+  values are renamed to pairs in every stored set, so nothing reads two spellings (owner,
+  2026-09-18). Logged results are real columns on the logged set, because they get charted.
+- **Limits**, targets and actuals alike (owner, 2026-09-18): distance up to 1,000 km; duration up to
+  24 h, to a tenth of a second; pace 1:00–60:00 /km; split 0:30–10:00 /500 m; calories 1–5,000;
+  cadence 1–300; stroke rate 1–150; resistance 0–100; heart rate 30–250 bpm; power 1–3,000 W; % FTP
+  1–300; RIR 0–10; RPE 1–10 everywhere; HR zone 1–5; tempo phases 0–99 s or X; reps and load as today.
 - **The AI assistant** applies a preset when it adds an exercise — by type, once types exist.
 - **Chart markers by type (commit 16):** Strength — estimated 1RM, top set, volume. Bodyweight —
   best set reps. Endurance — pace, distance, best times. Erg — split, watts, best times. Carry & sled
@@ -453,7 +476,8 @@ anything you rely on.
 | 8 | Completion 2: one check-in derivation | One summariser; the legacy check-in shape is gone |
 | 9 | Completion 3: attendance lives on the calendar workout | No skips; Clear log |
 | 10 | Completion 4: the flip | Partials count as completed everywhere |
-| 11 | Measurement columns: data, units and client logging | Clients can log every measurement |
+| 11a | Measurement columns 1: the prescription | Every exercise can prescribe every measurement, as ranges |
+| 11b | Measurement columns 2: the actuals | Clients log every measurement; coach and AI see prescribed beside actual |
 | 12 | Measurement columns and presets in the builder | Coaches choose each exercise's columns |
 | 13 | Exercise types | New exercises start on their type's preset |
 | 14 | Timed groups: scores and client logging | Clients do and score AMRAP, EMOM and For time |
@@ -739,35 +763,254 @@ WATCH FOR: migration 136 was dropped in commit 5 — don't reintroduce it; the m
 NOT IN THIS COMMIT: one report assembly for both check-in views (the old 4b — the check-in rework).
 ```
 
-### Commit 11 — Measurement columns: data, units and client logging
+### Commit 11a — Measurement columns 1: the prescription
 
 ```text
-Implement commit 11 of 22 — Measurement columns: data, units and client logging — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
+Implement commit 11a of 22 — Measurement columns 1: the prescription — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
 
-Before anything else, read the plan's §1–§5 (skip the other commits' prompts), then CONVENTIONS.md and docs/ARCHITECTURE.md in full, then docs/newdesignsystem.md and CLIENT-APP-REFERENCE.md. Work the way §2 says: ARCHITECTURE.md describes today's product, so where this commit changes a shape it describes, follow the plan and rewrite that part of the doc. Plan first, with plain sentences, and wait for my go.
+Before anything else, read the plan's §1–§5 (skip the other commits' prompts) and this commit's whole section in §6, including the planning notes under this prompt; then CONVENTIONS.md and docs/ARCHITECTURE.md in full, then docs/newdesignsystem.md and CLIENT-APP-REFERENCE.md. Work the way §2 says: ARCHITECTURE.md describes today's product, so where this commit changes a shape it describes, follow the plan and rewrite that part of the doc.
+
+Commit 11 was planned in full with the owner on 2026-09-18 and split in two so each half fits a session: 11a is the prescription, 11b the actuals. The behaviours in the planning notes are approved. Plan against them (§2.4) without reopening them, put anything they don't answer to me as a plain sentence, and wait for my go.
 
 WHAT WE'RE BUILDING
-Everything needed to prescribe and log every measurement in §4.4, except the builder controls. Clients can log the new measurements before coaches can prescribe them, so this commit is smoked with seeded prescriptions.
+Everything a coach can prescribe for every measurement in §4.4: the 19 columns defined once and explicit on every exercise, a range for every numeric target, tempo as one compound value — stored, validated and carried through every path that saves or copies exercises. Clients log the new measurements in 11b; this commit is smoked with the builder's range boxes and seeded prescriptions.
 
 WHEN THIS COMMIT IS DONE
-- The full column list (§4.4) is defined once, and the database check, validators, builder, client and assistant all use it — replacing the five names hard-coded in six places.
-- An exercise's column list is never empty: existing empty lists get today's five, and new exercises always carry an explicit list.
-- A set's targets can hold every column's value, with ranges where §4.4 says. Validators and database checks agree (including the RPE 0 mismatch in §5).
-- A logged set can record every measurement as real columns, with sensible limits for each.
-- Distance and time are stored as metres and seconds, pace is worked out from them, and all of it is converted only on screen by the viewer's units. CONVENTIONS §20 gains the distance and time rules, and conversions live in the one units module.
-- The client logs whatever the exercise's columns ask for; Weight shows only when Load is on; the log API takes canonical values with no new unit tag; rows still come from buildPrescribedRows.
-- A set counts as logged when any value is recorded (§4.7 amendment 1).
-- The prescription snapshot carries the new fields, and the client's snapshot fallback reads them with the right key spelling (§5).
-- The coach's session log view and the check-in AI summary describe the new measurements sensibly.
-- Strength analytics are unchanged for strength sets.
-- CLIENT-APP-REFERENCE.md documents all of it.
+- The 19 columns are defined once, and the database checks, validators, builder, client and assistant all use that definition — replacing the five names hard-coded in six places. A test fails if the migration's list and the code's list ever differ.
+- An exercise's column list is never null or empty: existing null lists get today's five, the column is required with no default, and new exercises start on today's five.
+- A set's targets hold every column: each numeric target a min/max pair, tempo one compound value, rest one number. RPE and Load become pairs in every stored set spec — library and client exercises and log snapshots — so nothing reads two spellings.
+- Validators and database checks agree, including §5's RPE 0 mismatch: RPE is 1–10 on every path.
+- Every path that saves or copies exercises carries every target and column name, proved by the survival matrix running each path's input through its real route schema.
+- The builder's RPE and Load boxes take ranges; the assistant carries and writes them; existing screens read them.
+- The client tracker's snapshot fallback reads the snapshot's own keys and pairs with its log (§5).
+- Distance, duration, pace and split targets are stored canonically (§4.4 Units); CONVENTIONS §20 gains the storage rules, and any conversion this commit needs lives in the one units module.
+- ARCHITECTURE.md, CONVENTIONS.md and CLIENT-APP-REFERENCE.md (the prescription wire: prescribedFields, the SetSpec keys and their units) describe it.
 
-RULES: §4.4 — closed.
+RULES: §4.4 — closed, including the owner's 2026-09-18 amendments.
 
-WATCH FOR: every path that copies or saves exercises must carry the new set fields — validators strip unknown keys, so extend the survival tests.
+WATCH FOR: the planning notes list what the planning session found in the code, with file references — re-check each before relying on it. Validators strip unknown keys, and the survival tests bypass the validators.
 
-NOT IN THIS COMMIT: the builder's column selector and presets (commit 12); exercise types (commit 13); charts (commit 16).
+NOT IN THIS COMMIT: logged values and the client's boxes for the new measurements, the coach's prescribed-against-actual view and the AI lines (11b); the builder's column selector, presets and endurance inputs (12); exercise types and the assistant writing the new measures (13); charts (16).
 ```
+
+**Planning notes — commit 11a (approved by the owner, 2026-09-18)**
+
+*Approved behaviours*
+1. The builder's RPE and Load boxes take a range, like Reps: "7-8", "100-105", "70-75" for a % load.
+   Everything else in the builder looks as today: the Columns menu offers today's five (set type,
+   reps, load, RPE, rest), "Show all columns" ticks those five, and any other column an exercise
+   carries survives every edit and save with its targets. New exercises start on today's five.
+2. Duplicate-with-progression moves both ends of a load or rep range.
+3. RPE is 1–10 everywhere; the builder turns a typed 0 into 1.
+4. The assistant keeps every column and target through every edit and writes RPE and load ranges. It
+   can't write the new measures yet: its "set the sets" tool refuses, with a sentence, an exercise
+   carrying targets it can't write, instead of wiping them. Its program view prints every target; its
+   new exercises start on today's five.
+5. Where the client's grid and the coach's logged-workout view show RPE and load today, a range reads
+   "7–8", "100–105 kg", "70–75% 1RM".
+6. A logged workout whose exercise the coach later removed shows its prescription again — reps, RPE,
+   rest — and appears once, not twice.
+7. Every existing exercise gets today's five columns explicitly. Six DEV client exercises already carry
+   lists without Load; their Weight box goes in 11b.
+
+*Data (decided; the names are the planning session's proposal — keep them unless you find a reason)*
+- Column names stored in `prescribed_fields`: `set_type`, `load`, `reps`, `rpe`, `rir`, `tempo`,
+  `distance`, `duration`, `pace`, `split`, `calories`, `cadence`, `stroke_rate`, `resistance` (the
+  Damper/Resistance column), `heart_rate_zone` (HR zone), `heart_rate` (Target HR), `power`,
+  `ftp_percent`, `rest`. Today's five: `set_type`, `reps`, `load`, `rpe`, `rest`.
+- Per-set targets in `set_specs`, every numeric one a pair: `load_type` (unchanged) with
+  `load_min`/`load_max`; `reps_min`/`reps_max`; `rpe_min`/`rpe_max`; `rir_min`/`rir_max`;
+  `distance_meters_min`/`_max`; `duration_seconds_min`/`_max`; `pace_seconds_per_km_min`/`_max`;
+  `split_seconds_per_500m_min`/`_max`; `calories_min`/`_max`; `cadence_min`/`_max`;
+  `stroke_rate_min`/`_max`; `resistance_min`/`_max`; `heart_rate_zone_min`/`_max`;
+  `heart_rate_min`/`_max`; `power_min`/`_max`; `ftp_percent_min`/`_max`; `tempo` ("3-1-X-0");
+  `rest_seconds` (one number). A drop keeps one load (`load_value`, in its parent's type) and one rep
+  count.
+- The migration: backfill null or empty lists to today's five, then NOT NULL with no default and a
+  CHECK — non-empty and a subset of the 19 (use `cardinality()`: migration 149's `array_length` check
+  lets `'{}'` through); rename `rpe_target` → `rpe_min` + `rpe_max` and `load_value` → `load_min` +
+  `load_max` in `coach_saved_exercises.set_specs`, `training_exercises.set_specs` and
+  `exercise_logs.prescribed_exercise_snapshot->'set_specs'` (spec-level keys only; drops keep
+  theirs); a 1–10 CHECK on `coach_saved_exercises.rpe_target`.
+- The exercise-level compact columns (`sets`, `reps_min`/`reps_max`, `rpe_target`, `percentage_1rm`,
+  `rest_seconds`) stay as the legacy summary for exercises with no per-set list. Every range lives in
+  the per-set list; `expandSetSpecs` synthesizes the pairs from the compact columns.
+- A log snapshot with no list, or a null one, reads as today's five.
+- Rejected, so nobody re-derives them: a join table for the column list (closed, small, never
+  referenced — §4.4 decided the list); null meaning "all"; a database default for the list (a writer
+  that forgets it would silently get the strength columns); keeping `rpe_target`/`load_value` beside
+  new `_max` keys (two naming schemes forever); reading both spellings, as drops still do for their
+  old `weight` key (every reader, React Native included, would carry the fallback); nested
+  `{min, max}` objects (the per-set edit kernel's no-op check compares values with `===`, so an object
+  always reads as changed); tempo as four separate fields (it is read and written as one value, and
+  the validated form still compares phase by phase); widening `training_exercises`' RPE check to 0–10
+  (RPE 0 isn't a rating).
+
+*Found in the code (2026-09-18 — re-check before relying on it)*
+- Zod 3.25 strips unknown keys. `setSpecSchema` (`lib/validations/training.ts`) and its nested drops
+  object are plain `z.object`s, and every save route passes `parsed.data` on: saved-plans create and
+  `…/overwrite`, saved-sessions create and `…/overwrite`, place-from-library (inline), the tray's
+  `PUT …/sessions/[sessionId]` and Edit plan's `PUT …/edit`. The client-side safeParse belts send the
+  raw body.
+- The column-list enums (`training.ts` `prescribedFieldsSchema`; `lib/validations/assistant.ts`, twice)
+  REJECT a new name. `toPrescribedFields`/`resolvePrescribedFields` (`utils/prescribed-fields.ts`)
+  treat null as "all five" and silently drop unknown names. `copySavedGroupRows`
+  (`services/coach-library-helpers.ts`) and `saveSessionFromCalendar`'s row builder
+  (`services/coach-library-calendar-service.ts`) write `?? null` directly. The builder writes null for
+  "all five" (`set-columns-menu.tsx`) and for a new exercise (`defaultExerciseDraftFromCatalog` in
+  `program-builder-model.ts`, which the assistant's `add_exercise` also uses).
+- The survival tests (`services/exercise-groups-survival.test.ts`, `services/set-specs-survival.test.ts`)
+  hand services already-parsed input, so stripping is invisible to them; their fixtures use known
+  keys only, and `EXPECTED_SHAPE` pins a null list. Paths to cover through their route schemas:
+  library save and create, duplicate, promote, standalone create and overwrite (and its restore),
+  saving a client session to the library, placement from the library and inline, the calendar drop,
+  the tray save, and Edit plan's payload. Edit plan's function (`edit_training_plan_atomic`, migration
+  180) reads `prescribed_fields` and `set_specs` straight from the payload, so a null list raises
+  inside the RPC as a generic "Failed to save the plan".
+- Edit plan's "unchanged" check (`services/plan-edit-same-day.ts`) compares set specs as JSON: a stored
+  key the save stripped reads every such session as changed and clears its edited mark.
+- The assistant strips twice: the request's draft goes through `programDraftSnapshotSchema` (which
+  reuses `setSpecSchema`), and the returned ops through `draftOpSchema` before replay
+  (`program-builder/assistant/use-assistant-chat.ts`). `set_exercise_sets`
+  (`services/assistant/draft-exercise-tools.ts`) rebuilds every spec key by key. The ops drift test
+  (`program-builder-ops.test.ts`) catches only keys in its maximal fixture. Everything else already
+  copies specs whole: `cloneSpec` in `set-spec-edits.ts`, `progression-rules.ts`, the builder model's
+  clones, the serializers and the database-to-database copies.
+- The client tracker's snapshot fallback (`components/client-portal/training/set-tracker.tsx`
+  `normalizeExercise`) reads camelCase keys from a snake_case snapshot, and the snapshot carries no
+  id: the view gets "snapshot-N", so the exercise renders once blank and again, with its logged sets,
+  as Unplanned. The resolved snapshot exercise is built in one place (`snapshotGroups` in
+  `services/training-log-service.ts`), which knows the log's `training_exercise_id`. The
+  "[uuid-filter]" case in `set-tracker.test.tsx` pins the old shape.
+- RPE 0: `savedExerciseInputSchema` and the assistant's schemas and tools allow an exercise-level RPE
+  of 0; `coach_saved_exercises.rpe_target` has no CHECK and `training_exercises.rpe_target` has 1–10
+  (migration 015), so placing such an exercise fails. The builder's per-set RPE box clamps at 0
+  (`set-row-editor.tsx`).
+- Scripts insert `training_exercises` without `prescribed_fields`: `scripts/seed/generate.ts` and
+  `scripts/seed-scale-client.ts` (both untyped), `scripts/perf-correctness.ts` (typed — the
+  regenerated types will flag it). `scripts/seed/generate.ts` writes `rpe_target`/`load_value` into
+  specs.
+- The exercise tables' BEFORE UPDATE triggers bump `updated_at` on every backfilled row; Edit plan's
+  stale-check version reads session rows, not exercise rows.
+
+*DEV facts (2026-09-18 — per-database; they don't travel to PROD)*
+- `coach_saved_exercises`: 668 rows, every list null. `training_exercises`: 98,007 rows — 98,001 null
+  lists, six explicit ones: `[set_type, reps, rest]` ×1 and `[set_type, reps, rpe, rest]` ×5, none with
+  load.
+- Set specs: 435,302 in client exercises, 1,349 in library exercises, 523 in log snapshots.
+  `rpe_target` is a number in 363,299 of them and `load_value` in 6,681; no malformed value, no RPE
+  outside 1–10, no tempo value anywhere, no spec already using a range key; drops on 8.
+- Logged exercises: 59,240 — 56,602 with no snapshot, 2,451 whose snapshot has no list key, 184 with a
+  null list. `set_logs`: 237,058 rows.
+- PROD was at migration 174 when this plan was written. Before the owner pushes this commit's
+  migration there, hand them one probe query: the rows it rewrites, and any value it would refuse or
+  that the new validators would — library RPE outside 1–10, a non-numeric `rpe_target` or
+  `load_value`, a tempo that isn't four phases.
+
+### Commit 11b — Measurement columns 2: the actuals
+
+```text
+Implement commit 11b of 22 — Measurement columns 2: the actuals — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
+
+Before anything else, read the plan's §1–§5 (skip the other commits' prompts) and this commit's whole section in §6, including the planning notes under this prompt; then CONVENTIONS.md and docs/ARCHITECTURE.md in full, then docs/newdesignsystem.md and CLIENT-APP-REFERENCE.md. Work the way §2 says: ARCHITECTURE.md describes today's product, so where this commit changes a shape it describes, follow the plan and rewrite that part of the doc.
+
+Commit 11 was planned in full with the owner on 2026-09-18 and split in two; 11a (the prescription) has shipped. The behaviours in the planning notes are approved. Plan against them (§2.4) without reopening them, put anything they don't answer to me as a plain sentence, and wait for my go.
+
+WHAT WE'RE BUILDING
+Clients log every measurement in §4.4, and the coach and the check-in AI see what was prescribed beside what was done. Every column gets an actual on the logged set, in the same measure as its target. Coaches can't prescribe the new measurements until commit 12, so this commit is smoked with seeded prescriptions.
+
+WHEN THIS COMMIT IS DONE
+- A logged set records every column's actual as a real column, with the same limits as its target; validators and database checks agree.
+- The log API takes canonical values with no new unit tag.
+- The client logs whatever the exercise's columns ask for — one box per column — and rows still come from buildPrescribedRows.
+- Distance, duration, pace and split are typed and read by the viewer's units as §4.4 says; the conversions and entry rules live in the one units module, and CONVENTIONS §20 gains the reading and writing rules.
+- A set counts as logged when any value is recorded (§4.7 amendment 1).
+- Reopening a logged workout restores every value, so a save never erases one.
+- The prescription snapshot carries the new targets (11a's keys ride in set_specs).
+- The coach's logged-workout view and the check-in AI lines show what was prescribed beside what was done, measure by measure.
+- Strength analytics are unchanged for strength sets.
+- ARCHITECTURE.md, CONVENTIONS.md and CLIENT-APP-REFERENCE.md (the logging contract) describe it.
+
+RULES: §4.4 — closed, including the owner's 2026-09-18 amendments.
+
+WATCH FOR: the planning notes list what the planning session found in the code — re-check each before relying on it. Every save full-replaces a log's sets, so any value the form doesn't restore is erased.
+
+NOT IN THIS COMMIT: the builder's column selector, presets and endurance inputs (12); exercise types (13); charts (16).
+```
+
+**Planning notes — commit 11b (approved by the owner, 2026-09-18)**
+
+*Approved behaviours*
+1. Each ticked column is one box: the coach's target as its grey hint (a range reads "7–8"), the client
+   types what they did. No column adds, fills or works out another. Set type stays a tag and Rest keeps
+   its timer — neither is a box.
+2. Load's box is the weight lifted, with the target as its hint ("100–105 kg" or "75–80% 1RM"), so
+   Weight shows only when Load is on — six DEV exercises lose their Weight box. The separate read-only
+   Load cell goes.
+3. HR zone, % FTP and Tempo are ordinary boxes: the zone, the percentage, the tempo used.
+4. Pace and Split are typed in minutes and seconds — "4:45 /km" or "7:39 /mi", "1:52.3 /500m" — and
+   stored as typed. A coach who ticks distance, duration and pace gets all three from the client, and
+   nothing checks them against each other.
+5. The distance box: a bare number is km (miles for an imperial client); "400 m" or "800 yd" work too;
+   leaving the box shows what was recorded, in m or yd under 1 km / 1 mile.
+6. The duration box takes hours and minutes: "2:00:00", "1:30:00", "45:00", "2h", "1h30", "90 min". A
+   bare number means minutes, so "120" is a two-hour run; seconds need a colon or an s ("0:45",
+   "45s"); tenths work for ergs ("6:45.3"). Leaving the box shows what was recorded ("120" becomes
+   "2:00:00"). Durations read "2:00:00" from an hour up and "45:00" below.
+7. Entering any value and moving on ticks the set, so it counts as logged; Copy previous copies every
+   value.
+8. Reopening a logged workout shows every value logged.
+9. The exercise's summary line and the Program tab describe endurance targets
+   ("6 × 800 m · 3:45–3:50 /km").
+10. The coach's logged-workout view gives each measure a column; each cell shows what the client did
+    with the coach's target under it, and a value outside its target reads amber (RPE two or more above
+    keeps today's red; a % load can't be compared with kilograms, so it is never marked). The separate
+    Prescribed column goes, and columns follow the data, so history never hides a recorded value.
+11. The check-in AI's exercise lines give the prescription and the result measure by measure, name any
+    measure outside its target, use the coach's units, and no longer print missing values as "0x0".
+12. Rest taken is Rest's actual: the React Native app records it from its timer and the web harness
+    doesn't ask. The coach's view shows it when present.
+
+*Data (decided; the names are the planning session's proposal)*
+- New `set_logs` columns, each nullable with a CHECK equal to its target's limit: `rir`, `tempo`,
+  `distance_meters`, `duration_seconds` (tenths), `pace_seconds_per_km`, `split_seconds_per_500m`,
+  `calories`, `cadence`, `stroke_rate`, `resistance`, `heart_rate_zone`, `heart_rate`, `power`,
+  `ftp_percent`, `rest_seconds` (the rest taken). `weight`, `reps` and `rpe` as today. Wire keys are
+  camelCase and canonical (`distanceMeters`, `durationSeconds`, `paceSecondsPerKm`, `strokeRate`,
+  `heartRateZone`, `ftpPercent`, `restSeconds`…); the per-exercise `weightUnit` tag stays as it is.
+- Rejected, so nobody re-derives them: a JSON bag or key-value child table for actuals (§4.4 wants
+  real, chartable columns with typed checks); logging HR zone and % FTP as bpm and watts (the gap would
+  need zone and FTP settings nobody stores); pace worked out from distance and duration (owner,
+  2026-09-18: pace is its own box); any cross-column rule on the client (owner: one box per column).
+
+*Found in the code (2026-09-18 — re-check before relying on it)*
+- Every save full-replaces the log's `exercise_logs` (`set_logs` cascade), and the web form restores
+  only reps, weight and RPE (`restoreSetsFromLog` in
+  `components/client-portal/training/log-form-types.ts`); the auto-tick and Copy previous
+  (`exercise-tracker-block.tsx`) look at those three only.
+- `setPerformanceSchema` (`lib/validations/training.ts`) strips unknown keys, and the tracker sends
+  `parsed.data` (`set-tracker.tsx` `onSubmit`), so the client-side parse strips too. The writer builds
+  each `set_logs` row explicitly (`writeSessionLog` in `services/training-log-service.ts`);
+  `mapSetLogRow` maps fields explicitly; `utils/logged-set-rows.ts` carries reps, weight and RPE only.
+- A value that converts (weight, distance, pace) must resubmit its stored canonical value when
+  untouched: the weight's per-field dirty guard in `buildLogPayload` is the pattern (CONVENTIONS §20).
+- The client grid: `components/client-portal/training/set-row.tsx` (Weight always rendered),
+  `prescribed-set-grid.tsx` (the header and the grid template derive from one field set) and
+  `exercise-tracker-block.tsx`. The client portal is exempt from `check:labels`; the coach view is not.
+- The coach view: `components/clients/training/session-log-exercise-card.tsx` renders Weight and Reps
+  always and one combined Prescribed text column; `rpeToneClass` holds today's RPE colours.
+- The AI lines: `getExerciseSummariesForPeriod` (`services/check-in-context-service.ts`) writes one line
+  per exercise — top set by weight, missing values printed as 0, raw kg with no unit, warm-ups counted.
+  Its two callers (`app/api/check-in/[id]/ai-summary/route.ts`, `services/client-check-in-service.ts`)
+  resolve the coach's units (`getCoachUnitPreference`) after building the lines — resolve them first
+  and pass them in; `utils/ai-prompt-builder.ts` already renders loads in the coach's units.
+- Tests that pin exact `set_logs` rows or `SetLog` shapes: `services/training-log-service.test.ts`; the
+  `SetLog` factories in `session-log-detail-dialog.test.tsx`, `log-form-types.test.ts` and
+  `set-tracker.test.tsx`; the expected AI lines in `check-in-context-service.test.ts`.
+- Analytics read `set_logs` through `get_exercise_progression_window`'s explicit column list and
+  `get_exercise_prs` (migration 120), untouched by new columns. An endurance-only set already yields no
+  top set, e1RM, volume or PR, and still counts in `actualSets` — leave it; charts are commit 16. The
+  day summary's "X/Y exercises logged" counts exercise logs, not sets.
 
 ### Commit 12 — Measurement columns and presets in the builder
 
