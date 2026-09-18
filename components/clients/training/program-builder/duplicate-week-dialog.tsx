@@ -161,17 +161,21 @@ export function DuplicateWeekDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      {/* Never taller than the screen: the preview inside caps itself at 40vh
-          and the dialog scrolls past that, so the footer stays reachable on a
-          15-exercise week. No description — the title and the controls say
-          what it does (owner, 2026-09-18). */}
-      <DialogContent aria-describedby={undefined} className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+      {/* Never taller than the screen: the card keeps its padding, its title
+          and its footer in place, and only the BODY scrolls (the middle grid
+          row), so a 15-exercise week never pushes the buttons off screen and
+          nothing scrolls under the card's edge. No description — the title and
+          the controls say what it does (owner, 2026-09-18). */}
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[85vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-xl"
+      >
         <DialogHeader>
           <DialogTitle>Duplicate Week {week.weekIndex + 1}</DialogTitle>
         </DialogHeader>
 
         {hasExercises ? (
-          <div className="space-y-4 py-1">
+          <div className="min-h-0 space-y-4 overflow-y-auto py-1">
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLASS}>Progression</span>
               <SegmentedControl
