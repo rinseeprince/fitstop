@@ -17,8 +17,21 @@ import { isSupersetOrCircuit } from "./program-builder-groups";
 // Pure view-model for the duplicate-week progression preview: pairs the
 // source week with its progressed clone POSITIONALLY (progressWeek never
 // adds/removes/reorders sessions or exercises) and formats the field the
-// active rule touches as a before → after diff line. React-free so the
-// formatting is unit-testable without a render.
+// active rule touches as a before → after diff. React-free so the formatting
+// is unit-testable without a render.
+//
+// One line when one value says it all — every working set shares the value, or
+// the rule is Sets — and one line PER SET under the exercise's name when the
+// sets differ, so a long prescription grows the preview down, never sideways.
+
+/** One working set's before → after, when the sets differ. */
+type ProgressionPreviewSetLine = {
+  /** "S2" for a set, "R2" for a round of a superset or circuit. */
+  label: string;
+  before: string;
+  /** The value after the rule, carrying the unit ("102.5 kg", "72.5%", "9"). */
+  after: string;
+};
 
 type ProgressionPreviewRow = {
   uid: string; // the progressed clone's uid (matches changedExerciseUids)
@@ -27,6 +40,8 @@ type ProgressionPreviewRow = {
   changed: boolean;
   before: string;
   after: string | null; // null when the rule leaves this exercise unchanged
+  /** One line per working set when they differ; null when `before → after` says it all. */
+  perSet: ProgressionPreviewSetLine[] | null;
 };
 
 // One session of the week: its day, its place within the day, and its rows.
@@ -80,6 +95,32 @@ const loadToken = (s: SetSpec, viewer: UnitSystem): string => {
   return `${loadRange(s, viewer)}${formatLoad(0, viewer).unit}`;
 };
 
+/** The working sets' values, and the unit they share (empty when each token carries its own). */
+type Tokens = { tokens: string[]; unit: string };
+
+const allEqual = (tokens: string[]): boolean => tokens.every((t) => t === tokens[0]);
+
+/** One line for equal values, the values joined for differing ones, then the shared unit. */
+const joinTokens = ({ tokens, unit }: Tokens): string => {
+  if (tokens.length === 0) return "—";
+  return `${allEqual(tokens) ? tokens[0] : tokens.join(" / ")}${unit}`;
+};
+
+function loadTokens(ex: ExerciseDraft, viewer: UnitSystem): Tokens {
+  const specs = workingSpecs(ex);
+  if (specs.every((s) => s.load_type === "absolute" && hasLoad(s))) {
+    return { tokens: specs.map((s) => loadRange(s, viewer)), unit: ` ${formatLoad(0, viewer).unit}` };
+  }
+  if (
+    specs.every(
+      (s) => (s.load_type === "pct_1rm" || s.load_type === "pct_top") && hasLoad(s),
+    )
+  ) {
+    return { tokens: specs.map((s) => `${loadRange(s, viewer)}%`), unit: "" };
+  }
+  return { tokens: specs.map((s) => loadToken(s, viewer)), unit: "" };
+}
+
 /**
  * FORK POINT. Two callers with opposite requirements:
  *
@@ -94,19 +135,7 @@ const loadToken = (s: SetSpec, viewer: UnitSystem): string => {
  * Hence the required parameter: there is no safe default for both.
  */
 export function formatLoads(ex: ExerciseDraft, viewer: UnitSystem): string {
-  const specs = workingSpecs(ex);
-  if (specs.length === 0) return "—";
-  if (specs.every((s) => s.load_type === "absolute" && hasLoad(s))) {
-    return `${specs.map((s) => loadRange(s, viewer)).join(" / ")} ${formatLoad(0, viewer).unit}`;
-  }
-  if (
-    specs.every(
-      (s) => (s.load_type === "pct_1rm" || s.load_type === "pct_top") && hasLoad(s),
-    )
-  ) {
-    return specs.map((s) => `${loadRange(s, viewer)}%`).join(" / ");
-  }
-  return specs.map((s) => loadToken(s, viewer)).join(" / ");
+  return joinTokens(loadTokens(ex, viewer));
 }
 
 const repsToken = (s: SetSpec): string => {
@@ -118,10 +147,13 @@ const repsToken = (s: SetSpec): string => {
   return s.reps_target?.trim() ? s.reps_target : "—";
 };
 
+const repsTokens = (ex: ExerciseDraft): Tokens => ({
+  tokens: workingSpecs(ex).map(repsToken),
+  unit: "",
+});
+
 export function formatReps(ex: ExerciseDraft): string {
-  const tokens = workingSpecs(ex).map(repsToken);
-  if (tokens.length === 0) return "—";
-  return tokens.every((t) => t === tokens[0]) ? tokens[0] : tokens.join(" / ");
+  return joinTokens(repsTokens(ex));
 }
 
 export function formatSetCount(ex: ExerciseDraft): string {
@@ -136,15 +168,50 @@ function formatRoundCount(ex: ExerciseDraft): string {
   return `${n} ${n === 1 ? "round" : "rounds"}`;
 }
 
+function tokensForRule(
+  rule: ProgressionRule,
+  ex: ExerciseDraft,
+  viewer: UnitSystem,
+): Tokens | null {
+  if (rule.kind === "load") return loadTokens(ex, viewer);
+  if (rule.kind === "reps") return repsTokens(ex);
+  return null;
+}
+
 function formatForRule(
   rule: ProgressionRule,
   ex: ExerciseDraft,
   viewer: UnitSystem,
   inRounds: boolean,
 ): string {
-  if (rule.kind === "load") return formatLoads(ex, viewer);
-  if (rule.kind === "reps") return formatReps(ex);
+  const tokens = tokensForRule(rule, ex, viewer);
+  if (tokens) return joinTokens(tokens);
   return inRounds ? formatRoundCount(ex) : formatSetCount(ex);
+}
+
+/**
+ * One line per working set when the sets differ before or after the rule —
+ * each labelled by the set's own number (a round's, in a superset or circuit),
+ * so a warm-up ahead of them doesn't shift the count. Null when one line says
+ * it all.
+ */
+function perSetLines(
+  rule: ProgressionRule,
+  before: ExerciseDraft,
+  after: ExerciseDraft,
+  viewer: UnitSystem,
+  inRounds: boolean,
+): ProgressionPreviewSetLine[] | null {
+  const b = tokensForRule(rule, before, viewer);
+  const a = tokensForRule(rule, after, viewer);
+  if (!b || !a || b.tokens.length < 2) return null;
+  if (allEqual(b.tokens) && allEqual(a.tokens)) return null;
+  const numbers = workingSpecs(before).map((s) => s.set_number);
+  return b.tokens.map((token, i) => ({
+    label: `${inRounds ? "R" : "S"}${numbers[i] ?? i + 1}`,
+    before: token,
+    after: `${a.tokens[i] ?? "—"}${a.unit}`,
+  }));
 }
 
 export function buildPreviewRows(
@@ -173,6 +240,7 @@ export function buildPreviewRows(
             changed,
             before: formatForRule(rule, before, viewer, inRounds),
             after: changed ? formatForRule(rule, after, viewer, inRounds) : null,
+            perSet: changed ? perSetLines(rule, before, after, viewer, inRounds) : null,
           };
         });
       });

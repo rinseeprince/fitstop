@@ -14,7 +14,7 @@ import type { ProgressionPreviewSession } from "./progression-preview-model";
 
 // Presentational preview for the duplicate-week progression dialog: one
 // section per session, day by day, with per-exercise before → after diff
-// lines. Checkboxes appear only under the "Pick exercises" scope and toggle by
+// lines — one line, or one per set under the name when the sets differ. Checkboxes appear only under the "Pick exercises" scope and toggle by
 // scope KEY — the same exercise placed on two days moves together (identity
 // semantics).
 type ProgressionPreviewProps = {
@@ -47,26 +47,45 @@ export function ProgressionPreview({
             Day {session.dayIndex + 1} · {session.sessionName}
           </div>
           {session.rows.map((row) => (
-            <div key={row.uid} className="flex items-center gap-2 px-3 py-1.5">
-              {showCheckboxes && (
-                <Checkbox
-                  aria-label={`Include ${row.name} (Day ${session.dayIndex + 1})`}
-                  checked={selectedKeys.has(row.scopeKey)}
-                  onCheckedChange={() => onToggleKey(row.scopeKey)}
-                  className="h-3.5 w-3.5"
-                />
-              )}
-              <span className={cn("min-w-0 flex-1 truncate text-xs font-semibold", TEXT_PRIMARY)}>
-                {row.name}
-              </span>
-              {row.changed && row.after ? (
-                <span className={cn(MONO, "whitespace-nowrap text-[11px]")}>
-                  <span className={TEXT_SECONDARY}>{row.before}</span>
-                  <span className={TEXT_SECONDARY}> → </span>
-                  <span className="font-semibold text-[#0d9488]">{row.after}</span>
+            <div key={row.uid} className="px-3 py-1.5">
+              <div className="flex items-center gap-2">
+                {showCheckboxes && (
+                  <Checkbox
+                    aria-label={`Include ${row.name} (Day ${session.dayIndex + 1})`}
+                    checked={selectedKeys.has(row.scopeKey)}
+                    onCheckedChange={() => onToggleKey(row.scopeKey)}
+                    className="h-3.5 w-3.5"
+                  />
+                )}
+                <span className={cn("min-w-0 flex-1 truncate text-xs font-semibold", TEXT_PRIMARY)}>
+                  {row.name}
                 </span>
-              ) : (
-                <span className={CHIP_NEUTRAL_CLASS}>No change</span>
+                {row.changed && row.after ? (
+                  // One line when one value says it all; the per-set lines
+                  // below take over when the sets differ. A line that still
+                  // doesn't fit wraps — nothing spills past the card.
+                  row.perSet === null && (
+                    <span className={cn(MONO, "min-w-0 text-right text-[11px]")}>
+                      <span className={TEXT_SECONDARY}>{row.before}</span>
+                      <span className={TEXT_SECONDARY}> → </span>
+                      <span className="font-semibold text-[#0d9488]">{row.after}</span>
+                    </span>
+                  )
+                ) : (
+                  <span className={CHIP_NEUTRAL_CLASS}>No change</span>
+                )}
+              </div>
+              {row.perSet && (
+                <div className={cn(MONO, "mt-1 space-y-0.5 pl-4 text-[11px]")}>
+                  {row.perSet.map((line) => (
+                    <div key={line.label} className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="w-6 shrink-0 text-[#93b0b4]">{line.label}</span>
+                      <span className={TEXT_SECONDARY}>{line.before}</span>
+                      <span className={TEXT_SECONDARY}>→</span>
+                      <span className="font-semibold text-[#0d9488]">{line.after}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           ))}

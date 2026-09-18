@@ -1012,6 +1012,14 @@ NOT IN THIS COMMIT: the builder's column selector, presets and endurance inputs 
   top set, e1RM, volume or PR, and still counts in `actualSets` — leave it; charts are commit 16. The
   day summary's "X/Y exercises logged" counts exercise logs, not sets.
 
+*The coach's logged-workout view (owner, 2026-09-18, after the 11a smoke)* — the dialog on the Training tab's
+Data pane is today a fixed 672px with one "Prescribed" sentence per set beside Weight, Reps and RPE, which a run's
+distance, duration and pace can't fit. 11b builds it this way: one column per column the exercise prescribes, each
+cell showing the target above what the client did ("100–105 kg" over "102.5", "8-10" over "9", "7–8" over "8"), so
+strength stays four columns wide and a run shows Set, Distance, Duration, Pace; the dialog widens to the tray's
+780px, and an exercise's table scrolls sideways inside its own card when its columns still don't fit, with the Set
+column pinned; columns still follow the data, so anything logged that wasn't prescribed still shows.
+
 ### Commit 12 — Measurement columns and presets in the builder
 
 ```text

@@ -160,8 +160,11 @@ describe("DuplicateWeekDialog", () => {
     expect(screen.getByText("Duplicate Week 1")).toBeInTheDocument();
     // kg +2.5 changes only the absolute-loaded bench (compact-only curl has no kg loads)
     expect(screen.getByText("1 of 2 exercises change")).toBeInTheDocument();
-    expect(screen.getByText("100 / 90 / 90 kg")).toBeInTheDocument();
-    expect(screen.getByText("102.5 / 92.5 / 92.5 kg")).toBeInTheDocument();
+    // The bench's sets differ, so it reads one line per set under its name.
+    expect(screen.getAllByText(/^S\d+$/)).toHaveLength(3);
+    expect(screen.getByText("102.5 kg")).toBeInTheDocument();
+    expect(screen.getAllByText("92.5 kg")).toHaveLength(2);
+    expect(screen.queryByText("100 / 90 / 90 kg")).toBeNull();
     expect(screen.getByText("No change")).toBeInTheDocument(); // curl
     // surplus is deliberately not part of this feature
     expect(screen.queryByLabelText(/surplus/i)).toBeNull();
@@ -333,7 +336,7 @@ describe("DuplicateWeekDialog", () => {
     expect(screen.getByText("Day 1 · Push")).toBeInTheDocument();
     expect(screen.getByText("Day 1 · Pull")).toBeInTheDocument();
     expect(screen.getByText("2 of 3 exercises change")).toBeInTheDocument();
-    expect(screen.getByText("82.5 / 82.5 kg")).toBeInTheDocument();
+    expect(screen.getByText("82.5 kg")).toBeInTheDocument();
 
     fireEvent.click(commitButton());
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
