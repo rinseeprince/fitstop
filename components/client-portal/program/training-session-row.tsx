@@ -13,39 +13,30 @@ import { expandSetSpecs } from "@/utils/exercise-set-specs";
 import { buildPrescribedRows } from "@/utils/set-spec-rows";
 import {
   exerciseGroupPlace,
-  formatRoundReps,
   groupHeading,
   groupHeadingText,
   isLinkedGroup,
 } from "@/utils/exercise-group-display";
+import { resolvePrescribedFields } from "@/utils/prescribed-fields";
+import { formatPrescriptionSummary } from "@/utils/prescription-summary";
+import { useUnits } from "@/contexts/units-context";
 
 type Props = {
   session: ClientTrainingSessionEntry;
 };
 
-function formatReps(ex: ClientTrainingExercise): string | null {
-  if (ex.repsTarget) return ex.repsTarget;
-  if (ex.repsMin != null && ex.repsMax != null) {
-    return ex.repsMin === ex.repsMax
-      ? String(ex.repsMin)
-      : `${ex.repsMin}-${ex.repsMax}`;
-  }
-  if (ex.repsMin != null) return String(ex.repsMin);
-  if (ex.repsMax != null) return String(ex.repsMax);
-  return null;
-}
-
-function formatPrescription(ex: ClientTrainingExercise): string {
-  const reps = formatReps(ex);
-  const setsReps = reps ? `${ex.sets} x ${reps}` : `${ex.sets} sets`;
-  return ex.rpeTarget != null ? `${setsReps} @ RPE ${ex.rpeTarget}` : setsReps;
-}
-
-// Where an exercise's rows are a group's rounds, "4 x …" would read as sets:
-// its reps read round by round instead ("21-15-9 reps").
-function formatRoundsPrescription(ex: ClientTrainingExercise): string {
-  const reps = formatRoundReps(
-    buildPrescribedRows(
+// The one summary line every client surface reads (utils/prescription-summary.ts):
+// every prescribed column as a readout in the viewer's units, "3 × 8–12 · RPE 8 ·
+// 2m rest", "6 × 800 m · 3:45–3:50 /km". A superset or circuit reads its
+// exercises' rests off the group's heading, so an exercise in one shows no rest
+// of its own, and its reps round by round.
+function prescriptionLine(
+  ex: ClientTrainingExercise,
+  roundsAreRows: boolean,
+  viewer: ReturnType<typeof useUnits>["preference"],
+): string {
+  return formatPrescriptionSummary({
+    rows: buildPrescribedRows(
       expandSetSpecs({
         setSpecs: ex.setSpecs,
         sets: ex.sets,
@@ -57,13 +48,13 @@ function formatRoundsPrescription(ex: ClientTrainingExercise): string {
         restSeconds: ex.restSeconds,
       }),
     ),
-  );
-  const rpe = ex.rpeTarget != null ? `@ RPE ${ex.rpeTarget}` : null;
-  return [reps, rpe].filter(Boolean).join(" ");
+    fields: resolvePrescribedFields(ex.prescribedFields),
+    restSeconds: ex.restSeconds,
+    roundsAreRows,
+    viewer,
+  });
 }
 
-// A superset or circuit reads its exercises' rests off the group's heading, so
-// an exercise in one shows no rest of its own.
 function ExerciseItem({
   ex,
   roundsAreRows,
@@ -71,10 +62,8 @@ function ExerciseItem({
   ex: ClientTrainingExercise;
   roundsAreRows: boolean;
 }) {
-  const prescription = roundsAreRows
-    ? formatRoundsPrescription(ex)
-    : formatPrescription(ex);
-  const showRest = !roundsAreRows && ex.restSeconds != null;
+  const { preference } = useUnits();
+  const prescription = prescriptionLine(ex, roundsAreRows, preference);
   return (
     <li className="space-y-0.5">
       <p className="text-sm font-semibold text-foreground">{ex.name}</p>
@@ -82,20 +71,6 @@ function ExerciseItem({
         <p className="font-mono-display text-xs text-muted-foreground">
           {prescription}
         </p>
-      )}
-      {(ex.tempo || showRest) && (
-        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-          {ex.tempo && (
-            <span className="rounded-md bg-muted px-2 py-0.5 font-mono-display text-[11px] text-muted-foreground">
-              Tempo {ex.tempo}
-            </span>
-          )}
-          {showRest && (
-            <span className="rounded-md bg-muted px-2 py-0.5 font-mono-display text-[11px] text-muted-foreground">
-              Rest {ex.restSeconds}s
-            </span>
-          )}
-        </div>
       )}
     </li>
   );

@@ -640,6 +640,7 @@
   - **Read through `expandSetSpecs`, not the columns.** It returns authored specs when present and otherwise synthesizes N `working` specs from the compact columns, so every prescription yields per-set rows carrying a `set_type`. A reader that ignores `set_specs` sees a truthful but lossy summary — it loses warm-ups, AMRAP/drop/failure sets, per-set loads and per-set rest.
   - **Edits go through the shared kernel.** `applySetSpecEdit` (`utils/set-spec-edits.ts`) is the one pure editing path, used by both the builder hook and the assistant's server executors so they cannot drift. Its invariants are load-bearing: `MAX_SET_SPECS` 30, `MAX_WORKING_SETS` 20, never all-warmup, deleting the last set reverts `setSpecs` to `null` (never `[]`), and a no-op edit returns the same array reference so a blur can't silently materialize specs.
   - **Set type is coach-prescribed, never client-chosen.** `set_logs.set_type` is seeded from the prescription snapshot; the log schema accepts-but-ignores any client value. Analytics exclude `warmup` from every performance metric; the progression engine touches `working`-type sets only. **These two filters are deliberately different — don't unify them.**
+  - **A logged set's actuals are real columns, from one table** (migration 184). `set_logs` carries every measure a coach can prescribe — `reps`, `weight`, `rpe`, `rir`, `tempo`, `distance_meters`, `duration_seconds`, `pace_seconds_per_km`, `split_seconds_per_500m`, `calories`, `cadence`, `stroke_rate`, `resistance`, `heart_rate_zone`, `heart_rate`, `power`, `ftp_percent`, `rest_seconds` — nullable, each CHECKed to its target's limit and scaled to its resolution. `SET_LOG_MEASURES` (`utils/set-log-measures.ts`) is the one table: the migration test reads the migration against it, and the wire schema, the log writer, the row mapper and the client's boxes derive from it, so a measure is added there and in the next migration, never in a second list. No JSON bag and no key-value child table: the actuals are typed and charted (commit 16), and a set of seventeen columns is a closed set.
   - **Every exercise sits in a group (migration 178).** A session is an ordered list of groups, a group an ordered list of exercises; a lone exercise is a straight-sets group of one. Every clone/serialize/placement path carries the groups exactly — each group's format, settings and place, each exercise's place in its group — through the one row builder per tier (`services/coach-library-helpers.ts`, `services/training-group-writes.ts`); a path that rebuilt groups by default would silently erase a coach's supersets. A new path that saves or copies exercises joins `services/exercise-groups-survival.test.ts`. **Group edits go through one pure module**, `components/clients/training/program-builder/program-builder-groups.ts`, shared by the builder's mutators and the assistant's ops so the two cannot drift, and three rules hold after every edit: a group of one is a plain exercise with nothing set; in a superset or circuit every exercise has exactly one set per round, so changing how many sets one has is a change to the group's rounds, never to that exercise alone; and a group stores no setting its format doesn't use. The write schemas refuse anything else. Full model: `docs/ARCHITECTURE.md` → "Groups".
   - **`is_warmup` is retired from builder authoring**: it is still rendered in the client tracker, but its last writer (the legacy calendar drawer's add-exercise dialog) was deleted with the drawer — it now only round-trips through the draft/clone/serialize/placement paths, and must keep doing so; add no new UI for it.
   - **Days are positional, not weekdays.** The builder authors a weeks × Day-1-7 grid; placement writes `day_of_week: null` and places the whole program once as a sequential date-walk over its days. A day of a program is its `(week_index, order_index)`: its session rows, each at its place in the day (`day_order`, migration 180), or one rest row. Rest days are **real rows** (`is_rest = true`) that advance the walk and emit no `training_event` — "empty === rest". A missing rest row collapses the week and slides every later date. Read a program's rows as days through `programDays` (`utils/program-days.ts`), never row by row: a day can hold several rows. Never reintroduce weekday-derived scheduling or a 7-day repeat assumption.
@@ -956,25 +957,38 @@
   never stated one. That is exactly how pounds got stored as kilograms. Reject an
   untagged value; never guess it. Do not add a third tag.
 
-  ### Distance and time (training targets, migration 183)
+  ### Distance and time (training targets and actuals, migrations 183 and 184)
 
-  The per-set targets store their measures canonically, like weights and lengths.
-  Beside each storage unit is what a coach types and reads — nobody types or reads
-  the stored unit (owner, 2026-09-18):
+  The per-set targets and the logged actuals store their measures canonically,
+  like weights and lengths. Beside each storage unit is what a coach or a client
+  types and reads — nobody types or reads the stored unit (owner, 2026-09-18):
 
   | Measure | Stored as | Typed and read as |
   |---|---|---|
-  | Distance | metres (`distance_meters_*`) | km or miles by the viewer's units, a bare number; or with its unit ("400 m", "800 yd"); reads in m or yd under 1 km / 1 mile |
-  | Duration | seconds, to a tenth (`duration_seconds_*`) | hours and minutes — "2:00:00", "1h30", "90 min"; a bare number means minutes |
-  | Pace | seconds per km (`pace_seconds_per_km_*`) | minutes and seconds per km or mile by the viewer's units ("4:45 /km"); stored as typed, never worked out from distance and duration |
-  | Split | seconds per 500 m (`split_seconds_per_500m_*`) | m:ss per 500 m, for everyone |
-  | Calories, cadence, stroke rate, resistance, heart rate, power, % FTP | kcal, rpm or steps/min, strokes/min, the machine's level, bpm, watts, percent | the same |
-  | Load | kilograms, or a percentage by `load_type` | the viewer's unit, or % |
+  | Distance | metres, to a hundredth (`distance_meters_*`; `set_logs.distance_meters`) | km or miles by the viewer's units, a bare number; or with its unit, which wins whoever types it ("400 m", "800 yd", "3.1 mi"); reads "400 m" / "5.2 km", "800 yd" / "3.1 mi" — m or yd under 1 km / 1 mile |
+  | Duration | seconds, to a tenth (`duration_seconds_*`; `set_logs.duration_seconds`) | hours and minutes — "2:00:00", "45:00", "0:45", "2h", "1h30", "90 min", "45s", "6:45.3"; a bare number means minutes; reads "2:00:00" from an hour up, "45:00" below, a tenth kept |
+  | Pace | whole seconds per km (`pace_seconds_per_km_*`; `set_logs.pace_seconds_per_km`) | minutes and seconds per km or mile by the viewer's units unless the box says which ("4:45", "4:45 /km", "7:39 /mi"); reads "4:45 /km" / "7:39 /mi"; stored as typed, never worked out from distance and duration |
+  | Split | seconds per 500 m, to a tenth (`split_seconds_per_500m_*`; `set_logs.split_seconds_per_500m`) | m:ss per 500 m, for everyone ("1:52.3", "1:52.3 /500m") |
+  | HR zone | 1–5 | "2" or "Z2"; reads "Z2" |
+  | Calories, cadence, stroke rate, resistance, heart rate, power, % FTP | kcal, rpm or steps/min, strokes/min, the machine's level, bpm, watts, percent | the same; readouts add the word — "300 kcal", "28 spm", "150 bpm", "250 W", "80% FTP" (cadence and resistance stay bare) |
+  | Load | kilograms, or a percentage by `load_type`; a logged load is kilograms always (`set_logs.weight`) | the viewer's unit, or %; the client's box hints the target ("100–105 kg", "75–80% 1RM") and takes the kilograms or pounds they lifted |
 
-  The bounds are `SET_SPEC_MEASURES` (`utils/exercise-set-specs.ts`), the owner's limits
-  (distance to 1,000 km, duration to 24 h, pace 1:00–60:00 /km, split 0:30–10:00 /500 m,
-  RPE 1–10, RIR 0–10, HR zone 1–5, …). The app sends canonical values and there is no new
-  unit tag — the rule above stands. Any conversion a screen needs — the imperial distance
-  and pace, the `h:mm:ss` and `m:ss` forms — lives in `utils/unit-conversions.ts` when that
-  screen is built (commit 12's inputs, 11b's boxes); until then no screen shows an endurance
-  target and nothing converts. A box shows what it recorded when the person leaves it.
+  The bounds are `SET_SPEC_MEASURES` (`utils/exercise-set-specs.ts`) for a target and
+  `SET_LOG_MEASURES` (`utils/set-log-measures.ts`) for the logged actual — the owner's limits
+  alike (distance to 1,000 km, duration to 24 h, pace 1:00–60:00 /km, split 0:30–10:00 /500 m,
+  RPE 1–10, RIR 0–10, HR zone 1–5, …; a logged rep count keeps its floor of 1). An actual also
+  has a resolution (the scales above), which the wire schema refuses to exceed rather than
+  letting Postgres round a value quietly. The app sends canonical values and there is no new
+  unit tag — the rule above stands.
+
+  **Reading and writing a box.** Every conversion and every entry rule lives in
+  `utils/unit-conversions.ts`, once: `parseEntry(kind, text, viewer)` reads what was typed
+  and `formatEntry(kind, value, viewer)` is what a box shows when the person leaves it —
+  "120" becomes "2:00:00", "5.2" becomes "5.2 km", "4:45" becomes "4:45 /km" — and the
+  readout grammar every describing surface shares ("5 km", "3:45–3:50 /km", "RPE 7–8",
+  "250 W") is `utils/measure-readout.ts`. A box that can't be read keeps what was typed,
+  and the save refuses with the box named and focused. **Every box follows the weight rule
+  above:** it is seeded with its canonical value beside the string it shows, an untouched box
+  resubmits that value byte-identical, a dirty one is parsed from what is in it, and the
+  guard is per box, never per row (`components/client-portal/training/log-form-types.ts`).
+  Commit 12's builder inputs will speak the same grammar through the same two functions.

@@ -3,6 +3,7 @@ import {
   MAX_PRESCRIBED_ROWS,
   type PrescribedRow,
 } from "./set-spec-rows";
+import { pickLoggedActuals, type LoggedActuals } from "./set-log-measures";
 
 // The prescription paired with what was actually logged against it — the model
 // behind the coach's logged-workout readout.
@@ -19,15 +20,11 @@ import {
 // anything else would put a row beside a different spec from the one it was
 // typed against.
 
-/** What the client recorded for one set. Every field is optional detail. */
-type LoggedSetActuals = {
-  reps: number | null;
-  weight: number | null;
-  rpe: number | null;
-};
+/** What the client recorded for one set — every measure, null where nothing was. */
+type LoggedSetActuals = LoggedActuals;
 
 /** The minimum a caller must supply per logged set (a `SetLog` satisfies it). */
-export type LoggedSetInput = LoggedSetActuals & {
+export type LoggedSetInput = Partial<LoggedSetActuals> & {
   setNumber: number;
 };
 
@@ -44,7 +41,7 @@ export type LoggedSetRow = {
    * What was logged, or null for a prescribed set with no log — which renders
    * as NOT DONE rather than being omitted.
    *
-   * A non-null value with all three fields null is a different state and must
+   * A non-null value with every field null is a different state and must
    * stay distinguishable: the client ticked the set and recorded no numbers,
    * which is a truthful record of work done (per-set completion, locked
    * decision 3).
@@ -84,11 +81,7 @@ export function buildLoggedSetRows(
   for (const log of logs) {
     const index = log.setNumber - 1;
     if (!Number.isInteger(index) || index < 0 || index >= rowCount) continue;
-    byIndex.set(index, {
-      reps: log.reps,
-      weight: log.weight,
-      rpe: log.rpe,
-    });
+    byIndex.set(index, pickLoggedActuals(log));
   }
 
   const displayNumbers = buildSetDisplayNumbers(prescribedRows, rowCount);

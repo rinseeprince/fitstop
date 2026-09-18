@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { LOAD_KG_MAX } from "@/lib/constants";
 import {
   MAX_PROGRAM_DAYS,
   MAX_PROGRAM_SESSIONS,
@@ -26,6 +25,12 @@ import {
   type SetSpecMeasure,
 } from "@/utils/exercise-set-specs";
 import { PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
+import {
+  LOGGED_MEASURES,
+  SET_LOG_MEASURES,
+  type ActualNumberKey,
+  type LoggedMeasure,
+} from "@/utils/set-log-measures";
 import { programDays, programRowsIssue } from "@/utils/program-days";
 import type { TrainingPlan } from "@/types/training";
 
@@ -530,6 +535,33 @@ export type InlinePlanBody = z.infer<typeof inlinePlanBodySchema>;
 // that refuses a save recording no work; this is its wire half.
 const completionQualitySchema = z.enum(["full", "partial"]);
 
+// One actual per measure, from the one table of actuals
+// (utils/set-log-measures.ts): each key optional, bounded to its target's
+// limit and refused when finer than its column's scale, so this validator and
+// migration 184's CHECKs agree rather than Postgres rounding a value quietly.
+// Values are canonical with no unit tag — metres, seconds, seconds per km,
+// seconds per 500 m; `weight` alone still takes the exercise's REQUIRED
+// `weightUnit` (a non-web client logs in its own unit), applied by the writer.
+const atScale = (value: number, scale: number): boolean => {
+  const scaled = value * 10 ** scale;
+  return Math.abs(scaled - Math.round(scaled)) < 1e-6;
+};
+
+function actualSchema(measure: LoggedMeasure) {
+  const { floor, ceiling, integer, scale } = SET_LOG_MEASURES[measure];
+  const bounded = z.number().min(floor).max(ceiling);
+  const schema: z.ZodType<number, z.ZodTypeDef, number> = integer
+    ? bounded.int()
+    : bounded.refine((value) => atScale(value, scale), {
+        message: `${measure} is recorded to ${scale} decimal place${scale === 1 ? "" : "s"}`,
+      });
+  return schema.optional();
+}
+
+const actualsShape = Object.fromEntries(
+  LOGGED_MEASURES.map((measure) => [SET_LOG_MEASURES[measure].key, actualSchema(measure)]),
+) as Record<ActualNumberKey, z.ZodOptional<z.ZodType<number, z.ZodTypeDef, number>>>;
+
 const setPerformanceSchema = z.object({
   // 1-based index into the FLATTENED prescription (buildPrescribedRows output),
   // never the position in this array and never the spec's own set_number: a drop
@@ -538,14 +570,12 @@ const setPerformanceSchema = z.object({
   // prescribedRows[setNumber - 1] to stamp the coach-prescribed set_type.
   //
   // There is NO `completed` flag. The client sends exactly the sets it
-  // completed; presence in this array IS completion. A set with no reps, weight
-  // or RPE is still a set that was done.
+  // completed; presence in this array IS completion. A set with no value at
+  // all is still a set that was done.
   setNumber: z.number().int().min(1).max(MAX_PRESCRIBED_ROWS),
-  reps: z.number().int().min(1).max(100).optional(),
-  // Canonical kilograms (migration 141). Unlike setSpecSchema.load_value above,
-  // this field is never a percentage, so it can carry the named kg bound.
-  weight: z.number().min(0).max(LOAD_KG_MAX).optional(),
-  rpe: z.number().min(1).max(10).optional(),
+  ...actualsShape,
+  // The one non-numeric actual: the tempo used, on the four-phase grammar.
+  tempo: tempoSchema.optional(),
   // Accepted-but-ignored: set_type is coach-prescribed, derived server-side from
   // the prescription snapshot's set_specs at log time (never chosen by the
   // client). Present only so an echo/restore round-trip doesn't fail validation.

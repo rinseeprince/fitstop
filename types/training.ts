@@ -1,6 +1,7 @@
 
 import type { SetSpec, SetType } from "@/utils/exercise-set-specs";
 import type { PrescribedField } from "@/utils/prescribed-fields";
+import type { LoggedActuals } from "@/utils/set-log-measures";
 import type { GroupSettings } from "@/utils/exercise-groups";
 
 // Training plan split types
@@ -358,7 +359,9 @@ export type SessionLog = {
   updatedAt: string;
 };
 
-// Camel-case mirror of a set_logs row.
+// Camel-case mirror of a set_logs row: its identity, then every actual the
+// set can carry (utils/set-log-measures.ts, migration 184), null where nothing
+// was recorded.
 export type SetLog = {
   id: string;
   exerciseLogId: string;
@@ -366,9 +369,7 @@ export type SetLog = {
   // Coach-prescribed set type, seeded from the prescription's set_specs at log
   // time (set_logs.set_type). Defaults to 'working'.
   setType: SetType;
-  reps: number | null;
-  weight: number | null;
-  rpe: number | null;
+} & LoggedActuals & {
   createdAt: string;
   updatedAt: string;
 };

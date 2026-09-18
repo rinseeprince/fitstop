@@ -51,7 +51,14 @@ import type {
   TrainingExerciseGroup,
   TrainingSessionHeader,
 } from "@/types/training";
-import { toCanonicalWeightKg } from "@/utils/unit-conversions";
+// The one table of actuals (migration 184): the row mapper reads and the
+// writer writes every measure through it, so a column added there reaches
+// both without a second list. The wire's weight tag is applied inside it.
+import {
+  actualsFromSetLogRow,
+  actualsFromWire,
+  setLogColumnsFromActuals,
+} from "@/utils/set-log-measures";
 // The shared mapper, deliberately. A local copy of this function lived here and
 // silently omitted set_specs and video_url, so every read through
 // getTrainingEventDetail lost the per-set prescription — loads, per-set rest and
@@ -185,9 +192,7 @@ function mapSetLogRow(row: SetLogRow): SetLog {
     exerciseLogId: row.exercise_log_id,
     setNumber: row.set_number,
     setType: (row.set_type as SetType) ?? "working",
-    reps: row.reps,
-    weight: row.weight,
-    rpe: row.rpe,
+    ...actualsFromSetLogRow(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -765,17 +770,12 @@ async function writeSessionLog(params: {
           // from the first three specs.
           set_number: s.setNumber,
           set_type: prescribedRows[s.setNumber - 1]?.setType ?? "working",
-          reps: s.reps ?? null,
-          // set_logs.weight is canonical kilograms (migration 141) and no longer
-          // carries a tag, so the payload's unit is applied HERE and then
-          // discarded.
-          //
-          // The web client now converts before sending and always tags "kg"
-          // (log-form-types.ts), so this is an identity for that caller. It is
-          // kept because the wire schema still accepts a tag and the React
-          // Native client is entitled to send one.
-          weight: toCanonicalWeightKg(s.weight ?? undefined, ex.weightUnit) ?? null,
-          rpe: s.rpe ?? null,
+          // Every measure the set carries, through the one table of actuals;
+          // the wire's weight is canonical kilograms from here on (its REQUIRED
+          // per-exercise tag applied inside actualsFromWire and then discarded —
+          // the web form converts before sending and always tags "kg", the React
+          // Native client is entitled to send lbs).
+          ...setLogColumnsFromActuals(actualsFromWire(s, ex.weightUnit)),
         });
       });
     });

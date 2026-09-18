@@ -8,6 +8,7 @@ import type {
 } from "@/types/training";
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import { SetTracker } from "./set-tracker";
+import { emptyLoggedActuals } from "@/utils/set-log-measures";
 
 // jsdom doesn't implement ResizeObserver; Radix UI primitives need it.
 class ResizeObserverStub {
@@ -798,7 +799,7 @@ describe("SetTracker", () => {
         performedName: "Removed Row",
         prescribedExerciseSnapshot: { name: "Removed Row" },
         sets: [
-          { id: "sl-1", exerciseLogId: "elog-1", setType: "working", setNumber: 1, reps: 9, weight: null, rpe: 8, createdAt: ISO, updatedAt: ISO },
+          { id: "sl-1", exerciseLogId: "elog-1", setType: "working", ...emptyLoggedActuals(), setNumber: 1, reps: 9, weight: null, rpe: 8, createdAt: ISO, updatedAt: ISO },
         ],
         createdAt: ISO,
         updatedAt: ISO,
@@ -811,9 +812,9 @@ describe("SetTracker", () => {
     expect(screen.getAllByTestId("exercise-tracker-block")).toHaveLength(1);
     expect(screen.queryByText("Unplanned")).toBeNull();
     // Its prescription reads off the snapshot's own keys...
-    expect(screen.getByLabelText("Set 1 reps")).toHaveAttribute("placeholder", "8-10");
+    expect(screen.getByLabelText("Set 1 reps")).toHaveAttribute("placeholder", "8–10");
     expect(screen.getByLabelText("Set 1 RPE")).toHaveAttribute("placeholder", "8");
-    expect(screen.getByLabelText("Set 2 reps")).toHaveAttribute("placeholder", "8-10");
+    expect(screen.getByLabelText("Set 2 reps")).toHaveAttribute("placeholder", "8–10");
     // ...and the logged set sits on its row, banked.
     expect(screen.getByLabelText("Set 1 reps")).toHaveValue("9");
     expect(screen.getAllByTestId("set-row")[0]).toHaveAttribute("data-completed", "true");
@@ -1376,6 +1377,7 @@ describe("SetTracker", () => {
             id: "sl-1",
             exerciseLogId: "elog-1",
             setType: "working",
+            ...emptyLoggedActuals(),
             setNumber: 1,
             reps: 10,
             weight: 100,
@@ -1387,6 +1389,7 @@ describe("SetTracker", () => {
             id: "sl-2",
             exerciseLogId: "elog-1",
             setType: "working",
+            ...emptyLoggedActuals(),
             setNumber: 2,
             reps: 10,
             weight: 105,
@@ -1398,6 +1401,7 @@ describe("SetTracker", () => {
             id: "sl-3",
             exerciseLogId: "elog-1",
             setType: "working",
+            ...emptyLoggedActuals(),
             setNumber: 3,
             reps: 8,
             weight: 105,
@@ -1716,6 +1720,7 @@ describe("SetTracker", () => {
             id: "sl-1",
             exerciseLogId: "elog-row",
             setType: "working",
+            ...emptyLoggedActuals(),
             setNumber: 2,
             reps: 10,
             weight: 60,

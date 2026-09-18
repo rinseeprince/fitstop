@@ -77,7 +77,7 @@ function FormHarness({ exercise }: { exercise: PrescribedExerciseView }) {
   );
 }
 
-describe("prescribed load column", () => {
+describe("the load box's hint", () => {
   const spec = (over: Record<string, unknown>) => ({
     set_number: 1,
     set_type: "working",
@@ -93,7 +93,7 @@ describe("prescribed load column", () => {
     ...over,
   });
 
-  it("renders an absolute load in its own read-only cell, not on the weight input", () => {
+  it("hints an absolute load on the weight box, in the viewer's unit", () => {
     const exercise = makeExercise({
       sets: 2,
       setSpecs: [
@@ -103,12 +103,10 @@ describe("prescribed load column", () => {
     });
     render(<FormHarness exercise={exercise} />);
 
-    expect(screen.getByTestId("prescribed-load-0-0")).toHaveTextContent("100 kg");
-    // The weight box is the CLIENT's entry, always in their unit, never the
-    // prescription — a percentage could not live there.
-    expect(screen.getAllByLabelText(/weight/i)[0]).not.toHaveAttribute(
-      "placeholder",
-    );
+    // Load's box IS the weight box: the coach's target is its hint, the client
+    // types the kilograms they lifted. There is no separate read-only Load cell.
+    expect(screen.queryByTestId("prescribed-load-0-0")).toBeNull();
+    expect(screen.getAllByLabelText(/weight/i)[0]).toHaveAttribute("placeholder", "100 kg");
   });
 
   it("renders a percentage prescription as a percentage", () => {
@@ -117,12 +115,52 @@ describe("prescribed load column", () => {
       setSpecs: [spec({ load_type: "pct_1rm", load_min: 60, load_max: 60 })] as never,
     });
     render(<FormHarness exercise={exercise} />);
-    expect(screen.getByTestId("prescribed-load-0-0")).toHaveTextContent("60% 1RM");
+    expect(screen.getAllByLabelText(/weight/i)[0]).toHaveAttribute("placeholder", "60% 1RM");
   });
 
-  it("shows a dash when the coach prescribed no load", () => {
+  it("hints nothing when the coach prescribed no load", () => {
     render(<FormHarness exercise={makeExercise({ sets: 2 })} />);
-    expect(screen.getByTestId("prescribed-load-0-0")).toHaveTextContent("—");
+    expect(screen.getAllByLabelText(/weight/i)[0]).toHaveAttribute("placeholder", "");
+  });
+
+  it("shows no weight box at all when Load is not among the exercise's columns", () => {
+    render(
+      <FormHarness
+        exercise={makeExercise({ sets: 2, prescribedFields: ["set_type", "reps", "rpe", "rest"] })}
+      />,
+    );
+    expect(screen.queryAllByLabelText(/weight/i)).toHaveLength(0);
+    expect(screen.getAllByLabelText(/reps/i)).toHaveLength(2);
+  });
+
+  it("gives an endurance exercise one box per column, hinting each target in the viewer's units", () => {
+    const exercise = makeExercise({
+      sets: 1,
+      prescribedFields: ["set_type", "distance", "duration", "pace", "heart_rate_zone", "rest"],
+      setSpecs: [
+        spec({
+          reps_min: null,
+          reps_max: null,
+          rpe_min: null,
+          rpe_max: null,
+          distance_meters_min: 5000,
+          distance_meters_max: 5000,
+          duration_seconds_min: 1500,
+          duration_seconds_max: 1620,
+          pace_seconds_per_km_min: 300,
+          pace_seconds_per_km_max: 320,
+          heart_rate_zone_min: 3,
+          heart_rate_zone_max: 3,
+        }),
+      ] as never,
+    });
+    render(<FormHarness exercise={exercise} />);
+    expect(screen.queryAllByLabelText(/weight/i)).toHaveLength(0);
+    expect(screen.queryAllByLabelText(/reps/i)).toHaveLength(0);
+    expect(screen.getByLabelText("Set 1 distance")).toHaveAttribute("placeholder", "5 km");
+    expect(screen.getByLabelText("Set 1 duration")).toHaveAttribute("placeholder", "25:00–27:00");
+    expect(screen.getByLabelText("Set 1 pace")).toHaveAttribute("placeholder", "5:00–5:20 /km");
+    expect(screen.getByLabelText("Set 1 HR zone")).toHaveAttribute("placeholder", "Z3");
   });
 
   it("gives every set its OWN reps hint rather than one exercise-level range", () => {
@@ -136,9 +174,9 @@ describe("prescribed load column", () => {
     });
     render(<FormHarness exercise={exercise} />);
     const reps = screen.getAllByLabelText(/reps/i);
-    expect(reps[0]).toHaveAttribute("placeholder", "15-20");
-    expect(reps[1]).toHaveAttribute("placeholder", "10-12");
-    expect(reps[2]).toHaveAttribute("placeholder", "8-10");
+    expect(reps[0]).toHaveAttribute("placeholder", "15–20");
+    expect(reps[1]).toHaveAttribute("placeholder", "10–12");
+    expect(reps[2]).toHaveAttribute("placeholder", "8–10");
   });
 
   it("expands a drop set into its top set plus one row per drop", () => {
@@ -156,7 +194,8 @@ describe("prescribed load column", () => {
     });
     render(<FormHarness exercise={exercise} />);
     expect(screen.getAllByTestId("set-row")).toHaveLength(3);
-    expect(screen.getByTestId("prescribed-load-0-1")).toHaveTextContent("60 kg");
-    expect(screen.getByTestId("prescribed-load-0-2")).toHaveTextContent("40 kg");
+    const weights = screen.getAllByLabelText(/weight/i);
+    expect(weights[1]).toHaveAttribute("placeholder", "60 kg");
+    expect(weights[2]).toHaveAttribute("placeholder", "40 kg");
   });
 });

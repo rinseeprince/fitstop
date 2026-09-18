@@ -4,41 +4,57 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { LogFormValues } from "./log-form-types";
 import { useUnits } from "@/contexts/units-context";
-import { formatLoad } from "@/utils/unit-conversions";
-import { formatRepsRange } from "@/utils/reps-range";
-import {
-  formatPrescribedLoad,
-  formatPrescribedRpe,
-  type PrescribedRow,
-} from "@/utils/set-spec-rows";
+import type { UnitSystem } from "@/utils/unit-conversions";
+import { formatMeasureReadout } from "@/utils/measure-readout";
+import { formatTargetReadout } from "@/utils/target-range";
+import type { PrescribedRow } from "@/utils/set-spec-rows";
 import type { PrescribedField } from "@/utils/prescribed-fields";
+import { BOX_WORDS, boxEntry, type LoggedBox } from "@/utils/set-log-measures";
 
 // The header row and every set row share this grid and must not drift, so the
-// template is derived once from the same field set both are given.
+// template is derived once from the same box list both are given.
 //
-// Set and Weight have no toggle. Set is the row's identity, and Weight is the
-// CLIENT's entry rather than a prescription column — it is what they lifted, and
-// hiding it would stop collecting the data every strength metric is built from.
-// Of the five prescribed fields only reps, load and rpe are columns; set_type
-// gates the row tag and rest gates the timer between rows.
+// One box per column the coach prescribes (utils/set-log-measures.ts): the
+// coach's target is the box's hint and the client types what they did. Load's
+// box is the weight box — what they lifted, with the prescribed load as its
+// hint — so Weight shows only when Load is on; there is no separate read-only
+// Load cell. Set is the row's identity and is never a box; set_type gates the
+// row's tag and rest gates the timer between rows.
 //
-// The tick is not a prescribed field either — it is the CLIENT's claim that the
-// set was done, and it exists only in the log form. `withTick` is decided once,
-// by the grid, and handed to both the header and every row for that reason.
+// The tick is not a prescribed column either — it is the CLIENT's claim that
+// the set was done, and it exists only in the log form. `withTick` is decided
+// once, by the grid, and handed to both the header and every row for that
+// reason.
 export const SET_GRID_BASE = "grid items-center gap-2";
 
-export function setGridTemplate(
-  fields: ReadonlySet<PrescribedField>,
-  withTick: boolean,
-): string {
-  const columns = withTick ? ["32px", "44px"] : ["44px"];
-  if (fields.has("load")) columns.push("minmax(0,0.9fr)");
-  columns.push("minmax(0,1.1fr)");
-  if (fields.has("reps")) columns.push("minmax(0,1fr)");
-  if (fields.has("rpe")) columns.push("minmax(0,0.7fr)");
+/** A box never narrower than its widest reading ("3:45–3:50 /km"); the grid scrolls sideways past that. */
+const BOX_COLUMN = "minmax(96px,1fr)";
+const TICK_COLUMN_PX = 32;
+const SET_COLUMN_PX = 44;
+const GAP_PX = 8;
+
+export function setGridTemplate(boxes: readonly LoggedBox[], withTick: boolean): string {
+  const columns = withTick ? [`${TICK_COLUMN_PX}px`, `${SET_COLUMN_PX}px`] : [`${SET_COLUMN_PX}px`];
+  for (let i = 0; i < boxes.length; i++) columns.push(BOX_COLUMN);
   columns.push("56px");
   return columns.join(" ");
 }
+
+/**
+ * The tick and Set cells stay put while the boxes scroll: sticky against the
+ * grid's scrolling wrapper, each at its own offset, with an opaque background
+ * so the boxes slide under them. The banked tint is an opaque approximation of
+ * the row's translucent one, because a sticky cell cannot be see-through.
+ */
+export function pinnedCellClass(offsetPx: number, banked: boolean): string {
+  // Literal class names, never interpolated: Tailwind only emits what it can
+  // read in the source, so the one non-zero offset is spelled out.
+  return `sticky z-[1] ${banked ? "bg-[#f5fbfa]" : "bg-white"} ${
+    offsetPx === 0 ? "left-0" : "left-[40px]"
+  }`;
+}
+/** The Set cell's offset behind the tick: the tick column plus the grid's gap. */
+export const SET_CELL_OFFSET_PX = TICK_COLUMN_PX + GAP_PX;
 
 // Every non-working set carries its type, the way Hevy and Strong tag them: a
 // single letter beside the set number. Working sets are untagged because they
@@ -65,11 +81,56 @@ function SetTypeTag({ row }: { row?: PrescribedRow }) {
   );
 }
 
+/**
+ * The coach's target as the box's hint: a range reads with an en dash ("7–8",
+ * "100–105 kg", "3:45–3:50 /km"). Boxes whose header already carries the word
+ * (reps, RPE, RIR, cadence, resistance) hint the bare number; the converting
+ * and unit-bearing measures hint with their unit, which is also how the box
+ * reads back what it recorded.
+ */
+function boxHint(
+  box: LoggedBox,
+  prescribed: PrescribedRow | undefined,
+  viewer: UnitSystem,
+): string {
+  if (!prescribed) return "";
+  switch (box) {
+    case "tempo":
+      return prescribed.tempo ?? "";
+    case "reps":
+      return prescribed.repsTarget ?? formatTargetReadout(prescribed.ranges.reps) ?? "";
+    case "rpe":
+    case "rir":
+    case "cadence":
+    case "resistance":
+      return formatTargetReadout(prescribed.ranges[box]) ?? "";
+    case "load":
+      return formatMeasureReadout("load", prescribed.ranges.load, viewer, prescribed.loadType) ?? "";
+    default:
+      return formatMeasureReadout(box, prescribed.ranges[box], viewer) ?? "";
+  }
+}
+
+function inputModeFor(box: LoggedBox): "numeric" | "decimal" | "text" {
+  switch (boxEntry(box)) {
+    case "number":
+      return box === "reps" || box === "calories" || box === "cadence" || box === "stroke_rate" || box === "heart_rate" || box === "power"
+        ? "numeric"
+        : "decimal";
+    case "load":
+      return "decimal";
+    default:
+      return "text";
+  }
+}
+
 type SetRowProps = {
   setNumber: number;
   /** "Round" where the exercise's rows are a group's rounds. */
   rowNoun?: "Set" | "Round";
-  /** Which prescription columns this exercise uses. */
+  /** The exercise's boxes, in the columns' order — decided by the grid. */
+  boxes: readonly LoggedBox[];
+  /** Which prescription columns this exercise uses (for the set-type tag). */
   fields: ReadonlySet<PrescribedField>;
   /**
    * This row's own prescription. Undefined for a set the CLIENT added beyond
@@ -86,10 +147,13 @@ type SetRowProps = {
   completed?: boolean;
   onToggleComplete?: () => void;
   /**
-   * Fired after a value field loses focus, so the row can auto-tick itself
-   * (locked decision 2). A client recording numbers never touches a tick.
+   * Fired after a box loses focus, naming the box, so the row can show what it
+   * recorded and auto-tick itself (locked decision 2). A client recording
+   * numbers never touches a tick.
    */
-  onBlurRow?: () => void;
+  onBlurBox?: (box: LoggedBox) => void;
+  /** The box the last save could not read, if any: it is marked and focused. */
+  invalidBox?: LoggedBox | null;
   onCopyPrevious?: () => void;
   canCopyPrevious?: boolean;
   onRemove?: () => void;
@@ -97,16 +161,16 @@ type SetRowProps = {
 
 // Compose the auto-tick onto react-hook-form's own blur handler rather than
 // replacing it — RHF's runs the field's validation and touched-state bookkeeping.
-function withAutoTick(
+function withBlur(
   field: UseFormRegisterReturn,
-  onBlurRow: (() => void) | undefined,
+  onBlur: (() => void) | undefined,
 ): UseFormRegisterReturn {
-  if (!onBlurRow) return field;
+  if (!onBlur) return field;
   return {
     ...field,
     onBlur: async (event) => {
       await field.onBlur(event);
-      onBlurRow();
+      onBlur();
     },
   };
 }
@@ -114,6 +178,7 @@ function withAutoTick(
 export function SetRow({
   setNumber,
   rowNoun = "Set",
+  boxes,
   fields,
   prescribed,
   register,
@@ -122,7 +187,8 @@ export function SetRow({
   withTick,
   completed,
   onToggleComplete,
-  onBlurRow,
+  onBlurBox,
+  invalidBox,
   onCopyPrevious,
   canCopyPrevious,
   onRemove,
@@ -130,29 +196,8 @@ export function SetRow({
   // The client's own unit. It used to arrive as a prop carrying a mapper
   // constant, so every client logged under a "kg" label whatever they preferred.
   const { preference } = useUnits();
-  const loadUnit = formatLoad(0, preference).unit;
   const editable =
     register !== undefined && exerciseIndex != null && setIndex != null;
-
-  // Load is the coach's INSTRUCTION and is never fillable — it may be a
-  // percentage, which cannot share a box with the kilograms the client logs.
-  // A value or a range ("100–105 kg", "70–75% 1RM"). Absolute loads snap here
-  // (formatLoad, not displayLoad) because this is a read-only readout, not an
-  // editable field that could round-trip the snap.
-  const loadText = prescribed
-    ? formatPrescribedLoad(
-        prescribed,
-        (kg) => String(formatLoad(kg, preference).value),
-        loadUnit,
-      )
-    : null;
-
-  const repsPlaceholder = prescribed
-    ? prescribed.repsTarget ??
-      formatRepsRange({ min: prescribed.repsMin, max: prescribed.repsMax })
-    : "";
-  // The coach's RPE, one value or a range ("7–8"), as the box's hint.
-  const rpePlaceholder = prescribed ? (formatPrescribedRpe(prescribed) ?? "") : "";
 
   // Banked rows read as done: muted, but never disabled. A client who ticks a
   // set and then remembers the weight has to be able to type it in.
@@ -168,7 +213,12 @@ export function SetRow({
   const valueClass = banked ? "text-[#5a7d82]" : "";
 
   const setCell = (
-    <div className="flex items-center justify-center gap-1">
+    <div
+      className={`flex h-full items-center justify-center gap-1 ${pinnedCellClass(
+        withTick === true ? SET_CELL_OFFSET_PX : 0,
+        banked,
+      )}`}
+    >
       {/* A drop shares its top set's number, so repeating it would read as a
           duplicate — the tag alone identifies the row. */}
       <span
@@ -185,19 +235,18 @@ export function SetRow({
       <div
         data-testid="set-row"
         className={`${SET_GRID_BASE} px-3 py-2`}
-        style={{ gridTemplateColumns: setGridTemplate(fields, false) }}
+        style={{ gridTemplateColumns: setGridTemplate(boxes, false) }}
       >
         {setCell}
-        {fields.has("load") && <ReadOnlyCell text={loadText} />}
-        <ReadOnlyCell text={null} />
-        {fields.has("reps") && <ReadOnlyCell text={repsPlaceholder || null} />}
-        {fields.has("rpe") && <ReadOnlyCell text={rpePlaceholder || null} />}
+        {boxes.map((box) => (
+          <ReadOnlyCell key={box} text={boxHint(box, prescribed, preference) || null} />
+        ))}
         <span />
       </div>
     );
   }
 
-  const namePrefix = `exercises.${exerciseIndex}.sets.${setIndex}` as const;
+  const namePrefix = `exercises.${exerciseIndex}.sets.${setIndex}.entries` as const;
   const showCopy = setIndex > 0 && onCopyPrevious !== undefined;
 
   return (
@@ -207,10 +256,10 @@ export function SetRow({
       className={`${SET_GRID_BASE} px-3 py-2 ${
         banked ? "rounded-[6px] bg-[rgba(13,148,136,0.04)]" : ""
       }`}
-      style={{ gridTemplateColumns: setGridTemplate(fields, withTick === true) }}
+      style={{ gridTemplateColumns: setGridTemplate(boxes, withTick === true) }}
     >
       {withTick === true && (
-        <div className="flex items-center justify-center">
+        <div className={`flex h-full items-center justify-center ${pinnedCellClass(0, banked)}`}>
           <Checkbox
             checked={banked}
             onCheckedChange={() => onToggleComplete?.()}
@@ -223,51 +272,19 @@ export function SetRow({
 
       {setCell}
 
-      {fields.has("load") && (
-        <div
-          className={`truncate text-center text-[12px] font-mono-display ${
-            banked ? "text-[#93b0b4]" : "text-[#5a7d82]"
-          }`}
-          data-testid={`prescribed-load-${exerciseIndex}-${setIndex}`}
-        >
-          {loadText ?? "—"}
-        </div>
-      )}
-
-      <div className="relative">
+      {boxes.map((box) => (
         <Input
-          {...withAutoTick(register(`${namePrefix}.weight`), onBlurRow)}
-          inputMode="decimal"
+          key={box}
+          {...withBlur(register(`${namePrefix}.${box}`), onBlurBox ? () => onBlurBox(box) : undefined)}
+          inputMode={inputModeFor(box)}
           type="text"
-          aria-label={`${rowNoun} ${setNumber} weight`}
-          className={`h-9 pr-9 text-center text-[13px] font-mono-display ${valueClass}`}
-        />
-        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
-          {loadUnit}
-        </span>
-      </div>
-
-      {fields.has("reps") && (
-        <Input
-          {...withAutoTick(register(`${namePrefix}.reps`), onBlurRow)}
-          inputMode="numeric"
-          type="text"
-          placeholder={repsPlaceholder}
-          aria-label={`${rowNoun} ${setNumber} reps`}
+          placeholder={boxHint(box, prescribed, preference)}
+          aria-label={`${rowNoun} ${setNumber} ${BOX_WORDS[box]}`}
+          aria-invalid={invalidBox === box || undefined}
+          data-testid={`box-${box}-${exerciseIndex}-${setIndex}`}
           className={`h-9 text-center text-[13px] font-mono-display ${valueClass}`}
         />
-      )}
-
-      {fields.has("rpe") && (
-        <Input
-          {...withAutoTick(register(`${namePrefix}.rpe`), onBlurRow)}
-          inputMode="decimal"
-          type="text"
-          placeholder={rpePlaceholder}
-          aria-label={`${rowNoun} ${setNumber} RPE`}
-          className={`h-9 text-center text-[13px] font-mono-display ${valueClass}`}
-        />
-      )}
+      ))}
 
       <div className="flex items-center justify-end gap-1">
         {onRemove ? (

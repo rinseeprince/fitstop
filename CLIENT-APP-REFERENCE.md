@@ -435,7 +435,7 @@ type TrainingEventDetail = {
     | { source: "snapshot"; snapshot: Record<string, unknown> } // prescribed_session_snapshot
   groups: ResolvedExerciseGroup[] // the workout, in order
   sessionLog: SessionLog | null
-  exerciseLogs: ExerciseLog[]
+  exerciseLogs: ExerciseLog[] // each with `sets: SetLog[]` — every measure the set recorded, by the log payload's keys (reps, weight in kg, rpe, rir, tempo, distanceMeters, …, restSeconds), null where nothing was
 }
 
 type ResolvedExerciseGroup = {
@@ -508,8 +508,32 @@ type LogTrainingEventInput = {
     trainingExerciseId?: string
     exerciseId?: string
     exerciseName: string
-    sets: Array<{ setNumber, reps?, weight?, rpe?, setType? }>
-    weightUnit: "lbs" | "kg"
+    sets: Array<{
+      setNumber: number             // 1-based index into the flattened setSpecs
+      // One actual per measure the coach can prescribe (migration 184), each
+      // optional, CANONICAL and bounded to its target's limit. Omit what was
+      // not recorded; a value finer than its resolution is a 400.
+      reps?: number                 // 1–100, whole
+      weight?: number               // in `weightUnit` — the ONE tagged value
+      rpe?: number                  // 1–10, to a tenth
+      rir?: number                  // 0–10, to a tenth
+      tempo?: string                // "3-1-X-0": four phases, seconds or X
+      distanceMeters?: number       // 1–1,000,000 m, to a hundredth
+      durationSeconds?: number      // 0.1–86,400 s, to a tenth
+      paceSecondsPerKm?: number     // 60–3,600 s/km, whole — per km even for an imperial client
+      splitSecondsPer500m?: number  // 30–600 s/500 m, to a tenth
+      calories?: number             // 1–5,000 kcal, whole
+      cadence?: number              // 1–300, whole
+      strokeRate?: number           // 1–150, whole
+      resistance?: number           // 0–100, to a tenth
+      heartRateZone?: number        // 1–5
+      heartRate?: number            // 30–250 bpm, whole
+      power?: number                // 1–3,000 W, whole
+      ftpPercent?: number           // 1–300, to a tenth
+      restSeconds?: number          // 0–3,600 s, whole: the rest the client TOOK, from the app's timer
+      setType?: string              // accepted and ignored
+    }>
+    weightUnit: "lbs" | "kg"        // applies to `weight` alone
     notes?: string
     skipped?: boolean         // sets may be empty only when skipped === true
   }>
@@ -533,6 +557,25 @@ type LogTrainingEventInput = {
 > logged. To remove a log, call `DELETE` on the same path.
 
 > **RN contract — `setType` is coach-prescribed, never client-chosen.** The schema accepts a `setType` per set and the server **ignores it**: `set_logs.set_type` is seeded from the prescription snapshot. Do not build a set-type picker.
+
+> **RN contract — one box per column, canonical on the wire (migration 184).** Render one box
+> per name in the exercise's `prescribedFields`, set type and rest aside, with the coach's
+> target as its hint, and nothing else: no column adds, fills or works out another. Load's box
+> is the weight box — no `load` column, no weight box. The client types in THEIR units and
+> the app converts before sending: kilometres or miles to metres, hours and minutes to
+> seconds, a pace per km or per mile to seconds per km (stored as typed, never worked out
+> from distance and duration), a split to seconds per 500 m; round to the resolution above
+> or the save is a 400. A unit the client types ("400 m", "800 yd", "7:39 /mi") wins over
+> their preference. Rest has no box: send `restSeconds` from the rest timer when the app ran
+> one. The web client's grammar is `parseEntry` / `formatEntry` (`utils/unit-conversions.ts`)
+> and the one table of actuals is `utils/set-log-measures.ts`.
+
+> **RN contract — any value counts, and a save never erases a value.** A set with any box
+> filled is a set that was done: send it. Reopening a logged workout must put EVERY value the
+> log carries back in its boxes — `exerciseLogs[].sets[]` carries them all, under these same
+> keys, null where nothing was recorded — and an untouched box must resend the stored value
+> exactly rather than re-parsing what it displayed, because a save full-replaces the log's
+> sets and a value the form does not resend is gone.
 
 ### CheckIn
 ```typescript

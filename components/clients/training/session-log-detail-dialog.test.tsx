@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SessionLogDetailDialog } from "./session-log-detail-dialog";
+import { emptyLoggedActuals } from "@/utils/set-log-measures";
 import type {
   SessionLog,
   ExerciseLog,
@@ -71,6 +72,7 @@ function makeSetLog(overrides: Partial<SetLog> = {}): SetLog {
     exerciseLogId: "el-1",
     setNumber: 1,
     setType: "working",
+    ...emptyLoggedActuals(),
     reps: 10,
     weight: 60,
     rpe: null,

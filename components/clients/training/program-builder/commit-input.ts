@@ -1,5 +1,10 @@
 import { LOAD_KG_MAX } from "@/lib/constants";
-import { kgToLbs, lbsToKg, type UnitSystem } from "@/utils/unit-conversions";
+import {
+  formatLoadEntry,
+  kgToLbs,
+  lbsToKg,
+  type UnitSystem,
+} from "@/utils/unit-conversions";
 import {
   formatTargetRange,
   parseTargetRange,
@@ -66,8 +71,6 @@ export const commitRange = (
   return { changed: true, range: parsed };
 };
 
-const round1 = (n: number): number => Math.round(n * 10) / 10;
-
 /**
  * The string an absolute load is SEEDED with, in the viewer's unit.
  *
@@ -83,10 +86,7 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 export const displayLoad = (
   valueKg: number | null | undefined,
   viewer: UnitSystem,
-): string =>
-  valueKg == null
-    ? ""
-    : String(round1(viewer === "imperial" ? kgToLbs(valueKg) : valueKg));
+): string => (valueKg == null ? "" : formatLoadEntry(valueKg, viewer));
 
 const toDisplayNumber = (valueKg: number | null | undefined, viewer: UnitSystem) =>
   valueKg == null ? null : Number(displayLoad(valueKg, viewer));

@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import {
   useFieldArray,
+  useFormState,
   useWatch,
   type Control,
   type UseFormGetValues,
@@ -19,6 +20,7 @@ import { PrescribedSetGrid } from "./prescribed-set-grid";
 import { ExerciseSearchInput } from "./exercise-search-input";
 import {
   emptySet,
+  isRowFilled,
   prescribedRowsForView,
   type LogFormValues,
 } from "./log-form-types";
@@ -27,12 +29,11 @@ import {
   resolvePrescribedFields,
   type PrescribedField,
 } from "@/utils/prescribed-fields";
-import {
-  formatRestDuration,
-  formatRoundReps,
-  LONE_EXERCISE,
-  type ExerciseGroupPlace,
-} from "@/utils/exercise-group-display";
+import { LONE_EXERCISE, type ExerciseGroupPlace } from "@/utils/exercise-group-display";
+import { useUnits } from "@/contexts/units-context";
+import { formatEntry, parseEntry } from "@/utils/unit-conversions";
+import { boxEntry, LOGGED_BOXES, type LoggedBox } from "@/utils/set-log-measures";
+import { formatPrescriptionSummary } from "@/utils/prescription-summary";
 
 export type PrescribedExerciseView = {
   id: string;
@@ -100,12 +101,18 @@ export function ExerciseTrackerBlock({
     [exercise],
   );
   const fields = resolvePrescribedFields(exercise.prescribedFields);
-  // Where rows are rounds, "3 × …" would read as sets and the exercise's own
-  // rest isn't the one that follows its rows: the line reads its reps round by
-  // round instead.
-  const summary = place.roundsAreRows
-    ? formatRoundsSummary(exercise, prescribedRows)
-    : formatSummary(exercise, formatRepsHint(exercise));
+  const { preference } = useUnits();
+  // Every prescribed measure as a readout, in the viewer's units: "3 × 8–12 ·
+  // 100–105 kg · RPE 7–8 · 1m 30s rest", "6 × 800 m · 3:45–3:50 /km". Where
+  // rows are rounds the line reads its reps round by round and no rest of its
+  // own, which is the group's to say.
+  const summary = formatPrescriptionSummary({
+    rows: prescribedRows,
+    fields,
+    restSeconds: exercise.restSeconds,
+    roundsAreRows: place.roundsAreRows,
+    viewer: preference,
+  });
 
   if (!formContext) {
     return (
@@ -196,6 +203,15 @@ function FormModeBlock({
     name: `exercises.${index}.sets`,
   });
 
+  const { preference } = useUnits();
+  // The box the last save could not read, per row, so it can be marked.
+  const { errors } = useFormState({ control, name: `exercises.${index}.sets` });
+  const invalidBoxAt = (row: number): LoggedBox | null => {
+    const boxErrors = errors.exercises?.[index]?.sets?.[row]?.entries;
+    if (!boxErrors) return null;
+    return LOGGED_BOXES.find((box) => boxErrors[box] != null) ?? null;
+  };
+
   const initialNotes = getValues(`exercises.${index}.notes`) ?? "";
   const [notesOpen, setNotesOpen] = useState(initialNotes.trim().length > 0);
   const [swapping, setSwapping] = useState(false);
@@ -248,24 +264,21 @@ function FormModeBlock({
     const sets = getValues(`exercises.${index}.sets`);
     for (let m = rowIndex - 1; m >= 0; m--) {
       const s = sets[m];
-      if (!s) continue;
-      if (s.reps.trim() || s.weight.trim() || s.rpe.trim()) {
-        setValue(`exercises.${index}.sets.${rowIndex}.reps`, s.reps, {
+      if (!s || !isRowFilled(s)) continue;
+      // Every box, as it reads on the row above: what is copied is what the
+      // client sees there, so the copied row parses exactly as if they had typed
+      // it.
+      for (const box of LOGGED_BOXES) {
+        setValue(`exercises.${index}.sets.${rowIndex}.entries.${box}`, s.entries[box], {
           shouldDirty: true,
         });
-        setValue(`exercises.${index}.sets.${rowIndex}.weight`, s.weight, {
-          shouldDirty: true,
-        });
-        setValue(`exercises.${index}.sets.${rowIndex}.rpe`, s.rpe, {
-          shouldDirty: true,
-        });
-        // Copying IS entering a value — it fills the row without ever firing a
-        // blur, so without this the commonest gesture in the form leaves rows
-        // full of numbers and unticked, which is precisely what the auto-tick
-        // exists to prevent.
-        setCompleted(rowIndex, true);
-        return;
       }
+      // Copying IS entering a value — it fills the row without ever firing a
+      // blur, so without this the commonest gesture in the form leaves rows
+      // full of numbers and unticked, which is precisely what the auto-tick
+      // exists to prevent.
+      setCompleted(rowIndex, true);
+      return;
     }
   };
 
@@ -273,12 +286,24 @@ function FormModeBlock({
   // set, so a client recording numbers never touches a tick. Only ever ticks —
   // clearing a field does NOT untick, because a banked set with empty fields is
   // a legitimate record (decision 3).
-  const handleRowBlur = (row: number) => {
+  const handleBoxBlur = (row: number, box: LoggedBox) => {
     const s = getValues(`exercises.${index}.sets.${row}`);
-    if (!s || s.completed) return;
-    if (s.reps.trim() || s.weight.trim() || s.rpe.trim()) {
-      setCompleted(row, true);
+    if (!s) return;
+    // A box shows what it recorded when the client leaves it: "120" reads back
+    // as "2:00:00", "400" as "400 m" or "0.4 km" — never a second grammar. A
+    // box that can't be read keeps what was typed; the save names it.
+    const text = s.entries[box];
+    if (text.trim()) {
+      const kind = boxEntry(box);
+      const parsed = parseEntry(kind, text, preference);
+      if (parsed !== null) {
+        const shown = formatEntry(kind, parsed, preference);
+        if (shown !== text) {
+          setValue(`exercises.${index}.sets.${row}.entries.${box}`, shown, { shouldDirty: true });
+        }
+      }
     }
+    if (!s.completed && isRowFilled(s)) setCompleted(row, true);
   };
 
   const completedCount = watchedSets.filter((s) => s?.completed === true).length;
@@ -289,9 +314,7 @@ function FormModeBlock({
   };
 
   function isSetFilled(row: number): boolean {
-    const s = watchedSets[row];
-    if (!s) return false;
-    return Boolean(s.reps?.trim() || s.weight?.trim() || s.rpe?.trim());
+    return isRowFilled(watchedSets[row]);
   }
 
   function canCopyAt(row: number): boolean {
@@ -421,7 +444,8 @@ function FormModeBlock({
           exerciseIndex={index}
           isCompleted={isCompleted}
           onToggleComplete={(row) => setCompleted(row, !isCompleted(row))}
-          onRowBlur={handleRowBlur}
+          onBlurBox={handleBoxBlur}
+          invalidBox={invalidBoxAt}
           onRemove={remove}
           // Only rows the client appended PAST the prescription. Removing a
           // prescribed row shifts every later row down and stamps it from the
@@ -502,33 +526,3 @@ function UnplannedBadge() {
   );
 }
 
-function formatRepsHint(e: PrescribedExerciseView): string | undefined {
-  if (e.repsTarget) return e.repsTarget;
-  if (e.repsMin != null && e.repsMax != null) return `${e.repsMin}-${e.repsMax}`;
-  if (e.repsMin != null) return `${e.repsMin}+`;
-  return undefined;
-}
-
-function formatSummary(
-  e: PrescribedExerciseView,
-  repsHint: string | undefined,
-): string {
-  const parts: string[] = [];
-  if (e.sets > 0) {
-    parts.push(repsHint ? `${e.sets} × ${repsHint}` : `${e.sets} sets`);
-  }
-  if (e.rpeTarget != null) parts.push(`@ RPE ${e.rpeTarget}`);
-  if (e.restSeconds != null) parts.push(`${formatRestDuration(e.restSeconds)} rest`);
-  return parts.join(" · ");
-}
-
-function formatRoundsSummary(
-  e: PrescribedExerciseView,
-  rows: PrescribedRow[],
-): string {
-  const parts: string[] = [];
-  const reps = formatRoundReps(rows);
-  if (reps) parts.push(reps);
-  if (e.rpeTarget != null) parts.push(`@ RPE ${e.rpeTarget}`);
-  return parts.join(" · ");
-}

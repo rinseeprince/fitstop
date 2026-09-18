@@ -20,6 +20,7 @@ import { canEditDay } from "@/lib/daily-log-permissions";
 import { toast } from "sonner";
 import { logTrainingEventSchema } from "@/lib/validations/training";
 import { EMPTY_TRAINING_LOG_MESSAGE } from "@/lib/training-log-content";
+import { BOX_LABELS } from "@/utils/set-log-measures";
 import type { Client } from "@/types/check-in";
 import type {
   ResolvedExercise,
@@ -306,6 +307,8 @@ function TrainingLogForm({
     setValue,
     getValues,
     handleSubmit,
+    setError,
+    setFocus,
     formState: { isSubmitting, dirtyFields },
   } = useForm<LogFormValues>({ defaultValues });
 
@@ -320,23 +323,39 @@ function TrainingLogForm({
 
   const onSubmit = async (values: LogFormValues) => {
     if (!editable) return; // locked day — server also rejects with 403
-    // Per WEIGHT FIELD, not per row: editing a set's reps must not cause its
-    // untouched weight to round-trip through the rounded display string.
-    const base = buildLogPayload(
+    // Per BOX, not per row: editing a set's reps must not cause its untouched
+    // distance to round-trip through the display string.
+    const result = buildLogPayload(
       values,
       preference,
-      (exIndex, setIndex) =>
-        Boolean(dirtyFields.exercises?.[exIndex]?.sets?.[setIndex]?.weight),
+      (exIndex, setIndex, box) =>
+        Boolean(dirtyFields.exercises?.[exIndex]?.sets?.[setIndex]?.entries?.[box]),
       prescribedRowsByIndex,
     );
-    if (base === null) {
-      // The footer already says this and holds the button; the toast is the
-      // belt for a submit that reached here another way.
+    if (!result.ok) {
+      if (result.reason === "nothing") {
+        // The footer already says this and holds the button; the toast is the
+        // belt for a submit that reached here another way.
+        toast.error("Couldn't save workout", {
+          description: EMPTY_TRAINING_LOG_MESSAGE,
+        });
+        return;
+      }
+      // A box the grammar can't read, or a value outside its column's limit:
+      // the box is marked and focused and the message names it, so the client
+      // goes to it rather than hunting for "some invalid input".
+      const { exerciseIndex, setIndex, box } = result;
+      const path = `exercises.${exerciseIndex}.sets.${setIndex}.entries.${box}` as const;
+      const exerciseName =
+        values.exercises[exerciseIndex]?.exerciseName ?? "this exercise";
+      setError(path, { type: "manual", message: `Check ${BOX_LABELS[box]}` });
+      setFocus(path);
       toast.error("Couldn't save workout", {
-        description: EMPTY_TRAINING_LOG_MESSAGE,
+        description: `${BOX_LABELS[box]} on ${exerciseName}, set ${setIndex + 1}, isn't something it can read.`,
       });
       return;
     }
+    const base = result.payload;
     const parsed = logTrainingEventSchema.safeParse(base);
     if (!parsed.success) {
       toast.error("Couldn't save workout", {

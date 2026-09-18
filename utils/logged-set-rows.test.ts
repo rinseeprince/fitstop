@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { SetSpec } from "./exercise-set-specs";
 import { buildPrescribedRows, MAX_PRESCRIBED_ROWS } from "./set-spec-rows";
+import { emptyLoggedActuals } from "./set-log-measures";
 import { buildLoggedSetRows, type LoggedSetInput } from "./logged-set-rows";
 
 function spec(overrides: Partial<SetSpec> & { set_number: number }): SetSpec {
@@ -69,7 +70,7 @@ describe("buildLoggedSetRows", () => {
 
     expect(rows).toHaveLength(4);
     expect(rows[3].prescribed?.dropIndex).toBe(2);
-    expect(rows[3].actual).toEqual({ reps: 6, weight: 40, rpe: null });
+    expect(rows[3].actual).toEqual({ ...emptyLoggedActuals(), reps: 6, weight: 40 });
     // The three drop rows all display the top set's number.
     expect(rows.map((r) => r.displayNumber)).toEqual([1, 2, 2, 2]);
     expect(rows.filter((r) => r.actual !== null)).toHaveLength(1);
@@ -83,7 +84,7 @@ describe("buildLoggedSetRows", () => {
 
     expect(rows).toHaveLength(8);
     expect(rows[7].prescribed).toBeNull();
-    expect(rows[7].actual).toEqual({ reps: 6, weight: 50, rpe: null });
+    expect(rows[7].actual).toEqual({ ...emptyLoggedActuals(), reps: 6, weight: 50 });
     // Row 7 is neither prescribed nor logged — an appended row's gap.
     expect(rows[6].prescribed).toBeNull();
     expect(rows[6].actual).toBeNull();
@@ -93,8 +94,8 @@ describe("buildLoggedSetRows", () => {
     const rows = buildLoggedSetRows(SIX_ROWS, [log({ setNumber: 2 })]);
 
     // Doing the work is the claim; recording numbers is a bonus. The row exists
-    // with all three values null, which must not read as "not done".
-    expect(rows[1].actual).toEqual({ reps: null, weight: null, rpe: null });
+    // with every value null, which must not read as "not done".
+    expect(rows[1].actual).toEqual(emptyLoggedActuals());
     expect(rows[2].actual).toBeNull();
   });
 

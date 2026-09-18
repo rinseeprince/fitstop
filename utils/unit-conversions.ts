@@ -9,9 +9,10 @@ import type { UnitPreference } from "@/types/check-in";
  * a formatter takes the stored value plus the VIEWER's preference and there is
  * no per-record unit to pass.
  *
- * `KG_PER_LB` and `CM_PER_IN` are the only unit-conversion factors in this
- * file, deliberately: the codebase previously held four conflicting lbs↔kg
- * constants (2.205, 2.20462, 0.453592, and /2.205 inside SQL).
+ * `KG_PER_LB`, `CM_PER_IN`, `METERS_PER_MILE` and `METERS_PER_YARD` are the
+ * only unit-conversion factors in this file, deliberately: the codebase
+ * previously held four conflicting lbs↔kg constants (2.205, 2.20462, 0.453592,
+ * and /2.205 inside SQL).
  * `INCHES_PER_FOOT` and `IMPERIAL_LOAD_INCREMENT_LB` are not conversion
  * factors — one is composite-unit arithmetic, the other a plate increment.
  *
@@ -173,7 +174,7 @@ export function formatHeight(valueCm: number, viewer: UnitSystem): HeightDisplay
  *
  * Distinct from `parseWeightToKg`, which takes the VIEWER's preference: this
  * takes a `"lbs" | "kg"` tag travelling on the wire beside the value. Exactly
- * one caller remains — `services/training-log-service.ts`, for
+ * one caller remains — `actualsFromWire` in `utils/set-log-measures.ts`, for
  * `logTrainingEventSchema`'s REQUIRED `weightUnit` field, which exists so a
  * non-web client (React Native) can log in its own unit. The web log form
  * converts first and sends `"kg"` (`log-form-types.ts`).
@@ -236,4 +237,321 @@ export function toUnitSystem(value: string | null | undefined): UnitSystem {
     );
   }
   return "metric";
+}
+
+// ---------------------------------------------------------------------------
+// Distance and time (CONVENTIONS section 20, migrations 183 and 184)
+//
+// Storage is canonical: metres, seconds, seconds per kilometre, seconds per
+// 500 m. Nobody types or reads the stored unit. What a box takes and what it
+// shows back are decided here, once, for every box that converts or formats —
+// the client's log form today, the builder's endurance inputs in commit 12 —
+// so the grammar a client learns is the grammar every screen speaks.
+//
+// `METERS_PER_MILE` and `METERS_PER_YARD` are the only distance factors in
+// the codebase, for the same reason `KG_PER_LB` is the only mass one.
+// ---------------------------------------------------------------------------
+
+/** Exact, by definition of the international mile. */
+export const METERS_PER_MILE = 1609.344;
+/** Exact, by definition of the international yard. */
+export const METERS_PER_YARD = 0.9144;
+const YARDS_PER_MILE = 1760;
+
+/**
+ * The grammars a box can speak. A measure names one in
+ * `utils/set-log-measures.ts`; `parseEntry` / `formatEntry` dispatch on it.
+ */
+export type EntryKind =
+  | "load"
+  | "number"
+  | "distance"
+  | "duration"
+  | "pace"
+  | "split"
+  | "zone"
+  | "tempo";
+
+const roundTo = (n: number, scale: number): number => {
+  const factor = 10 ** scale;
+  return Math.round(n * factor) / factor;
+};
+
+/** "5", "5.2", "4.99": a number with up to `scale` decimals and no trailing zeros. */
+const trimmed = (n: number, scale: number): string => String(roundTo(n, scale));
+
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+
+/**
+ * Seconds as a clock: "m:ss", with a tenth when there is one ("6:45.3").
+ * Minutes run past 59 ("75:00"); an hour-carrying form is `formatDuration`.
+ */
+function clock(seconds: number): string {
+  const total = roundTo(seconds, 1);
+  const minutes = Math.floor(total / 60);
+  const rest = roundTo(total - minutes * 60, 1);
+  const whole = Math.floor(rest);
+  const tenth = Math.round((rest - whole) * 10);
+  return `${minutes}:${pad2(whole)}${tenth > 0 ? `.${tenth}` : ""}`;
+}
+
+// --- Distance ---------------------------------------------------------------
+
+const DISTANCE_RE =
+  /^(\d+(?:\.\d+)?)\s*(m|metre|metres|meter|meters|km|kilometre|kilometres|kilometer|kilometers|yd|yard|yards|mi|mile|miles)?$/i;
+
+const DISTANCE_UNIT: Record<string, number> = {
+  m: 1,
+  metre: 1,
+  metres: 1,
+  meter: 1,
+  meters: 1,
+  km: 1000,
+  kilometre: 1000,
+  kilometres: 1000,
+  kilometer: 1000,
+  kilometers: 1000,
+  yd: METERS_PER_YARD,
+  yard: METERS_PER_YARD,
+  yards: METERS_PER_YARD,
+  mi: METERS_PER_MILE,
+  mile: METERS_PER_MILE,
+  miles: METERS_PER_MILE,
+};
+
+/**
+ * What a client typed as a distance → canonical metres to a hundredth, or
+ * null when it is not a distance. A bare number is kilometres, or miles for an
+ * imperial viewer; a unit typed in the box wins over the viewer's units, so
+ * "400 m" and "800 yd" read the same for everyone.
+ */
+export function parseDistance(text: string, viewer: UnitSystem): number | null {
+  const match = DISTANCE_RE.exec(text.trim());
+  if (!match) return null;
+  const unit = (match[2] ?? (viewer === "imperial" ? "mi" : "km")).toLowerCase();
+  return roundTo(Number(match[1]) * DISTANCE_UNIT[unit], 2);
+}
+
+/**
+ * Canonical metres as the viewer reads them: metres under a kilometre and
+ * kilometres from one up ("400 m", "5.2 km"); yards under a mile and miles
+ * from one up for an imperial viewer ("800 yd", "3.1 mi").
+ */
+export function formatDistance(metres: number, viewer: UnitSystem): string {
+  if (viewer === "imperial") {
+    const yards = metres / METERS_PER_YARD;
+    if (yards < YARDS_PER_MILE) return `${Math.round(yards)} yd`;
+    return `${trimmed(metres / METERS_PER_MILE, 2)} mi`;
+  }
+  if (metres < 1000) return `${Math.round(metres)} m`;
+  return `${trimmed(metres / 1000, 2)} km`;
+}
+
+// --- Duration ---------------------------------------------------------------
+
+const HMS_RE = /^(\d+):(\d{1,2}):(\d{1,2}(?:\.\d)?)$/;
+const MS_RE = /^(\d+):(\d{1,2}(?:\.\d)?)$/;
+const HOURS_RE =
+  /^(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s*(?:(\d+)\s*(?:m|min|mins|minute|minutes)?)?$/i;
+const MINUTES_RE = /^(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)$/i;
+const SECONDS_RE = /^(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)$/i;
+const BARE_NUMBER_RE = /^(\d+(?:\.\d+)?)$/;
+
+/**
+ * What a client typed as a duration → canonical seconds to a tenth, or null
+ * when it is not one. Hours and minutes: "2:00:00", "45:00", "0:45", "2h",
+ * "1h30", "90 min", "45s", "6:45.3". A bare number means minutes, so "120" is
+ * a two-hour run; seconds need a colon or an s.
+ */
+export function parseDuration(text: string): number | null {
+  const raw = text.trim();
+  let seconds: number | null = null;
+
+  const hms = HMS_RE.exec(raw);
+  const ms = hms ? null : MS_RE.exec(raw);
+  if (hms) {
+    const [, h, m, s] = hms;
+    if (Number(m) >= 60 || Number(s) >= 60) return null;
+    seconds = Number(h) * 3600 + Number(m) * 60 + Number(s);
+  } else if (ms) {
+    const [, m, s] = ms;
+    if (Number(s) >= 60) return null;
+    seconds = Number(m) * 60 + Number(s);
+  } else {
+    const hours = HOURS_RE.exec(raw);
+    const minutes = hours ? null : MINUTES_RE.exec(raw);
+    const secs = hours || minutes ? null : SECONDS_RE.exec(raw);
+    const bare = hours || minutes || secs ? null : BARE_NUMBER_RE.exec(raw);
+    if (hours) seconds = Number(hours[1]) * 3600 + Number(hours[2] ?? 0) * 60;
+    else if (minutes) seconds = Number(minutes[1]) * 60;
+    else if (secs) seconds = Number(secs[1]);
+    else if (bare) seconds = Number(bare[1]) * 60;
+  }
+
+  return seconds == null ? null : roundTo(seconds, 1);
+}
+
+/**
+ * Canonical seconds as a client reads them: "2:00:00" from an hour up,
+ * "45:00" below, a tenth kept when there is one ("6:45.3").
+ */
+export function formatDuration(seconds: number): string {
+  const total = roundTo(seconds, 1);
+  if (total < 3600) return clock(total);
+  const hours = Math.floor(total / 3600);
+  const rest = total - hours * 3600;
+  const minutes = Math.floor(rest / 60);
+  return `${hours}:${pad2(minutes)}:${clock(rest - minutes * 60).slice(2)}`;
+}
+
+// --- Pace --------------------------------------------------------------------
+
+const PACE_RE = /^(\d+):(\d{1,2})\s*(?:\/\s*(km|mi|mile))?$/i;
+
+/**
+ * What a client typed as a pace → canonical whole seconds per kilometre, or
+ * null. Minutes and seconds, per kilometre or per mile by the viewer's units
+ * unless the box says which ("4:45", "4:45 /km", "7:39 /mi"). Stored as typed,
+ * never worked out from distance and duration.
+ */
+export function parsePace(text: string, viewer: UnitSystem): number | null {
+  const match = PACE_RE.exec(text.trim());
+  if (!match) return null;
+  const [, minutes, seconds, unitRaw] = match;
+  if (Number(seconds) >= 60) return null;
+  const perUnit = Number(minutes) * 60 + Number(seconds);
+  const perMile = unitRaw ? unitRaw.toLowerCase() !== "km" : viewer === "imperial";
+  return Math.round(perMile ? (perUnit * 1000) / METERS_PER_MILE : perUnit);
+}
+
+/** Canonical seconds per km as the viewer reads them: "4:45 /km" or "7:39 /mi". */
+export function formatPace(secondsPerKm: number, viewer: UnitSystem): string {
+  if (viewer === "imperial") {
+    return `${clock(Math.round((secondsPerKm * METERS_PER_MILE) / 1000))} /mi`;
+  }
+  return `${clock(Math.round(secondsPerKm))} /km`;
+}
+
+// --- Split -------------------------------------------------------------------
+
+const SPLIT_RE = /^(\d+):(\d{1,2}(?:\.\d)?)\s*(?:\/\s*500\s*m)?$/i;
+
+/** What a client typed as an erg split → canonical seconds per 500 m to a tenth, or null. */
+export function parseSplit(text: string): number | null {
+  const match = SPLIT_RE.exec(text.trim());
+  if (!match) return null;
+  const [, minutes, seconds] = match;
+  if (Number(seconds) >= 60) return null;
+  return roundTo(Number(minutes) * 60 + Number(seconds), 1);
+}
+
+/** Seconds per 500 m as everyone reads them: "1:52.3 /500m". */
+export function formatSplit(secondsPer500m: number): string {
+  return `${clock(secondsPer500m)} /500m`;
+}
+
+// --- Heart-rate zone -------------------------------------------------------------
+
+const ZONE_RE = /^z?\s*(\d)$/i;
+
+/** "2" or "Z2" → 2; anything else is null (the bound is the validator's). */
+export function parseZone(text: string): number | null {
+  const match = ZONE_RE.exec(text.trim());
+  return match ? Number(match[1]) : null;
+}
+
+export function formatZone(zone: number): string {
+  return `Z${zone}`;
+}
+
+// --- Load and plain numbers ----------------------------------------------------
+
+/**
+ * The string an editable absolute load is seeded with, in the viewer's unit —
+ * one decimal, UNSNAPPED. Not `formatLoad`: a snap seeded into an editable
+ * box would round-trip into storage the first time someone tabbed through it.
+ * `program-builder/commit-input.ts`'s `displayLoad` is this function.
+ */
+export function formatLoadEntry(valueKg: number, viewer: UnitSystem): string {
+  return String(roundTo(viewer === "imperial" ? kgToLbs(valueKg) : valueKg, 1));
+}
+
+/** A load typed in the viewer's unit → canonical kilograms to a hundredth, or null. */
+function parseLoadEntry(text: string, viewer: UnitSystem): number | null {
+  const match = BARE_NUMBER_RE.exec(text.trim());
+  if (!match) return null;
+  return roundTo(parseWeightToKg(Number(match[1]), viewer), 2);
+}
+
+function parseNumberEntry(text: string): number | null {
+  const match = BARE_NUMBER_RE.exec(text.trim());
+  return match ? Number(match[1]) : null;
+}
+
+// --- The dispatch a box goes through ----------------------------------------------
+
+/**
+ * What a box's text means, canonically, or null when it cannot be read. An
+ * empty box is the caller's to notice first: it means "not recorded", not a
+ * reading failure. A tempo is returned as typed — its grammar is the
+ * validator's (`TEMPO_PATTERN`).
+ */
+export function parseEntry(
+  kind: EntryKind,
+  text: string,
+  viewer: UnitSystem,
+): number | string | null {
+  switch (kind) {
+    case "load":
+      return parseLoadEntry(text, viewer);
+    case "number":
+      return parseNumberEntry(text);
+    case "distance":
+      return parseDistance(text, viewer);
+    case "duration":
+      return parseDuration(text);
+    case "pace":
+      return parsePace(text, viewer);
+    case "split":
+      return parseSplit(text);
+    case "zone":
+      return parseZone(text);
+    case "tempo": {
+      const trimmedText = text.trim();
+      return trimmedText === "" ? null : trimmedText;
+    }
+  }
+}
+
+/**
+ * What a box shows for a canonical value — the form the client sees when they
+ * leave the box, and the form a logged value reopens as. Every string this
+ * returns is readable by `parseEntry`, at the display's precision: an imperial
+ * distance or load rounds for reading, which is why an untouched box resubmits
+ * the value it was seeded with rather than re-parsing what it shows.
+ */
+export function formatEntry(
+  kind: EntryKind,
+  value: number | string,
+  viewer: UnitSystem,
+): string {
+  if (typeof value === "string") return value;
+  switch (kind) {
+    case "load":
+      return formatLoadEntry(value, viewer);
+    case "number":
+      return String(value);
+    case "distance":
+      return formatDistance(value, viewer);
+    case "duration":
+      return formatDuration(value);
+    case "pace":
+      return formatPace(value, viewer);
+    case "split":
+      return formatSplit(value);
+    case "zone":
+      return formatZone(value);
+    case "tempo":
+      return String(value);
+  }
 }

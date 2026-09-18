@@ -2243,35 +2243,80 @@ export type Database = {
       }
       set_logs: {
         Row: {
+          cadence: number | null
+          calories: number | null
           created_at: string
+          distance_meters: number | null
+          duration_seconds: number | null
           exercise_log_id: string
+          ftp_percent: number | null
+          heart_rate: number | null
+          heart_rate_zone: number | null
           id: string
+          pace_seconds_per_km: number | null
+          power: number | null
           reps: number | null
+          resistance: number | null
+          rest_seconds: number | null
+          rir: number | null
           rpe: number | null
           set_number: number
           set_type: string
+          split_seconds_per_500m: number | null
+          stroke_rate: number | null
+          tempo: string | null
           updated_at: string
           weight: number | null
         }
         Insert: {
+          cadence?: number | null
+          calories?: number | null
           created_at?: string
+          distance_meters?: number | null
+          duration_seconds?: number | null
           exercise_log_id: string
+          ftp_percent?: number | null
+          heart_rate?: number | null
+          heart_rate_zone?: number | null
           id?: string
+          pace_seconds_per_km?: number | null
+          power?: number | null
           reps?: number | null
+          resistance?: number | null
+          rest_seconds?: number | null
+          rir?: number | null
           rpe?: number | null
           set_number: number
           set_type?: string
+          split_seconds_per_500m?: number | null
+          stroke_rate?: number | null
+          tempo?: string | null
           updated_at?: string
           weight?: number | null
         }
         Update: {
+          cadence?: number | null
+          calories?: number | null
           created_at?: string
+          distance_meters?: number | null
+          duration_seconds?: number | null
           exercise_log_id?: string
+          ftp_percent?: number | null
+          heart_rate?: number | null
+          heart_rate_zone?: number | null
           id?: string
+          pace_seconds_per_km?: number | null
+          power?: number | null
           reps?: number | null
+          resistance?: number | null
+          rest_seconds?: number | null
+          rir?: number | null
           rpe?: number | null
           set_number?: number
           set_type?: string
+          split_seconds_per_500m?: number | null
+          stroke_rate?: number | null
+          tempo?: string | null
           updated_at?: string
           weight?: number | null
         }

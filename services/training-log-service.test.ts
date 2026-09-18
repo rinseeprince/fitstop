@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { setLogColumnsFromActuals, emptyLoggedActuals } from "@/utils/set-log-measures";
+
+// Every column migration 184 added, unrecorded: what a strength set writes
+// beside its reps, weight and RPE.
+const { reps: _r, weight: _w, rpe: _p, ...NULL_ACTUALS } = setLogColumnsFromActuals(emptyLoggedActuals());
+
 
 // Mock supabase-admin before importing the service.
 vi.mock("./supabase-admin", () => ({
@@ -445,9 +451,9 @@ describe("logTrainingEvent", () => {
     expect(setLogsInsertQ.insert).toHaveBeenCalledTimes(1);
     const setRows = setLogsInsertQ.insert.mock.calls[0][0];
     expect(setRows).toEqual([
-      { exercise_log_id: "el-a", set_number: 1, set_type: "working", reps: 10, weight: 100, rpe: null },
-      { exercise_log_id: "el-a", set_number: 2, set_type: "working", reps: 10, weight: 105, rpe: null },
-      { exercise_log_id: "el-a", set_number: 3, set_type: "working", reps: 8, weight: 105, rpe: null },
+      { exercise_log_id: "el-a", set_number: 1, set_type: "working", reps: 10, weight: 100, rpe: null, ...NULL_ACTUALS },
+      { exercise_log_id: "el-a", set_number: 2, set_type: "working", reps: 10, weight: 105, rpe: null, ...NULL_ACTUALS },
+      { exercise_log_id: "el-a", set_number: 3, set_type: "working", reps: 8, weight: 105, rpe: null, ...NULL_ACTUALS },
     ]);
 
     // payload completionQuality='full' → status='completed' (mapping).
@@ -713,9 +719,9 @@ describe("logTrainingEvent", () => {
     // set_logs preserves per-set values exactly.
     expect(setLogsInsertQ.insert).toHaveBeenCalledTimes(1);
     expect(setLogsInsertQ.insert.mock.calls[0][0]).toEqual([
-      { exercise_log_id: "el-bench", set_number: 1, set_type: "working", reps: 10, weight: 100, rpe: 7 },
-      { exercise_log_id: "el-bench", set_number: 2, set_type: "working", reps: 10, weight: 105, rpe: 8 },
-      { exercise_log_id: "el-bench", set_number: 3, set_type: "working", reps: 8, weight: 105, rpe: 9 },
+      { exercise_log_id: "el-bench", set_number: 1, set_type: "working", reps: 10, weight: 100, rpe: 7, ...NULL_ACTUALS },
+      { exercise_log_id: "el-bench", set_number: 2, set_type: "working", reps: 10, weight: 105, rpe: 8, ...NULL_ACTUALS },
+      { exercise_log_id: "el-bench", set_number: 3, set_type: "working", reps: 8, weight: 105, rpe: 9, ...NULL_ACTUALS },
     ]);
   });
 
@@ -1456,9 +1462,9 @@ describe("logTrainingEvent", () => {
     });
 
     expect(setLogsInsertQ.insert.mock.calls[0][0]).toEqual([
-      { exercise_log_id: "el-empty", set_number: 1, set_type: "working", reps: 10, weight: 100, rpe: null },
-      { exercise_log_id: "el-empty", set_number: 2, set_type: "working", reps: null, weight: null, rpe: null },
-      { exercise_log_id: "el-empty", set_number: 3, set_type: "working", reps: 8, weight: 100, rpe: null },
+      { exercise_log_id: "el-empty", set_number: 1, set_type: "working", reps: 10, weight: 100, rpe: null, ...NULL_ACTUALS },
+      { exercise_log_id: "el-empty", set_number: 2, set_type: "working", reps: null, weight: null, rpe: null, ...NULL_ACTUALS },
+      { exercise_log_id: "el-empty", set_number: 3, set_type: "working", reps: 8, weight: 100, rpe: null, ...NULL_ACTUALS },
     ]);
     // All three prescribed working sets were sent, values or not.
     expect(upsertQ.insert.mock.calls[0][0].completion_quality).toBe("full");

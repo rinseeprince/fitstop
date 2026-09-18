@@ -6,6 +6,10 @@ import type { ClientTrainingPlan } from "@/types/client-training-plan";
 
 const swrCall = vi.fn();
 
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
 vi.mock("swr", () => ({
   __esModule: true,
   default: (key: unknown, _fetcher: unknown, _opts: unknown) => swrCall(key),

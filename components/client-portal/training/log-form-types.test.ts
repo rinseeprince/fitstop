@@ -7,21 +7,57 @@ import {
 } from "./log-form-types";
 import type {
   LogFormValues,
+  LogPayloadResult,
   PrescribedRowsByIndex,
   SetRowValues,
 } from "./log-form-types";
 import type { PrescribedExerciseView } from "./exercise-tracker-block";
 import type { ExerciseLog, SessionLog, SetLog } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import {
+  emptyLoggedActuals,
+  type LoggedActuals,
+  type LoggedBox,
+} from "@/utils/set-log-measures";
 
 const KG_PER_LB = 0.45359237;
 const ISO = "2026-05-01T00:00:00.000Z";
 const EX_A = "11111111-1111-4111-8111-111111111111";
 
-/** A ticked row carrying values — what a client who logged numbers produces. */
-function ticked(over: Partial<SetRowValues> = {}): SetRowValues {
-  return { reps: "", weight: "", rpe: "", weightKg: null, completed: true, ...over };
+/**
+ * A row as the form holds it: what is in each box, and the canonical value each
+ * was seeded from. `reps` / `weight` / `rpe` are the strings in those boxes;
+ * `weightKg` the weight box's seed.
+ */
+function row(over: {
+  reps?: string;
+  weight?: string;
+  rpe?: string;
+  weightKg?: number | null;
+  completed?: boolean;
+  entries?: Partial<Record<LoggedBox, string>>;
+  seeds?: Partial<LoggedActuals>;
+} = {}): SetRowValues {
+  const base = emptySet();
+  return {
+    completed: over.completed ?? true,
+    entries: {
+      ...base.entries,
+      ...(over.reps != null && { reps: over.reps }),
+      ...(over.weight != null && { load: over.weight }),
+      ...(over.rpe != null && { rpe: over.rpe }),
+      ...over.entries,
+    },
+    seeds: {
+      ...base.seeds,
+      ...(over.weightKg !== undefined && { weight: over.weightKg }),
+      ...over.seeds,
+    },
+  };
 }
+
+/** A ticked row carrying values — what a client who logged numbers produces. */
+const ticked = (over: Parameters<typeof row>[0] = {}) => row({ ...over, completed: true });
 
 function values(sets: SetRowValues[]): LogFormValues {
   return {
@@ -48,79 +84,80 @@ function working(n: number): PrescribedRowsByIndex {
 
 const NOTHING_DIRTY = () => false;
 const ALL_DIRTY = () => true;
-/** The payload a save that records work produces. Null is its own test, below. */
-const saved = (payload: ReturnType<typeof buildLogPayload>) => {
-  expect(payload).not.toBeNull();
-  return payload!;
+/** The payload a save that records work produces. A refusal is its own test, below. */
+const saved = (result: LogPayloadResult) => {
+  if (!result.ok) throw new Error(`refused: ${result.reason}`);
+  return result.payload;
 };
-const setsOf = (payload: ReturnType<typeof buildLogPayload>) =>
-  saved(payload).exercises![0].sets;
+const setsOf = (result: LogPayloadResult) => saved(result).exercises![0].sets;
 
-// The form seeds its weight field from canonical kilograms, rounded for
-// legibility, and submits in the client's unit. Both halves of that round trip
-// are lossy, so an untouched weight must resubmit the kilograms it came from
-// rather than being re-parsed from the string it was shown as.
+// The form seeds every box from a canonical value, formatted for reading, and
+// submits canonical values. Both halves of that round trip can be lossy (a
+// weight converts, a distance converts, a duration reformats), so an untouched
+// box must resubmit the value it came from rather than being re-parsed from the
+// string it was shown as.
 describe("buildLogPayload", () => {
   it("always tags the wire canonical, whatever the client sees", () => {
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([ticked({ reps: "10", weight: "225" })]),
       "imperial",
       ALL_DIRTY,
       working(1),
     );
-    expect(saved(payload).exercises![0].weightUnit).toBe("kg");
+    expect(saved(result).exercises![0].weightUnit).toBe("kg");
   });
 
-  it("converts an edited weight from the client's unit to kilograms", () => {
-    const payload = buildLogPayload(
+  it("converts an edited weight from the client's unit to kilograms, to a hundredth", () => {
+    const result = buildLogPayload(
       values([ticked({ reps: "10", weight: "225" })]),
       "imperial",
       ALL_DIRTY,
       working(1),
     );
-    expect(setsOf(payload)[0].weight).toBeCloseTo(225 * KG_PER_LB, 6);
+    expect(setsOf(result)[0].weight).toBe(Math.round(225 * KG_PER_LB * 100) / 100);
   });
 
   it("stores a metric edit verbatim", () => {
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([ticked({ reps: "10", weight: "102.5" })]),
       "metric",
       ALL_DIRTY,
       working(1),
     );
-    expect(setsOf(payload)[0].weight).toBe(102.5);
+    expect(setsOf(result)[0].weight).toBe(102.5);
   });
 
   it("resubmits a wholly untouched log byte-identical", () => {
     // 100 kg seeds as "220.5" for an imperial client; re-parsing that string
-    // would store 100.017 kg.
-    const payload = buildLogPayload(
+    // would store 100.02 kg.
+    const result = buildLogPayload(
       values([ticked({ reps: "10", weight: "220.5", rpe: "8", weightKg: 100 })]),
       "imperial",
       NOTHING_DIRTY,
       working(1),
     );
-    expect(setsOf(payload)[0].weight).toBe(100);
+    expect(setsOf(result)[0].weight).toBe(100);
   });
 
   // THE case. A row is dirty the moment its reps change, so a row-level guard
   // would let this drift — and the wholly-untouched test above would still pass.
   it("leaves an untouched WEIGHT alone when its row is dirty from a reps edit", () => {
-    const dirtyRepsOnly = (_ex: number, _set: number) => false; // weight not dirty
-    const payload = buildLogPayload(
-      values([ticked({ reps: "12", weight: "220.5", rpe: "8", weightKg: 100 })]),
+    const dirtyRepsOnly = (_ex: number, _set: number, box: LoggedBox) => box === "reps";
+    const result = buildLogPayload(
+      values([ticked({ reps: "12", weight: "220.5", rpe: "8", weightKg: 100, seeds: { reps: 10, rpe: 8 } })]),
       "imperial",
       dirtyRepsOnly,
       working(1),
     );
 
-    expect(setsOf(payload)[0].reps).toBe(12);
-    expect(setsOf(payload)[0].weight).toBe(100);
+    expect(setsOf(result)[0].reps).toBe(12);
+    expect(setsOf(result)[0].weight).toBe(100);
+    expect(setsOf(result)[0].rpe).toBe(8);
   });
 
   it("guards per set, not per exercise", () => {
     const onlySecondSetDirty = (_ex: number, setIndex: number) => setIndex === 1;
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([
         ticked({ reps: "10", weight: "220.5", weightKg: 100 }),
         ticked({ reps: "10", weight: "225", weightKg: 100 }),
@@ -130,58 +167,138 @@ describe("buildLogPayload", () => {
       working(2),
     );
 
-    expect(setsOf(payload)[0].weight).toBe(100);
-    expect(setsOf(payload)[1].weight).toBeCloseTo(225 * KG_PER_LB, 6);
+    expect(setsOf(result)[0].weight).toBe(100);
+    expect(setsOf(result)[1].weight).toBe(Math.round(225 * KG_PER_LB * 100) / 100);
   });
 
   it("clears the weight when an edited field is emptied", () => {
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([ticked({ reps: "10", weight: "", weightKg: 100 })]),
       "imperial",
       ALL_DIRTY,
       working(1),
     );
-    expect(setsOf(payload)[0].weight).toBeUndefined();
+    expect(setsOf(result)[0].weight).toBeUndefined();
+  });
+
+  // ---- Every box, through its own grammar ----------------------------------
+
+  it("parses each box through the entry grammar into its canonical unit", () => {
+    const result = buildLogPayload(
+      values([
+        ticked({
+          entries: {
+            distance: "5 km",
+            duration: "120",
+            pace: "4:45",
+            split: "1:52.3",
+            heart_rate_zone: "Z3",
+            tempo: "3-1-X-0",
+            calories: "300",
+            rir: "2",
+          },
+        }),
+      ]),
+      "metric",
+      ALL_DIRTY,
+      working(1),
+    );
+    expect(setsOf(result)[0]).toEqual({
+      setNumber: 1,
+      distanceMeters: 5000,
+      durationSeconds: 7200,
+      paceSecondsPerKm: 285,
+      splitSecondsPer500m: 112.3,
+      heartRateZone: 3,
+      tempo: "3-1-X-0",
+      calories: 300,
+      rir: 2,
+    });
+  });
+
+  it("reads an imperial client's bare distance and pace as miles, and a typed unit as typed", () => {
+    const result = buildLogPayload(
+      values([ticked({ entries: { distance: "3.1", pace: "7:39" } }), ticked({ entries: { distance: "800 yd", pace: "4:45 /km" } })]),
+      "imperial",
+      ALL_DIRTY,
+      working(2),
+    );
+    expect(setsOf(result)[0].distanceMeters).toBe(4988.97);
+    expect(setsOf(result)[0].paceSecondsPerKm).toBe(285);
+    expect(setsOf(result)[1].distanceMeters).toBe(731.52);
+    expect(setsOf(result)[1].paceSecondsPerKm).toBe(285);
+  });
+
+  // Amendment 1 to section 4.7: a set with any recorded value counts.
+  it("sends a set that carries only a distance, and it counts as logged", () => {
+    const result = buildLogPayload(
+      values([ticked({ entries: { distance: "5 km" } })]),
+      "metric",
+      ALL_DIRTY,
+      working(1),
+    );
+    expect(result.ok).toBe(true);
+    expect(setsOf(result)).toEqual([{ setNumber: 1, distanceMeters: 5000 }]);
+    expect(saved(result).completionQuality).toBe("full");
+  });
+
+  it("refuses a box it cannot read, naming the exercise, the set and the box", () => {
+    const result = buildLogPayload(
+      values([ticked({ entries: { reps: "10" } }), ticked({ entries: { pace: "fast" } })]),
+      "metric",
+      ALL_DIRTY,
+      working(2),
+    );
+    expect(result).toEqual({ ok: false, reason: "unreadable", exerciseIndex: 0, setIndex: 1, box: "pace" });
+  });
+
+  it("refuses a value outside its column's limit or finer than its scale", () => {
+    const over = buildLogPayload(values([ticked({ reps: "200" })]), "metric", ALL_DIRTY, working(1));
+    expect(over).toMatchObject({ ok: false, reason: "unreadable", box: "reps" });
+    const fine = buildLogPayload(values([ticked({ rpe: "8.25" })]), "metric", ALL_DIRTY, working(1));
+    expect(fine).toMatchObject({ ok: false, reason: "unreadable", box: "rpe" });
+    const tempo = buildLogPayload(values([ticked({ entries: { tempo: "slow" } })]), "metric", ALL_DIRTY, working(1));
+    expect(tempo).toMatchObject({ ok: false, reason: "unreadable", box: "tempo" });
   });
 
   // ---- The tick decides what is sent (locked decisions 1 and 3) ------------
 
   // Nothing ticked is nothing to save. The form refuses it — and so does the
   // server, through the same rule — rather than storing an empty log.
-  it("returns null when nothing is ticked", () => {
-    const payload = buildLogPayload(
+  it("refuses the save when nothing is ticked", () => {
+    const result = buildLogPayload(
       values([emptySet()]),
       "metric",
       ALL_DIRTY,
       working(1),
     );
-    expect(payload).toBeNull();
+    expect(result).toEqual({ ok: false, reason: "nothing" });
   });
 
   // Decision 3: doing the work is the claim; recording numbers is a bonus.
-  it("sends a ticked set with every field empty", () => {
-    const payload = buildLogPayload(
+  it("sends a ticked set with every box empty", () => {
+    const result = buildLogPayload(
       values([ticked()]),
       "metric",
       ALL_DIRTY,
       working(1),
     );
-    expect(setsOf(payload)).toEqual([{ setNumber: 1 }]);
+    expect(setsOf(result)).toEqual([{ setNumber: 1 }]);
   });
 
   // Decision 1: the tick is the ONLY thing that decides completion. Numbers left
   // in an unticked row are notes to self, not a claim that the set was done.
   it("does NOT send a filled set that was never ticked", () => {
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([
         ticked({ reps: "10" }),
-        { reps: "9", weight: "100", rpe: "8", weightKg: null, completed: false },
+        row({ reps: "9", weight: "100", rpe: "8", completed: false }),
       ]),
       "metric",
       ALL_DIRTY,
       working(2),
     );
-    expect(setsOf(payload)).toEqual([{ setNumber: 1, reps: 10 }]);
+    expect(setsOf(result)).toEqual([{ setNumber: 1, reps: 10 }]);
   });
 
   // THE identity case. The form's rows mirror the flattened prescription, so a
@@ -190,7 +307,7 @@ describe("buildLogPayload", () => {
   // the server then typed each row from the wrong spec (a lone working set
   // stored as set 1, typed `warmup`, and excluded from every performance metric).
   it("sends each ticked set's own row number, not its position among the ticked rows", () => {
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([
         emptySet(),
         ticked({ reps: "10", weight: "100" }),
@@ -202,12 +319,12 @@ describe("buildLogPayload", () => {
       working(4),
     );
 
-    expect(setsOf(payload).map((s) => s.setNumber)).toEqual([2, 4]);
-    expect(setsOf(payload).map((s) => s.setNumber)).not.toEqual([1, 2]);
+    expect(setsOf(result).map((s) => s.setNumber)).toEqual([2, 4]);
+    expect(setsOf(result).map((s) => s.setNumber)).not.toEqual([1, 2]);
   });
 
   it("numbers a fully ticked exercise 1..n", () => {
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([
         ticked({ reps: "10", weight: "100" }),
         ticked({ reps: "10", weight: "100" }),
@@ -217,7 +334,7 @@ describe("buildLogPayload", () => {
       ALL_DIRTY,
       working(3),
     );
-    expect(setsOf(payload).map((s) => s.setNumber)).toEqual([1, 2, 3]);
+    expect(setsOf(result).map((s) => s.setNumber)).toEqual([1, 2, 3]);
   });
 
   // ---- The derived completionQuality --------------------------------------
@@ -228,33 +345,23 @@ describe("buildLogPayload", () => {
   // none, which is exactly the all-unticked case below.
 
   it("derives full when every prescribed working set is ticked", () => {
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([ticked(), ticked(), ticked()]),
       "metric",
       ALL_DIRTY,
       working(3),
     );
-    expect(saved(payload).completionQuality).toBe("full");
+    expect(saved(result).completionQuality).toBe("full");
   });
 
   it("derives partial when some are ticked", () => {
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([ticked(), emptySet(), emptySet()]),
       "metric",
       ALL_DIRTY,
       working(3),
     );
-    expect(saved(payload).completionQuality).toBe("partial");
-  });
-
-  it("refuses the save when nothing is ticked", () => {
-    const payload = buildLogPayload(
-      values([emptySet(), emptySet(), emptySet()]),
-      "metric",
-      ALL_DIRTY,
-      working(3),
-    );
-    expect(payload).toBeNull();
+    expect(saved(result).completionQuality).toBe("partial");
   });
 
   // Decision 5: warm-ups are recorded but never scored. Ticking the warm-up and
@@ -273,14 +380,14 @@ describe("buildLogPayload", () => {
         ] as SetSpec[],
       }),
     ];
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([ticked(), ticked(), ticked()]),
       "metric",
       ALL_DIRTY,
       rows,
     );
-    expect(saved(payload).completionQuality).toBe("full");
-    expect(setsOf(payload).map((s) => s.setNumber)).toEqual([1, 2, 3]);
+    expect(saved(result).completionQuality).toBe("full");
+    expect(setsOf(result).map((s) => s.setNumber)).toEqual([1, 2, 3]);
   });
 
   // A warm-up scores nothing, so ticking only it is short of complete —
@@ -299,16 +406,16 @@ describe("buildLogPayload", () => {
         ] as SetSpec[],
       }),
     ];
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       values([ticked(), emptySet(), emptySet()]),
       "metric",
       ALL_DIRTY,
       rows,
     );
-    expect(saved(payload).completionQuality).toBe("partial");
+    expect(saved(result).completionQuality).toBe("partial");
     // Recorded even though it scores nothing — a coach investigating a niggle
     // needs to see it.
-    expect(setsOf(payload)).toEqual([{ setNumber: 1 }]);
+    expect(setsOf(result)).toEqual([{ setNumber: 1 }]);
   });
 });
 
@@ -326,6 +433,7 @@ function setLog(setNumber: number, over: Partial<SetLog> = {}): SetLog {
     exerciseLogId: "elog-1",
     setNumber,
     setType: "working",
+    ...emptyLoggedActuals(),
     reps: 10,
     weight: 100,
     rpe: null,
@@ -334,6 +442,28 @@ function setLog(setNumber: number, over: Partial<SetLog> = {}): SetLog {
     ...over,
   };
 }
+
+/** Every measure a set can carry, as a log would hold it. */
+const EVERYTHING: Partial<SetLog> = {
+  reps: 8,
+  weight: 100,
+  rpe: 8,
+  rir: 2,
+  tempo: "3-1-X-0",
+  distanceMeters: 5000,
+  durationSeconds: 1500.5,
+  paceSecondsPerKm: 300,
+  splitSecondsPer500m: 112.3,
+  calories: 300,
+  cadence: 90,
+  strokeRate: 28,
+  resistance: 7,
+  heartRateZone: 3,
+  heartRate: 150,
+  power: 250,
+  ftpPercent: 80,
+  restSeconds: 90,
+};
 
 function exerciseLog(sets: SetLog[]): ExerciseLog {
   return {
@@ -387,7 +517,7 @@ describe("seedDefaultValues — reopening a logged session", () => {
       true,
       false,
     ]);
-    expect(sets.map((s) => s.reps)).toEqual(["", "", "10", "10", "10", ""]);
+    expect(sets.map((s) => s.entries.reps)).toEqual(["", "", "10", "10", "10", ""]);
   });
 
   it("re-saves a restored partial log with its ORIGINAL set numbers", () => {
@@ -398,14 +528,68 @@ describe("seedDefaultValues — reopening a logged session", () => {
       viewer: "metric",
     });
 
-    const payload = buildLogPayload(
+    const result = buildLogPayload(
       seeded,
       "metric",
       NOTHING_DIRTY,
       working(6),
     );
-    expect(setsOf(payload).map((s) => s.setNumber)).toEqual([3, 4, 5]);
-    expect(saved(payload).completionQuality).toBe("partial");
+    expect(setsOf(result).map((s) => s.setNumber)).toEqual([3, 4, 5]);
+    expect(saved(result).completionQuality).toBe("partial");
+  });
+
+  // Every save full-replaces the log's sets, so a value the form did not
+  // restore would be erased on the next save. Every measure a set carries goes
+  // into its seed — rest taken included, which has no box — and reads back in
+  // the viewer's units.
+  it("restores every value a logged set carries and resubmits it untouched, byte-identical", () => {
+    const seeded = seedDefaultValues({
+      prescribedViews: [view({ sets: 1 })],
+      sessionLog: SESSION_LOG,
+      exerciseLogs: [exerciseLog([setLog(1, EVERYTHING)])],
+      viewer: "metric",
+    });
+
+    const set = seeded.exercises[0].sets[0];
+    expect(set.completed).toBe(true);
+    expect(set.entries).toEqual({
+      load: "100",
+      reps: "8",
+      rpe: "8",
+      rir: "2",
+      tempo: "3-1-X-0",
+      distance: "5 km",
+      duration: "25:00.5",
+      pace: "5:00 /km",
+      split: "1:52.3 /500m",
+      calories: "300",
+      cadence: "90",
+      stroke_rate: "28",
+      resistance: "7",
+      heart_rate_zone: "Z3",
+      heart_rate: "150",
+      power: "250",
+      ftp_percent: "80",
+    });
+
+    const result = buildLogPayload(seeded, "metric", NOTHING_DIRTY, working(1));
+    expect(setsOf(result)).toEqual([{ setNumber: 1, ...EVERYTHING }]);
+  });
+
+  it("reads a logged set back in an imperial client's units and still resubmits the stored value", () => {
+    const seeded = seedDefaultValues({
+      prescribedViews: [view({ sets: 1 })],
+      sessionLog: SESSION_LOG,
+      exerciseLogs: [exerciseLog([setLog(1, { distanceMeters: 5000, paceSecondsPerKm: 300, weight: 100 })])],
+      viewer: "imperial",
+    });
+    const set = seeded.exercises[0].sets[0];
+    expect(set.entries.distance).toBe("3.11 mi");
+    expect(set.entries.pace).toBe("8:03 /mi");
+    expect(set.entries.load).toBe("220.5");
+
+    const result = buildLogPayload(seeded, "imperial", NOTHING_DIRTY, working(1));
+    expect(setsOf(result)[0]).toMatchObject({ distanceMeters: 5000, paceSecondsPerKm: 300, weight: 100 });
   });
 
   // A logged set past the prescription is real and reachable — the client
@@ -424,10 +608,10 @@ describe("seedDefaultValues — reopening a logged session", () => {
 
     const sets = seeded.exercises[0].sets;
     expect(sets).toHaveLength(4);
-    expect(sets[3]).toMatchObject({ reps: "6", completed: true });
+    expect(sets[3]).toMatchObject({ entries: { reps: "6" }, completed: true });
 
-    const payload = buildLogPayload(seeded, "metric", NOTHING_DIRTY, working(3));
-    expect(setsOf(payload).map((s) => s.setNumber)).toEqual([1, 2, 3, 4]);
+    const result = buildLogPayload(seeded, "metric", NOTHING_DIRTY, working(3));
+    expect(setsOf(result).map((s) => s.setNumber)).toEqual([1, 2, 3, 4]);
   });
 
   it("seeds a never-logged exercise as the full prescription, unticked", () => {

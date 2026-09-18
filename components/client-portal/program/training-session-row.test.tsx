@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 
 import { TrainingSessionRow } from "./training-session-row";
@@ -7,6 +7,10 @@ import type {
   ClientTrainingSessionEntry,
 } from "@/types/client-training-plan";
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
+
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
 
 function makeSession(
   overrides: Partial<ClientTrainingSessionEntry> = {},
@@ -72,12 +76,12 @@ describe("TrainingSessionRow", () => {
     expect(screen.getByText("Bench Press")).toBeInTheDocument();
   });
 
-  it("renders sets/reps/RPE on a font-mono-display line when expanded", () => {
+  it("renders every prescribed measure as a readout on a font-mono-display line when expanded", () => {
     render(<TrainingSessionRow session={makeSession()} />);
 
     fireEvent.click(screen.getByRole("button"));
 
-    const prescription = screen.getByText("4 x 8-10 @ RPE 8");
+    const prescription = screen.getByText("4 × 8–10 · RPE 8 · 2m rest");
     expect(prescription).toBeInTheDocument();
     expect(prescription.className).toContain("font-mono-display");
   });
@@ -180,8 +184,8 @@ describe("TrainingSessionRow", () => {
       const squat = screen.getByText("Back Squat").closest("li");
       expect(squat).not.toBeNull();
       expect(superset.contains(squat)).toBe(false);
-      expect(within(squat!).getByText("2 x 5")).toBeInTheDocument();
-      expect(within(squat!).getByText("Rest 120s")).toBeInTheDocument();
+      // Its own rest rides on its line; a superset exercise (below) carries none.
+      expect(within(squat!).getByText("2 × 5 · 2m rest")).toBeInTheDocument();
     });
 
     it("reads a superset or circuit exercise's reps round by round, with no rest of its own", () => {
@@ -189,7 +193,7 @@ describe("TrainingSessionRow", () => {
       fireEvent.click(screen.getByRole("button"));
 
       const superset = screen.getByRole("listitem", { name: "Superset · 3 rounds" });
-      expect(within(superset).getByText("8-10 reps @ RPE 8")).toBeInTheDocument();
+      expect(within(superset).getByText("8-10 reps · RPE 8")).toBeInTheDocument();
       expect(within(superset).getByText("21-15-9 reps")).toBeInTheDocument();
       expect(within(superset).queryByText(/^Rest /)).toBeNull();
       expect(within(superset).queryByText(/3 x/)).toBeNull();

@@ -2,7 +2,7 @@ import type { LogTrainingEventInput } from "@/lib/validations/training";
 import type { LoggedQuality } from "@/types/training";
 import type { ExerciseLog, SessionLog } from "@/types/training";
 import type { PrescribedExerciseView } from "./exercise-tracker-block";
-import { expandSetSpecs } from "@/utils/exercise-set-specs";
+import { expandSetSpecs, TEMPO_PATTERN } from "@/utils/exercise-set-specs";
 import {
   buildPrescribedRows,
   MAX_PRESCRIBED_ROWS,
@@ -13,34 +13,50 @@ import {
   type ScoredExercise,
 } from "@/utils/completion-quality";
 import { trainingLogRecordsWork } from "@/lib/training-log-content";
-import { parseWeightToKg, type UnitSystem } from "@/utils/unit-conversions";
-import { displayLoad } from "@/components/clients/training/program-builder/commit-input";
+import { formatEntry, parseEntry, type UnitSystem } from "@/utils/unit-conversions";
+import {
+  boxEntry,
+  boxKey,
+  emptyLoggedActuals,
+  LOGGED_BOXES,
+  pickLoggedActuals,
+  SET_LOG_MEASURES,
+  type ActualKey,
+  type LoggedActuals,
+  type LoggedBox,
+} from "@/utils/set-log-measures";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type SetRowValues = {
-  reps: string;
-  weight: string;
-  rpe: string;
-  /**
-   * The canonical KILOGRAMS this row was seeded from, carried alongside the
-   * display string it produced.
-   *
-   * The display string is rounded for legibility, so re-parsing an untouched
-   * field would not land back on the value it came from — a set logged at 100 kg
-   * seeds as "220.5" for an imperial client and parses back to 100.017. Keeping
-   * the original means an untouched weight resubmits byte-identical. null for a
-   * fresh row that has never been logged.
-   */
-  weightKg: number | null;
   /**
    * "I did this set." The ONLY thing that decides completion (locked decision
    * 1): buildLogPayload sends exactly the ticked rows and nothing else, and a
-   * ticked row with all three fields empty is still sent, because doing the work
-   * is the claim and recording numbers is a bonus (decision 3).
+   * ticked row with every box empty is still sent, because doing the work is
+   * the claim and recording numbers is a bonus (decision 3).
    */
   completed: boolean;
+  /**
+   * What is in each box — one per column the coach prescribes — in the
+   * viewer's units and the box's own entry grammar ("5.2 km", "4:45 /km",
+   * "2:00:00"; utils/unit-conversions.ts). Keyed by the column, so the grid
+   * walks the exercise's prescribed columns straight into the form.
+   */
+  entries: Record<LoggedBox, string>;
+  /**
+   * The canonical value each box was SEEDED from, kept beside the string it
+   * produced — null where nothing was recorded. The string is rounded and
+   * reformatted for reading, so re-parsing an untouched box would not land
+   * back on its value (a set logged at 100 kg seeds "220.5" for an imperial
+   * client and parses back to 100.02). An untouched box resubmits its seed
+   * byte-identical — the weight rule (CONVENTIONS section 20), applied to every
+   * box — and a value with no box on screen, because the coach has since
+   * stopped prescribing that column or the React Native app's timer recorded
+   * the rest taken, rides through the seed unchanged. That is what makes a save
+   * never erase a value: the write path full-replaces the log's sets.
+   */
+  seeds: LoggedActuals;
 };
 
 export type ExerciseFormValues = {
@@ -63,8 +79,31 @@ export type LogFormValues = {
   exercises: ExerciseFormValues[];
 };
 
+function emptyEntries(): Record<LoggedBox, string> {
+  return Object.fromEntries(LOGGED_BOXES.map((box) => [box, ""])) as Record<LoggedBox, string>;
+}
+
 export function emptySet(): SetRowValues {
-  return { reps: "", weight: "", rpe: "", weightKg: null, completed: false };
+  return { completed: false, entries: emptyEntries(), seeds: emptyLoggedActuals() };
+}
+
+/** The boxes' strings for a set's canonical values — what a logged set reopens as. */
+function entriesFromActuals(
+  actuals: LoggedActuals,
+  viewer: UnitSystem,
+): Record<LoggedBox, string> {
+  const entries = emptyEntries();
+  for (const box of LOGGED_BOXES) {
+    const value = actuals[boxKey(box)];
+    entries[box] = value == null ? "" : formatEntry(boxEntry(box), value, viewer);
+  }
+  return entries;
+}
+
+/** Does any box of this row hold something? The auto-tick and Copy previous ask it. */
+export function isRowFilled(row: Pick<SetRowValues, "entries"> | undefined): boolean {
+  if (!row) return false;
+  return LOGGED_BOXES.some((box) => row.entries[box]?.trim());
 }
 
 /**
@@ -172,83 +211,111 @@ export function resolveLogOutcome(
   };
 }
 
+export type LogPayloadResult =
+  | { ok: true; payload: LogTrainingEventInput }
+  /** Nothing ticked: the save is refused with the one sentence. */
+  | { ok: false; reason: "nothing" }
+  /** A box holds something the grammar can't read, or a value outside its column's limit. */
+  | { ok: false; reason: "unreadable"; exerciseIndex: number; setIndex: number; box: LoggedBox };
+
+/** Within the column's limit and at its scale — the wire schema's rule, asked here so the box can be named. */
+function withinLimit(box: LoggedBox, value: number | string): boolean {
+  if (box === "tempo") return typeof value === "string" && TEMPO_PATTERN.test(value);
+  if (typeof value !== "number") return false;
+  const { floor, ceiling, integer, scale } = SET_LOG_MEASURES[box];
+  if (value < floor || value > ceiling) return false;
+  if (integer) return Number.isInteger(value);
+  const scaled = value * 10 ** scale;
+  return Math.abs(scaled - Math.round(scaled)) < 1e-6;
+}
+
 /**
- * Build the wire payload, converting to canonical kilograms HERE rather than
+ * Build the wire payload, converting to canonical units HERE rather than
  * sending the client's display unit and a tag for the server to apply.
  *
- * `null` when the form records no work — nothing ticked. The save is refused
- * rather than stored as a skip, and the server refuses the same payload through
- * the same rule, so the screen and the wire agree.
+ * Refused, rather than stored as a skip, when the form records no work —
+ * nothing ticked — and the server refuses the same payload through the same
+ * rule, so the screen and the wire agree. Refused with the box named when a
+ * box can't be read or its value is outside its column's limit, so the client
+ * is sent to the box rather than told "some inputs are invalid".
  *
- * The conversion is evaluated PER WEIGHT FIELD, never per row. A set row is
- * dirty the moment the client edits its reps — under a row-level rule its
- * untouched weight would still round-trip through the rounded display string
- * and drift the logged value, on the commonest edit in this form. An untouched
- * weight resubmits the exact kilograms it was seeded with.
+ * Every box is judged PER BOX, never per row: a row is dirty the moment its
+ * reps change, and under a row-level rule its untouched distance would
+ * round-trip through the display string. An untouched box resubmits the exact
+ * canonical value it was seeded with; a dirty one is parsed from what is in it.
+ * A value with no box on screen rides through its seed, so a save never erases
+ * one.
  *
  * `weightUnit` therefore leaves as "kg" always. The wire schema still carries it
- * (lib/validations/training.ts) and training-log-service still applies it, so
- * any other caller — the React Native client — is unaffected.
+ * (lib/validations/training.ts) and the writer still applies it, so any other
+ * caller — the React Native client — is unaffected.
  */
 export function buildLogPayload(
   values: LogFormValues,
   viewer: UnitSystem,
-  isWeightDirty: (exerciseIndex: number, setIndex: number) => boolean,
+  isDirty: (exerciseIndex: number, setIndex: number, box: LoggedBox) => boolean,
   prescribedRows: PrescribedRowsByIndex,
-): LogTrainingEventInput | null {
-  const detailed = values.exercises
-    .map((ex, exIndex) => {
+): LogPayloadResult {
+  type WireSet = NonNullable<LogTrainingEventInput["exercises"]>[number]["sets"][number];
+  const detailed: NonNullable<LogTrainingEventInput["exercises"]> = [];
+
+  for (const [exIndex, ex] of values.exercises.entries()) {
+    const completedSets: WireSet[] = [];
+    for (const [setIndex, s] of ex.sets.entries()) {
       // Exactly the ticked sets. The tick is the claim; an unticked row says
       // "not done" and is simply absent from the wire (there is no `completed`
       // flag on the schema — presence IS completion).
-      const completedSets = ex.sets.flatMap((s, setIndex) =>
-        s.completed
-          ? [
-              {
-                // The row's position in THIS form's row list, which mirrors the
-                // flattened prescription (seedDefaultValues builds it from
-                // buildPrescribedRows and restores a log back into the same
-                // shape, and a prescribed row cannot be deleted). The server
-                // reads it as an index into that list — prescribedRows[n - 1] —
-                // to stamp the coach-prescribed set_type.
-                //
-                // It is taken from the ORIGINAL array, never from a position
-                // among the selected rows: numbering after selecting renumbered
-                // a logged subset down to 1..n, so a lone working set was stored
-                // as set 1 and typed from the warm-up spec.
-                setNumber: setIndex + 1,
-                reps: s.reps.trim() ? Number(s.reps) : undefined,
-                weight: isWeightDirty(exIndex, setIndex)
-                  ? s.weight.trim()
-                    ? parseWeightToKg(Number(s.weight), viewer)
-                    : undefined
-                  : (s.weightKg ?? undefined),
-                rpe: s.rpe.trim() ? Number(s.rpe) : undefined,
-              },
-            ]
-          : [],
-      );
+      if (!s.completed) continue;
+      // The row's position in THIS form's row list, which mirrors the flattened
+      // prescription (seedDefaultValues builds it from buildPrescribedRows and
+      // restores a log back into the same shape, and a prescribed row cannot be
+      // deleted). The server reads it as an index into that list —
+      // prescribedRows[n - 1] — to stamp the coach-prescribed set_type. Taken
+      // from the ORIGINAL array, never a position among the selected rows.
+      const wireSet: WireSet = { setNumber: setIndex + 1 };
+      for (const box of LOGGED_BOXES) {
+        const key = boxKey(box);
+        let value: number | string | null | undefined;
+        if (isDirty(exIndex, setIndex, box)) {
+          const text = s.entries[box];
+          if (!text.trim()) continue;
+          const parsed = parseEntry(boxEntry(box), text, viewer);
+          if (parsed === null || !withinLimit(box, parsed)) {
+            return { ok: false, reason: "unreadable", exerciseIndex: exIndex, setIndex, box };
+          }
+          value = parsed;
+        } else {
+          value = s.seeds[key];
+        }
+        // Typed per key by the schema; the table guarantees a number where one
+        // is due and a string for tempo alone.
+        if (value != null) (wireSet as Record<ActualKey, number | string | undefined>)[key] = value;
+      }
+      // Rest taken has no box: only the React Native app's timer records it,
+      // and a logged one rides through the seed.
+      if (s.seeds.restSeconds != null) wireSet.restSeconds = s.seeds.restSeconds;
+      completedSets.push(wireSet);
+    }
 
-      if (completedSets.length === 0) return null;
+    if (completedSets.length === 0) continue;
 
-      const trimmedNotes = ex.notes.trim();
-      return {
-        ...(UUID_RE.test(ex.trainingExerciseId) && {
-          trainingExerciseId: ex.trainingExerciseId,
-        }),
-        ...(ex.exerciseId &&
-          UUID_RE.test(ex.exerciseId) && { exerciseId: ex.exerciseId }),
-        exerciseName: ex.exerciseName,
-        sets: completedSets,
-        // Already canonical — see the note above.
-        weightUnit: "kg" as const,
-        ...(trimmedNotes && { notes: trimmedNotes }),
-      };
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
+    const trimmedNotes = ex.notes.trim();
+    detailed.push({
+      ...(UUID_RE.test(ex.trainingExerciseId) && {
+        trainingExerciseId: ex.trainingExerciseId,
+      }),
+      ...(ex.exerciseId &&
+        UUID_RE.test(ex.exerciseId) && { exerciseId: ex.exerciseId }),
+      exerciseName: ex.exerciseName,
+      sets: completedSets,
+      // Already canonical — see the note above.
+      weightUnit: "kg" as const,
+      ...(trimmedNotes && { notes: trimmedNotes }),
+    });
+  }
 
   const quality = resolveLogOutcome(values.exercises, prescribedRows).quality;
-  if (quality === null) return null;
+  if (quality === null) return { ok: false, reason: "nothing" };
 
   const trimmedNotes = values.notes.trim();
   const base: LogTrainingEventInput = {
@@ -263,7 +330,9 @@ export function buildLogPayload(
   const payload = detailed.length > 0 ? { ...base, exercises: detailed } : base;
   // The belt: the outcome above and the rule below answer the same question,
   // and the server asks the rule.
-  return trainingLogRecordsWork(payload) ? payload : null;
+  return trainingLogRecordsWork(payload)
+    ? { ok: true, payload }
+    : { ok: false, reason: "nothing" };
 }
 
 /** `count` empty, unticked rows — never fewer than one to type into. */
@@ -273,7 +342,7 @@ function blankRows(count: number): SetRowValues[] {
 
 /**
  * Rebuild the FULL row list for a logged exercise, with the logged sets dropped
- * back onto the rows they were logged against and ticked.
+ * back onto the rows they were logged against and ticked, every value restored.
  *
  * The row list is the prescription, not the log. Rebuilding only the logged rows
  * is what made a session logged as sets 3-5 of six reopen as a three-row form
@@ -287,7 +356,8 @@ function blankRows(count: number): SetRowValues[] {
  * prescription afterwards — and dropping it would not merely hide it. The write
  * path full-replaces (every exercise_log deleted, set_logs cascaded, re-inserted
  * from the payload), so a row missing from the rebuilt form is deleted from the
- * database on the next save. Reopen, save, gone.
+ * database on the next save. Reopen, save, gone. The same is true of a VALUE:
+ * every measure the row carries goes into its seed, box or no box.
  */
 function restoreSetsFromLog(
   log: ExerciseLog,
@@ -308,13 +378,12 @@ function restoreSetsFromLog(
   for (const s of log.sets) {
     const index = s.setNumber - 1;
     if (!Number.isInteger(index) || index < 0 || index >= rows.length) continue;
+    const seeds = pickLoggedActuals(s);
     rows[index] = {
-      reps: s.reps != null ? String(s.reps) : "",
-      // Unsnapped, never formatLoad: this seeds an editable field, and a snap
-      // would round-trip into the logged value.
-      weight: displayLoad(s.weight, viewer),
-      rpe: s.rpe != null ? String(s.rpe) : "",
-      weightKg: s.weight ?? null,
+      // Unsnapped seeds, never formatLoad: these fill editable boxes, and a
+      // snap would round-trip into the logged value.
+      entries: entriesFromActuals(seeds, viewer),
+      seeds,
       // It was logged, so it was done. Reopening a session shows the whole
       // prescription with exactly the logged rows banked.
       completed: true,
@@ -335,7 +404,7 @@ export function seedDefaultValues(args: {
   prescribedViews: PrescribedExerciseView[];
   sessionLog: SessionLog | null;
   exerciseLogs: ExerciseLog[];
-  /** The VIEWER's system. Display seeds convert to it; storage stays kilograms. */
+  /** The VIEWER's system. Display seeds convert to it; storage stays canonical. */
   viewer: UnitSystem;
 }): LogFormValues {
   const { prescribedViews, sessionLog, exerciseLogs, viewer } = args;
