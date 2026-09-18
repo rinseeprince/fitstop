@@ -201,8 +201,8 @@ commit's plan.
   until commit 11a. Rest stays one number: it is what the rest timer counts down. Tempo is one compound
   value: four phases, each seconds or X for explosive, written "3-1-X-0".
 - **Presets:** a fixed set — one per exercise type, plus Circuit. A preset applies to one exercise or
-  a whole group. Coaches don't save their own. The exact columns in each preset are put to the owner
-  in commit 12. *(confirm)*
+  a whole group. Coaches don't save their own. The exact columns in each preset were put to the owner
+  in commit 12 and confirmed at its smoke (owner, 2026-09-19); they are listed under commit 12.
 - **Exercise types:** Strength, Bodyweight, Endurance, Erg, Carry & sled, Holds — on every catalog
   exercise. A new exercise starts on its type's preset; with no type, on Strength. The existing
   free-text Category (compound, isolation, cardio, plyometric) stays separate: "Compounds only" in
@@ -1044,7 +1044,7 @@ RULES: §4.4 — closed. Include a frame test for the selector and presets (§2)
 NOT IN THIS COMMIT: exercise types (commit 13).
 ```
 
-*The presets as built (put to the owner 2026-09-18 with the smoke; §4.4's "(confirm)")* — Strength: set
+*The presets, confirmed by the owner at the smoke (2026-09-19; §4.4's "(confirm)" is answered)* — Strength: set
 type, reps, load, RPE, rest. Bodyweight: set type, reps, RPE, rest. Endurance: set type, distance,
 duration, pace, HR zone, rest. Erg: set type, distance, duration, split, stroke rate, resistance, rest.
 Carry & sled: set type, load, distance, duration, rest. Holds: set type, RPE, duration, rest. Circuit:
