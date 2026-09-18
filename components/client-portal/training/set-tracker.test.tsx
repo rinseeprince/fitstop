@@ -149,7 +149,7 @@ function baseFixture(): TrainingEventDetail {
               repsTarget: "8-12",
               rpeTarget: 8,
               isWarmup: false,
-              prescribedFields: null,
+              prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
               createdAt: ISO,
               updatedAt: ISO,
             },
@@ -173,7 +173,7 @@ function baseFixture(): TrainingEventDetail {
               sets: 4,
               repsTarget: "6-10",
               isWarmup: false,
-              prescribedFields: null,
+              prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
               createdAt: ISO,
               updatedAt: ISO,
             },
@@ -215,7 +215,7 @@ function liveExercise(
       orderIndex,
       sets: 3,
       isWarmup: false,
-      prescribedFields: null,
+      prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
       createdAt: ISO,
       updatedAt: ISO,
       ...over,
@@ -745,9 +745,86 @@ describe("SetTracker", () => {
 
   // ---- 14. trainingExerciseId UUID filter ---------------------------------
 
+  it("[snapshot-pairing] a logged exercise the coach later removed shows its prescription once, with its logged sets", () => {
+    const detail = baseFixture();
+    detail.event = { ...detail.event, date: new Date().toISOString().slice(0, 10), sessionLogId: "log-1" };
+    detail.sessionLog = {
+      id: "log-1",
+      clientId: "c-1",
+      trainingSessionId: "s-1",
+      trainingEventId: "evt-1",
+      completedAt: detail.event.date,
+      completionQuality: "full",
+      notes: null,
+      weekStartDate: "2026-05-04",
+      prescribedSessionSnapshot: null,
+      createdAt: ISO,
+      updatedAt: ISO,
+    };
+    // The live session no longer holds the exercise: it arrives as its snapshot,
+    // in snake_case, named by the id its log is keyed to.
+    detail.groups = [
+      {
+        id: "grp-removed",
+        orderIndex: 0,
+        ...STRAIGHT_SETS,
+        exercises: [
+          {
+            source: "snapshot",
+            trainingExerciseId: REAL_UUID_A,
+            snapshot: {
+              name: "Removed Row",
+              sets: 2,
+              reps_min: 8,
+              reps_max: 10,
+              rpe_target: 8,
+              rest_seconds: 90,
+              is_warmup: false,
+              set_specs: null,
+              prescribed_fields: ["set_type", "reps", "rpe", "rest"],
+            },
+          },
+        ],
+      },
+    ];
+    detail.exerciseLogs = [
+      {
+        id: "elog-1",
+        sessionLogId: "log-1",
+        trainingExerciseId: REAL_UUID_A,
+        exerciseId: null,
+        completed: true,
+        notes: null,
+        performedName: "Removed Row",
+        prescribedExerciseSnapshot: { name: "Removed Row" },
+        sets: [
+          { id: "sl-1", exerciseLogId: "elog-1", setType: "working", setNumber: 1, reps: 9, weight: null, rpe: 8, createdAt: ISO, updatedAt: ISO },
+        ],
+        createdAt: ISO,
+        updatedAt: ISO,
+      },
+    ];
+    setEventReady(detail);
+    render(<SetTracker eventId="evt-1" />);
+
+    // Once, not once blank and again as Unplanned.
+    expect(screen.getAllByTestId("exercise-tracker-block")).toHaveLength(1);
+    expect(screen.queryByText("Unplanned")).toBeNull();
+    // Its prescription reads off the snapshot's own keys...
+    expect(screen.getByLabelText("Set 1 reps")).toHaveAttribute("placeholder", "8-10");
+    expect(screen.getByLabelText("Set 1 RPE")).toHaveAttribute("placeholder", "8");
+    expect(screen.getByLabelText("Set 2 reps")).toHaveAttribute("placeholder", "8-10");
+    // ...and the logged set sits on its row, banked.
+    expect(screen.getByLabelText("Set 1 reps")).toHaveValue("9");
+    expect(screen.getAllByTestId("set-row")[0]).toHaveAttribute("data-completed", "true");
+    // Its columns are the snapshot's: no Load cell, since the coach never prescribed one.
+    expect(screen.queryByTestId("prescribed-load-0-0")).toBeNull();
+  });
+
   it("[uuid-filter] non-UUID prescribed id is omitted from payload", async () => {
     const detail = baseFixture();
-    // Change exercise to snapshot with no id, so set-tracker synthesizes "snapshot-0"
+    // A snapshot exercise under a non-UUID id (a legacy fixture): the id is
+    // dropped from the payload, never sent as a trainingExerciseId.
     detail.groups = [
       {
         id: "grp-mystery",
@@ -756,10 +833,11 @@ describe("SetTracker", () => {
         exercises: [
           {
             source: "snapshot",
+            trainingExerciseId: "mystery-1",
             snapshot: {
               name: "Mystery Exercise",
               sets: 2,
-              isWarmup: false,
+              is_warmup: false,
             },
           },
         ],

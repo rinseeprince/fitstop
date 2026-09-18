@@ -9,7 +9,8 @@ import {
   GROUP_TIME_CAP_SECONDS_MAX,
   MAX_EXERCISES_PER_SESSION,
 } from "@/utils/exercise-groups";
-import { MAX_SET_SPECS } from "@/utils/exercise-set-specs";
+import { MAX_SET_SPECS, SET_SPEC_MEASURES, TEMPO_PATTERN } from "@/utils/exercise-set-specs";
+import { PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
 import type { DraftOp } from "@/components/clients/training/program-builder/program-builder-ops";
 
@@ -31,6 +32,12 @@ const uidSchema = z.string().min(1).max(64);
 
 const setSpecsSnapshotSchema = z.array(setSpecSchema).min(1).max(30);
 
+// RPE is 1–10 and tempo four phases on every path, the assistant's included.
+const rpeSchema = z.number().min(SET_SPEC_MEASURES.rpe.floor).max(SET_SPEC_MEASURES.rpe.ceiling);
+const tempoSchema = z.string().regex(TEMPO_PATTERN);
+// Migration 183: the column list is required and never empty.
+const prescribedFieldsSchema = z.array(z.enum(PRESCRIBED_FIELDS)).min(1);
+
 const exerciseDraftSnapshotSchema = z.object({
   uid: uidSchema,
   exerciseId: z.string().uuid().nullable(),
@@ -40,20 +47,17 @@ const exerciseDraftSnapshotSchema = z.object({
   repsMin: z.number().int().min(0).max(100).nullable(),
   repsMax: z.number().int().min(0).max(100).nullable(),
   repsTarget: z.string().max(20).nullable(),
-  rpeTarget: z.number().min(0).max(10).nullable(),
+  rpeTarget: rpeSchema.nullable(),
   percentage1rm: z.number().min(0).max(100).nullable(),
-  tempo: z.string().max(20).nullable(),
+  tempo: tempoSchema.nullable(),
   restSeconds: z.number().int().min(0).max(3600).nullable(),
   isWarmup: z.boolean(),
   notes: z.string().max(500).nullable(),
   videoUrl: z.string().max(500).nullable(),
-  // Migration 149. The assistant never narrows a prescription itself, but the
-  // snapshot round-trips the whole draft, so omitting this would let an AI edit
-  // silently widen an exercise back to all five columns.
-  prescribedFields: z
-    .array(z.enum(["set_type", "reps", "load", "rpe", "rest"]))
-    .min(1)
-    .nullable(),
+  // Migration 183. The assistant never narrows a prescription itself, but the
+  // snapshot round-trips the whole draft, so a list it stripped would be
+  // erased from the coach's draft by the replay.
+  prescribedFields: prescribedFieldsSchema,
 });
 
 // Migration 178. The snapshot carries every group's settings as well as its
@@ -155,18 +159,14 @@ const exercisePatchSchema = z
     repsMin: z.number().int().min(0).max(100).nullable().optional(),
     repsMax: z.number().int().min(0).max(100).nullable().optional(),
     repsTarget: z.string().max(20).nullable().optional(),
-    rpeTarget: z.number().min(0).max(10).nullable().optional(),
+    rpeTarget: rpeSchema.nullable().optional(),
     percentage1rm: z.number().min(0).max(100).nullable().optional(),
-    tempo: z.string().max(20).nullable().optional(),
+    tempo: tempoSchema.nullable().optional(),
     restSeconds: z.number().int().min(0).max(3600).nullable().optional(),
     isWarmup: z.boolean().optional(),
     notes: z.string().max(500).nullable().optional(),
     videoUrl: z.string().max(500).nullable().optional(),
-    prescribedFields: z
-      .array(z.enum(["set_type", "reps", "load", "rpe", "rest"]))
-      .min(1)
-      .nullable()
-      .optional(),
+    prescribedFields: prescribedFieldsSchema.optional(),
   })
   .strict();
 

@@ -57,7 +57,7 @@ const exerciseRow = {
   reps_target: null,
   rpe_target: 8,
   percentage_1rm: null,
-  tempo: "31X0",
+  tempo: "3-1-X-0",
   rest_seconds: 120,
   is_warmup: false,
   notes: "coach note",

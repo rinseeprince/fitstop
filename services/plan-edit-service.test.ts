@@ -34,6 +34,7 @@ import {
 import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
 import type { ProgramDraft } from "@/components/clients/training/program-builder/program-builder-types";
 import { planEditSaveSchema } from "@/lib/validations/training";
+import { SET_SPEC_MEASURES, SET_SPEC_MEASURE_KEYS } from "@/utils/exercise-set-specs";
 import { EXERCISE_WITH_GROUP_COLUMNS } from "./training-mappers";
 import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 
@@ -264,7 +265,7 @@ function groupedExerciseRow(
     is_warmup: false,
     set_specs: null,
     video_url: null,
-    prescribed_fields: null,
+    prescribed_fields: ["set_type", "reps", "load", "rpe", "rest"],
     is_active: true,
     created_at: ROW_UPDATED_AT,
     updated_at: ROW_UPDATED_AT,
@@ -915,7 +916,7 @@ function writtenExercise(columns: Record<string, unknown>) {
     is_warmup: false,
     set_specs: null,
     video_url: null,
-    prescribed_fields: null,
+    prescribed_fields: ["set_type", "reps", "load", "rpe", "rest"],
     ...columns,
   };
 }
@@ -1159,18 +1160,30 @@ describe("savePlanEdit", () => {
       const IN_HISTORY = "e3000000-0000-4000-8000-000000000003";
       vi.mocked(fetchVisibleExerciseIds).mockResolvedValue(new Set([MINE]));
       mockTables({});
+      // Every measure's pair, a tempo, a rest and a drop: the save must hand
+      // the function each one exactly as the route's schema parsed it.
       const specs = [
         {
           set_number: 1,
-          set_type: "working" as const,
-          reps_min: 6,
-          reps_max: 8,
+          set_type: "drop" as const,
+          reps_target: null,
           load_type: "absolute" as const,
-          load_value: 80,
+          ...Object.fromEntries(
+            SET_SPEC_MEASURE_KEYS.flatMap((measure) => {
+              const { min, max, floor, ceiling } = SET_SPEC_MEASURES[measure];
+              return [
+                [min, floor + 1],
+                [max, Math.min(ceiling, floor + 2)],
+              ];
+            }),
+          ),
+          tempo: "3-1-X-0",
+          rest_seconds: 90,
+          drops: [{ load_value: 60, reps: 8 }],
         },
       ];
       const days = grid(2, {
-        0: session("Push", [lone({ name: "Bench press", exerciseId: IN_HISTORY, sets: 3 })]),
+        0: session("Push", [lone({ name: "Bench press", exerciseId: IN_HISTORY, sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })]),
         3: {
           eventId: null,
           name: "Pull",
@@ -1188,7 +1201,7 @@ describe("savePlanEdit", () => {
               restBetweenRoundsSeconds: 90,
               notes: "No rest between the pulls",
               exercises: [
-                { name: "Pull-up", exerciseId: NOT_MINE, sets: 3 },
+                { name: "Pull-up", exerciseId: NOT_MINE, sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] },
                 {
                   name: "Row",
                   exerciseId: MINE,
@@ -1198,7 +1211,7 @@ describe("savePlanEdit", () => {
                   repsTarget: "6-8",
                   rpeTarget: 8,
                   percentage1rm: 75,
-                  tempo: "3010",
+                  tempo: "3-0-1-0",
                   restSeconds: 120,
                   notes: "Pause",
                   isWarmup: true,
@@ -1208,12 +1221,23 @@ describe("savePlanEdit", () => {
                 },
               ],
             },
-            lone({ name: "Face pull", sets: 2 }),
+            lone({ name: "Face pull", sets: 2, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }),
           ],
         },
         5: session("Legs"),
       });
 
+      // The route's schema keeps every key of the spec and every column name
+      // (the circuit above carries a time cap the schema refuses, to prove the
+      // function's columns; the exercise is parsed on its own).
+      const rowExercise = days[3].sessions[0].groups[0].exercises[1];
+      const parsed = planEditSaveSchema.parse({
+        days: [{ sessions: [{ eventId: null, name: "Pull", groups: [lone(rowExercise)] }] }, ...grid(1).slice(1)],
+        plan: { name: "Block A" },
+        version: "v",
+      });
+      expect(parsed.days[0].sessions[0].groups[0].exercises[0]).toEqual(rowExercise);
+      expect(parsed.days[0].sessions[0].groups[0].exercises[0].setSpecs).toEqual(specs);
       await save(days);
 
       const [pull, rest, legs] = rpcDays();
@@ -1244,7 +1268,7 @@ describe("savePlanEdit", () => {
                 reps_target: "6-8",
                 rpe_target: 8,
                 percentage_1rm: 75,
-                tempo: "3010",
+                tempo: "3-0-1-0",
                 rest_seconds: 120,
                 notes: "Pause",
                 is_warmup: true,
@@ -1386,8 +1410,8 @@ describe("savePlanEdit", () => {
     const UPPER_B = rowId(3);
     const specs = [
       // Numbered from 2 and keyed out of order, as a stored list can be.
-      { load_value: 40, set_type: "warmup", set_number: 2, reps_min: 10, reps_max: 10, load_type: "absolute" },
-      { load_value: 80, set_type: "working", set_number: 5, reps_min: 6, reps_max: 8, load_type: "absolute" },
+      { load_min: 40, load_max: 40, set_type: "warmup", set_number: 2, reps_min: 10, reps_max: 10, load_type: "absolute" },
+      { load_min: 80, load_max: 80, set_type: "working", set_number: 5, reps_min: 6, reps_max: 8, load_type: "absolute" },
     ];
     // Lower A's squat and lunge share a circuit with every setting a circuit
     // stores set, one set per round each; the circuit sits second, numbered
@@ -1425,7 +1449,7 @@ describe("savePlanEdit", () => {
           reps_target: "6-8",
           rpe_target: 7.5,
           percentage_1rm: 70,
-          tempo: "3010",
+          tempo: "3-0-1-0",
           rest_seconds: 120,
           notes: "Pause",
           prescribed_fields: ["reps", "load"],

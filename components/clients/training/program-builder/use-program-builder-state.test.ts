@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { PrescribedField } from "@/utils/prescribed-fields";
 import { act, renderHook } from "@testing-library/react";
 import { toast } from "sonner";
 import { STRAIGHT_SETS, sessionExercises, type GroupSettings } from "@/utils/exercise-groups";
@@ -168,7 +169,7 @@ describe("useProgramBuilderState — weeks", () => {
                     isWarmup: false,
                     notes: null,
                     videoUrl: null,
-                    prescribedFields: null,
+                    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
                   },
                 ],
               },
@@ -479,7 +480,7 @@ describe("useProgramBuilderState — exercises + normalize", () => {
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    prescribedFields: null,
+    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] as PrescribedField[],
   };
 
   it("add/update/remove exercise via session uid", () => {
@@ -556,7 +557,7 @@ describe("useProgramBuilderState — exercises sit in groups", () => {
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    prescribedFields: null,
+    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
   };
 
   const exercise = (uid: string, name: string): ExerciseDraft => ({ ...PICKED, uid, name });

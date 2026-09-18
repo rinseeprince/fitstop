@@ -457,7 +457,7 @@
   | is ordered, toggled, or assigned per owner | a join table carrying `position` / `enabled` / the owner FK — never an array whose index is the order |
   | is shared between owners (a template and a client, a coach and their clients) | one row referenced by both — copies only where `docs/ARCHITECTURE.md` says the library model is copy-based, and then the *join rows* are copied, not the entity |
   | will ever be counted, trended, or filtered on its own ("how did answers to Q3 change") | a table with an index on the column you will filter — a JSONB path scan is not a query plan |
-  | is a fixed enum of a few keys with presence semantics | a join table `(parent_id, key)` with a `CHECK` on the key, or a `TEXT[]` **only** when the set is closed, small, and never referenced (the migration-149 `prescribed_fields` case — and that migration documents why) |
+  | is a fixed enum of a few keys with presence semantics | a join table `(parent_id, key)` with a `CHECK` on the key, or a `TEXT[]` **only** when the set is closed, small, and never referenced (the `prescribed_fields` case, migrations 149 and 183: a closed list of nineteen defined once in `utils/prescribed-fields.ts`, mirrored by the CHECK, required on every row) |
 
   **What JSONB is for here, and only here:** value-bags and snapshots that have no identity
   and are never addressed from outside — a set prescription (`set_specs`), a frozen
@@ -634,7 +634,9 @@
 
   ### Training prescription model (migrations 119-121)
 
-  - **`set_specs` JSONB is the prescription. `sets` / `reps_min` / `reps_max` are a maintained projection, never independent truth.** Never write the compact three directly. Every insert/update goes through `projectExerciseCompact` (`utils/exercise-set-specs.ts`), which writes `set_specs`/`video_url` verbatim and re-derives the compact trio via `compactFromSpecs` (clamped to the `training_exercises.sets` CHECK [1,20]). Clone sites splat the source row's columns instead — never re-derive on a copy. A write path that sets `sets` by hand silently corrupts the coach's programming, and no test will tell you.
+  - **`set_specs` JSONB is the prescription. `sets` / `reps_min` / `reps_max` are a maintained projection, never independent truth.** Never write the compact three directly. Every insert/update goes through `projectExerciseCompact` (`utils/exercise-set-specs.ts`), which writes `set_specs`/`video_url` verbatim, re-derives the compact trio via `compactFromSpecs` (clamped to the `training_exercises.sets` CHECK [1,20]) and narrows the REQUIRED `prescribed_fields` list. Clone sites splat the source row's columns instead — never re-derive on a copy. A write path that sets `sets` by hand silently corrupts the coach's programming, and no test will tell you.
+  - **Every numeric per-set target is a min/max pair, and the measures are one table** (migration 183). `SET_SPEC_MEASURES` names each measure's two keys and bounds; the zod schema, the flattened rows and the assistant's print derive from it — add a measure there, never in a second list. A single value is the same number at both ends. Tempo is one compound value (`3-1-X-0`, `TEMPO_PATTERN`), rest one number, a drop one load and one rep count. RPE is 1–10 on every path. A spec carries no single-value `rpe_target` or `load_value`; never read or write one.
+  - **Every exercise names its columns.** `prescribed_fields` is `NOT NULL` with no default and required by every write schema: a writer that forgets the list is refused, never silently given the strength columns. The nineteen names live once in `PRESCRIBED_FIELDS` (`utils/prescribed-fields.ts`), mirrored by the CHECK and held together by a test that reads the migration; a new exercise starts on `DEFAULT_PRESCRIBED_FIELDS`. A path that saves or copies exercises carries the list and every target key, proved in `services/exercise-groups-survival.test.ts` THROUGH the path's route schema — a validator strips an untaught key without an error, so a survival test that bypasses the validator proves nothing.
   - **Read through `expandSetSpecs`, not the columns.** It returns authored specs when present and otherwise synthesizes N `working` specs from the compact columns, so every prescription yields per-set rows carrying a `set_type`. A reader that ignores `set_specs` sees a truthful but lossy summary — it loses warm-ups, AMRAP/drop/failure sets, per-set loads and per-set rest.
   - **Edits go through the shared kernel.** `applySetSpecEdit` (`utils/set-spec-edits.ts`) is the one pure editing path, used by both the builder hook and the assistant's server executors so they cannot drift. Its invariants are load-bearing: `MAX_SET_SPECS` 30, `MAX_WORKING_SETS` 20, never all-warmup, deleting the last set reverts `setSpecs` to `null` (never `[]`), and a no-op edit returns the same array reference so a blur can't silently materialize specs.
   - **Set type is coach-prescribed, never client-chosen.** `set_logs.set_type` is seeded from the prescription snapshot; the log schema accepts-but-ignores any client value. Analytics exclude `warmup` from every performance metric; the progression engine touches `working`-type sets only. **These two filters are deliberately different — don't unify them.**
@@ -953,3 +955,26 @@
   needs a fallback, and a fallback silently decides the unit for a payload that
   never stated one. That is exactly how pounds got stored as kilograms. Reject an
   untagged value; never guess it. Do not add a third tag.
+
+  ### Distance and time (training targets, migration 183)
+
+  The per-set targets store their measures canonically, like weights and lengths.
+  Beside each storage unit is what a coach types and reads — nobody types or reads
+  the stored unit (owner, 2026-09-18):
+
+  | Measure | Stored as | Typed and read as |
+  |---|---|---|
+  | Distance | metres (`distance_meters_*`) | km or miles by the viewer's units, a bare number; or with its unit ("400 m", "800 yd"); reads in m or yd under 1 km / 1 mile |
+  | Duration | seconds, to a tenth (`duration_seconds_*`) | hours and minutes — "2:00:00", "1h30", "90 min"; a bare number means minutes |
+  | Pace | seconds per km (`pace_seconds_per_km_*`) | minutes and seconds per km or mile by the viewer's units ("4:45 /km"); stored as typed, never worked out from distance and duration |
+  | Split | seconds per 500 m (`split_seconds_per_500m_*`) | m:ss per 500 m, for everyone |
+  | Calories, cadence, stroke rate, resistance, heart rate, power, % FTP | kcal, rpm or steps/min, strokes/min, the machine's level, bpm, watts, percent | the same |
+  | Load | kilograms, or a percentage by `load_type` | the viewer's unit, or % |
+
+  The bounds are `SET_SPEC_MEASURES` (`utils/exercise-set-specs.ts`), the owner's limits
+  (distance to 1,000 km, duration to 24 h, pace 1:00–60:00 /km, split 0:30–10:00 /500 m,
+  RPE 1–10, RIR 0–10, HR zone 1–5, …). The app sends canonical values and there is no new
+  unit tag — the rule above stands. Any conversion a screen needs — the imperial distance
+  and pace, the `h:mm:ss` and `m:ss` forms — lives in `utils/unit-conversions.ts` when that
+  screen is built (commit 12's inputs, 11b's boxes); until then no screen shows an endurance
+  target and nothing converts. A box shows what it recorded when the person leaves it.

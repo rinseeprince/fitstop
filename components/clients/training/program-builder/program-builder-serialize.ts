@@ -189,9 +189,9 @@ function exerciseDraftToInput(e: ExerciseDraft) {
     // this is the last-line belt.
     setSpecs: e.setSpecs && e.setSpecs.length > 0 ? e.setSpecs : null,
     videoUrl: e.videoUrl?.trim() ? e.videoUrl.trim() : null,
-    // null, never [] — an empty list is refused by the 149 CHECK and would
-    // render the client an empty grid.
-    prescribedFields: e.prescribedFields?.length ? e.prescribedFields : null,
+    // Never empty — an empty list is refused by the 183 CHECK and would render
+    // the client an empty grid; the narrowing is the belt.
+    prescribedFields: toPrescribedFields(e.prescribedFields),
   };
 }
 

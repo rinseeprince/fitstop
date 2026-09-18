@@ -117,7 +117,7 @@ function savedGroupRowsFromTrainingGroups(
         notes: e.notes ?? null,
         set_specs: (e.setSpecs ?? null) as unknown as Json,
         video_url: e.videoUrl ?? null,
-        prescribed_fields: e.prescribedFields ?? null,
+        prescribed_fields: e.prescribedFields,
       });
     });
   });

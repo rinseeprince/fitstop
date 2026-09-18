@@ -89,8 +89,9 @@ const workingSet = (load: number): SetSpec => ({
   reps_max: 5,
   reps_target: null,
   load_type: "absolute",
-  load_value: load,
-  rpe_target: null,
+  load_min: load, load_max: load,
+  rpe_min: null,
+  rpe_max: null,
   tempo: null,
   rest_seconds: 180,
   drops: null,
@@ -117,7 +118,7 @@ function exercise(
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    prescribedFields: null,
+    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
   };
 }
 
@@ -176,7 +177,7 @@ const tool = (tools: Array<{ name: string }>, name: string) => {
 const squatLoads = (ws: ReturnType<typeof makeWs>, weekIndex: number): number[] => {
   const [session] = ws.draft.weeks[weekIndex].days[0].sessions;
   return ((session ? sessionExercises(session)[0].setSpecs : null) ?? []).map(
-    (s) => s.load_value ?? -1,
+    (s) => s.load_min ?? -1,
   );
 };
 
@@ -225,8 +226,8 @@ describe("duplicate_week with progression", () => {
       scope: "compounds",
     } as never);
     const exercises = sessionExercises(ws.draft.weeks[1].days[0].sessions[0]);
-    expect(exercises[0].setSpecs?.[0].load_value).toBe(105); // Back Squat (Compound)
-    expect(exercises[1].setSpecs?.[0].load_value).toBe(40); // Leg Curl untouched
+    expect(exercises[0].setSpecs?.[0].load_min).toBe(105); // Back Squat (Compound)
+    expect(exercises[1].setSpecs?.[0].load_min).toBe(40); // Leg Curl untouched
   });
 
   it("relays the MAX_WEEKS belt instead of silently no-opping", async () => {
@@ -359,6 +360,106 @@ describe("set programming tools", () => {
     expect(op.patch.repsMax).toBe(8);
   });
 
+  it("set_exercise_sets writes RPE and load ranges as pairs, one value at both ends", async () => {
+    const ws = makeWs();
+    const setSets = tool(buildExerciseTools(ws), "set_exercise_sets");
+    const out = await setSets.run({
+      week: 1,
+      day: 1,
+      exerciseName: "Back Squat",
+      sets: [
+        { setType: "working", repsMin: 5, repsMax: 5, loadKg: 100, loadKgMax: 105, rpe: 7, rpeMax: 8 },
+        { setType: "working", repsMin: 5, repsMax: 5, loadPercent1rm: 70, loadPercent1rmMax: 75, rpe: 8, tempo: "3-1-X-0" },
+      ],
+    } as never);
+    expect(out).toMatch(/2 sets/);
+    const op = ws.ops[0];
+    if (op.type !== "update_exercise") throw new Error("expected update_exercise");
+    expect(op.patch.setSpecs?.[0]).toMatchObject({
+      load_type: "absolute", load_min: 100, load_max: 105, rpe_min: 7, rpe_max: 8,
+    });
+    expect(op.patch.setSpecs?.[1]).toMatchObject({
+      load_type: "pct_1rm", load_min: 70, load_max: 75, rpe_min: 8, rpe_max: 8, tempo: "3-1-X-0",
+    });
+    expect(op.patch.setSpecs?.[0]).not.toHaveProperty("load_value");
+    expect(op.patch.setSpecs?.[0]).not.toHaveProperty("rpe_target");
+  });
+
+  it("set_exercise_sets refuses a range that runs high to low, and a high end with no low end", async () => {
+    const ws = makeWs();
+    const setSets = tool(buildExerciseTools(ws), "set_exercise_sets");
+    expect(
+      await setSets.run({ week: 1, day: 1, exerciseName: "Back Squat", sets: [{ setType: "working", rpe: 8, rpeMax: 7 }] } as never),
+    ).toMatch(/low to high/);
+    expect(
+      await setSets.run({ week: 1, day: 1, exerciseName: "Back Squat", sets: [{ setType: "working", loadKgMax: 105 }] } as never),
+    ).toMatch(/loadKgMax needs loadKg/);
+    expect(ws.ops).toHaveLength(0);
+  });
+
+  it("set_exercise_sets refuses an exercise carrying targets it can't write, rather than dropping them", async () => {
+    const ws = makeWs();
+    const sessionUid = ws.draft.weeks[0].days[0].sessions[0].uid;
+    const squat = sessionExercises(ws.draft.weeks[0].days[0].sessions[0])[0];
+    ws.draft = normalizeDraft(
+      mapSession(ws.draft, sessionUid, (s) => ({
+        ...s,
+        groups: s.groups.map((g) => ({
+          ...g,
+          exercises: g.exercises.map((e) =>
+            e.uid === squat.uid
+              ? {
+                  ...e,
+                  setSpecs: [
+                    { ...workingSet(100), distance_meters_min: 400, distance_meters_max: 400, heart_rate_zone_min: 2, heart_rate_zone_max: 3 },
+                  ],
+                  sets: 1,
+                }
+              : e,
+          ),
+        })),
+      })),
+    );
+    const setSets = tool(buildExerciseTools(ws), "set_exercise_sets");
+    const out = await setSets.run({
+      week: 1, day: 1, exerciseName: "Back Squat",
+      sets: [{ setType: "working", repsMin: 5, repsMax: 5, loadKg: 120 }],
+    } as never);
+    expect(out).toMatch(/can't write yet \(Distance, HR zone\)/);
+    expect(ws.ops).toHaveLength(0);
+    // The targets are still there.
+    expect(sessionExercises(ws.draft.weeks[0].days[0].sessions[0])[0].setSpecs?.[0]).toMatchObject({
+      distance_meters_min: 400,
+      heart_rate_zone_max: 3,
+    });
+  });
+
+  it("update_exercise writes a load range onto working sets and keeps every other key", async () => {
+    const ws = makeWs();
+    const update = tool(buildExerciseTools(ws), "update_exercise");
+    const out = await update.run({
+      week: 1, day: 1, exerciseName: "Back Squat", loadKg: 100, loadKgMax: 110,
+    } as never);
+    expect(out).toMatch(/Updated/);
+    const op = ws.ops[0];
+    if (op.type !== "update_exercise") throw new Error("expected update_exercise");
+    const working = op.patch.setSpecs!.filter((s) => s.set_type === "working");
+    expect(working.every((s) => s.load_min === 100 && s.load_max === 110)).toBe(true);
+    expect(working.every((s) => s.rest_seconds === 180)).toBe(true);
+  });
+
+  it("add_exercise starts a new exercise on today's five columns and refuses an RPE of 0", async () => {
+    const ws = makeWs();
+    const add = tool(buildExerciseTools(ws), "add_exercise");
+    await add.run({ week: 1, day: 1, name: "Bench Press" } as never);
+    const op = ws.ops[0];
+    if (op.type !== "add_exercise") throw new Error("expected add_exercise");
+    expect(op.group.exercises[0].prescribedFields).toEqual(["set_type", "reps", "load", "rpe", "rest"]);
+    // The tool schema bounds rpeTarget at 1 (SET_SPEC_MEASURES.rpe.floor).
+    const schema = (add as unknown as { input_schema: { properties: { rpeTarget: { minimum: number } } } }).input_schema;
+    expect(schema.properties.rpeTarget.minimum).toBe(1);
+  });
+
   it("rejects an all-warmup set list", async () => {
     const ws = makeWs();
     const setSets = tool(buildExerciseTools(ws), "set_exercise_sets");
@@ -384,7 +485,7 @@ describe("set programming tools", () => {
     expect(out).toMatch(/Updated/);
     const op = ws.ops[0];
     if (op.type !== "update_exercise") throw new Error("expected update_exercise");
-    expect(op.patch.setSpecs?.every((s) => s.load_value === 45)).toBe(true);
+    expect(op.patch.setSpecs?.every((s) => s.load_min === 45)).toBe(true);
   });
 });
 
@@ -463,7 +564,7 @@ describe("review-fleet regressions (S6a follow-up)", () => {
     if (op.type !== "update_exercise") throw new Error("expected update_exercise");
     // The specs must carry the REQUESTED 5 sets at 5 reps @100kg…
     expect(op.patch.setSpecs).toHaveLength(5);
-    expect(op.patch.setSpecs?.every((s) => s.load_value === 100)).toBe(true);
+    expect(op.patch.setSpecs?.every((s) => s.load_min === 100)).toBe(true);
     expect(op.patch.setSpecs?.every((s) => s.reps_min === 5 && s.reps_max === 5)).toBe(true);
     // …and the compact columns must be the projection OF those specs, so the
     // save path's re-derivation can't silently revert the coach's 5x5.
@@ -618,7 +719,7 @@ describe("duplicate_week reports STORED loads, not recomputed arithmetic", () =>
     expect(out).not.toContain("92.6");
 
     const loads = (w: number) =>
-      sessionExercises(ws.draft.weeks[w].days[0].sessions[0])[0].setSpecs![0].load_value;
+      sessionExercises(ws.draft.weeks[w].days[0].sessions[0])[0].setSpecs![0].load_min;
     expect([loads(1), loads(2), loads(3)]).toEqual([84, 88, 92.5]);
   });
 });
@@ -1367,7 +1468,7 @@ describe("a day holding several sessions", () => {
       await update.run({ week: 1, day: 1, session: 2, exercisePosition: 2, loadKg: 85 } as never),
     ).toBe('Updated "Bench Press".');
     expect(
-      sessionExercises(ws.draft.weeks[0].days[0].sessions[1])[1].setSpecs![0].load_value,
+      sessionExercises(ws.draft.weeks[0].days[0].sessions[1])[1].setSpecs![0].load_min,
     ).toBe(85);
   });
 
@@ -1527,7 +1628,7 @@ describe("a day holding several sessions", () => {
     expect(out).toContain("Back Squat 100 kg → 105 kg");
     const [am, pm] = ws.draft.weeks[1].days[0].sessions;
     expect([am.name, pm.name]).toEqual(["AM run", "PM lift"]);
-    expect(sessionExercises(pm).map((e) => e.setSpecs![0].load_value)).toEqual([105, 85]);
+    expect(sessionExercises(pm).map((e) => e.setSpecs![0].load_min)).toEqual([105, 85]);
   });
 
   it("the catalog sweep reads every session: an unresolved exercise new on a day's second session discards the turn", () => {

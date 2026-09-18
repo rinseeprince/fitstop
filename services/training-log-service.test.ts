@@ -1026,7 +1026,7 @@ describe("logTrainingEvent", () => {
     // Flattens to five rows: 1 warmup · 2 working · 3 drop(top) · 4 drop · 5 failure.
     const setSpecs = [
       { set_number: 1, set_type: "warmup", reps_min: 12, reps_max: 12 },
-      { set_number: 2, set_type: "working", reps_min: 8, reps_max: 10, load_type: "absolute", load_value: 60 },
+      { set_number: 2, set_type: "working", reps_min: 8, reps_max: 10, load_type: "absolute", load_min: 60, load_max: 60 },
       { set_number: 3, set_type: "drop", drops: [{ weight: 40, reps: 8 }] },
       { set_number: 4, set_type: "failure" },
     ];
@@ -1040,7 +1040,7 @@ describe("logTrainingEvent", () => {
       reps_target: "8-10",
       rpe_target: 8,
       percentage_1rm: null,
-      tempo: "2010",
+      tempo: "2-0-1-0",
       rest_seconds: 60,
       notes: "Squeeze",
       is_warmup: false,
@@ -1133,7 +1133,7 @@ describe("logTrainingEvent", () => {
       reps_target: "8-10",
       rpe_target: 8,
       percentage_1rm: null,
-      tempo: "2010",
+      tempo: "2-0-1-0",
       rest_seconds: 60,
       notes: "Squeeze",
       is_warmup: false,
@@ -2477,7 +2477,7 @@ describe("getTrainingEventDetail", () => {
       format: "straight_sets",
     });
     expect(result?.groups[0].exercises).toEqual([
-      { source: "snapshot", snapshot: EXERCISE_A_SNAPSHOT },
+      { source: "snapshot", trainingExerciseId: "ex-a", snapshot: EXERCISE_A_SNAPSHOT },
     ]);
   });
 
@@ -2614,7 +2614,7 @@ describe("getTrainingEventDetail", () => {
     expect(result?.groups[0].id).toBe("grp-a");
     // The orphan follows as the group its snapshot records.
     expect(result?.groups[1]).toMatchObject({ id: "grp-b-retired", format: "straight_sets" });
-    expect(exercises[1]).toEqual({ source: "snapshot", snapshot: orphanSnapshot });
+    expect(exercises[1]).toEqual({ source: "snapshot", trainingExerciseId: EXERCISE_B, snapshot: orphanSnapshot });
   });
 
   // -------------------------------------------------------------------------
@@ -2734,13 +2734,13 @@ describe("getTrainingEventDetail", () => {
         id: "ex-squat",
         orderIndex: 0,
         ...STRAIGHT_SETS,
-        exercises: [{ source: "snapshot", snapshot: { ...legacy, name: "Squat", order_index: 0 } }],
+        exercises: [{ source: "snapshot", trainingExerciseId: "ex-squat", snapshot: { ...legacy, name: "Squat", order_index: 0 } }],
       },
       {
         id: "ex-press",
         orderIndex: 2,
         ...STRAIGHT_SETS,
-        exercises: [{ source: "snapshot", snapshot: { ...legacy, name: "Press", order_index: 2 } }],
+        exercises: [{ source: "snapshot", trainingExerciseId: "ex-press", snapshot: { ...legacy, name: "Press", order_index: 2 } }],
       },
     ]);
   });
@@ -2842,8 +2842,8 @@ describe("mapExerciseRow is the shared mapper, not a lossy local copy", () => {
           reps_max: 10,
           reps_target: null,
           load_type: "absolute",
-          load_value: 100,
-          rpe_target: 8,
+          load_min: 100, load_max: 100,
+          rpe_min: 8, rpe_max: 8,
           tempo: null,
           rest_seconds: 180,
           drops: null,
@@ -2854,7 +2854,7 @@ describe("mapExerciseRow is the shared mapper, not a lossy local copy", () => {
     } as never);
 
     expect(mapped.setSpecs).toHaveLength(1);
-    expect(mapped.setSpecs?.[0].load_value).toBe(100);
+    expect(mapped.setSpecs?.[0].load_min).toBe(100);
     expect(mapped.setSpecs?.[0].load_type).toBe("absolute");
     expect(mapped.videoUrl).toBe("https://example.test/squat");
   });
@@ -2904,7 +2904,7 @@ describe("getSessionLogDetail", () => {
       notes: null,
       is_warmup: false,
       set_specs: null,
-      prescribed_fields: null,
+      prescribed_fields: ["set_type", "reps", "load", "rpe", "rest"],
       ...over,
     };
   }

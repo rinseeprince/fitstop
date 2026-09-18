@@ -22,7 +22,7 @@ const exercise = (overrides: Partial<TrainingExercise> = {}): TrainingExercise =
   isWarmup: false,
   setSpecs: null,
   videoUrl: null,
-  prescribedFields: null,
+  prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
   createdAt: "2026-09-01T00:00:00Z",
   updatedAt: "2026-09-01T00:00:00Z",
   ...overrides,
@@ -119,7 +119,7 @@ describe("isSessionUnchanged", () => {
     ["its target reps", { repsTarget: "8-10" }],
     ["its RPE", { rpeTarget: 8 }],
     ["its percentage of 1RM", { percentage1rm: 75 }],
-    ["its tempo", { tempo: "3010" }],
+    ["its tempo", { tempo: "3-0-1-0" }],
     ["its rest", { restSeconds: 90 }],
     ["its note", { notes: "Pause at the bottom" }],
     ["its warm-up flag", { isWarmup: true }],
@@ -129,7 +129,7 @@ describe("isSessionUnchanged", () => {
       "a set's load",
       {
         setSpecs: [
-          { set_number: 1, set_type: "working", reps_min: 8, reps_max: 10, load_type: "absolute", load_value: 82.5 },
+          { set_number: 1, set_type: "working", reps_min: 8, reps_max: 10, load_type: "absolute", load_min: 82.5, load_max: 82.5 },
         ],
       },
     ],
@@ -260,8 +260,8 @@ describe("isSessionUnchanged", () => {
           lone(
             exercise({
               setSpecs: [
-                { set_type: "warmup", set_number: 3, reps_min: 10, reps_max: 10, load_type: "absolute", load_value: 40 },
-                { set_type: "working", set_number: 7, reps_min: 8, reps_max: 10, load_type: "absolute", load_value: 80 },
+                { set_type: "warmup", set_number: 3, reps_min: 10, reps_max: 10, load_type: "absolute", load_min: 40, load_max: 40 },
+                { set_type: "working", set_number: 7, reps_min: 8, reps_max: 10, load_type: "absolute", load_min: 80, load_max: 80 },
               ],
             }),
           ),
@@ -272,8 +272,8 @@ describe("isSessionUnchanged", () => {
           lone(
             exercise({
               setSpecs: [
-                { set_number: 1, set_type: "warmup", load_type: "absolute", load_value: 40, reps_min: 10, reps_max: 10 },
-                { set_number: 2, set_type: "working", load_type: "absolute", load_value: 80, reps_min: 8, reps_max: 10 },
+                { set_number: 1, set_type: "warmup", load_type: "absolute", load_min: 40, load_max: 40, reps_min: 10, reps_max: 10 },
+                { set_number: 2, set_type: "working", load_type: "absolute", load_min: 80, load_max: 80, reps_min: 8, reps_max: 10 },
               ],
             }),
           ),
@@ -289,7 +289,7 @@ describe("isSessionUnchanged", () => {
         ],
       });
       const saved = laidDay({
-        groups: [lone(exercise({ setSpecs: null, videoUrl: "https://example.com/bench", prescribedFields: null }))],
+        groups: [lone(exercise({ setSpecs: null, videoUrl: "https://example.com/bench", prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }))],
       });
       expect(isSessionUnchanged(laid, saved)).toBe(true);
     });

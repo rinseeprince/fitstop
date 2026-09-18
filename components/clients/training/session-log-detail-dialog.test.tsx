@@ -38,8 +38,9 @@ function spec(overrides: Partial<SetSpec> & { set_number: number }): SetSpec {
     reps_max: null,
     reps_target: null,
     load_type: null,
-    load_value: null,
-    rpe_target: null,
+    load_min: null, load_max: null,
+    rpe_min: null,
+    rpe_max: null,
     tempo: null,
     rest_seconds: null,
     drops: null,
@@ -362,7 +363,7 @@ describe("SessionLogDetailDialog", () => {
                   reps_min: 5,
                   reps_max: 5,
                   load_type: "absolute",
-                  load_value: 100,
+                  load_min: 100, load_max: 100,
                 }),
               ],
             },
@@ -373,7 +374,7 @@ describe("SessionLogDetailDialog", () => {
 
       render(<SessionLogDetailDialog {...defaultProps} />);
 
-      expect(screen.getByText("5 @ 100kg")).toBeInTheDocument();
+      expect(screen.getByText("5 @ 100 kg")).toBeInTheDocument();
       expect(screen.getByText("Weight (kg)")).toBeInTheDocument();
     });
 
@@ -390,15 +391,15 @@ describe("SessionLogDetailDialog", () => {
                   reps_min: 10,
                   reps_max: 12,
                   load_type: "pct_1rm",
-                  load_value: 60,
-                  rpe_target: 8,
+                  load_min: 60, load_max: 60,
+                  rpe_min: 8, rpe_max: 8,
                 }),
                 spec({
                   set_number: 2,
                   reps_min: 10,
                   reps_max: 12,
                   load_type: "pct_top",
-                  load_value: 80,
+                  load_min: 80, load_max: 80,
                 }),
               ],
             },
@@ -431,8 +432,8 @@ describe("SessionLogDetailDialog", () => {
                   reps_min: 7,
                   reps_max: 11,
                   load_type: "pct_1rm",
-                  load_value: 60,
-                  rpe_target: 9,
+                  load_min: 60, load_max: 60,
+                  rpe_min: 9, rpe_max: 9,
                 }),
               ],
             },
@@ -512,7 +513,7 @@ describe("SessionLogDetailDialog", () => {
       expect(screen.getAllByText("Drop")).toHaveLength(3);
       const [, dropTop, firstDrop, lastDrop] = rows();
       expect(within(lastDrop).getByText("Logged")).toBeInTheDocument();
-      expect(within(lastDrop).getByText("6 @ 40kg")).toBeInTheDocument();
+      expect(within(lastDrop).getByText("6 @ 40 kg")).toBeInTheDocument();
 
       // buildSetDisplayNumbers returns the PARENT's number for a drop
       // continuation and leaves blanking to each renderer, so the extraction

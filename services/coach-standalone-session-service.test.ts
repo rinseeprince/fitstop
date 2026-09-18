@@ -84,7 +84,7 @@ const exerciseRow = {
   rest_seconds: 180,
   is_warmup: false,
   notes: null,
-  set_specs: [{ set_number: 1, set_type: "working", load_type: "pct_1rm", load_value: 80 }],
+  set_specs: [{ set_number: 1, set_type: "working", load_type: "pct_1rm", load_min: 80, load_max: 80 }],
   video_url: "https://example.com/squat.mp4",
   created_at: "2026-06-01T00:00:00Z",
   updated_at: "2026-06-01T00:00:00Z",
@@ -172,7 +172,7 @@ describe("coach-standalone-session-service", () => {
 
       const sessionId = await createStandaloneSession("coach-1", {
         name: "Quick Workout",
-        groups: [lone({ name: "Bench Press", sets: 3 })],
+        groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
       });
 
       expect(sessionId).toBe("session-1");
@@ -202,7 +202,7 @@ describe("coach-standalone-session-service", () => {
 
       await createStandaloneSession("coach-1", {
         name: "Test Session",
-        groups: [lone({ name: "Bench Press", sets: 3 }), lone({ name: "Squat", sets: 4 })],
+        groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }), lone({ name: "Squat", sets: 4, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
       });
 
       expect(mockResolveExercises).toHaveBeenCalledWith(
@@ -226,8 +226,8 @@ describe("coach-standalone-session-service", () => {
       await createStandaloneSession("coach-1", {
         name: "Test Session",
         groups: [
-          lone({ name: "Own Exercise", exerciseId: "ex-own", sets: 3 }),
-          lone({ name: "Foreign Exercise", exerciseId: "ex-foreign", sets: 3 }),
+          lone({ name: "Own Exercise", exerciseId: "ex-own", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }),
+          lone({ name: "Foreign Exercise", exerciseId: "ex-foreign", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }),
         ],
       });
 
@@ -264,7 +264,7 @@ describe("coach-standalone-session-service", () => {
       await expect(
         createStandaloneSession("coach-1", {
           name: "Doomed",
-          groups: [lone({ name: "Bench Press", sets: 3 })],
+          groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
         })
       ).rejects.toThrow(/insert blew up/);
 
@@ -291,7 +291,7 @@ describe("coach-standalone-session-service", () => {
       await expect(
         createStandaloneSession("coach-1", {
           name: "Doomed",
-          groups: [lone({ name: "Bench Press", sets: 3 })],
+          groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
         })
       ).rejects.toThrow(/group insert blew up/);
 
@@ -320,7 +320,7 @@ describe("coach-standalone-session-service", () => {
 
       const result = await createStandaloneSessionDeduped("coach-1", {
         name: "Push Day A",
-        groups: [lone({ name: "Bench Press", sets: 3 })],
+        groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
       });
 
       expect(result).toEqual({ sessionId: "s-new", name: "Push Day A" });
@@ -343,7 +343,7 @@ describe("coach-standalone-session-service", () => {
 
       const result = await createStandaloneSessionDeduped("coach-1", {
         name: "Leg Day A",
-        groups: [lone({ name: "Squat", sets: 3 })],
+        groups: [lone({ name: "Squat", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
       });
 
       expect(result.name).toBe("Leg Day A (copy)");
@@ -367,7 +367,7 @@ describe("coach-standalone-session-service", () => {
 
       const result = await createStandaloneSessionDeduped("coach-1", {
         name: "Push Day",
-        groups: [lone({ name: "Bench Press", sets: 3 })],
+        groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
       });
 
       expect(result.name).toBe("Push Day (copy 2)");
@@ -388,7 +388,7 @@ describe("coach-standalone-session-service", () => {
 
       const result = await createStandaloneSessionDeduped("coach-1", {
         name: longName,
-        groups: [lone({ name: "Bench Press", sets: 3 })],
+        groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
       });
 
       expect(result.name).toBe(`${"A".repeat(88)} (copy)`);
@@ -417,6 +417,7 @@ describe("coach-standalone-session-service", () => {
           lone({
             name: "Bench Press",
             sets: 3,
+            prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
             setSpecs: specs as never,
             videoUrl: "https://example.com/bench.mp4",
           }),
@@ -486,11 +487,12 @@ describe("coach-standalone-session-service", () => {
           lone({
             name: "Bench Press",
             exerciseId: "ex-own",
+            prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
             sets: 3,
             setSpecs: specs as never,
             videoUrl: "https://example.com/bench.mp4",
           }),
-          lone({ name: "Flye", sets: 3 }),
+          lone({ name: "Flye", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }),
         ],
       });
 
@@ -583,7 +585,7 @@ describe("coach-standalone-session-service", () => {
 
       await overwriteStandaloneSession("s1", "coach-1", {
         name: "X",
-        groups: [lone({ name: "Foreign", exerciseId: "ex-foreign", sets: 3 })],
+        groups: [lone({ name: "Foreign", exerciseId: "ex-foreign", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
       });
 
       expect(mockResolveExercises).toHaveBeenCalledWith(["Foreign"], "coach-1");
@@ -615,7 +617,7 @@ describe("coach-standalone-session-service", () => {
       await expect(
         overwriteStandaloneSession("s1", "coach-1", {
           name: "X",
-          groups: [lone({ name: "Bench Press", sets: 3 })],
+          groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
         })
       ).rejects.toThrow(/insert blew up/);
 
@@ -657,7 +659,7 @@ describe("coach-standalone-session-service", () => {
       await expect(
         overwriteStandaloneSession("s1", "coach-1", {
           name: "X",
-          groups: [lone({ name: "Bench Press", sets: 3 })],
+          groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
         })
       ).rejects.toThrow(/group insert blew up/);
 
@@ -704,7 +706,7 @@ describe("coach-standalone-session-service", () => {
       await expect(
         overwriteStandaloneSession("s1", "coach-1", {
           name: "X",
-          groups: [lone({ name: "Bench Press", sets: 3 })],
+          groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
         })
       ).rejects.toThrow(
         "Failed to insert saved exercises: insert blew up; restore also failed: Failed to insert saved exercise groups: restore boom"
@@ -719,7 +721,7 @@ describe("coach-standalone-session-service", () => {
       await expect(
         overwriteStandaloneSession("s1", "coach-1", {
           name: "X",
-          groups: [lone({ name: "Bench Press", sets: 3 })],
+          groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
         })
       ).rejects.toThrow("resolve boom");
 
@@ -776,7 +778,7 @@ describe("coach-standalone-session-service", () => {
       await expect(
         overwriteStandaloneSession("s1", "coach-1", {
           name: "X",
-          groups: [lone({ name: "Bench Press", sets: 3 })],
+          groups: [lone({ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })],
         })
       ).rejects.toThrow("Failed to update session: upd boom");
 

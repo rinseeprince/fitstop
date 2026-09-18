@@ -39,7 +39,7 @@ function makeRequest(body: unknown) {
 const validBody = {
   name: "Push Day",
   focus: "chest",
-  groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench Press", sets: 3 }] }],
+  groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench Press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }] }],
 };
 
 const params = { params: Promise.resolve({ savedSessionId: "s1" }) };

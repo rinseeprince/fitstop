@@ -18,7 +18,14 @@ import {
   formatReps,
   formatSetCount,
 } from "@/components/clients/training/program-builder/progression-preview-model";
-import { setSpecCount, type SetSpec } from "@/utils/exercise-set-specs";
+import {
+  SET_SPEC_MEASURE_KEYS,
+  setSpecCount,
+  specRange,
+  type SetSpec,
+  type SetSpecMeasure,
+} from "@/utils/exercise-set-specs";
+import { formatTargetRange } from "@/utils/target-range";
 import { countSessionExercises, sessionExercises } from "@/utils/exercise-groups";
 import { groupHeading, groupHeadingText } from "@/utils/exercise-group-display";
 import {
@@ -270,20 +277,53 @@ export function reorderDestination(
 
 // --- Compact rendering for read tools ---
 
+// Every measure a set can carry, as the model reads it: its name and the
+// canonical storage unit (metres, seconds, seconds per km…), never the
+// viewer's — the model speaks canonical units in every tool it calls.
+type PrintedMeasure = Exclude<SetSpecMeasure, "reps" | "load">;
+const MEASURE_PRINT: Record<PrintedMeasure, { label: string; unit: string }> = {
+  rpe: { label: "RPE", unit: "" },
+  rir: { label: "RIR", unit: "" },
+  distance: { label: "distance", unit: "m" },
+  duration: { label: "duration", unit: "s" },
+  pace: { label: "pace", unit: "s/km" },
+  split: { label: "split", unit: "s/500m" },
+  calories: { label: "calories", unit: "kcal" },
+  cadence: { label: "cadence", unit: "rpm" },
+  stroke_rate: { label: "stroke rate", unit: "spm" },
+  resistance: { label: "resistance", unit: "" },
+  heart_rate_zone: { label: "HR zone", unit: "" },
+  heart_rate: { label: "HR", unit: "bpm" },
+  power: { label: "power", unit: "W" },
+  ftp_percent: { label: "FTP", unit: "%" },
+};
+
+// A set's line prints every target it carries — reps, load, then each other
+// measure by name — each one value or a range ("7-8").
 const specLine = (s: SetSpec): string => {
-  const reps =
-    s.reps_min != null || s.reps_max != null
-      ? `${s.reps_min ?? "?"}-${s.reps_max ?? "?"} reps`
-      : (s.reps_target ?? "reps —");
+  const repsRange = formatTargetRange(specRange(s, "reps"));
+  const reps = repsRange ? `${repsRange} reps` : (s.reps_target ?? "reps —");
+  const loadRange = formatTargetRange(specRange(s, "load"));
   const load =
-    s.load_value != null && s.load_type != null
+    loadRange && s.load_type != null
       ? s.load_type === "absolute"
-        ? ` @ ${s.load_value}kg`
-        : ` @ ${s.load_value}% (${s.load_type})`
+        ? ` @ ${loadRange}kg`
+        : ` @ ${loadRange}% (${s.load_type})`
       : "";
-  const rpe = s.rpe_target != null ? ` RPE${s.rpe_target}` : "";
+  const others = SET_SPEC_MEASURE_KEYS.filter(
+    (m): m is PrintedMeasure => m !== "reps" && m !== "load",
+  )
+    .map((measure) => {
+      const range = formatTargetRange(specRange(s, measure));
+      if (!range) return "";
+      const { label, unit } = MEASURE_PRINT[measure];
+      return ` ${label} ${range}${unit}`;
+    })
+    .join("");
+  const tempo = s.tempo ? ` tempo ${s.tempo}` : "";
+  const rest = s.rest_seconds != null ? ` rest ${s.rest_seconds}s` : "";
   const drops = s.drops?.length ? ` +${s.drops.length} drop(s)` : "";
-  return `S${s.set_number} ${s.set_type}: ${reps}${load}${rpe}${drops}`;
+  return `S${s.set_number} ${s.set_type}: ${reps}${load}${others}${tempo}${rest}${drops}`;
 };
 
 // `inRounds`: the exercise is in a superset or circuit, so its sets are the

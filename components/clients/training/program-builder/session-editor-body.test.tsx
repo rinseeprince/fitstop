@@ -37,7 +37,7 @@ function makeExercise(uid: string, sets: number): ExerciseDraft {
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    prescribedFields: null,
+    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
   };
 }
 

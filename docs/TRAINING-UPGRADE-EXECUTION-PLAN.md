@@ -763,7 +763,7 @@ WATCH FOR: migration 136 was dropped in commit 5 — don't reintroduce it; the m
 NOT IN THIS COMMIT: one report assembly for both check-in views (the old 4b — the check-in rework).
 ```
 
-### Commit 11a — Measurement columns 1: the prescription
+### Commit 11a — Measurement columns 1: the prescription — SHIPPED 2026-09-18
 
 ```text
 Implement commit 11a of 22 — Measurement columns 1: the prescription — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

@@ -1209,7 +1209,7 @@ export type Database = {
           notes: string | null
           order_index: number
           percentage_1rm: number | null
-          prescribed_fields: string[] | null
+          prescribed_fields: string[]
           reps_max: number | null
           reps_min: number | null
           reps_target: string | null
@@ -1232,7 +1232,7 @@ export type Database = {
           notes?: string | null
           order_index?: number
           percentage_1rm?: number | null
-          prescribed_fields?: string[] | null
+          prescribed_fields: string[]
           reps_max?: number | null
           reps_min?: number | null
           reps_target?: string | null
@@ -1255,7 +1255,7 @@ export type Database = {
           notes?: string | null
           order_index?: number
           percentage_1rm?: number | null
-          prescribed_fields?: string[] | null
+          prescribed_fields?: string[]
           reps_max?: number | null
           reps_min?: number | null
           reps_target?: string | null
@@ -2433,7 +2433,7 @@ export type Database = {
           notes: string | null
           order_index: number
           percentage_1rm: number | null
-          prescribed_fields: string[] | null
+          prescribed_fields: string[]
           reps_max: number | null
           reps_min: number | null
           reps_target: string | null
@@ -2457,7 +2457,7 @@ export type Database = {
           notes?: string | null
           order_index?: number
           percentage_1rm?: number | null
-          prescribed_fields?: string[] | null
+          prescribed_fields: string[]
           reps_max?: number | null
           reps_min?: number | null
           reps_target?: string | null
@@ -2481,7 +2481,7 @@ export type Database = {
           notes?: string | null
           order_index?: number
           percentage_1rm?: number | null
-          prescribed_fields?: string[] | null
+          prescribed_fields?: string[]
           reps_max?: number | null
           reps_min?: number | null
           reps_target?: string | null

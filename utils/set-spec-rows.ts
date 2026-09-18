@@ -1,6 +1,12 @@
-import { dropLoadValue, MAX_SET_SPECS } from "./exercise-set-specs";
-import type { SetSpec, SetType } from "./exercise-set-specs";
+import {
+  dropLoadValue,
+  MAX_SET_SPECS,
+  SET_SPEC_MEASURE_KEYS,
+  specRange,
+} from "./exercise-set-specs";
+import type { SetSpec, SetSpecMeasure, SetType } from "./exercise-set-specs";
 import { MAX_DROPS } from "./set-spec-edits";
+import { formatTargetReadout, type TargetRange } from "./target-range";
 
 // The prescription, flattened to the rows a CLIENT logs against.
 //
@@ -28,6 +34,9 @@ import { MAX_DROPS } from "./set-spec-edits";
  */
 export const MAX_PRESCRIBED_ROWS = MAX_SET_SPECS * (1 + MAX_DROPS);
 
+/** Every measure's prescribed pair on one row, by measure (null ends = not prescribed). */
+export type PrescribedRanges = Readonly<Record<SetSpecMeasure, TargetRange>>;
+
 export type PrescribedRow = {
   /** The coach's set number. Drop children repeat their parent's. */
   setNumber: number;
@@ -40,11 +49,36 @@ export type PrescribedRow = {
   repsMax: number | null;
   repsTarget: string | null;
   loadType: SetSpec["load_type"];
-  loadValue: number | null;
-  rpeTarget: number | null;
+  /** The load pair, in the load type's unit; a drop's single value at both ends. */
+  loadMin: number | null;
+  loadMax: number | null;
+  rpeMin: number | null;
+  rpeMax: number | null;
+  tempo: string | null;
+  /**
+   * The same pairs — reps, load and RPE included — for a renderer that walks
+   * the exercise's columns rather than naming each one. A drop child carries
+   * only its reps and load.
+   */
+  ranges: PrescribedRanges;
   /** Null on drop children: a drop set is performed with no rest between drops. */
   restSeconds: number | null;
 };
+
+const NO_RANGES: PrescribedRanges = Object.freeze(
+  Object.fromEntries(
+    SET_SPEC_MEASURE_KEYS.map((measure) => [measure, { min: null, max: null }]),
+  ) as Record<SetSpecMeasure, TargetRange>,
+);
+
+function specRanges(spec: SetSpec, openEnded: boolean): PrescribedRanges {
+  return Object.fromEntries(
+    SET_SPEC_MEASURE_KEYS.map((measure) => [
+      measure,
+      measure === "reps" && openEnded ? { min: null, max: null } : specRange(spec, measure),
+    ]),
+  ) as Record<SetSpecMeasure, TargetRange>;
+}
 
 /**
  * Expand authored specs into the client's flat row list.
@@ -88,8 +122,12 @@ export function buildPrescribedRows(specs: SetSpec[]): PrescribedRow[] {
       repsMax: openEnded ? null : spec.reps_max ?? null,
       repsTarget: openEnded ? null : spec.reps_target ?? null,
       loadType: spec.load_type ?? null,
-      loadValue: spec.load_value ?? null,
-      rpeTarget: spec.rpe_target ?? null,
+      loadMin: spec.load_min ?? null,
+      loadMax: spec.load_max ?? null,
+      rpeMin: spec.rpe_min ?? null,
+      rpeMax: spec.rpe_max ?? null,
+      tempo: spec.tempo ?? null,
+      ranges: specRanges(spec, openEnded),
       restSeconds: spec.rest_seconds ?? null,
     });
 
@@ -97,23 +135,33 @@ export function buildPrescribedRows(specs: SetSpec[]): PrescribedRow[] {
 
     spec.drops.forEach((drop, i) => {
       const loadValue = dropLoadValue(drop);
+      // The PARENT's load type. A drop is performed in the same unit as the
+      // set it drops from, so the type lives once on the spec and the
+      // flattening distributes it — the same division of labour as
+      // `setNumber`, which drop children also inherit. It used to be
+      // hardcoded to "absolute", which is why a "% 1RM" set's drops still
+      // asked a coach for kilograms.
+      const loadType = loadValue == null ? null : (spec.load_type ?? "absolute");
+      const reps = drop.reps ?? null;
       rows.push({
         setNumber,
         setType: "drop",
         specIndex,
         dropIndex: i + 1,
-        repsMin: drop.reps ?? null,
-        repsMax: drop.reps ?? null,
+        repsMin: reps,
+        repsMax: reps,
         repsTarget: null,
-        // The PARENT's load type. A drop is performed in the same unit as the
-        // set it drops from, so the type lives once on the spec and the
-        // flattening distributes it — the same division of labour as
-        // `setNumber`, which drop children also inherit. It used to be
-        // hardcoded to "absolute", which is why a "% 1RM" set's drops still
-        // asked a coach for kilograms.
-        loadType: loadValue == null ? null : (spec.load_type ?? "absolute"),
-        loadValue,
-        rpeTarget: null,
+        loadType,
+        loadMin: loadValue,
+        loadMax: loadValue,
+        rpeMin: null,
+        rpeMax: null,
+        tempo: null,
+        ranges: {
+          ...NO_RANGES,
+          reps: { min: reps, max: reps },
+          load: { min: loadValue, max: loadValue },
+        },
         restSeconds: null,
       });
     });
@@ -217,25 +265,43 @@ export function restAfterRow(
 }
 
 /**
- * The read-only Load cell's text.
+ * The read-only Load cell's text: one value or a range — "100 kg",
+ * "100–105 kg", "70–75% 1RM", "80% top set".
  *
- * `unitLabel` is passed in rather than resolved here so this stays pure: the
- * viewer's unit belongs to the render boundary (CONVENTIONS §20), and the
- * caller has already converted `loadValue` into it for the absolute case.
+ * `absoluteDisplay` converts one canonical kilogram value into the viewer's
+ * unit as a string, and `unitLabel` names that unit, so this stays pure: the
+ * viewer's unit belongs to the render boundary (CONVENTIONS §20).
  * Percentages are unitless and never convert.
  */
 export function formatPrescribedLoad(
-  row: Pick<PrescribedRow, "loadType" | "loadValue">,
-  absoluteDisplayValue: string,
+  row: Pick<PrescribedRow, "loadType" | "loadMin" | "loadMax">,
+  absoluteDisplay: (kg: number) => string,
   unitLabel: string,
 ): string | null {
-  if (row.loadType == null || row.loadValue == null) return null;
+  if (row.loadType == null) return null;
+  if (row.loadMin == null && row.loadMax == null) return null;
+  const range = formatTargetReadout(
+    row.loadType === "absolute"
+      ? {
+          min: row.loadMin == null ? null : Number(absoluteDisplay(row.loadMin)),
+          max: row.loadMax == null ? null : Number(absoluteDisplay(row.loadMax)),
+        }
+      : { min: row.loadMin, max: row.loadMax },
+  );
+  if (range == null) return null;
   switch (row.loadType) {
     case "absolute":
-      return `${absoluteDisplayValue}${unitLabel}`;
+      return `${range} ${unitLabel}`;
     case "pct_1rm":
-      return `${row.loadValue}% 1RM`;
+      return `${range}% 1RM`;
     case "pct_top":
-      return `${row.loadValue}% top set`;
+      return `${range}% top set`;
   }
+}
+
+/** The read-only RPE cell's text: "8", "7–8", or null when none is prescribed. */
+export function formatPrescribedRpe(
+  row: Pick<PrescribedRow, "rpeMin" | "rpeMax">,
+): string | null {
+  return formatTargetReadout({ min: row.rpeMin, max: row.rpeMax });
 }

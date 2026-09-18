@@ -73,6 +73,7 @@ const mockPlan = {
 const benchPress = {
   name: "Bench Press",
   sets: 3,
+  prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
   setSpecs: [
     { set_number: 1, set_type: "warmup", reps_min: 10, reps_max: 12 },
     { set_number: 2, set_type: "working", reps_min: 5, reps_max: 8 },
@@ -99,8 +100,8 @@ const circuitGroup = {
   restBetweenRoundsSeconds: 90,
   notes: "A",
   exercises: [
-    { name: "Kettlebell Swing", sets: 1, repsMin: 15, repsMax: 15, isWarmup: false },
-    { name: "Push-up", sets: 1, repsMin: 10, repsMax: 12, restSeconds: 30, isWarmup: false },
+    { name: "Kettlebell Swing", sets: 1, repsMin: 15, repsMax: 15, isWarmup: false, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] },
+    { name: "Push-up", sets: 1, repsMin: 10, repsMax: 12, restSeconds: 30, isWarmup: false, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] },
   ],
 };
 

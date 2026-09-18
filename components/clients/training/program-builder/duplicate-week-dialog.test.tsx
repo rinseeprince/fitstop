@@ -61,7 +61,7 @@ function draftExercise(over: Partial<ExerciseDraft>): ExerciseDraft {
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    prescribedFields: null,
+    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
     ...over,
   };
 }
@@ -75,7 +75,7 @@ const working = (n: number, load: number, reps: [number, number]): SetSpec => ({
   set_number: n,
   set_type: "working",
   load_type: "absolute",
-  load_value: load,
+  load_min: load, load_max: load,
   reps_min: reps[0],
   reps_max: reps[1],
 });
@@ -112,7 +112,7 @@ function makeWeek(): WeekDraft {
               exerciseId: "e-bench",
               name: "Bench Press",
               setSpecs: [
-                { set_number: 1, set_type: "warmup", load_type: "absolute", load_value: 60 },
+                { set_number: 1, set_type: "warmup", load_type: "absolute", load_min: 60, load_max: 60 },
                 working(2, 100, [8, 10]),
                 working(3, 90, [8, 10]),
                 working(4, 90, [8, 10]),
@@ -177,10 +177,10 @@ describe("DuplicateWeekDialog", () => {
     expect(committed.uid).not.toBe(week.uid);
     const bench = sessionExercises(committed.days[0].sessions[0])[0];
     expect(bench.uid).not.toBe("ex-bench");
-    expect(bench.setSpecs!.map((s) => s.load_value)).toEqual([60, 102.5, 92.5, 92.5]);
+    expect(bench.setSpecs!.map((s) => s.load_min)).toEqual([60, 102.5, 92.5, 92.5]);
     expect(committed.days[0].sessions[0].calorieSurplusPercentage).toBe(12);
     // the frozen source is untouched
-    expect(sessionExercises(week.days[0].sessions[0])[0].setSpecs!.map((s) => s.load_value)).toEqual([
+    expect(sessionExercises(week.days[0].sessions[0])[0].setSpecs!.map((s) => s.load_min)).toEqual([
       60, 100, 90, 90,
     ]);
   });
@@ -241,7 +241,7 @@ describe("DuplicateWeekDialog", () => {
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
     const [bench, curl] = sessionExercises(committed.days[0].sessions[0]);
     // warm-up + first two working sets survive; the LAST working set was removed
-    expect(bench.setSpecs!.map((s) => [s.set_type, s.load_value])).toEqual([
+    expect(bench.setSpecs!.map((s) => [s.set_type, s.load_min])).toEqual([
       ["warmup", 60],
       ["working", 100],
       ["working", 90],
@@ -284,7 +284,7 @@ describe("DuplicateWeekDialog", () => {
     fireEvent.click(commitButton());
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
     expect(
-      sessionExercises(committed.days[0].sessions[0])[0].setSpecs!.map((s) => s.load_value),
+      sessionExercises(committed.days[0].sessions[0])[0].setSpecs!.map((s) => s.load_min),
     ).toEqual([60, 100, 90, 90]);
   });
 
@@ -341,8 +341,8 @@ describe("DuplicateWeekDialog", () => {
     expect([copiedPush.name, copiedPull.name]).toEqual(["Push", "Pull"]);
     expect(copiedPush.uid).not.toBe("sess-push");
     expect(copiedPull.uid).not.toBe("sess-pull");
-    expect(sessionExercises(copiedPull)[0].setSpecs!.map((s) => s.load_value)).toEqual([82.5, 82.5]);
-    expect(sessionExercises(copiedPush)[0].setSpecs!.map((s) => s.load_value)).toEqual([60, 102.5, 92.5, 92.5]);
+    expect(sessionExercises(copiedPull)[0].setSpecs!.map((s) => s.load_min)).toEqual([82.5, 82.5]);
+    expect(sessionExercises(copiedPush)[0].setSpecs!.map((s) => s.load_min)).toEqual([60, 102.5, 92.5, 92.5]);
   });
 
   it("disables commit at the 52-week limit", () => {

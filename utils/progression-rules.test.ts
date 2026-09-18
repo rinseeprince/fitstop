@@ -25,7 +25,7 @@ function spec(setType: SetSpec["set_type"], setNumber: number, over: Partial<Set
 }
 
 function absWorking(setNumber: number, load: number, over: Partial<SetSpec> = {}): SetSpec {
-  return spec("working", setNumber, { load_type: "absolute", load_value: load, ...over });
+  return spec("working", setNumber, { load_type: "absolute", load_min: load, load_max: load, ...over });
 }
 
 function exercise(over: Partial<ProgressionExercise> = {}): ProgressionExercise {
@@ -64,14 +64,14 @@ const snapshot = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 describe("progressSetSpecs — load kg", () => {
   it("adds kg to absolute working loads only; every other spec keeps its reference", () => {
     const specs = [
-      spec("warmup", 1, { load_type: "absolute", load_value: 60 }),
+      spec("warmup", 1, { load_type: "absolute", load_min: 60, load_max: 60 }),
       absWorking(2, 100),
-      spec("working", 3, { load_type: "pct_1rm", load_value: 70 }),
-      spec("drop", 4, { load_type: "absolute", load_value: 80 }),
-      spec("amrap", 5, { load_type: "absolute", load_value: 90 }),
+      spec("working", 3, { load_type: "pct_1rm", load_min: 70, load_max: 70 }),
+      spec("drop", 4, { load_type: "absolute", load_min: 80, load_max: 80 }),
+      spec("amrap", 5, { load_type: "absolute", load_min: 90, load_max: 90 }),
     ];
     const next = progressSetSpecs(specs, kg(2.5))!;
-    expect(next[1].load_value).toBe(102.5);
+    expect(next[1].load_min).toBe(102.5);
     // warmup / pct working / drop / amrap: untouched by reference
     expect(next[0]).toBe(specs[0]);
     expect(next[2]).toBe(specs[2]);
@@ -80,30 +80,30 @@ describe("progressSetSpecs — load kg", () => {
   });
 
   it("treats a spec with MISSING set_type as working (countWorkingSets convention)", () => {
-    const untyped = { set_number: 1, load_type: "absolute", load_value: 100 } as SetSpec;
+    const untyped = { set_number: 1, load_type: "absolute", load_min: 100, load_max: 100 } as SetSpec;
     const next = progressSetSpecs([untyped], kg(2.5))!;
-    expect(next[0].load_value).toBe(102.5);
+    expect(next[0].load_min).toBe(102.5);
   });
 
   it("never fabricates a load_type: load_value with load_type null is skipped by BOTH load rules", () => {
-    const specs = [spec("working", 1, { load_type: null, load_value: 100 })];
+    const specs = [spec("working", 1, { load_type: null, load_min: 100, load_max: 100 })];
     expect(progressSetSpecs(specs, kg(2.5))).toBeNull();
     expect(progressSetSpecs(specs, pct(2.5))).toBeNull();
   });
 
   it("scrubs float dust to 2dp", () => {
     const next = progressSetSpecs([absWorking(1, 1.1)], kg(2.2))!;
-    expect(next[0].load_value).toBe(3.3);
+    expect(next[0].load_min).toBe(3.3);
   });
 
   it("clamps to [0, 2000]", () => {
-    expect(progressSetSpecs([absWorking(1, 1999)], kg(5))![0].load_value).toBe(2000);
-    expect(progressSetSpecs([absWorking(1, 2)], kg(-5))![0].load_value).toBe(0);
+    expect(progressSetSpecs([absWorking(1, 1999)], kg(5))![0].load_min).toBe(2000);
+    expect(progressSetSpecs([absWorking(1, 2)], kg(-5))![0].load_min).toBe(0);
   });
 
   it("returns null when no working set carries an absolute load", () => {
     const specs = [
-      spec("working", 1, { load_type: "pct_1rm", load_value: 70 }),
+      spec("working", 1, { load_type: "pct_1rm", load_min: 70, load_max: 70 }),
       spec("working", 2), // no load at all
     ];
     expect(progressSetSpecs(specs, kg(2.5))).toBeNull();
@@ -113,23 +113,23 @@ describe("progressSetSpecs — load kg", () => {
 describe("progressSetSpecs — load percent", () => {
   it("multiplies absolute loads and snaps to the nearest 0.5 kg", () => {
     const next = progressSetSpecs([absWorking(1, 100), absWorking(2, 72.5)], pct(2.5))!;
-    expect(next[0].load_value).toBe(102.5);
-    expect(next[1].load_value).toBe(74.5); // 74.3125 -> nearest 0.5
+    expect(next[0].load_min).toBe(102.5);
+    expect(next[1].load_min).toBe(74.5); // 74.3125 -> nearest 0.5
   });
 
   it("adds percentage points to pct_1rm and pct_top loads, 1dp", () => {
     const specs = [
-      spec("working", 1, { load_type: "pct_1rm", load_value: 70 }),
-      spec("working", 2, { load_type: "pct_top", load_value: 85 }),
+      spec("working", 1, { load_type: "pct_1rm", load_min: 70, load_max: 70 }),
+      spec("working", 2, { load_type: "pct_top", load_min: 85, load_max: 85 }),
     ];
     const next = progressSetSpecs(specs, pct(2.5))!;
-    expect(next[0].load_value).toBe(72.5);
-    expect(next[1].load_value).toBe(87.5);
+    expect(next[0].load_min).toBe(72.5);
+    expect(next[1].load_min).toBe(87.5);
   });
 
   it("clamps pct loads at 100", () => {
-    const specs = [spec("working", 1, { load_type: "pct_1rm", load_value: 97.5 })];
-    expect(progressSetSpecs(specs, pct(5))![0].load_value).toBe(100);
+    const specs = [spec("working", 1, { load_type: "pct_1rm", load_min: 97.5, load_max: 97.5 })];
+    expect(progressSetSpecs(specs, pct(5))![0].load_min).toBe(100);
   });
 
   it("a snap-back-to-same is a genuine no-op (null)", () => {
@@ -138,17 +138,17 @@ describe("progressSetSpecs — load percent", () => {
   });
 
   it("negative percent deloads both load styles", () => {
-    const specs = [absWorking(1, 100), spec("working", 2, { load_type: "pct_1rm", load_value: 70 })];
+    const specs = [absWorking(1, 100), spec("working", 2, { load_type: "pct_1rm", load_min: 70, load_max: 70 })];
     const next = progressSetSpecs(specs, pct(-2.5))!;
-    expect(next[0].load_value).toBe(97.5);
-    expect(next[1].load_value).toBe(67.5);
+    expect(next[0].load_min).toBe(97.5);
+    expect(next[1].load_min).toBe(67.5);
   });
 
   it("never scales drops[].weight under either load rule", () => {
     const drops = [{ weight: 80, reps: 8 }];
     const specs = [absWorking(1, 100, { drops })];
     const afterPct = progressSetSpecs(specs, pct(10))!;
-    expect(afterPct[0].load_value).toBe(110);
+    expect(afterPct[0].load_min).toBe(110);
     expect(afterPct[0].drops).toBe(drops); // same reference, values untouched
     const afterKg = progressSetSpecs(specs, kg(10))!;
     expect(afterKg[0].drops).toBe(drops);
@@ -206,14 +206,14 @@ describe("progressSetSpecs — sets", () => {
     const specs = [
       spec("warmup", 1),
       absWorking(2, 100),
-      absWorking(3, 90, { rpe_target: 8 }),
-      spec("drop", 4, { load_type: "absolute", load_value: 70 }),
+      absWorking(3, 90, { rpe_min: 8, rpe_max: 8 }),
+      spec("drop", 4, { load_type: "absolute", load_min: 70, load_max: 70 }),
     ];
     const next = progressSetSpecs(specs, sets(2))!;
     expect(next).toHaveLength(6);
     // clones of the last WORKING set (index 2), inserted before the drop
-    expect(next[3]).toMatchObject({ set_type: "working", load_value: 90, rpe_target: 8 });
-    expect(next[4]).toMatchObject({ set_type: "working", load_value: 90 });
+    expect(next[3]).toMatchObject({ set_type: "working", load_min: 90, load_max: 90, rpe_min: 8, rpe_max: 8 });
+    expect(next[4]).toMatchObject({ set_type: "working", load_min: 90, load_max: 90 });
     expect(next[5].set_type).toBe("drop");
     expect(next.map((s) => s.set_number)).toEqual([1, 2, 3, 4, 5, 6]);
     // specs before the insertion point keep identity
@@ -263,10 +263,10 @@ describe("progressSetSpecs — sets", () => {
       absWorking(2, 100), // top set — survives
       absWorking(3, 90),
       absWorking(4, 90),
-      spec("drop", 5, { load_type: "absolute", load_value: 70 }),
+      spec("drop", 5, { load_type: "absolute", load_min: 70, load_max: 70 }),
     ];
     const next = progressSetSpecs(specs, sets(-1))!;
-    expect(next.map((s) => [s.set_type, s.load_value])).toEqual([
+    expect(next.map((s) => [s.set_type, s.load_min])).toEqual([
       ["warmup", undefined],
       ["working", 100],
       ["working", 90],
@@ -283,7 +283,7 @@ describe("progressSetSpecs — sets", () => {
     const three = [absWorking(1, 100), absWorking(2, 90), absWorking(3, 90)];
     const floored = progressSetSpecs(three, sets(-5))!;
     expect(floored).toHaveLength(1);
-    expect(floored[0].load_value).toBe(100); // the first working set survives
+    expect(floored[0].load_min).toBe(100); // the first working set survives
     expect(progressSetSpecs([absWorking(1, 100)], sets(-1))).toBeNull();
   });
 });
@@ -318,14 +318,14 @@ describe("progressExercise", () => {
 
   it("compact-only + percent rule keeps specs and percentage1rm in lockstep", () => {
     const result = progressExercise(exercise({ percentage1rm: 75 }), pct(2.5))!;
-    expect(result.setSpecs.every((s) => s.load_value === 77.5)).toBe(true);
+    expect(result.setSpecs.every((s) => s.load_min === 77.5)).toBe(true);
     expect(result.percentage1rm).toBe(77.5);
   });
 
   it("spec-bearing + percent rule mirrors percentage1rm; null passes through", () => {
-    const specs = [spec("working", 1, { load_type: "pct_1rm", load_value: 70 })];
+    const specs = [spec("working", 1, { load_type: "pct_1rm", load_min: 70, load_max: 70 })];
     const mirrored = progressExercise(exercise({ setSpecs: specs, percentage1rm: 70 }), pct(2.5))!;
-    expect(mirrored.setSpecs[0].load_value).toBe(72.5);
+    expect(mirrored.setSpecs[0].load_min).toBe(72.5);
     expect(mirrored.percentage1rm).toBe(72.5);
     const nullPct = progressExercise(exercise({ setSpecs: specs, percentage1rm: null }), pct(2.5))!;
     expect(nullPct.percentage1rm).toBeNull();
@@ -338,7 +338,7 @@ describe("progressExercise", () => {
         setSpecs: [
           spec("warmup", 1, { reps_min: 10, reps_max: 12 }),
           absWorking(2, 100, { reps_min: 5, reps_max: 8 }),
-          spec("working", 3, { load_type: "pct_1rm", load_value: 70, reps_min: 8, reps_max: 10 }),
+          spec("working", 3, { load_type: "pct_1rm", load_min: 70, load_max: 70, reps_min: 8, reps_max: 10 }),
         ],
       });
       const result = progressExercise(ex, rule);
@@ -402,7 +402,7 @@ describe("purity", () => {
           setSpecs: [
             spec("warmup", 1),
             absWorking(2, 100, { reps_min: 8, reps_max: 10, drops: [{ weight: 80, reps: 8 }] }),
-            spec("working", 3, { load_type: "pct_1rm", load_value: 70, reps_min: 8, reps_max: 10 }),
+            spec("working", 3, { load_type: "pct_1rm", load_min: 70, load_max: 70, reps_min: 8, reps_max: 10 }),
           ],
         }),
       );
@@ -435,7 +435,7 @@ function draftExercise(over: Partial<ExerciseDraft> = {}): ExerciseDraft {
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    prescribedFields: null,
+    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
     ...over,
   };
 }
@@ -464,7 +464,7 @@ function weekWithSessions(): WeekDraft {
             draftExercise({
               uid: "ex-bench",
               setSpecs: [
-                spec("warmup", 1, { load_type: "absolute", load_value: 60 }),
+                spec("warmup", 1, { load_type: "absolute", load_min: 60, load_max: 60 }),
                 absWorking(2, 100),
                 absWorking(3, 90),
               ],
@@ -475,7 +475,7 @@ function weekWithSessions(): WeekDraft {
               uid: "ex-curl",
               exerciseId: null,
               name: "Cable Curl",
-              setSpecs: [spec("working", 1, { load_type: "pct_1rm", load_value: 60 })],
+              setSpecs: [spec("working", 1, { load_type: "pct_1rm", load_min: 60, load_max: 60 })],
             }),
           ),
         ],
@@ -500,7 +500,7 @@ describe("progressWeek (duplicate-week integration)", () => {
     expect(JSON.stringify(weeks)).toBe(before);
     expect(weeks).toEqual(beforeDeep);
     // and the progressed clone actually changed
-    expect(sessionExercises(progressed.days[0].sessions[0])[0].setSpecs![1].load_value).toBe(102.5);
+    expect(sessionExercises(progressed.days[0].sessions[0])[0].setSpecs![1].load_min).toBe(102.5);
   });
 
   it("'+2.5 kg, compounds only': bench changes, curl keeps its reference, uids are the clone's", () => {
@@ -512,9 +512,9 @@ describe("progressWeek (duplicate-week integration)", () => {
       buildScopePredicate({ kind: "compounds" }, isCompound),
     );
     const [bench, curl] = sessionExercises(progressed.days[0].sessions[0]);
-    expect(bench.setSpecs![1].load_value).toBe(102.5);
-    expect(bench.setSpecs![2].load_value).toBe(92.5);
-    expect(bench.setSpecs![0].load_value).toBe(60); // warm-up untouched
+    expect(bench.setSpecs![1].load_min).toBe(102.5);
+    expect(bench.setSpecs![2].load_min).toBe(92.5);
+    expect(bench.setSpecs![0].load_min).toBe(60); // warm-up untouched
     expect(curl).toBe(sessionExercises(clone.days[0].sessions[0])[1]); // out of scope: same reference
     expect(changedExerciseUids).toEqual(new Set([sessionExercises(clone.days[0].sessions[0])[0].uid]));
     // surplus reconciliation: the session's surplus passes through untouched
@@ -543,5 +543,56 @@ describe("progressWeek (duplicate-week integration)", () => {
     for (let i = 1; i < 7; i++) {
       expect(week.days[i]).toBe(source.days[i]);
     }
+  });
+});
+
+describe("progressSetSpecs — ranges move at both ends", () => {
+  it("adds kg to both ends of an absolute range and keeps a single value single", () => {
+    const specs = [
+      spec("working", 1, { load_type: "absolute", load_min: 100, load_max: 105 }),
+      absWorking(2, 90),
+    ];
+    const next = progressSetSpecs(specs, { kind: "load", mode: "absolute", amount: 2.5 })!;
+    expect(next[0]).toMatchObject({ load_min: 102.5, load_max: 107.5 });
+    expect(next[1]).toMatchObject({ load_min: 92.5, load_max: 92.5 });
+  });
+
+  it("scales both ends of an absolute range and adds points to both ends of a percentage range", () => {
+    const specs = [
+      spec("working", 1, { load_type: "absolute", load_min: 100, load_max: 110 }),
+      spec("working", 2, { load_type: "pct_1rm", load_min: 70, load_max: 75 }),
+    ];
+    const next = progressSetSpecs(specs, { kind: "load", mode: "percent", amount: 10 })!;
+    expect(next[0]).toMatchObject({ load_min: 110, load_max: 121 });
+    expect(next[1]).toMatchObject({ load_min: 80, load_max: 85 });
+  });
+
+  it("moves a half-open range's one end and leaves the other null", () => {
+    const specs = [spec("working", 1, { load_type: "absolute", load_min: 100, load_max: null })];
+    const next = progressSetSpecs(specs, { kind: "load", mode: "absolute", amount: 5 })!;
+    expect(next[0]).toMatchObject({ load_min: 105, load_max: null });
+  });
+
+  it("carries every other target through untouched", () => {
+    const specs = [
+      spec("working", 1, {
+        load_type: "absolute",
+        load_min: 100,
+        load_max: 100,
+        rpe_min: 7,
+        rpe_max: 8,
+        distance_meters_min: 400,
+        distance_meters_max: 400,
+        tempo: "3-1-X-0",
+      }),
+    ];
+    const next = progressSetSpecs(specs, { kind: "load", mode: "absolute", amount: 5 })!;
+    expect(next[0]).toMatchObject({
+      load_min: 105,
+      rpe_min: 7,
+      rpe_max: 8,
+      distance_meters_min: 400,
+      tempo: "3-1-X-0",
+    });
   });
 });

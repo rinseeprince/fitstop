@@ -12,8 +12,9 @@ import {
 // - WORKING-TYPE sets only ((set_type ?? 'working') === 'working' — missing
 //   type counts as working, matching countWorkingSets). Warm-up/AMRAP/drop/
 //   failure specs copy by reference, a deliberate divergence from the
-//   non-warmup definition analytics use; drops[].weight is never scaled.
-// - Never fabricates a load_type (load_value with null type is skipped),
+//   non-warmup definition analytics use; a drop's own load is never scaled.
+// - A load or rep RANGE moves at both ends by the same rule.
+// - Never fabricates a load_type (a load with null type is skipped),
 //   never mutates input, never returns [], never changes set_type — the
 //   ≥1-non-warmup zod refine cannot be violated.
 // - null = the rule changes nothing (compact-only exercises then stay
@@ -81,20 +82,36 @@ const cloneSpec = (s: SetSpec): SetSpec => ({
   drops: s.drops ? s.drops.map((d) => ({ ...d })) : s.drops,
 });
 
-function progressLoad(s: SetSpec, mode: "absolute" | "percent", amount: number): SetSpec {
-  // load_type null with a load_value set is schema-legal — skip, never guess.
-  if (s.load_value == null || s.load_type == null) return s;
-  let next: number;
+// One end of a load range under a rule. Null stays null; a snap-back-to-same
+// (post-rounding) is reported as unchanged so the caller can keep identity.
+function progressLoadEnd(
+  value: number | null | undefined,
+  loadType: NonNullable<SetSpec["load_type"]>,
+  mode: "absolute" | "percent",
+  amount: number,
+): number | null {
+  if (value == null) return null;
   if (mode === "absolute") {
-    if (s.load_type !== "absolute") return s;
-    next = clamp(round2(s.load_value + amount), 0, 2000); // 2dp scrubs float dust
-  } else if (s.load_type === "absolute") {
-    next = clamp(roundHalf(s.load_value * (1 + amount / 100)), 0, 2000); // plate math
-  } else {
-    next = clamp(round1(s.load_value + amount), 0, 100); // percentage points
+    return clamp(round2(value + amount), 0, 2000); // 2dp scrubs float dust
   }
+  if (loadType === "absolute") {
+    return clamp(roundHalf(value * (1 + amount / 100)), 0, 2000); // plate math
+  }
+  return clamp(round1(value + amount), 0, 100); // percentage points
+}
+
+function progressLoad(s: SetSpec, mode: "absolute" | "percent", amount: number): SetSpec {
+  // load_type null with a load set is schema-legal — skip, never guess.
+  if (s.load_type == null) return s;
+  if (s.load_min == null && s.load_max == null) return s;
+  if (mode === "absolute" && s.load_type !== "absolute") return s;
+  // Both ends of a range move by the same rule, so "100-105 kg" +2.5 is
+  // "102.5-107.5 kg" and a single value stays a single value.
+  const min = progressLoadEnd(s.load_min, s.load_type, mode, amount);
+  const max = progressLoadEnd(s.load_max, s.load_type, mode, amount);
   // Post-rounding comparison: a snap-back-to-same is a genuine no-op.
-  return next === s.load_value ? s : { ...s, load_value: next };
+  if (min === (s.load_min ?? null) && max === (s.load_max ?? null)) return s;
+  return { ...s, load_min: min, load_max: max };
 }
 
 function progressReps(s: SetSpec, amount: number): SetSpec {

@@ -33,7 +33,7 @@ function makeExercise(overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    prescribedFields: null,
+    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
     ...overrides,
   };
 }
@@ -192,7 +192,7 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
     user.click(screen.getByLabelText(/^Columns for /));
 
   it("shows every column by default, because null means all five", () => {
-    render(<Wrapper exercise={makeExercise({ prescribedFields: null })} defaultExpanded />);
+    render(<Wrapper exercise={makeExercise({ prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] })} defaultExpanded />);
     for (const label of ["Type", "Reps", "Load", "RPE", "Rest s"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
@@ -221,13 +221,13 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
     // re-ticking brings the number back rather than a blank.
     const exercise = makeExercise({
       setSpecs: [
-        { set_number: 1, set_type: "working", reps_min: 8, reps_max: 10, rpe_target: 9 },
+        { set_number: 1, set_type: "working", reps_min: 8, reps_max: 10, rpe_min: 9, rpe_max: 9 },
       ],
       sets: 1,
-      prescribedFields: null,
+      prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
     });
     render(<Wrapper exercise={exercise} defaultExpanded />);
-    expect(screen.getByLabelText("Set 1 RPE")).toHaveValue(9);
+    expect(screen.getByLabelText("Set 1 RPE")).toHaveValue("9");
 
     await openMenu(user);
     await user.click(screen.getByRole("menuitemcheckbox", { name: "RPE" }));
@@ -235,7 +235,7 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
 
     // Re-tick: the 9 is still there.
     await user.click(screen.getByRole("menuitemcheckbox", { name: "RPE" }));
-    expect(screen.getByLabelText("Set 1 RPE")).toHaveValue(9);
+    expect(screen.getByLabelText("Set 1 RPE")).toHaveValue("9");
   });
 
   it("refuses to untick the last remaining column", async () => {
@@ -390,6 +390,43 @@ describe("ExerciseCard — picking exercises to link", () => {
     expect(screen.getByRole("checkbox", { name: "Bench Press" })).toHaveAttribute("aria-checked", "true");
     // The number gives way to a tick.
     expect(screen.queryByText("1")).toBeNull();
+  });
+
+  it("RPE takes one value or a range, clamped to 1–10, and a load range writes both ends", async () => {
+    const user = userEvent.setup();
+    const exercise = makeExercise({
+      setSpecs: [
+        { set_number: 1, set_type: "working", reps_min: 8, reps_max: 10, load_type: "absolute", load_min: 100, load_max: 100, rpe_min: 8, rpe_max: 8 },
+      ],
+      sets: 1,
+    });
+    render(<Wrapper exercise={exercise} defaultExpanded />);
+
+    const rpe = screen.getByLabelText("Set 1 RPE");
+    expect(rpe).toHaveValue("8");
+    await user.clear(rpe);
+    await user.type(rpe, "7-8");
+    await user.tab();
+    expect(rpe).toHaveValue("7-8");
+
+    // A typed 0 becomes 1: RPE is 1–10 everywhere.
+    await user.clear(rpe);
+    await user.type(rpe, "0");
+    await user.tab();
+    expect(rpe).toHaveValue("1");
+
+    // Junk reverts to what was there rather than blanking the prescription.
+    await user.clear(rpe);
+    await user.type(rpe, "hard");
+    await user.tab();
+    expect(rpe).toHaveValue("1");
+
+    const load = screen.getByLabelText("Set 1 load");
+    expect(load).toHaveValue("100");
+    await user.clear(load);
+    await user.type(load, "100-105");
+    await user.tab();
+    expect(load).toHaveValue("100-105");
   });
 
   it("draws a drop line only when told where one goes", () => {

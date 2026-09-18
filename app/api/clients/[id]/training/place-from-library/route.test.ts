@@ -80,7 +80,7 @@ const inlinePlanBody = {
       name: "Push",
       orderIndex: 0,
       isRest: false,
-      groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench", sets: 3 }] }],
+      groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }] }],
     },
   ],
 };

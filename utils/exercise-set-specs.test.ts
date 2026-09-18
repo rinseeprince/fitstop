@@ -6,6 +6,12 @@ import {
   projectExerciseCompact,
   setSpecCount,
   type SetSpec,
+  SET_SPEC_MEASURES,
+  SET_SPEC_MEASURE_KEYS,
+  specRange,
+  specMeasures,
+  isTempo,
+  loadTypeBounds,
 } from "./exercise-set-specs";
 import { setSpecsArraySchema } from "@/lib/validations/training";
 
@@ -83,7 +89,7 @@ describe("expandSetSpecs", () => {
     const out = expandSetSpecs({ setSpecs: null, sets: 3, repsMin: 8, repsMax: 12, percentage1rm: 75 });
     expect(out).toHaveLength(3);
     expect(out.every((s) => s.set_type === "working")).toBe(true);
-    expect(out[0]).toMatchObject({ reps_min: 8, reps_max: 12, load_type: "pct_1rm", load_value: 75 });
+    expect(out[0]).toMatchObject({ reps_min: 8, reps_max: 12, load_type: "pct_1rm", load_min: 75, load_max: 75 });
   });
 });
 
@@ -113,7 +119,7 @@ describe("projectExerciseCompact (INPUT write-site contract)", () => {
       { set_number: 2, set_type: "working", reps_min: 6, reps_max: 8 },
       { set_number: 3, set_type: "working", reps_min: 6, reps_max: 10 },
     ];
-    const w = projectExerciseCompact({ setSpecs: specs, videoUrl: "https://v/x", sets: 99 });
+    const w = projectExerciseCompact({ setSpecs: specs, videoUrl: "https://v/x", sets: 99, prescribedFields: ["reps", "load"] });
     expect(w.set_specs).toBe(specs);
     expect(w.video_url).toBe("https://v/x");
     expect(w.sets).toBe(2); // compact projection wins over the stale `sets: 99`
@@ -122,7 +128,7 @@ describe("projectExerciseCompact (INPUT write-site contract)", () => {
   });
 
   it("passes compact columns through untouched when no specs are supplied", () => {
-    const w = projectExerciseCompact({ setSpecs: null, sets: 4, repsMin: 5, repsMax: 5 });
+    const w = projectExerciseCompact({ setSpecs: null, sets: 4, repsMin: 5, repsMax: 5, prescribedFields: ["reps"] });
     expect(w.set_specs).toBeNull();
     expect(w.video_url).toBeNull();
     expect(w).toMatchObject({ sets: 4, reps_min: 5, reps_max: 5 });
@@ -144,5 +150,79 @@ describe("setSpecsArraySchema (authoring guard)", () => {
       { set_number: 2, set_type: "working", reps_min: 6, reps_max: 8 },
     ]);
     expect(r.success).toBe(true);
+  });
+});
+
+describe("the measures table (migration 183)", () => {
+  it("names every numeric target as a min/max pair with the owner's bounds", () => {
+    expect(SET_SPEC_MEASURE_KEYS).toEqual([
+      "reps", "load", "rpe", "rir", "distance", "duration", "pace", "split", "calories",
+      "cadence", "stroke_rate", "resistance", "heart_rate_zone", "heart_rate", "power", "ftp_percent",
+    ]);
+    for (const measure of SET_SPEC_MEASURE_KEYS) {
+      const keys = SET_SPEC_MEASURES[measure];
+      expect(keys.min.endsWith("_min")).toBe(true);
+      expect(keys.max.endsWith("_max")).toBe(true);
+      expect(keys.floor).toBeLessThan(keys.ceiling);
+    }
+    expect(SET_SPEC_MEASURES.rpe).toMatchObject({ floor: 1, ceiling: 10 });
+    expect(SET_SPEC_MEASURES.distance).toMatchObject({ min: "distance_meters_min", ceiling: 1_000_000 });
+    expect(SET_SPEC_MEASURES.pace).toMatchObject({ min: "pace_seconds_per_km_min", floor: 60, ceiling: 3600 });
+    expect(SET_SPEC_MEASURES.split).toMatchObject({ min: "split_seconds_per_500m_min", floor: 30, ceiling: 600 });
+  });
+
+  it("reads a spec's pairs by measure and lists the measures it carries", () => {
+    const spec: SetSpec = {
+      set_number: 1,
+      set_type: "working",
+      rpe_min: 7,
+      rpe_max: 8,
+      distance_meters_min: 5000,
+      distance_meters_max: null,
+    };
+    expect(specRange(spec, "rpe")).toEqual({ min: 7, max: 8 });
+    expect(specRange(spec, "distance")).toEqual({ min: 5000, max: null });
+    expect(specRange(spec, "power")).toEqual({ min: null, max: null });
+    expect(specMeasures(spec)).toEqual(["rpe", "distance"]);
+  });
+
+  it("tempo is four phases, seconds or X", () => {
+    for (const ok of ["3-1-X-0", "0-0-0-0", "31-1-X-X", "X-X-X-X"]) expect(isTempo(ok)).toBe(true);
+    for (const bad of ["3010", "3-1-X", "3-1-x-0", "100-1-1-1", "3-1-X-0-", "", null, 3]) {
+      expect(isTempo(bad)).toBe(false);
+    }
+  });
+
+  it("a load's bounds follow its type", () => {
+    expect(loadTypeBounds("absolute")).toMatchObject({ floor: 0, ceiling: 2000 });
+    expect(loadTypeBounds("pct_1rm")).toMatchObject({ floor: 0, ceiling: 100 });
+    expect(loadTypeBounds("pct_top").ceiling).toBe(100);
+  });
+});
+
+describe("expandSetSpecs synthesizes pairs from the compact columns", () => {
+  it("puts the exercise-level RPE and % 1RM at both ends", () => {
+    const [spec] = expandSetSpecs({ setSpecs: null, sets: 1, rpeTarget: 8, percentage1rm: 75 });
+    expect(spec).toMatchObject({
+      load_type: "pct_1rm",
+      load_min: 75,
+      load_max: 75,
+      rpe_min: 8,
+      rpe_max: 8,
+    });
+    expect(spec).not.toHaveProperty("rpe_target");
+    expect(spec).not.toHaveProperty("load_value");
+  });
+});
+
+describe("projectExerciseCompact narrows the column list", () => {
+  it("keeps every known column and drops an unknown one, never emitting an empty list", () => {
+    expect(
+      projectExerciseCompact({ setSpecs: null, sets: 3, prescribedFields: ["distance", "pace", "weight"] })
+        .prescribed_fields,
+    ).toEqual(["distance", "pace"]);
+    expect(
+      projectExerciseCompact({ setSpecs: null, sets: 3, prescribedFields: [] }).prescribed_fields,
+    ).toEqual(["set_type", "reps", "load", "rpe", "rest"]);
   });
 });

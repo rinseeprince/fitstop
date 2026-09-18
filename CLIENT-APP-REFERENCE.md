@@ -61,7 +61,7 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 **Locations**: `/client/program/training` (full plan), `/client/program` (this week's layout, tap-to-move), `/client` day view (today's events), `/client/training` (tracker)
 
 - View the active program as ordered day-slots grouped by `weekIndex` — rest days appear as real "Rest" entries
-- See per-set prescription (`setSpecs`: set type, reps, load, RPE, tempo, rest) plus an optional demo `videoUrl`
+- See per-set prescription (`setSpecs`: set type; reps, load, RPE, RIR, distance, duration, pace, split, calories, cadence, stroke rate, resistance, HR zone, target HR, power and % FTP each as a min/max pair; tempo as one compound value; rest) plus an optional demo `videoUrl` — and each exercise's `prescribedFields`, the columns to render
 - Log a prescribed day by tapping its event; on a rest day, pick a session from this week — it moves to that day (`events/layout`) and opens as an ordinary event; rearrange the whole week from the Program tab — a client-composed `events/layout` list
 - Per-exercise history and PRs via `exercise-history`
 - The plan is a **positional multi-week program** — render by `weekIndex` + `orderIndex`, not by weekday
@@ -390,9 +390,17 @@ type ClientTrainingExercise = {
   isWarmup: boolean       // legacy; always false on builder-authored content
   setSpecs: SetSpec[] | null   // AUTHORITATIVE per-set prescription when non-null
   videoUrl: string | null      // optional demo video
-  prescribedFields: string[] | null // the columns the coach prescribes; null = all five
+  prescribedFields: string[]  // the measurement columns the coach prescribes — never empty; see "Prescribed columns"
 }
 ```
+
+> **RN contract — prescribed columns (migration 183).** `prescribedFields` is a non-empty subset of
+> nineteen names: `set_type`, `load`, `reps`, `rpe`, `rir`, `tempo`, `distance`, `duration`, `pace`,
+> `split`, `calories`, `cadence`, `stroke_rate`, `resistance`, `heart_rate_zone`, `heart_rate`,
+> `power`, `ftp_percent`, `rest`. Render only the columns listed; `set_type` gates the row's tag and
+> `rest` the timer between rows rather than being boxes. A logged workout's snapshot exercise may
+> carry no list (written before the column existed) — read that as today's five: `set_type`, `reps`,
+> `load`, `rpe`, `rest`. The web client's rule is `resolvePrescribedFields` (`utils/prescribed-fields.ts`).
 
 > **RN contract — every exercise sits in a group.** A session is an ordered list of groups and a group an ordered list of exercises (migration 178). A lone exercise is a `straight_sets` group of one with every setting null — exactly the exercise it always was. Render a session's exercises group by group, each group's exercises in turn; that is the order the coach wrote. A group's format and settings are the coach's prescription for how its exercises are done together.
 
@@ -442,7 +450,7 @@ type ResolvedExerciseGroup = {
   notes: string | null
   exercises: Array<
     | { source: "live"; exercise: TrainingExercise }
-    | { source: "snapshot"; snapshot: Record<string, unknown> } // snake_case prescription as logged
+    | { source: "snapshot"; trainingExerciseId: string; snapshot: Record<string, unknown> } // snake_case prescription as logged, under the exercise id its log is keyed to — pair it with `exerciseLogs[].trainingExerciseId` and show it once
   > // in order; never empty
 }
 ```
@@ -452,24 +460,41 @@ type ResolvedExerciseGroup = {
 ```typescript
 type SetType = "warmup" | "working" | "amrap" | "drop" | "failure"
 
+// Every numeric target is a min/max pair: a single value is the same number at
+// both ends, a range runs low to high, and a null end is "not prescribed".
+// Units are canonical storage units — convert on screen by the viewer's units.
 type SetSpec = {
   set_number: number
   set_type: SetType
-  reps_min?: number | null
-  reps_max?: number | null
-  reps_target?: string | null
-  load_type?: "absolute" | "pct_1rm" | "pct_top" | null
-  load_value?: number | null
-  rpe_target?: number | null
-  tempo?: string | null
-  rest_seconds?: number | null
-  drops?: { load_value?: number | null; weight?: number | null; reps: number | null }[]  // weight = the pre-load_value spelling; read both, write load_value
+  reps_min?: number | null;               reps_max?: number | null            // 0–100, whole
+  reps_target?: string | null                                                 // legacy free text
+  load_type?: "absolute" | "pct_1rm" | "pct_top" | null                       // the unit of the load pair
+  load_min?: number | null;               load_max?: number | null            // kilograms (absolute) or a percentage
+  rpe_min?: number | null;                rpe_max?: number | null             // 1–10
+  rir_min?: number | null;                rir_max?: number | null             // 0–10
+  distance_meters_min?: number | null;    distance_meters_max?: number | null // metres, to 1,000 km
+  duration_seconds_min?: number | null;   duration_seconds_max?: number | null // seconds, tenths, to 24 h
+  pace_seconds_per_km_min?: number | null; pace_seconds_per_km_max?: number | null // 60–3600 s/km
+  split_seconds_per_500m_min?: number | null; split_seconds_per_500m_max?: number | null // 30–600 s/500 m
+  calories_min?: number | null;           calories_max?: number | null        // kcal, 1–5000
+  cadence_min?: number | null;            cadence_max?: number | null         // rpm or steps/min, 1–300
+  stroke_rate_min?: number | null;        stroke_rate_max?: number | null     // strokes/min, 1–150
+  resistance_min?: number | null;         resistance_max?: number | null      // damper/level, 0–100
+  heart_rate_zone_min?: number | null;    heart_rate_zone_max?: number | null // 1–5
+  heart_rate_min?: number | null;         heart_rate_max?: number | null      // bpm, 30–250
+  power_min?: number | null;              power_max?: number | null           // watts, 1–3000
+  ftp_percent_min?: number | null;        ftp_percent_max?: number | null     // 1–300
+  tempo?: string | null                   // ONE compound value: four phases, seconds or X, "3-1-X-0"
+  rest_seconds?: number | null            // one number — what the rest timer counts down
+  drops?: { load_value?: number | null; weight?: number | null; reps: number | null }[]  // a drop keeps one load (in the parent's load_type) and one rep count; weight = the pre-load_value spelling, read both, write load_value
 }
 ```
 
 Invariants RN must respect:
 - Max 30 specs per exercise; at least one non-warmup spec is always present.
-- `setSpecs === null` means "not authored per-set" — synthesize from the compact trio rather than showing nothing.
+- `setSpecs === null` means "not authored per-set" — synthesize from the compact trio rather than showing nothing (the compact `rpeTarget` / `percentage1rm` become a pair at both ends).
+- **A range reads with an en dash** — "7–8", "100–105 kg", "70–75% 1RM" — as the coach's hint beside the client's box; a single value reads as itself. The web client's rule is `formatTargetReadout` (`utils/target-range.ts`).
+- **A spec carries no single-value `rpe_target` or `load_value`** — read the pairs only.
 - **Warm-up sets are excluded from every performance metric and from compliance.** Show them in the tracker; exclude them from PR/volume/e1RM display.
 
 ### Training log payload (`POST /api/client/training/events/{eventId}/log`)

@@ -1,3 +1,4 @@
+import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 import {
   progressExercise,
   type ProgressionRule,
@@ -446,8 +447,8 @@ export function defaultExerciseDraftFromCatalog({
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    // null, never [] — a fresh exercise prescribes everything until the coach
-    // narrows it.
-    prescribedFields: null,
+    // A new exercise starts on today's five columns (commit 13 starts it on
+    // its type's preset).
+    prescribedFields: [...DEFAULT_PRESCRIBED_FIELDS],
   };
 }

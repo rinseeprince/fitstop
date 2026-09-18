@@ -38,7 +38,7 @@ function makeSession(
             isWarmup: false,
             setSpecs: null,
             videoUrl: null,
-            prescribedFields: null,
+            prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
           },
         ],
       },
@@ -122,7 +122,7 @@ describe("TrainingSessionRow", () => {
       isWarmup: false,
       setSpecs: null,
       videoUrl: null,
-      prescribedFields: null,
+      prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
       ...over,
     });
     const reps = (counts: number[]) =>

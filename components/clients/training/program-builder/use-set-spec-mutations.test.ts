@@ -21,7 +21,7 @@ function makeExercise(overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    prescribedFields: null,
+    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
     ...overrides,
   };
 }
@@ -148,17 +148,17 @@ describe("applySetSpecEdit", () => {
     let result = applySetSpecEdit(ex, { kind: "add-drop", setIndex: 1 });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.exercise.setSpecs![1].drops).toEqual([{ weight: null, reps: null }]);
+    expect(result.exercise.setSpecs![1].drops).toEqual([{ load_value: null, reps: null }]);
 
     result = applySetSpecEdit(result.exercise, {
       kind: "update-drop",
       setIndex: 1,
       dropIndex: 0,
-      patch: { weight: 40, reps: 10 },
+      patch: { load_value: 40, reps: 10 },
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.exercise.setSpecs![1].drops).toEqual([{ weight: 40, reps: 10 }]);
+    expect(result.exercise.setSpecs![1].drops).toEqual([{ load_value: 40, reps: 10 }]);
 
     result = applySetSpecEdit(result.exercise, {
       kind: "remove-drop",

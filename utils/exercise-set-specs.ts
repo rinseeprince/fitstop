@@ -1,7 +1,9 @@
 import type { Json } from "@/types/database";
-import { toPrescribedFields } from "./prescribed-fields";
+import { LOAD_KG_MAX } from "@/lib/constants";
+import { toPrescribedFields, type PrescribedField } from "./prescribed-fields";
 
-// Per-set prescription model (Training Builder S1, migration 119).
+// Per-set prescription model (Training Builder S1, migration 119; ranges and
+// every measurement column since migration 183).
 //
 // A prescription exercise can carry an authoritative per-set list (`set_specs`
 // JSONB on coach_saved_exercises / training_exercises). When it is absent the
@@ -18,11 +20,72 @@ import { toPrescribedFields } from "./prescribed-fields";
 
 export type SetType = "warmup" | "working" | "amrap" | "drop" | "failure";
 
-export type SetSpec = {
+export type LoadType = "absolute" | "pct_1rm" | "pct_top";
+
+/**
+ * Every numeric target a set can carry, each stored as a `<key>_min` /
+ * `<key>_max` pair (a single value is min === max) with the bounds the owner
+ * set (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md §4.4 "Limits"). Units are the
+ * canonical storage units (CONVENTIONS §20): metres, seconds, seconds per km,
+ * seconds per 500 m, kilograms for an absolute load. The spec keys, the zod
+ * schema and the flattened rows all derive from this table, so a measure is
+ * added here once.
+ */
+export const SET_SPEC_MEASURES = {
+  reps: { min: "reps_min", max: "reps_max", floor: 0, ceiling: 100, integer: true },
+  // Kilograms or a percentage, by the set's load_type; the ceiling is the
+  // kilogram one, and a percentage is bounded again by loadTypeBounds.
+  load: { min: "load_min", max: "load_max", floor: 0, ceiling: LOAD_KG_MAX, integer: false },
+  rpe: { min: "rpe_min", max: "rpe_max", floor: 1, ceiling: 10, integer: false },
+  rir: { min: "rir_min", max: "rir_max", floor: 0, ceiling: 10, integer: false },
+  distance: { min: "distance_meters_min", max: "distance_meters_max", floor: 1, ceiling: 1_000_000, integer: false },
+  duration: { min: "duration_seconds_min", max: "duration_seconds_max", floor: 0.1, ceiling: 86_400, integer: false },
+  pace: { min: "pace_seconds_per_km_min", max: "pace_seconds_per_km_max", floor: 60, ceiling: 3_600, integer: true },
+  split: { min: "split_seconds_per_500m_min", max: "split_seconds_per_500m_max", floor: 30, ceiling: 600, integer: false },
+  calories: { min: "calories_min", max: "calories_max", floor: 1, ceiling: 5_000, integer: true },
+  cadence: { min: "cadence_min", max: "cadence_max", floor: 1, ceiling: 300, integer: true },
+  stroke_rate: { min: "stroke_rate_min", max: "stroke_rate_max", floor: 1, ceiling: 150, integer: true },
+  resistance: { min: "resistance_min", max: "resistance_max", floor: 0, ceiling: 100, integer: false },
+  heart_rate_zone: { min: "heart_rate_zone_min", max: "heart_rate_zone_max", floor: 1, ceiling: 5, integer: true },
+  heart_rate: { min: "heart_rate_min", max: "heart_rate_max", floor: 30, ceiling: 250, integer: true },
+  power: { min: "power_min", max: "power_max", floor: 1, ceiling: 3_000, integer: true },
+  ftp_percent: { min: "ftp_percent_min", max: "ftp_percent_max", floor: 1, ceiling: 300, integer: false },
+} as const;
+
+export type SetSpecMeasure = keyof typeof SET_SPEC_MEASURES;
+export const SET_SPEC_MEASURE_KEYS = Object.keys(SET_SPEC_MEASURES) as SetSpecMeasure[];
+
+type MeasureKeys = (typeof SET_SPEC_MEASURES)[SetSpecMeasure]["min" | "max"];
+type MeasurePairs = { [K in MeasureKeys]?: number | null };
+
+/** The percentage load types' own ceiling; an absolute load takes the kilogram one. */
+export const LOAD_PERCENT_MAX = 100;
+
+/** The bounds a load value is clamped to, by its type. */
+export function loadTypeBounds(loadType: LoadType | null | undefined): {
+  floor: number;
+  ceiling: number;
+  integer: boolean;
+} {
+  return loadType === "absolute" || loadType == null
+    ? { floor: 0, ceiling: LOAD_KG_MAX, integer: false }
+    : { floor: 0, ceiling: LOAD_PERCENT_MAX, integer: false };
+}
+
+/**
+ * Tempo is ONE compound value: four phases, each seconds (0–99) or X for
+ * explosive, written "3-1-X-0". The same grammar on every path that stores a
+ * tempo — a set's, and the exercise-level summary column.
+ */
+export const TEMPO_PATTERN = /^(?:\d{1,2}|X)-(?:\d{1,2}|X)-(?:\d{1,2}|X)-(?:\d{1,2}|X)$/;
+
+export function isTempo(value: unknown): value is string {
+  return typeof value === "string" && TEMPO_PATTERN.test(value);
+}
+
+export type SetSpec = MeasurePairs & {
   set_number: number;
   set_type: SetType;
-  reps_min?: number | null;
-  reps_max?: number | null;
   // No longer authored per set (the builder's writer went with the disabled
   // amrap/failure reps input; the assistant's went in the 2026-08 sweep). It is
   // populated only by `expandSetSpecs` / `snapshotToSpecs` from the LIVE
@@ -30,15 +93,17 @@ export type SetSpec = {
   // exercises, and rendered by set-row / the coach readout — retire it WITH that
   // column, not before.
   reps_target?: string | null;
-  load_type?: "absolute" | "pct_1rm" | "pct_top" | null;
-  load_value?: number | null;
-  rpe_target?: number | null;
+  // The unit of load_min / load_max: kilograms, or a percentage of 1RM or of
+  // the top set. Null means no load is prescribed.
+  load_type?: LoadType | null;
   tempo?: string | null;
+  // One number: it is what the rest timer counts down.
   rest_seconds?: number | null;
-  // A drop carries a VALUE and reps; the load TYPE belongs to the parent spec,
-  // so every drop of one set is expressed in the same unit. Mixing units inside
-  // one drop set ("80kg, drop to 60%") is not a performable prescription, and
-  // giving each drop its own type would make that state representable.
+  // A drop carries ONE load value and one rep count; the load TYPE belongs to
+  // the parent spec, so every drop of one set is expressed in the same unit.
+  // Mixing units inside one drop set ("80kg, drop to 60%") is not a performable
+  // prescription, and giving each drop its own type would make that state
+  // representable.
   //
   // `weight` is the pre-load_value spelling — canonical kilograms, from when a
   // drop could only be absolute. Reads go through `dropLoadValue` below; writes
@@ -48,6 +113,23 @@ export type SetSpec = {
     | { load_value?: number | null; weight?: number | null; reps: number | null }[]
     | null;
 };
+
+/** A measure's stored pair on one spec, read through the table. */
+export function specRange(
+  spec: SetSpec,
+  measure: SetSpecMeasure,
+): { min: number | null; max: number | null } {
+  const keys = SET_SPEC_MEASURES[measure];
+  return { min: spec[keys.min] ?? null, max: spec[keys.max] ?? null };
+}
+
+/** The measures a spec carries a value for (either end of the pair set). */
+export function specMeasures(spec: SetSpec): SetSpecMeasure[] {
+  return SET_SPEC_MEASURE_KEYS.filter((measure) => {
+    const { min, max } = specRange(spec, measure);
+    return min != null || max != null;
+  });
+}
 
 /**
  * A drop's prescribed load value, honouring the legacy `weight` spelling.
@@ -65,9 +147,9 @@ export function dropLoadValue(drop: {
 /**
  * Count the sets that count toward volume/compliance — every set type except
  * `warmup`. Reads the authoritative per-set list when present; when `setSpecs`
- * is absent (the Phase 1 state — nothing authors it yet) or not a usable array,
- * falls back to `fallbackSets` (the compact `sets` count, which historically
- * counted working sets since warm-ups lived as a separate `is_warmup` exercise).
+ * is absent or not a usable array, falls back to `fallbackSets` (the compact
+ * `sets` count, which historically counted working sets since warm-ups lived as
+ * a separate `is_warmup` exercise).
  *
  * Accepts `unknown` because callers pass a JSONB value (e.g. a prescribed
  * snapshot's `set_specs`). A spec missing an explicit `set_type` counts as
@@ -147,9 +229,11 @@ export function setSpecCount(ex: {
 /**
  * Log-form / snapshot seeding (Phase 2). Returns the authored per-set list when
  * present; otherwise synthesizes N `working` specs from the compact columns so
- * every prescription yields per-set rows carrying a `set_type`. The client log
- * form seeds its row COUNT + warm-up labels from this; the client still enters
- * the actual values. `set_type` is coach-prescribed, never chosen by the client.
+ * every prescription yields per-set rows carrying a `set_type`. The compact
+ * columns hold one number each, so a synthesized pair is that number at both
+ * ends. The client log form seeds its row COUNT + warm-up labels from this; the
+ * client still enters the actual values. `set_type` is coach-prescribed, never
+ * chosen by the client.
  */
 export function expandSetSpecs(ex: {
   setSpecs?: SetSpec[] | null;
@@ -171,8 +255,10 @@ export function expandSetSpecs(ex: {
     reps_max: ex.repsMax ?? null,
     reps_target: ex.repsTarget ?? null,
     load_type: ex.percentage1rm != null ? ("pct_1rm" as const) : null,
-    load_value: ex.percentage1rm ?? null,
-    rpe_target: ex.rpeTarget ?? null,
+    load_min: ex.percentage1rm ?? null,
+    load_max: ex.percentage1rm ?? null,
+    rpe_min: ex.rpeTarget ?? null,
+    rpe_max: ex.rpeTarget ?? null,
     tempo: ex.tempo ?? null,
     rest_seconds: ex.restSeconds ?? null,
     drops: null,
@@ -209,10 +295,11 @@ export function snapshotToSpecs(
 
 /**
  * Insert-side projection for an INPUT (authoring) write. Returns the DB column
- * values for the five fields the set model touches: `set_specs` / `video_url` are
- * written verbatim, and the compact `sets` / `reps_min` / `reps_max` are re-derived
+ * values for the fields the set model touches: `set_specs` / `video_url` are
+ * written verbatim, the compact `sets` / `reps_min` / `reps_max` are re-derived
  * from `set_specs` (via compactFromSpecs) whenever specs are present so they stay a
- * maintained projection. Every INPUT clone/insert site routes through this so no
+ * maintained projection, and `prescribed_fields` is the column list narrowed to
+ * the known names. Every INPUT clone/insert site routes through this so no
  * path silently drops per-set data (Landmine #2). CLONE sites that copy an existing
  * row splat `set_specs` / `video_url` verbatim instead (the compact columns are
  * already correct on the source row).
@@ -220,7 +307,7 @@ export function snapshotToSpecs(
 export function projectExerciseCompact(input: {
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
-  prescribedFields?: readonly string[] | null;
+  prescribedFields: readonly string[];
   sets: number;
   repsMin?: number | null;
   repsMax?: number | null;
@@ -230,7 +317,7 @@ export function projectExerciseCompact(input: {
   reps_max: number | null;
   set_specs: Json | null;
   video_url: string | null;
-  prescribed_fields: string[] | null;
+  prescribed_fields: PrescribedField[];
 } {
   const specs =
     input.setSpecs && input.setSpecs.length > 0 ? input.setSpecs : null;
@@ -241,10 +328,9 @@ export function projectExerciseCompact(input: {
     reps_max: compact ? compact.repsMax : input.repsMax ?? null,
     set_specs: (specs ?? null) as unknown as Json | null,
     video_url: input.videoUrl ?? null,
-    // Migration 149. Null, never [] — null is how "all five columns" is spelled
-    // and the CHECK refuses an empty list. Every INPUT site routes through here
-    // so none of them can drop the column (Landmine #2, same reason set_specs
-    // does).
+    // Migration 183: required, never null and never []. Every INPUT site routes
+    // through here so none of them can drop the column (Landmine #2, same
+    // reason set_specs does).
     prescribed_fields: toPrescribedFields(input.prescribedFields),
   };
 }

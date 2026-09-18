@@ -117,7 +117,7 @@ function editSpecs(specs: SetSpec[], edit: SetSpecEdit): SetSpec[] | { reason: s
       }
       return specs.map((s, i) =>
         i === edit.setIndex
-          ? { ...s, drops: [...drops, { weight: null, reps: null }] }
+          ? { ...s, drops: [...drops, { load_value: null, reps: null }] }
           : s,
       );
     }

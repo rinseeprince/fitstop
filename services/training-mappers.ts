@@ -14,6 +14,7 @@ import type {
 } from "@/lib/database-helpers";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { groupSettingsFromRow, nestRowsIntoGroups } from "@/utils/exercise-groups";
+import { toPrescribedFields } from "@/utils/prescribed-fields";
 
 /**
  * The columns every read of client exercises selects: the row and the group it
@@ -48,11 +49,11 @@ export const mapExerciseRow = (row: TrainingExerciseRow): TrainingExercise => ({
   isWarmup: row.is_warmup ?? false,
   setSpecs: (row.set_specs as SetSpec[] | null) ?? null,
   videoUrl: row.video_url ?? null,
-  // Migration 149. Dropping it here widened every client's grid back to all
-  // five columns regardless of the coach's picker, because TrainingExercise
-  // declared it optional and nothing complained. It is required on that type
-  // now, so no mapper can lose it silently again.
-  prescribedFields: row.prescribed_fields ?? null,
+  // Migration 183. Dropping it here once widened every client's grid back to
+  // all five columns regardless of the coach's picker, because TrainingExercise
+  // declared it optional and nothing complained. It is required on that type,
+  // so no mapper can lose it silently again.
+  prescribedFields: toPrescribedFields(row.prescribed_fields),
   exerciseId: row.exercise_id ?? null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,

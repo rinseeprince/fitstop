@@ -15,10 +15,15 @@ import {
   expandSetSpecs,
   MAX_SET_SPECS,
   MAX_WORKING_SETS,
+  SET_SPEC_MEASURES,
   setSpecCount,
+  specMeasures,
+  TEMPO_PATTERN,
   type SetSpec,
+  type SetSpecMeasure,
   type SetType,
 } from "@/utils/exercise-set-specs";
+import { PRESCRIBED_FIELD_LABELS } from "@/utils/prescribed-fields";
 import {
   matchExerciseInRows,
   suggestExerciseCandidates,
@@ -58,16 +63,79 @@ const exerciseRefProperties = {
 
 type LoadInput = {
   loadKg?: number;
+  loadKgMax?: number;
   loadPercent1rm?: number;
+  loadPercent1rmMax?: number;
 };
 
-function loadFields(input: LoadInput): { type: "absolute" | "pct_1rm"; value: number } | null | { error: string } {
+type LoadRange = { type: "absolute" | "pct_1rm"; min: number; max: number };
+
+// A load is one value or a range: `loadKg` (the value, or the low end) with an
+// optional `loadKgMax`; the same for a percentage. A range runs low to high.
+function loadFields(input: LoadInput): LoadRange | null | { error: string } {
   if (input.loadKg != null && input.loadPercent1rm != null) {
     return { error: "Pass loadKg OR loadPercent1rm, not both." };
   }
-  if (input.loadKg != null) return { type: "absolute", value: input.loadKg };
-  if (input.loadPercent1rm != null) return { type: "pct_1rm", value: input.loadPercent1rm };
+  if (input.loadKg == null && input.loadKgMax != null) {
+    return { error: "loadKgMax needs loadKg (the low end of the range)." };
+  }
+  if (input.loadPercent1rm == null && input.loadPercent1rmMax != null) {
+    return { error: "loadPercent1rmMax needs loadPercent1rm (the low end of the range)." };
+  }
+  const range = (type: LoadRange["type"], min: number, max: number | undefined): LoadRange | { error: string } =>
+    max != null && max < min
+      ? { error: `A ${type === "absolute" ? "load" : "percentage"} range runs low to high (${min}-${max} doesn't).` }
+      : { type, min, max: max ?? min };
+  if (input.loadKg != null) return range("absolute", input.loadKg, input.loadKgMax);
+  if (input.loadPercent1rm != null) return range("pct_1rm", input.loadPercent1rm, input.loadPercent1rmMax);
   return null;
+}
+
+// RPE the same way: `rpe` alone, or `rpe` to `rpeMax`.
+function rpeFields(input: { rpe?: number; rpeMax?: number }):
+  | { min: number; max: number }
+  | null
+  | { error: string } {
+  if (input.rpe == null) {
+    return input.rpeMax != null ? { error: "rpeMax needs rpe (the low end of the range)." } : null;
+  }
+  const max = input.rpeMax ?? input.rpe;
+  if (max < input.rpe) return { error: `An RPE range runs low to high (${input.rpe}-${max} doesn't).` };
+  return { min: input.rpe, max };
+}
+
+const loadRangeProperties = {
+  loadKg: { type: "number", minimum: 0, maximum: 2000, description: "Absolute load in kg — the value, or the low end of a range" },
+  loadKgMax: { type: "number", minimum: 0, maximum: 2000, description: "High end of a kg range (loadKg is the low end)" },
+  loadPercent1rm: { type: "number", minimum: 0, maximum: 100, description: "% of 1RM — the value, or the low end of a range" },
+  loadPercent1rmMax: { type: "number", minimum: 0, maximum: 100, description: "High end of a % 1RM range" },
+} as const;
+
+const rpeProperty = {
+  type: "number",
+  minimum: SET_SPEC_MEASURES.rpe.floor,
+  maximum: SET_SPEC_MEASURES.rpe.ceiling,
+} as const;
+
+const tempoProperty = {
+  type: "string",
+  pattern: TEMPO_PATTERN.source,
+  description: "Four phases, seconds or X for explosive, written like 3-1-X-0",
+} as const;
+
+// The measures set_exercise_sets can write. Any other target an exercise
+// carries — RIR and the endurance measures, which commit 13 teaches the
+// assistant — makes the tool refuse rather than rebuild the sets without them.
+const WRITABLE_MEASURES: ReadonlySet<SetSpecMeasure> = new Set(["reps", "load", "rpe"]);
+
+function unwritableTargets(exercise: ExerciseDraft): SetSpecMeasure[] {
+  const found = new Set<SetSpecMeasure>();
+  for (const spec of exercise.setSpecs ?? []) {
+    for (const measure of specMeasures(spec)) {
+      if (!WRITABLE_MEASURES.has(measure)) found.add(measure);
+    }
+  }
+  return [...found];
 }
 
 /**
@@ -98,10 +166,10 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         sets: { type: "integer", minimum: 1, maximum: 20 },
         repsMin: { type: "integer", minimum: 0, maximum: 100 },
         repsMax: { type: "integer", minimum: 0, maximum: 100 },
-        rpeTarget: { type: "number", minimum: 0, maximum: 10 },
+        rpeTarget: rpeProperty,
         percentage1rm: { type: "number", minimum: 0, maximum: 100 },
         restSeconds: { type: "integer", minimum: 0, maximum: 600 },
-        tempo: { type: "string", maxLength: 20 },
+        tempo: tempoProperty,
         notes: { type: "string", maxLength: 500 },
         position: {
           type: "integer",
@@ -176,7 +244,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
   const updateExercise = betaTool({
     name: "update_exercise",
     description:
-      "Update an exercise's prescription: set count, rep range, RPE, %1RM, tempo, rest, notes, or a uniform working-set load (loadKg / loadPercent1rm). If the exercise has per-set programming, only notes and load changes apply here — reshape its sets with set_exercise_sets instead. Renaming is not supported: remove the exercise and add the right one.",
+      "Update an exercise's prescription: set count, rep range, RPE, %1RM, tempo, rest, notes, or a uniform working-set load — one value (loadKg / loadPercent1rm) or a range (add loadKgMax / loadPercent1rmMax). If the exercise has per-set programming, only notes and load changes apply here — reshape its sets with set_exercise_sets instead. Renaming is not supported: remove the exercise and add the right one.",
     inputSchema: {
       type: "object",
       properties: {
@@ -184,13 +252,12 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         sets: { type: "integer", minimum: 1, maximum: 20 },
         repsMin: { type: ["integer", "null"], minimum: 0, maximum: 100 },
         repsMax: { type: ["integer", "null"], minimum: 0, maximum: 100 },
-        rpeTarget: { type: ["number", "null"], minimum: 0, maximum: 10 },
+        rpeTarget: { type: ["number", "null"], minimum: SET_SPEC_MEASURES.rpe.floor, maximum: SET_SPEC_MEASURES.rpe.ceiling },
         percentage1rm: { type: ["number", "null"], minimum: 0, maximum: 100 },
-        tempo: { type: ["string", "null"], maxLength: 20 },
+        tempo: { type: ["string", "null"], pattern: TEMPO_PATTERN.source, description: tempoProperty.description },
         restSeconds: { type: ["integer", "null"], minimum: 0, maximum: 600 },
         notes: { type: ["string", "null"], maxLength: 500 },
-        loadKg: { type: "number", minimum: 0, maximum: 2000 },
-        loadPercent1rm: { type: "number", minimum: 0, maximum: 100 },
+        ...loadRangeProperties,
       },
       required: ["week", "day"],
       additionalProperties: false,
@@ -250,10 +317,11 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         // Uniform working-set load. Compact-only exercises materialize their
         // specs here (that's what "set bench to 100kg" means on one) — from
         // `base`, so the specs carry the sets/reps the coach just asked for.
+        // Every other key on a set is kept as it is.
         const specs = base.setSpecs ?? expandSetSpecs(base);
         const nextSpecs = specs.map((s) =>
           (s.set_type ?? "working") === "working"
-            ? { ...s, load_type: load.type, load_value: load.value }
+            ? { ...s, load_type: load.type, load_min: load.min, load_max: load.max }
             : s,
         );
         const compact = compactFromSpecs(nextSpecs);
@@ -261,7 +329,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         patch.sets = compact.sets;
         patch.repsMin = compact.repsMin;
         patch.repsMax = compact.repsMax;
-        if (load.type === "pct_1rm") patch.percentage1rm = load.value;
+        if (load.type === "pct_1rm") patch.percentage1rm = load.min;
       }
       if (input.notes !== undefined) patch.notes = input.notes;
 
@@ -280,7 +348,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
   const setExerciseSets = betaTool({
     name: "set_exercise_sets",
     description:
-      "Replace an exercise's full per-set list (set-by-set programming: warm-ups, working sets, AMRAP/drop/failure finishers, per-set reps/loads/RPE). At least one non-warmup set; max 30 sets, 20 working. Loads: loadKg (absolute) or loadPercent1rm, one per set. In a superset or circuit each set is one round: send exactly the group's rounds.",
+      "Replace an exercise's full per-set list (set-by-set programming: warm-ups, working sets, AMRAP/drop/failure finishers, per-set reps/loads/RPE). At least one non-warmup set; max 30 sets, 20 working. Each load and RPE is one value or a range: loadKg (absolute) or loadPercent1rm, with loadKgMax / loadPercent1rmMax for the high end; rpe with rpeMax for the high end. In a superset or circuit each set is one round: send exactly the group's rounds. Refuses an exercise carrying targets this tool can't write (RIR, distance, duration, pace and the other endurance measures) rather than dropping them.",
     inputSchema: {
       type: "object",
       properties: {
@@ -298,10 +366,10 @@ export function buildExerciseTools(ws: DraftWorkspace) {
               },
               repsMin: { type: "integer", minimum: 0, maximum: 100 },
               repsMax: { type: "integer", minimum: 0, maximum: 100 },
-              loadKg: { type: "number", minimum: 0, maximum: 2000 },
-              loadPercent1rm: { type: "number", minimum: 0, maximum: 100 },
-              rpe: { type: "number", minimum: 0, maximum: 10 },
-              tempo: { type: "string", maxLength: 20 },
+              ...loadRangeProperties,
+              rpe: { ...rpeProperty, description: "RPE — the value, or the low end of a range" },
+              rpeMax: { ...rpeProperty, description: "High end of an RPE range (rpe is the low end)" },
+              tempo: tempoProperty,
               restSeconds: { type: "integer", minimum: 0, maximum: 3600 },
             },
             required: ["setType"],
@@ -321,6 +389,11 @@ export function buildExerciseTools(ws: DraftWorkspace) {
 
       const refused = roundsRefusal(session.value, exercise, input.sets.length);
       if (refused) return refused;
+      const unwritable = unwritableTargets(exercise);
+      if (unwritable.length > 0) {
+        const names = unwritable.map((m) => PRESCRIBED_FIELD_LABELS[m]).join(", ");
+        return `"${exercise.name}" carries targets this tool can't write yet (${names}); rebuilding its sets here would drop them. Leave its sets to the coach, or change its notes and loads with update_exercise.`;
+      }
       const working = input.sets.filter((s) => s.setType !== "warmup").length;
       if (working === 0) return "At least one non-warmup set is required.";
       if (working > MAX_WORKING_SETS) {
@@ -332,17 +405,20 @@ export function buildExerciseTools(ws: DraftWorkspace) {
 
       const specs: SetSpec[] = [];
       for (const [i, s] of input.sets.entries()) {
-        if (s.loadKg != null && s.loadPercent1rm != null) {
-          return `Set ${i + 1}: pass loadKg OR loadPercent1rm, not both.`;
-        }
+        const load = loadFields(s);
+        if (load && "error" in load) return `Set ${i + 1}: ${load.error}`;
+        const rpe = rpeFields(s);
+        if (rpe && "error" in rpe) return `Set ${i + 1}: ${rpe.error}`;
         specs.push({
           set_number: i + 1,
           set_type: s.setType as SetType,
           reps_min: s.repsMin ?? null,
           reps_max: s.repsMax ?? null,
-          load_type: s.loadKg != null ? "absolute" : s.loadPercent1rm != null ? "pct_1rm" : null,
-          load_value: s.loadKg ?? s.loadPercent1rm ?? null,
-          rpe_target: s.rpe ?? null,
+          load_type: load?.type ?? null,
+          load_min: load?.min ?? null,
+          load_max: load?.max ?? null,
+          rpe_min: rpe?.min ?? null,
+          rpe_max: rpe?.max ?? null,
           tempo: s.tempo ?? null,
           rest_seconds: s.restSeconds ?? null,
           drops: null,

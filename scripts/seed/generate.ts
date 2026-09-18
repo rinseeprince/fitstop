@@ -21,6 +21,7 @@
  */
 
 import { compactFromSpecs, type SetSpec, type SetType } from "@/utils/exercise-set-specs";
+import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import { seedUuid, seedEmail } from "./ids";
 import { streamFor, type Rng } from "./rng";
@@ -439,7 +440,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
               // size is part of what the benchmark is measuring.
               //
               // The keys are the SetSpec shape from utils/exercise-set-specs
-              // (snake_case set_number/set_type/reps_min/reps_max/rpe_target),
+              // (snake_case set_number/set_type/reps_min/reps_max/rpe_min/rpe_max),
               // not a camelCase invention: countWorkingSets keys off `set_type`
               // and silently treats an unrecognised spec as a working set, so a
               // wrong-shaped array mis-counts every prescription instead of
@@ -451,7 +452,8 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
                   set_type: "warmup",
                   reps_min: repsMin,
                   reps_max: repsMax,
-                  rpe_target: null,
+                  rpe_min: null,
+                  rpe_max: null,
                   rest_seconds: restSeconds,
                 },
                 ...Array.from({ length: workingSets }, (_, s) => ({
@@ -461,7 +463,8 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
                     : "working") as SetType,
                   reps_min: repsMin,
                   reps_max: repsMax,
-                  rpe_target: rpeTarget,
+                  rpe_min: rpeTarget,
+                  rpe_max: rpeTarget,
                   rest_seconds: restSeconds,
                 })),
               ];
@@ -495,6 +498,8 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
                 is_active: true,
                 is_warmup: false,
                 set_specs: specs,
+                // Every exercise names its columns (migration 183).
+                prescribed_fields: [...DEFAULT_PRESCRIBED_FIELDS],
                 created_at: timestampAt(effFrom, 11, planRng),
                 updated_at: timestampAt(effFrom, 11, planRng),
               });

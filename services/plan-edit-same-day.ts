@@ -28,7 +28,7 @@ type ExerciseContent = {
   isWarmup?: boolean;
   setSpecs?: readonly object[] | null;
   videoUrl?: string | null;
-  prescribedFields?: readonly string[] | null;
+  prescribedFields: readonly string[];
 };
 
 /** A group in the order its exercises are written. */
@@ -46,8 +46,8 @@ type SessionContent = {
 
 // What the editor rewrites on a day nobody touched is evened out here, and
 // nothing else: it numbers groups, exercises and sets by position, sends an
-// empty set list as none, trims a video link and drops an empty
-// prescribed-fields list (trainingSessionToDraft, normalizeDraft and
+// empty set list as none, trims a video link and narrows the column list to
+// the known names (trainingSessionToDraft, normalizeDraft and
 // exerciseDraftToInput).
 function exerciseKey(exercise: ExerciseContent) {
   return {

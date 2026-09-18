@@ -106,7 +106,9 @@ export function systemPrompt(target: BuilderTarget): string {
 - A day holds its sessions in order, or holds none and is a rest day. There is no third state. A day can hold several sessions (a morning run and an evening lift), each its own workout — coaches program two-a-days this way.
 - On a day holding several sessions, name the one you mean by its place in the day with \`session\` (1 = the first) — every tool that works on a session takes it. The program state lists each session with its place.
 - add_session adds a session to any day: a rest day takes it as its session, a day already holding sessions takes it LAST. move_session moves a session to another day, where it also lands LAST. reorder_session changes a session's place within its day.
-- Exercises carry either a compact prescription (sets × rep range) or full per-set programming (set types: warmup/working/amrap/drop/failure, per-set reps/loads/RPE).
+- Exercises carry either a compact prescription (sets × rep range) or full per-set programming (set types: warmup/working/amrap/drop/failure, per-set reps/loads/RPE). Every per-set target is one value or a range: rpe 7 with rpeMax 8 is RPE 7-8, loadKg 100 with loadKgMax 105 is 100-105 kg, loadPercent1rm 70 with loadPercent1rmMax 75 is 70-75% 1RM.
+- Each exercise names the columns its client fills in (set type, reps, load, RPE, rest today; RIR and the endurance columns — distance, duration, pace, split, calories, cadence, stroke rate, resistance, HR zone, HR, power, %FTP — are stored and printed but not yours to write yet). set_exercise_sets refuses an exercise carrying targets it can't write rather than dropping them; say so to the coach.
+- Tempo is four phases, seconds or X for explosive, written 3-1-X-0.
 - "Working sets" are what progression and volume count; warm-ups and finishers are never auto-progressed.
 
 ## Supersets and circuits

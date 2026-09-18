@@ -19,7 +19,11 @@ import {
 import { useUnits } from "@/contexts/units-context";
 import { formatLoad } from "@/utils/unit-conversions";
 import { snapshotToSpecs } from "@/utils/exercise-set-specs";
-import { buildPrescribedRows, formatPrescribedLoad } from "@/utils/set-spec-rows";
+import {
+  buildPrescribedRows,
+  formatPrescribedLoad,
+  formatPrescribedRpe,
+} from "@/utils/set-spec-rows";
 import { buildLoggedSetRows, type LoggedSetRow } from "@/utils/logged-set-rows";
 import { formatRepsRange } from "@/utils/reps-range";
 import type { SetType } from "@/utils/exercise-set-specs";
@@ -89,10 +93,17 @@ function SetTypeTag({ setType }: { setType: SetType }) {
   );
 }
 
-/** RPE colour, against the prescribed target for THIS set. */
-function rpeToneClass(actual: number, prescribedRpe: number | null): string {
-  if (prescribedRpe == null) return TEXT_PRIMARY;
-  const diff = actual - prescribedRpe;
+/**
+ * RPE colour, against the prescribed target for THIS set: how far the actual
+ * sits above the top of the prescribed range (a single value is its own top).
+ */
+function rpeToneClass(
+  actual: number,
+  prescribed: { rpeMin: number | null; rpeMax: number | null } | null,
+): string {
+  const top = prescribed?.rpeMax ?? prescribed?.rpeMin ?? null;
+  if (top == null) return TEXT_PRIMARY;
+  const diff = actual - top;
   if (diff >= 2) return "font-semibold text-[#c06060]";
   if (diff >= 1) return "text-[#d97706]";
   return TEXT_PRIMARY;
@@ -101,7 +112,8 @@ function rpeToneClass(actual: number, prescribedRpe: number | null): string {
 const Dash = () => <span className="text-[#c2d0cc]">—</span>;
 
 /**
- * The coach's instruction for one set, as one data string: reps, load, RPE.
+ * The coach's instruction for one set, as one data string: reps, load, RPE —
+ * each one value or a range ("8-10 @ 100–105 kg · RPE 7–8").
  *
  * The load may be absolute (converted to the VIEWER's unit and snapped, because
  * this is a read-only readout) or a percentage, which is unitless and never
@@ -115,14 +127,11 @@ function prescribedText(
   if (!row) return null;
   const reps =
     row.repsTarget ?? formatRepsRange({ min: row.repsMin, max: row.repsMax });
-  const load = formatPrescribedLoad(
-    row,
-    row.loadValue != null ? toDisplayLoad(row.loadValue) : "",
-    unitLabel,
-  );
+  const load = formatPrescribedLoad(row, toDisplayLoad, unitLabel);
+  const rpe = formatPrescribedRpe(row);
   const head = reps && load ? `${reps} @ ${load}` : (reps || load);
-  if (!head) return row.rpeTarget != null ? `RPE ${row.rpeTarget}` : null;
-  return row.rpeTarget != null ? `${head} · RPE ${row.rpeTarget}` : head;
+  if (!head) return rpe != null ? `RPE ${rpe}` : null;
+  return rpe != null ? `${head} · RPE ${rpe}` : head;
 }
 
 type SessionLogExerciseCardProps = {
@@ -168,7 +177,10 @@ export function SessionLogExerciseCard({
   // snapshot written before migration 149 carries no field list at all.
   const showPrescribed = rows.some((r) => r.prescribed !== null);
   const showRpe = rows.some(
-    (r) => r.actual?.rpe != null || r.prescribed?.rpeTarget != null,
+    (r) =>
+      r.actual?.rpe != null ||
+      r.prescribed?.rpeMin != null ||
+      r.prescribed?.rpeMax != null,
   );
 
   return (
@@ -264,7 +276,7 @@ export function SessionLogExerciseCard({
                         MONO_CELL_CLASS,
                         "pr-4 text-right",
                         row.actual?.rpe != null && !isWarmup
-                          ? rpeToneClass(row.actual.rpe, row.prescribed?.rpeTarget ?? null)
+                          ? rpeToneClass(row.actual.rpe, row.prescribed)
                           : valueTone,
                       )}
                     >

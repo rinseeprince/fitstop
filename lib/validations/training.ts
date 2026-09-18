@@ -17,11 +17,32 @@ import {
   GROUP_TIME_CAP_SECONDS_MAX,
   MAX_EXERCISES_PER_SESSION,
 } from "@/utils/exercise-groups";
-import { setSpecCount } from "@/utils/exercise-set-specs";
+import {
+  LOAD_PERCENT_MAX,
+  SET_SPEC_MEASURES,
+  SET_SPEC_MEASURE_KEYS,
+  setSpecCount,
+  TEMPO_PATTERN,
+  type SetSpecMeasure,
+} from "@/utils/exercise-set-specs";
+import { PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 import { programDays, programRowsIssue } from "@/utils/program-days";
 import type { TrainingPlan } from "@/types/training";
 
 export const planStatusSchema = z.enum(["active", "archived", "draft", "planned"]);
+
+// RPE is 1–10 on every path — the exercise-level column (training_exercises
+// and coach_saved_exercises both CHECK it) and each end of a per-set range.
+const rpeSchema = z
+  .number()
+  .min(SET_SPEC_MEASURES.rpe.floor)
+  .max(SET_SPEC_MEASURES.rpe.ceiling);
+
+// Tempo is ONE compound value: four phases, each seconds (0–99) or X for
+// explosive, written "3-1-X-0" — on a set and on the exercise-level summary.
+const tempoSchema = z
+  .string()
+  .regex(TEMPO_PATTERN, "Tempo is four phases, seconds or X, like 3-1-X-0");
 
 export const exerciseSchema = z.object({
   name: z.string().min(1, "Exercise name is required").max(200),
@@ -32,9 +53,9 @@ export const exerciseSchema = z.object({
   repsMin: z.number().int().min(0).max(100).optional().nullable(),
   repsMax: z.number().int().min(0).max(100).optional().nullable(),
   repsTarget: z.string().max(20).optional().nullable(),
-  rpeTarget: z.number().min(1).max(10).optional().nullable(),
+  rpeTarget: rpeSchema.optional().nullable(),
   percentage1rm: z.number().min(0).max(100).optional().nullable(),
-  tempo: z.string().max(20).optional().nullable(),
+  tempo: tempoSchema.optional().nullable(),
   restSeconds: z.number().int().min(0).max(600).optional().nullable(),
   notes: z.string().max(500).optional().nullable(),
   isWarmup: z.boolean().optional().default(false),
@@ -53,9 +74,9 @@ export const updateTrainingPlanSchema = z.object({
 // Coach library (saved-plan / saved-session) mutation schemas
 // =============================================================================
 
-// Per-set prescription model (Training Builder S1/S2). Mirrors the SetSpec type
-// in utils/exercise-set-specs.ts; stored verbatim in the set_specs JSONB column
-// (snake_case keys match the stored shape).
+// Per-set prescription model (Training Builder S1/S2; ranges since migration
+// 183). Mirrors the SetSpec type in utils/exercise-set-specs.ts; stored verbatim
+// in the set_specs JSONB column (snake_case keys match the stored shape).
 const setTypeSchema = z.enum([
   "warmup",
   "working",
@@ -65,35 +86,81 @@ const setTypeSchema = z.enum([
 ]);
 const loadTypeSchema = z.enum(["absolute", "pct_1rm", "pct_top"]);
 
-export const setSpecSchema = z.object({
-  set_number: z.number().int().min(1).max(30),
-  set_type: setTypeSchema,
-  reps_min: z.number().int().min(0).max(100).nullish(),
-  reps_max: z.number().int().min(0).max(100).nullish(),
-  reps_target: z.string().max(20).nullish(),
-  load_type: loadTypeSchema.nullish(),
-  load_value: z.number().min(0).max(2000).nullish(),
-  rpe_target: z.number().min(0).max(10).nullish(),
-  tempo: z.string().max(20).nullish(),
-  rest_seconds: z.number().int().min(0).max(3600).nullish(),
-  // A drop carries a VALUE expressed in the PARENT spec's load_type, plus reps.
-  // There is deliberately no per-drop load type: every drop of one set shares
-  // the set's unit, so "80kg, drop to 60%" is not expressible.
-  //
-  // `weight` is the pre-load_value spelling (canonical kilograms, from when a
-  // drop could only be absolute). Still accepted so historical set_specs
-  // validate; nothing writes it any more. Read both through `dropLoadValue`.
-  drops: z
-    .array(
-      z.object({
-        load_value: z.number().min(0).max(2000).nullish(),
-        weight: z.number().nullish(),
-        reps: z.number().nullable(),
-      }),
-    )
-    .max(20)
-    .nullish(),
-});
+// Every numeric target is a min/max pair with its column's bounds, from the
+// one measures table — a measure added there is validated here without a
+// second list. Both ends optional, so a legacy half-open reps range still
+// validates; min ≤ max when both are set.
+function rangeEnd(measure: SetSpecMeasure) {
+  const { floor, ceiling, integer } = SET_SPEC_MEASURES[measure];
+  const base = z.number().min(floor).max(ceiling);
+  return (integer ? base.int() : base).nullish();
+}
+
+const measurePairsShape = Object.fromEntries(
+  SET_SPEC_MEASURE_KEYS.flatMap((measure) => {
+    const keys = SET_SPEC_MEASURES[measure];
+    return [
+      [keys.min, rangeEnd(measure)],
+      [keys.max, rangeEnd(measure)],
+    ];
+  }),
+) as { [K in (typeof SET_SPEC_MEASURES)[SetSpecMeasure]["min" | "max"]]: ReturnType<typeof rangeEnd> };
+
+export const setSpecSchema = z
+  .object({
+    set_number: z.number().int().min(1).max(30),
+    set_type: setTypeSchema,
+    ...measurePairsShape,
+    reps_target: z.string().max(20).nullish(),
+    load_type: loadTypeSchema.nullish(),
+    tempo: tempoSchema.nullish(),
+    // One number: it is what the rest timer counts down.
+    rest_seconds: z.number().int().min(0).max(3600).nullish(),
+    // A drop carries a VALUE expressed in the PARENT spec's load_type, plus reps.
+    // There is deliberately no per-drop load type: every drop of one set shares
+    // the set's unit, so "80kg, drop to 60%" is not expressible.
+    //
+    // `weight` is the pre-load_value spelling (canonical kilograms, from when a
+    // drop could only be absolute). Still accepted so historical set_specs
+    // validate; nothing writes it any more. Read both through `dropLoadValue`.
+    drops: z
+      .array(
+        z.object({
+          load_value: z.number().min(0).max(2000).nullish(),
+          weight: z.number().nullish(),
+          reps: z.number().nullable(),
+        }),
+      )
+      .max(20)
+      .nullish(),
+  })
+  .superRefine((spec, ctx) => {
+    for (const measure of SET_SPEC_MEASURE_KEYS) {
+      const keys = SET_SPEC_MEASURES[measure];
+      const min = spec[keys.min];
+      const max = spec[keys.max];
+      if (min != null && max != null && min > max) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [keys.max],
+          message: `${measure} range must run low to high`,
+        });
+      }
+    }
+    // A percentage load is bounded by 100 whatever the kilogram ceiling says.
+    if (spec.load_type === "pct_1rm" || spec.load_type === "pct_top") {
+      for (const key of ["load_min", "load_max"] as const) {
+        const value = spec[key];
+        if (value != null && value > LOAD_PERCENT_MAX) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `A percentage load is at most ${LOAD_PERCENT_MAX}`,
+          });
+        }
+      }
+    }
+  });
 
 // Authoring forbids an all-warmup array — the compact `sets` projection needs at
 // least one working set (compactFromSpecs clamps to the training_exercises CHECK
@@ -105,13 +172,12 @@ export const setSpecsArraySchema = z
     message: "At least one working set is required",
   });
 
-// Which prescription columns the coach uses (migration 149). Absent/null means
-// all five — never an empty list: an exercise prescribing nothing renders the
-// client an empty grid, which is why the DB CHECK refuses it too.
-const prescribedFieldsSchema = z
-  .array(z.enum(["set_type", "reps", "load", "rpe", "rest"]))
-  .min(1)
-  .nullish();
+// The measurement columns the coach prescribes (migration 183): REQUIRED, a
+// non-empty subset of the nineteen. Every writer names the list — a body that
+// omits it is refused rather than silently given the strength columns, and an
+// exercise prescribing nothing would render the client an empty grid, which is
+// why the DB CHECK refuses an empty list too.
+const prescribedFieldsSchema = z.array(z.enum(PRESCRIBED_FIELDS)).min(1);
 
 // Reject non-http(s) schemes: z.string().url() accepts javascript:/data: URLs,
 // and video_url is rendered as a raw href in the client portal (L3). This is the
@@ -131,9 +197,9 @@ const savedExerciseInputSchema = z.object({
   repsMin: z.number().int().min(0).max(100).nullish(),
   repsMax: z.number().int().min(0).max(100).nullish(),
   repsTarget: z.string().max(20).nullish(),
-  rpeTarget: z.number().min(0).max(10).nullish(),
+  rpeTarget: rpeSchema.nullish(),
   percentage1rm: z.number().min(0).max(100).nullish(),
-  tempo: z.string().max(20).nullish(),
+  tempo: tempoSchema.nullish(),
   restSeconds: z.number().int().min(0).max(600).nullish(),
   notes: z.string().max(500).nullish(),
   isWarmup: z.boolean().optional(),
@@ -143,12 +209,12 @@ const savedExerciseInputSchema = z.object({
 });
 
 // Per-exercise item for the placed-session tray's save (PUT
-// sessions/[sessionId]). Reuses the bounded exerciseSchema (rpeTarget keeps its
-// min(1) — training_exercises has CHECK rpe_target >= 1) but relaxes the reps
-// floor to 0 to match authoring + the ABSENT reps DB CHECK. Carries setSpecs + (scheme-safe)
-// videoUrl so editing one exercise does NOT silently NULL the coach's per-set
-// programming — projectExerciseCompact writes whatever it receives, so an
-// omitted field became null. Adds exerciseId.
+// sessions/[sessionId]). Reuses the bounded exerciseSchema (RPE 1–10, as on
+// every path) but relaxes the reps floor to 0 to match authoring + the ABSENT
+// reps DB CHECK. Carries setSpecs + (scheme-safe) videoUrl so editing one
+// exercise does NOT silently NULL the coach's per-set programming —
+// projectExerciseCompact writes whatever it receives, so an omitted field
+// became null. Adds exerciseId and the column list.
 export const bulkExerciseInputSchema = exerciseSchema.extend({
   exerciseId: z.string().uuid().nullish(),
   setSpecs: setSpecsArraySchema.nullish(),

@@ -110,6 +110,7 @@ const groupsWithSpecs: TrainingGroupWrite[] = [
         name: "Bench Press",
         sets: 3,
         exerciseId: null,
+        prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
         setSpecs: [
           { set_number: 1, set_type: "warmup", reps_min: 10, reps_max: 12 },
           { set_number: 2, set_type: "working", reps_min: 5, reps_max: 8 },

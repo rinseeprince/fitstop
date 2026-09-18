@@ -277,9 +277,7 @@ function TrainingLogForm({
   // The groups themselves only decide how those exercises are laid out.
   const prescribedViews = useMemo(
     () =>
-      sessionExercises({ groups: detail.groups }).map((e, i) =>
-        normalizeExercise(e, i),
-      ),
+      sessionExercises({ groups: detail.groups }).map(normalizeExercise),
     [detail.groups],
   );
 
@@ -608,10 +606,7 @@ function LoadFailed() {
   );
 }
 
-function normalizeExercise(
-  resolved: ResolvedExercise,
-  index: number,
-): PrescribedExerciseView {
+function normalizeExercise(resolved: ResolvedExercise): PrescribedExerciseView {
   if (resolved.source === "live") {
     const e = resolved.exercise;
     return {
@@ -627,23 +622,26 @@ function normalizeExercise(
       isWarmup: e.isWarmup ?? false,
       setSpecs: e.setSpecs ?? undefined,
       videoUrl: e.videoUrl ?? undefined,
-      prescribedFields: e.prescribedFields ?? null,
+      prescribedFields: e.prescribedFields,
     };
   }
+  // A logged exercise the live session no longer holds: its prescription as
+  // logged, read off the snake_case snapshot the log writer wrote
+  // (services/training-log-service.ts, toExerciseSnapshot), under the id its
+  // log is keyed to — so it pairs with its logged sets and renders once.
   const s = resolved.snapshot;
-  const pick = <T,>(k: string): T | undefined => s[k] as T | undefined;
+  const pick = <T,>(k: string): T | undefined => (s[k] ?? undefined) as T | undefined;
   return {
-    id: pick<string>("id") ?? `snapshot-${index}`,
+    id: resolved.trainingExerciseId,
     name: pick<string>("name") ?? "Unknown exercise",
     sets: Math.max(0, pick<number>("sets") ?? 0),
-    repsMin: pick<number>("repsMin"),
-    repsMax: pick<number>("repsMax"),
-    repsTarget: pick<string>("repsTarget"),
-    rpeTarget: pick<number>("rpeTarget"),
-    restSeconds: pick<number>("restSeconds"),
+    repsMin: pick<number>("reps_min"),
+    repsMax: pick<number>("reps_max"),
+    repsTarget: pick<string>("reps_target"),
+    rpeTarget: pick<number>("rpe_target"),
+    restSeconds: pick<number>("rest_seconds"),
     notes: pick<string>("notes"),
-    isWarmup: pick<boolean>("isWarmup") ?? false,
-    // Snapshot uses snake_case keys (matches the snapshot writer).
+    isWarmup: pick<boolean>("is_warmup") ?? false,
     setSpecs: pick<SetSpec[]>("set_specs"),
     videoUrl: pick<string>("video_url"),
     prescribedFields: pick<string[]>("prescribed_fields") ?? null,

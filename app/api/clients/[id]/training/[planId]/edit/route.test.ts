@@ -122,7 +122,7 @@ const planForEditing: PlanForEditing = {
 const push = {
   eventId: "e0000000-0000-4000-8000-000000000001",
   name: "Push",
-  groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench press", sets: 3 }] }],
+  groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench press", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }] }],
 };
 const run = { eventId: null, name: "Run", groups: [] };
 const days = Array.from({ length: 7 }, (_, i) => ({ sessions: i === 0 ? [push, run] : [] }));

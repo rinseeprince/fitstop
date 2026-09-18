@@ -155,7 +155,7 @@ const INPUT_GROUPS: SavedExerciseGroupInput[] = [
     ...CIRCUIT_SETTINGS,
     exercises: [
       { name: "Row", exerciseId: "cat-row", sets: 2, setSpecs: ROW_SPECS as never, prescribedFields: ["reps", "rest"] },
-      { name: "Burpee", exerciseId: "cat-burpee", sets: 3, repsMin: 10, repsMax: 10, prescribedFields: null },
+      { name: "Burpee", exerciseId: "cat-burpee", sets: 3, repsMin: 10, repsMax: 10, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] },
     ],
   },
   {
@@ -177,7 +177,7 @@ const EXPECTED_SHAPE = [
     notes: "A",
     exercises: [
       { order_index: 0, name: "Row", prescribed_fields: ["reps", "rest"], set_specs: ROW_SPECS },
-      { order_index: 1, name: "Burpee", prescribed_fields: null, set_specs: null },
+      { order_index: 1, name: "Burpee", prescribed_fields: ["set_type", "reps", "load", "rpe", "rest"], set_specs: null },
     ],
   },
   {
@@ -275,7 +275,7 @@ function libraryGroupTree(sessionId: string) {
       order_index: 0,
       ...groupColumns(CIRCUIT_SETTINGS),
       coach_saved_exercises: [
-        { id: "le-burpee", saved_session_id: sessionId, group_id: "lg-circuit", exercise_id: "cat-burpee", name: "Burpee", order_index: 1, sets: 3, reps_min: 10, reps_max: 10, set_specs: null, prescribed_fields: null, ...exerciseColumns },
+        { id: "le-burpee", saved_session_id: sessionId, group_id: "lg-circuit", exercise_id: "cat-burpee", name: "Burpee", order_index: 1, sets: 3, reps_min: 10, reps_max: 10, set_specs: null, prescribed_fields: ["set_type", "reps", "load", "rpe", "rest"], ...exerciseColumns },
         { id: "le-row", saved_session_id: sessionId, group_id: "lg-circuit", exercise_id: "cat-row", name: "Row", order_index: 0, sets: 2, reps_min: 8, reps_max: 12, set_specs: ROW_SPECS, prescribed_fields: ["reps", "rest"], ...exerciseColumns },
       ],
     },
@@ -319,7 +319,7 @@ function clientExerciseRows(sessionId: string) {
   const straight = { id: "cg-straight", session_id: sessionId, order_index: 1, ...groupColumns(STRAIGHT), created_at: "x", updated_at: "x" };
   return [
     { id: "ce-squat", session_id: sessionId, group_id: "cg-straight", exercise_id: "cat-squat", name: "Squat", order_index: 0, sets: 5, reps_min: 5, reps_max: 5, set_specs: null, prescribed_fields: ["load", "reps"], is_active: true, ...exerciseColumns, exercise_group: straight },
-    { id: "ce-burpee", session_id: sessionId, group_id: "cg-circuit", exercise_id: "cat-burpee", name: "Burpee", order_index: 1, sets: 3, reps_min: 10, reps_max: 10, set_specs: null, prescribed_fields: null, is_active: true, ...exerciseColumns, exercise_group: circuit },
+    { id: "ce-burpee", session_id: sessionId, group_id: "cg-circuit", exercise_id: "cat-burpee", name: "Burpee", order_index: 1, sets: 3, reps_min: 10, reps_max: 10, set_specs: null, prescribed_fields: ["set_type", "reps", "load", "rpe", "rest"], is_active: true, ...exerciseColumns, exercise_group: circuit },
     { id: "ce-row", session_id: sessionId, group_id: "cg-circuit", exercise_id: "cat-row", name: "Row", order_index: 0, sets: 2, reps_min: 8, reps_max: 12, set_specs: ROW_SPECS, prescribed_fields: ["reps", "rest"], is_active: true, ...exerciseColumns, exercise_group: circuit },
   ];
 }
@@ -480,7 +480,7 @@ describe("library writes carry groups", () => {
     await expect(
       overwriteStandaloneSession("standalone-1", "coach-1", {
         name: "Hybrid",
-        groups: [{ format: "straight_sets", exercises: [{ name: "Other", sets: 1 }] }],
+        groups: [{ format: "straight_sets", exercises: [{ name: "Other", sets: 1, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }] }],
       }),
     ).rejects.toThrow("boom");
 
@@ -648,5 +648,318 @@ describe("the placed-session tray carries groups", () => {
       ["straight_sets", ["Squat"]],
     ]);
     expect(result.session.groups[0]).toMatchObject(CIRCUIT_SETTINGS);
+  });
+});
+
+// =============================================================================
+// Every target and every column survives its route schema (migration 183).
+//
+// Zod strips unknown keys silently, so a target a schema was never taught
+// vanishes on the way in without an error. Each INPUT path below runs a
+// maximal exercise — every one of the nineteen columns and a set spec carrying
+// every measure's pair, a tempo, a rest and a drop — through the schema its
+// route parses with, then hands the PARSED body to the service and checks the
+// row it wrote. Each COPY path reads rows carrying the same spec and must write
+// it verbatim.
+// =============================================================================
+
+import { PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
+
+/** A catalog id the schemas accept (they check the uuid shape). */
+const CAT_EVERYTHING = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+import { SET_SPEC_MEASURES, SET_SPEC_MEASURE_KEYS } from "@/utils/exercise-set-specs";
+import {
+  createSavedPlanSchema,
+  createStandaloneSessionSchema,
+  inlinePlanBodySchema,
+  overwriteSavedPlanSchema,
+  overwriteStandaloneSessionSchema,
+  planEditSaveSchema,
+  replaceSessionSchema,
+} from "@/lib/validations/training";
+
+/** One spec carrying every measure at both ends, a tempo, a rest and a drop. */
+const MAXIMAL_SPEC = {
+  set_number: 1,
+  set_type: "drop",
+  reps_target: null,
+  load_type: "absolute",
+  ...Object.fromEntries(
+    SET_SPEC_MEASURE_KEYS.flatMap((measure) => {
+      const { min, max, floor, ceiling } = SET_SPEC_MEASURES[measure];
+      // Each end a distinct, in-bounds value so a swapped pair would show.
+      return [
+        [min, floor + 1],
+        [max, Math.min(ceiling, floor + 2)],
+      ];
+    }),
+  ),
+  tempo: "3-1-X-0",
+  rest_seconds: 90,
+  drops: [{ load_value: 60, reps: 8 }],
+};
+
+const MAXIMAL_EXERCISE = {
+  name: "Everything",
+  exerciseId: CAT_EVERYTHING,
+  sets: 1,
+  repsMin: 1,
+  repsMax: 2,
+  repsTarget: null,
+  rpeTarget: 8,
+  percentage1rm: 75,
+  tempo: "2-0-1-0",
+  restSeconds: 60,
+  notes: "all of it",
+  isWarmup: false,
+  setSpecs: [MAXIMAL_SPEC],
+  videoUrl: "https://example.com/everything",
+  prescribedFields: [...PRESCRIBED_FIELDS],
+};
+
+const MAXIMAL_GROUPS = [{ ...STRAIGHT, exercises: [MAXIMAL_EXERCISE] }];
+
+/** The written row must carry the spec verbatim and every column name. */
+function expectMaximal(row: Row | undefined) {
+  expect(row).toBeDefined();
+  expect(row!.set_specs).toEqual([MAXIMAL_SPEC]);
+  expect(row!.prescribed_fields).toEqual([...PRESCRIBED_FIELDS]);
+  expect(row!.tempo).toBe("2-0-1-0");
+  expect(row!.rpe_target).toBe(8);
+}
+
+const MAXIMAL_LIBRARY_ROW = (sessionId: string, groupId: string) => ({
+  id: "le-everything",
+  saved_session_id: sessionId,
+  group_id: groupId,
+  exercise_id: CAT_EVERYTHING,
+  name: "Everything",
+  order_index: 0,
+  sets: 1,
+  reps_min: 1,
+  reps_max: 2,
+  reps_target: null,
+  rpe_target: 8,
+  percentage_1rm: 75,
+  tempo: "2-0-1-0",
+  rest_seconds: 60,
+  notes: "all of it",
+  is_warmup: false,
+  set_specs: [MAXIMAL_SPEC],
+  video_url: "https://example.com/everything",
+  prescribed_fields: [...PRESCRIBED_FIELDS],
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+});
+
+function maximalLibrarySession(id: string, overrides: Row = {}) {
+  return librarySessionRow(id, {
+    coach_saved_exercise_groups: [
+      {
+        id: "lg-max",
+        saved_session_id: id,
+        order_index: 0,
+        ...groupColumns(STRAIGHT),
+        coach_saved_exercises: [MAXIMAL_LIBRARY_ROW(id, "lg-max")],
+      },
+    ],
+    ...overrides,
+  });
+}
+
+describe("every target and column survives its route schema", () => {
+  const writtenLibrary = (db: ReturnType<typeof installDb>) =>
+    db.inserted("coach_saved_exercises").find((e) => e.name === "Everything");
+  const writtenClient = (db: ReturnType<typeof installDb>) =>
+    db.inserted("training_exercises").find((e) => e.name === "Everything");
+
+  it("the library save, through overwriteSavedPlanSchema", async () => {
+    const parsed = overwriteSavedPlanSchema.parse({
+      name: "P",
+      sessions: [{ name: "Max", orderIndex: 0, weekIndex: 0, isRest: false, groups: MAXIMAL_GROUPS }],
+    });
+    const db = installDb((call) => {
+      if (call.table === "coach_saved_plans" && call.op === "select") return ok({ id: "plan-1" });
+      if (call.table === "coach_saved_sessions" && call.op === "select") return ok([]);
+      return ok();
+    });
+    await overwriteSavedPlan("plan-1", "coach-1", parsed);
+    expectMaximal(writtenLibrary(db));
+  });
+
+  it("creating a program, through createSavedPlanSchema", async () => {
+    const parsed = createSavedPlanSchema.parse({
+      name: "P",
+      sessions: [{ name: "Max", isRest: false, groups: MAXIMAL_GROUPS }],
+    });
+    const db = installDb((call) => {
+      if (call.table === "coach_saved_plans" && call.op === "insert") return ok({ id: "plan-new" });
+      if (call.table === "coach_saved_sessions" && call.op === "insert") return ok({ id: "s-1" });
+      return ok();
+    });
+    await createSavedPlanManual("coach-1", parsed.name, null, parsed.sessions);
+    expectMaximal(writtenLibrary(db));
+  });
+
+  it("a standalone session's create and overwrite, through their schemas", async () => {
+    const created = createStandaloneSessionSchema.parse({ name: "Max", groups: MAXIMAL_GROUPS });
+    let db = installDb((call) => {
+      if (call.table === "exercises") return ok([{ id: CAT_EVERYTHING }]);
+      if (call.table === "coach_saved_sessions" && call.op === "insert") return ok({ id: "standalone-new" });
+      return ok();
+    });
+    await createStandaloneSession("coach-1", created);
+    expectMaximal(writtenLibrary(db));
+
+    const overwritten = overwriteStandaloneSessionSchema.parse({ name: "Max", groups: MAXIMAL_GROUPS });
+    db = installDb((call) => {
+      if (call.table === "coach_saved_sessions" && call.op === "select") {
+        return ok(librarySessionRow("standalone-1", { saved_plan_id: null, coach_saved_exercise_groups: [] }));
+      }
+      if (call.table === "exercises") return ok([{ id: CAT_EVERYTHING }]);
+      return ok();
+    });
+    await overwriteStandaloneSession("standalone-1", "coach-1", overwritten);
+    expectMaximal(writtenLibrary(db));
+  });
+
+  it("a standalone overwrite's restore copies the rows it read", async () => {
+    let exerciseInserts = 0;
+    const db = installDb((call) => {
+      if (call.table === "coach_saved_sessions" && call.op === "select") {
+        return ok(maximalLibrarySession("standalone-1", { saved_plan_id: null }));
+      }
+      if (call.table === "exercises") return ok([]);
+      if (call.table === "coach_saved_exercises" && call.op === "insert" && ++exerciseInserts === 1) {
+        return { data: null, error: { message: "boom" } };
+      }
+      return ok();
+    });
+    await expect(
+      overwriteStandaloneSession("standalone-1", "coach-1", {
+        name: "Max",
+        groups: [{ format: "straight_sets", exercises: [{ name: "Other", sets: 1, prescribedFields: ["reps"] }] }],
+      }),
+    ).rejects.toThrow("boom");
+    const restore = db.calls.filter((c) => c.table === "coach_saved_exercises" && c.op === "insert")[1];
+    expectMaximal((restore.payload as Row[]).find((e) => e.name === "Everything"));
+  });
+
+  it("duplicating a program and promoting a draft copy the rows verbatim", async () => {
+    let db = installDb((call) => {
+      if (call.table === "coach_saved_plans" && call.op === "select" && call.columns?.includes("coach_saved_sessions")) {
+        return ok({ id: "plan-1", coach_id: "coach-1", name: "P", status: "saved", coach_saved_sessions: [maximalLibrarySession("src-1")] });
+      }
+      if (call.table === "coach_saved_plans" && call.op === "select") return ok([{ name: "P" }]);
+      if (call.table === "coach_saved_plans" && call.op === "insert") return ok({ id: "plan-copy" });
+      return ok();
+    });
+    await duplicateSavedPlan("plan-1", "coach-1");
+    expectMaximal(writtenLibrary(db));
+
+    db = installDb((call) => {
+      if (call.table === "coach_saved_plans" && call.op === "select" && call.columns === "id, name, coach_id, status") {
+        return ok({ id: "plan-1", name: "P", coach_id: "coach-1", status: "draft" });
+      }
+      if (call.table === "coach_saved_plans" && call.op === "select") return ok(null);
+      if (call.table === "coach_saved_sessions" && call.op === "select" && call.columns?.includes("coach_saved_exercise_groups")) {
+        return ok([maximalLibrarySession("draft-s1")]);
+      }
+      if (call.table === "coach_saved_sessions" && call.op === "select") return ok(null);
+      if (call.table === "coach_saved_sessions" && call.op === "insert") return ok({ id: "standalone-1" });
+      return ok();
+    });
+    await promoteDraftToSaved("plan-1", "coach-1", { saveSessionsIndividually: true });
+    expectMaximal(writtenLibrary(db));
+  });
+
+  it("saving a client's session to the library copies its live rows verbatim", async () => {
+    const group = { id: "cg-max", session_id: "client-s1", order_index: 0, ...groupColumns(STRAIGHT), created_at: "x", updated_at: "x" };
+    const db = installDb((call) => {
+      if (call.table === "training_sessions") {
+        return ok({
+          id: "client-s1", focus: null, estimated_duration_minutes: 45, calorie_surplus_percentage: null, notes: null,
+          training_exercises: [{ ...MAXIMAL_LIBRARY_ROW("client-s1", "cg-max"), id: "ce-max", session_id: "client-s1", is_active: true, exercise_group: group }],
+        });
+      }
+      if (call.table === "coach_saved_sessions" && call.op === "insert") return ok({ id: "saved-from-calendar" });
+      return ok();
+    });
+    await saveSessionFromCalendar("coach-1", "client-s1", "Max");
+    expectMaximal(writtenLibrary(db));
+  });
+
+  it("placing a library program and dropping a library session copy the rows verbatim", async () => {
+    let db = placementDb((call) =>
+      call.table === "coach_saved_plans"
+        ? ok({
+            id: "plan-1", coach_id: "coach-1", name: "P", status: "saved", split_type: null, frequency_per_week: 1,
+            default_surplus_percentage: null, source: "manual", coach_prompt: null, program_duration_weeks: 1,
+            coach_saved_sessions: [maximalLibrarySession("lib-day-0"), ...ONE_WEEK.slice(1)],
+          })
+        : null,
+    );
+    await placePlanOnCalendar({ savedPlanId: "plan-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-10-05" });
+    expectMaximal(writtenClient(db));
+
+    db = installDb((call) => {
+      if (call.table === "coach_saved_sessions") return ok(maximalLibrarySession("lib-s1", { saved_plan_id: null }));
+      if (call.table === "training_sessions" && call.op === "select") return ok(null);
+      if (call.table === "training_sessions" && call.op === "insert") return ok({ id: "ts-dropped" });
+      if (call.table === "training_events" && call.op === "insert") return ok({ id: "ev-dropped" });
+      return ok();
+    });
+    await placeSessionOnCalendar({ savedSessionId: "lib-s1", coachId: "coach-1", clientId: "client-1", planId: "plan-1", targetDate: "2026-10-07" });
+    expectMaximal(writtenClient(db));
+  });
+
+  it("placing an edited client draft, through inlinePlanBodySchema", async () => {
+    const plan = inlinePlanBodySchema.parse({
+      name: "P",
+      sessions: [
+        { name: "Max", orderIndex: 0, weekIndex: 0, dayOrder: 0, isRest: false, groups: MAXIMAL_GROUPS },
+        ...Array.from({ length: 6 }, (_, i) => ({ name: "Rest", orderIndex: i + 1, weekIndex: 0, dayOrder: 0, isRest: true, groups: [] })),
+      ],
+    });
+    const db = placementDb((call) => (call.table === "exercises" ? ok([{ id: CAT_EVERYTHING }]) : null));
+    await placeInlineEditedPlanOnCalendar({ plan, coachId: "coach-1", clientId: "client-1", startDate: "2026-10-05" });
+    expectMaximal(writtenClient(db));
+  });
+
+  it("the placed-session tray's save, through replaceSessionSchema", async () => {
+    const input = replaceSessionSchema.parse({ name: "Max", groups: MAXIMAL_GROUPS });
+    const db = installDb((call) => {
+      if (call.table === "training_sessions" && call.op === "select" && call.columns?.startsWith("*")) {
+        return ok({ id: "client-s1", plan_id: "plan-1", name: "Max", focus: null, is_rest: false, calorie_surplus_percentage: null });
+      }
+      if (call.table === "training_sessions" && call.op === "select") return ok({ id: "client-s1" });
+      if (call.table === "training_exercises" && call.op === "select" && call.columns === "id") return ok([]);
+      if (call.table === "training_exercises" && call.op === "select") return ok([]);
+      if (call.table === "training_sessions" && call.op === "update") {
+        return ok({ id: "client-s1", plan_id: "plan-1", name: "Max", order_index: 0, created_at: "x", updated_at: "x" });
+      }
+      return ok();
+    });
+    await replaceSessionFull({
+      sessionId: "client-s1", planId: "plan-1", clientId: "client-1", coachId: "coach-1", fromDate: "2026-10-05", input,
+    });
+    expectMaximal(writtenClient(db));
+  });
+
+  it("Edit plan's payload, through planEditSaveSchema", () => {
+    const body = planEditSaveSchema.parse({
+      days: [
+        { sessions: [{ eventId: null, name: "Max", groups: MAXIMAL_GROUPS }] },
+        ...Array.from({ length: 6 }, () => ({ sessions: [] })),
+      ],
+      plan: { name: "P" },
+      version: "v",
+    });
+    const [exercise] = body.days[0].sessions[0].groups[0].exercises;
+    expect(exercise.setSpecs).toEqual([MAXIMAL_SPEC]);
+    expect(exercise.prescribedFields).toEqual([...PRESCRIBED_FIELDS]);
+    expect(exercise.tempo).toBe("2-0-1-0");
+    // What the save then hands the function, column by column, is proved in
+    // plan-edit-service.test.ts ("writes each day in the function's columns").
   });
 });

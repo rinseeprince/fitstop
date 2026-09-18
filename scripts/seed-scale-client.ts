@@ -15,6 +15,7 @@
  *   --full-reset            also delete the seeded coach + client rows
  */
 import "./env-bootstrap";
+import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { computeEnergyPair } from "@/services/client-energy-calc";
@@ -569,6 +570,8 @@ async function insertTrainingPlan(
         order_index: 0,
         is_active: true,
         exercise_id: pe.exerciseId,
+        // Every exercise names its columns (migration 183).
+        prescribed_fields: [...DEFAULT_PRESCRIBED_FIELDS],
       });
     }
   }

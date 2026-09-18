@@ -1,4 +1,4 @@
-// Which prescription columns a coach fills in for an exercise (migration 149).
+// The columns a coach can prescribe on an exercise (migrations 149, 183).
 //
 // Its own module rather than a section of exercise-set-specs.ts or
 // set-spec-rows.ts: projectExerciseCompact (in the former) has to carry the
@@ -6,67 +6,107 @@
 // helpers in either place makes that a runtime cycle.
 
 /**
- * The columns a coach can choose to prescribe. Stored per exercise as
- * `prescribed_fields TEXT[]`; the CHECK constraint in migration 149 mirrors this
- * list, so the two must be changed together.
+ * THE definition of the measurement columns. Stored per exercise as
+ * `prescribed_fields TEXT[] NOT NULL`; the CHECK constraint in migration 183
+ * mirrors this list, and `prescribed-fields.test.ts` fails if the two differ.
  *
- * `set_type` and `rest` are not columns of the client's grid — they gate the row
- * tag and the rest timer respectively. `reps`, `load` and `rpe` are.
+ * Strength: load, reps, RPE, RIR, tempo. Endurance: distance, duration, pace,
+ * split, calories, cadence, stroke rate, resistance (damper), HR zone, target
+ * HR, power, % FTP. Framework: set type, rest — `set_type` and `rest` are not
+ * boxes of the client's grid; they gate the row tag and the rest timer.
  */
 export const PRESCRIBED_FIELDS = [
   "set_type",
-  "reps",
   "load",
+  "reps",
   "rpe",
+  "rir",
+  "tempo",
+  "distance",
+  "duration",
+  "pace",
+  "split",
+  "calories",
+  "cadence",
+  "stroke_rate",
+  "resistance",
+  "heart_rate_zone",
+  "heart_rate",
+  "power",
+  "ftp_percent",
   "rest",
 ] as const;
 
 export type PrescribedField = (typeof PRESCRIBED_FIELDS)[number];
 
-const ALL_FIELDS: ReadonlySet<PrescribedField> = new Set(PRESCRIBED_FIELDS);
+/**
+ * The columns every exercise starts on, and the columns an exercise carried
+ * before it could choose (the migration-183 backfill writes this list). The
+ * builder's Columns menu offers exactly these until commit 12's selector.
+ */
+export const DEFAULT_PRESCRIBED_FIELDS: readonly PrescribedField[] = [
+  "set_type",
+  "reps",
+  "load",
+  "rpe",
+  "rest",
+];
+
+/** How each column is named to a coach or a client. */
+export const PRESCRIBED_FIELD_LABELS: Record<PrescribedField, string> = {
+  set_type: "Set type",
+  load: "Load",
+  reps: "Reps",
+  rpe: "RPE",
+  rir: "RIR",
+  tempo: "Tempo",
+  distance: "Distance",
+  duration: "Duration",
+  pace: "Pace",
+  split: "Split",
+  calories: "Calories",
+  cadence: "Cadence",
+  stroke_rate: "Stroke rate",
+  resistance: "Resistance",
+  heart_rate_zone: "HR zone",
+  heart_rate: "Target HR",
+  power: "Power",
+  ftp_percent: "% FTP",
+  rest: "Rest",
+};
+
+const KNOWN: ReadonlySet<string> = new Set(PRESCRIBED_FIELDS);
+
+export function isPrescribedField(value: unknown): value is PrescribedField {
+  return typeof value === "string" && KNOWN.has(value);
+}
 
 /**
- * Resolve the stored column to the set a renderer should honour.
+ * Narrow a stored or received list to the column names, in the list's own
+ * order, as an array for a draft, a wire payload or a row on its way back to
+ * the database.
  *
- * NULL means all five — the default every pre-149 row carries, and the value a
- * write path that forgot the column produces. Unknown strings are dropped rather
- * than trusted: the array is `TEXT[]`, so the CHECK is the only thing standing
- * between the DB and a typo, and a renderer should not be the second line.
- *
- * An empty (or entirely unrecognised) list resolves to all five as well. That
- * state is unauthorable through the UI and refused by the CHECK, so reaching it
- * means something upstream is broken — and showing the whole prescription is the
- * safe way to be wrong.
+ * Unknown strings are dropped rather than trusted: the column is `TEXT[]`, so
+ * the CHECK is the only thing standing between the database and a typo, and a
+ * writer should not be the second line. The result is NEVER empty: a null,
+ * empty or wholly-unrecognised list reads as today's five. That case cannot
+ * come from a row (the column is NOT NULL and the CHECK refuses an empty list)
+ * — it is how a log snapshot written before migration 149, which carries no
+ * list, is read.
+ */
+export function toPrescribedFields(
+  stored: readonly string[] | null | undefined,
+): PrescribedField[] {
+  const known = (stored ?? []).filter(isPrescribedField);
+  return known.length > 0 ? known : [...DEFAULT_PRESCRIBED_FIELDS];
+}
+
+/**
+ * The same list as the set a renderer asks `.has()` of. A snapshot with no
+ * list, or a null one, reads as today's five.
  */
 export function resolvePrescribedFields(
   stored: readonly string[] | null | undefined,
 ): ReadonlySet<PrescribedField> {
-  if (stored == null) return ALL_FIELDS;
-  const known = stored.filter((f): f is PrescribedField =>
-    ALL_FIELDS.has(f as PrescribedField),
-  );
-  return known.length > 0 ? new Set(known) : ALL_FIELDS;
-}
-
-/**
- * Narrow a stored `TEXT[]` to the authoring type, for a draft or a clone.
- *
- * The write-side twin of `resolvePrescribedFields`. They look alike and are not
- * interchangeable: this one preserves `null` because null is how "all five" is
- * STORED, while the other expands null to the full set because that is what
- * "all five" means when RENDERING. Same statement, two representations — use
- * this one whenever the value is on its way back to the database.
- *
- * Returns `null` — never `[]` — for absent, empty or wholly-unrecognised input,
- * because null is what "all five" is spelled as everywhere else and an empty
- * array is refused by the migration-149 CHECK.
- */
-export function toPrescribedFields(
-  stored: readonly string[] | null | undefined,
-): PrescribedField[] | null {
-  if (stored == null) return null;
-  const known = stored.filter((f): f is PrescribedField =>
-    ALL_FIELDS.has(f as PrescribedField),
-  );
-  return known.length > 0 ? known : null;
+  return new Set(toPrescribedFields(stored));
 }

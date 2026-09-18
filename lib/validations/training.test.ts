@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import { SET_SPEC_MEASURES, SET_SPEC_MEASURE_KEYS } from '@/utils/exercise-set-specs'
+import { PRESCRIBED_FIELDS } from '@/utils/prescribed-fields'
 import {
   planStatusSchema,
   exerciseSchema,
+  setSpecSchema,
   updateTrainingPlanSchema,
   parseGetPlanResponse,
   logTrainingEventSchema,
@@ -89,54 +92,54 @@ describe('Training Validation Schemas', () => {
     })
 
     it('rejects sets below 1', () => {
-      const data = { name: 'Bench Press', sets: 0 }
+      const data = { name: 'Bench Press', sets: 0, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
       const result = exerciseSchema.safeParse(data)
       expect(result.success).toBe(false)
     })
 
     it('rejects sets above 20', () => {
-      const data = { name: 'Bench Press', sets: 25 }
+      const data = { name: 'Bench Press', sets: 25, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
       const result = exerciseSchema.safeParse(data)
       expect(result.success).toBe(false)
     })
 
     it('accepts 0 reps (timed/AMRAP holds; no reps DB CHECK) but rejects negative', () => {
-      expect(exerciseSchema.safeParse({ name: 'Plank', sets: 4, repsMin: 0 }).success).toBe(true)
-      expect(exerciseSchema.safeParse({ name: 'Bench Press', sets: 4, repsMin: -1 }).success).toBe(false)
+      expect(exerciseSchema.safeParse({ name: 'Plank', sets: 4, repsMin: 0, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }).success).toBe(true)
+      expect(exerciseSchema.safeParse({ name: 'Bench Press', sets: 4, repsMin: -1, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }).success).toBe(false)
     })
 
     it('rejects reps above 100', () => {
-      const data = { name: 'Bench Press', sets: 4, repsMax: 150 }
+      const data = { name: 'Bench Press', sets: 4, repsMax: 150, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
       const result = exerciseSchema.safeParse(data)
       expect(result.success).toBe(false)
     })
 
     it('rejects RPE below 1', () => {
-      const data = { name: 'Bench Press', sets: 4, rpeTarget: 0 }
+      const data = { name: 'Bench Press', sets: 4, rpeTarget: 0, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
       const result = exerciseSchema.safeParse(data)
       expect(result.success).toBe(false)
     })
 
     it('rejects RPE above 10', () => {
-      const data = { name: 'Bench Press', sets: 4, rpeTarget: 11 }
+      const data = { name: 'Bench Press', sets: 4, rpeTarget: 11, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
       const result = exerciseSchema.safeParse(data)
       expect(result.success).toBe(false)
     })
 
     it('rejects percentage1rm above 100', () => {
-      const data = { name: 'Bench Press', sets: 4, percentage1rm: 110 }
+      const data = { name: 'Bench Press', sets: 4, percentage1rm: 110, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
       const result = exerciseSchema.safeParse(data)
       expect(result.success).toBe(false)
     })
 
     it('rejects rest above 600 seconds (10 minutes)', () => {
-      const data = { name: 'Bench Press', sets: 4, restSeconds: 700 }
+      const data = { name: 'Bench Press', sets: 4, restSeconds: 700, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
       const result = exerciseSchema.safeParse(data)
       expect(result.success).toBe(false)
     })
 
     it('defaults isWarmup to false', () => {
-      const data = { name: 'Bench Press', sets: 4 }
+      const data = { name: 'Bench Press', sets: 4, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
       const result = exerciseSchema.safeParse(data)
 
       expect(result.success).toBe(true)
@@ -486,7 +489,7 @@ describe('Training Validation Schemas', () => {
   })
 
   describe('bulkExerciseInputSchema (PUT exercise item)', () => {
-    const base = { name: 'Squat', sets: 5 }
+    const base = { name: 'Squat', sets: 5, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
 
     it('accepts a 0-rep exercise (reps floor relaxed to match authoring + absent DB CHECK)', () => {
       const r = bulkExerciseInputSchema.safeParse({ ...base, repsMin: 0, repsMax: 0 })
@@ -598,7 +601,7 @@ describe('Training Validation Schemas', () => {
     })
 
     it('savedSessionInputSchema caps exercises at 50 per session', () => {
-      const ex = { name: 'E', sets: 3 }
+      const ex = { name: 'E', sets: 3, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
       const mk = (n: number) => ({ name: 'Day', orderIndex: 0, isRest: false, groups: Array(n).fill(lone(ex)) })
       expect(savedSessionInputSchema.safeParse(mk(51)).success).toBe(false)
       expect(savedSessionInputSchema.safeParse(mk(50)).success).toBe(true)
@@ -611,6 +614,7 @@ describe('Training Validation Schemas', () => {
       sets: 3,
       setSpecs: [{ set_number: 1, set_type: 'working', reps_min: 5, reps_max: 8 }],
       videoUrl: 'https://example.com/bench.mp4',
+      prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'],
     }
     const base = {
       name: 'Push Day',
@@ -660,12 +664,12 @@ describe('Training Validation Schemas', () => {
     const EMOM = { ...CIRCUIT, format: 'emom', timeCapSeconds: 600, intervalSeconds: 60 }
     // Each exercise names its isWarmup (the PUT item defaults it), so a
     // parsed group is exactly the group sent.
-    const squat = { name: 'Squat', sets: 3, isWarmup: false }
-    const row = { name: 'Row', sets: 3, repsMin: 8, repsMax: 10, isWarmup: false }
-    const bench = { name: 'Bench Press', sets: 4, restSeconds: 120, isWarmup: false }
+    const squat = { name: 'Squat', sets: 3, isWarmup: false, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
+    const row = { name: 'Row', sets: 3, repsMin: 8, repsMax: 10, isWarmup: false, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
+    const bench = { name: 'Bench Press', sets: 4, restSeconds: 120, isWarmup: false, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
     const circuitOf = (count: number) => ({
       ...CIRCUIT,
-      exercises: Array.from({ length: count }, (_, i) => ({ name: `E${i + 1}`, sets: 3 })),
+      exercises: Array.from({ length: count }, (_, i) => ({ name: `E${i + 1}`, sets: 3, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] })),
     })
 
     // Every session write schema asked the same question: parse a session
@@ -815,7 +819,7 @@ describe('Training Validation Schemas', () => {
         name: 'Day',
         orderIndex: 2,
         isRest: false,
-        groups: [lone({ name: 'Squat', sets: 3, orderIndex: 4, supersetGroup: 'A' })],
+        groups: [lone({ name: 'Squat', sets: 3, orderIndex: 4, supersetGroup: 'A', prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] })],
       })
 
       expect(r.success).toBe(true)
@@ -824,7 +828,7 @@ describe('Training Validation Schemas', () => {
         const [exercise] = sessionExercises(r.data)
         expect(exercise).not.toHaveProperty('orderIndex')
         expect(exercise).not.toHaveProperty('supersetGroup')
-        expect(exercise).toStrictEqual({ name: 'Squat', sets: 3 })
+        expect(exercise).toStrictEqual({ name: 'Squat', sets: 3, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] })
       }
     })
   })
@@ -876,5 +880,90 @@ describe('several sessions a day', () => {
     expect(clientLayoutSchema.safeParse({ moves: moves(8) }).success).toBe(true)
     expect(clientLayoutSchema.safeParse({ moves: moves(MAX_WEEK_LAYOUT_MOVES) }).success).toBe(true)
     expect(clientLayoutSchema.safeParse({ moves: moves(MAX_WEEK_LAYOUT_MOVES + 1) }).success).toBe(false)
+  })
+})
+
+describe('setSpecSchema — every target is a bounded pair (migration 183)', () => {
+  const base = { set_number: 1, set_type: 'working' }
+
+  it('accepts every measure at both ends of its bounds and refuses just outside', () => {
+    for (const measure of SET_SPEC_MEASURE_KEYS) {
+      const { min, max, floor, ceiling, integer } = SET_SPEC_MEASURES[measure]
+      expect(setSpecSchema.safeParse({ ...base, [min]: floor, [max]: ceiling }).success, measure).toBe(true)
+      expect(setSpecSchema.safeParse({ ...base, [min]: floor - 1 }).success, `${measure} below`).toBe(false)
+      expect(setSpecSchema.safeParse({ ...base, [max]: ceiling + 1 }).success, `${measure} above`).toBe(false)
+      if (integer) {
+        expect(setSpecSchema.safeParse({ ...base, [min]: floor + 0.5 }).success, `${measure} fraction`).toBe(false)
+      }
+    }
+  })
+
+  it('refuses a range that runs high to low, and keeps a half-open one', () => {
+    expect(setSpecSchema.safeParse({ ...base, rpe_min: 8, rpe_max: 7 }).success).toBe(false)
+    expect(setSpecSchema.safeParse({ ...base, reps_min: 8, reps_max: null }).success).toBe(true)
+    expect(setSpecSchema.safeParse({ ...base, rpe_min: 7, rpe_max: 8 }).success).toBe(true)
+  })
+
+  it('RPE is 1–10 at both ends', () => {
+    expect(setSpecSchema.safeParse({ ...base, rpe_min: 0, rpe_max: 0 }).success).toBe(false)
+    expect(setSpecSchema.safeParse({ ...base, rpe_min: 1, rpe_max: 10 }).success).toBe(true)
+  })
+
+  it('a percentage load is bounded by 100, an absolute one by the kilogram ceiling', () => {
+    expect(setSpecSchema.safeParse({ ...base, load_type: 'pct_1rm', load_min: 70, load_max: 105 }).success).toBe(false)
+    expect(setSpecSchema.safeParse({ ...base, load_type: 'absolute', load_min: 100, load_max: 105 }).success).toBe(true)
+    expect(setSpecSchema.safeParse({ ...base, load_type: 'absolute', load_max: 2001 }).success).toBe(false)
+  })
+
+  it('tempo is one compound value of four phases', () => {
+    expect(setSpecSchema.safeParse({ ...base, tempo: '3-1-X-0' }).success).toBe(true)
+    expect(setSpecSchema.safeParse({ ...base, tempo: '3010' }).success).toBe(false)
+    expect(setSpecSchema.safeParse({ ...base, tempo: null }).success).toBe(true)
+    // The exercise-level summary column takes the same grammar.
+    expect(exerciseSchema.safeParse({ name: 'Bench', sets: 3, tempo: '31X0' }).success).toBe(false)
+    expect(exerciseSchema.safeParse({ name: 'Bench', sets: 3, tempo: '3-1-X-0' }).success).toBe(true)
+  })
+
+  it('a drop keeps its one load value and one rep count', () => {
+    const r = setSpecSchema.safeParse({ ...base, set_type: 'drop', drops: [{ load_value: 60, reps: 8 }] })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.drops).toEqual([{ load_value: 60, reps: 8 }])
+  })
+
+  it('the old single-value spellings are not keys any more', () => {
+    const r = setSpecSchema.safeParse({ ...base, rpe_target: 8, load_value: 100 })
+    expect(r.success).toBe(true)
+    if (r.success) {
+      expect(r.data).not.toHaveProperty('rpe_target')
+      expect(r.data).not.toHaveProperty('load_value')
+    }
+  })
+})
+
+describe('prescribedFields — every writer names the list (migration 183)', () => {
+  const ex = { name: 'Row', sets: 3 }
+
+  it('is required: a body without it is refused', () => {
+    expect(bulkExerciseInputSchema.safeParse(ex).success).toBe(false)
+    expect(savedSessionInputSchema.safeParse({ name: 'D', orderIndex: 0, isRest: false, groups: [lone(ex)] }).success).toBe(false)
+  })
+
+  it('accepts every one of the nineteen and refuses an unknown name or an empty list', () => {
+    expect(bulkExerciseInputSchema.safeParse({ ...ex, prescribedFields: [...PRESCRIBED_FIELDS] }).success).toBe(true)
+    expect(bulkExerciseInputSchema.safeParse({ ...ex, prescribedFields: ['distance', 'duration'] }).success).toBe(true)
+    expect(bulkExerciseInputSchema.safeParse({ ...ex, prescribedFields: ['weight'] }).success).toBe(false)
+    expect(bulkExerciseInputSchema.safeParse({ ...ex, prescribedFields: [] }).success).toBe(false)
+    expect(bulkExerciseInputSchema.safeParse({ ...ex, prescribedFields: null }).success).toBe(false)
+  })
+
+  it('RPE is 1–10 on the library path too', () => {
+    const r = (rpeTarget: number) =>
+      savedSessionInputSchema.safeParse({
+        name: 'D', orderIndex: 0, isRest: false,
+        groups: [lone({ ...ex, rpeTarget, prescribedFields: ['rpe'] })],
+      }).success
+    expect(r(0)).toBe(false)
+    expect(r(1)).toBe(true)
+    expect(r(10)).toBe(true)
   })
 })

@@ -6,7 +6,11 @@ import type { LogFormValues } from "./log-form-types";
 import { useUnits } from "@/contexts/units-context";
 import { formatLoad } from "@/utils/unit-conversions";
 import { formatRepsRange } from "@/utils/reps-range";
-import { formatPrescribedLoad, type PrescribedRow } from "@/utils/set-spec-rows";
+import {
+  formatPrescribedLoad,
+  formatPrescribedRpe,
+  type PrescribedRow,
+} from "@/utils/set-spec-rows";
 import type { PrescribedField } from "@/utils/prescribed-fields";
 
 // The header row and every set row share this grid and must not drift, so the
@@ -132,14 +136,13 @@ export function SetRow({
 
   // Load is the coach's INSTRUCTION and is never fillable — it may be a
   // percentage, which cannot share a box with the kilograms the client logs.
-  // Absolute loads snap here (formatLoad, not displayLoad) because this is a
-  // read-only readout, not an editable field that could round-trip the snap.
+  // A value or a range ("100–105 kg", "70–75% 1RM"). Absolute loads snap here
+  // (formatLoad, not displayLoad) because this is a read-only readout, not an
+  // editable field that could round-trip the snap.
   const loadText = prescribed
     ? formatPrescribedLoad(
         prescribed,
-        prescribed.loadValue != null
-          ? String(formatLoad(prescribed.loadValue, preference).value)
-          : "",
+        (kg) => String(formatLoad(kg, preference).value),
         loadUnit,
       )
     : null;
@@ -148,8 +151,8 @@ export function SetRow({
     ? prescribed.repsTarget ??
       formatRepsRange({ min: prescribed.repsMin, max: prescribed.repsMax })
     : "";
-  const rpePlaceholder =
-    prescribed?.rpeTarget != null ? String(prescribed.rpeTarget) : "";
+  // The coach's RPE, one value or a range ("7–8"), as the box's hint.
+  const rpePlaceholder = prescribed ? (formatPrescribedRpe(prescribed) ?? "") : "";
 
   // Banked rows read as done: muted, but never disabled. A client who ticks a
   // set and then remembers the weight has to be able to type it in.

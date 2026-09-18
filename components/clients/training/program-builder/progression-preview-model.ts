@@ -11,6 +11,7 @@ import {
 import type { Exercise } from "@/types/training";
 import type { ExerciseDraft, WeekDraft } from "./program-builder-types";
 import { formatLoad, type UnitSystem } from "@/utils/unit-conversions";
+import { formatTargetReadout } from "@/utils/target-range";
 import { isSupersetOrCircuit } from "./program-builder-groups";
 
 // Pure view-model for the duplicate-week progression preview: pairs the
@@ -62,11 +63,21 @@ export function buildIsCompound(
 const workingSpecs = (ex: ExerciseDraft): SetSpec[] =>
   expandSetSpecs(ex).filter(isWorkingSpec);
 
+const hasLoad = (s: SetSpec): boolean =>
+  s.load_type != null && (s.load_min != null || s.load_max != null);
+
+// A load's value or range as a number string: "100", "100–105"; an absolute
+// load converted (and snapped — this is a readout) to the viewer's unit.
+const loadRange = (s: SetSpec, viewer: UnitSystem): string => {
+  const convert = (kg: number | null | undefined) =>
+    kg == null ? null : s.load_type === "absolute" ? formatLoad(kg, viewer).value : kg;
+  return formatTargetReadout({ min: convert(s.load_min), max: convert(s.load_max) }) ?? "—";
+};
+
 const loadToken = (s: SetSpec, viewer: UnitSystem): string => {
-  if (s.load_value == null || s.load_type == null) return "—";
-  if (s.load_type !== "absolute") return `${s.load_value}%`;
-  const load = formatLoad(s.load_value, viewer);
-  return `${load.value}${load.unit}`;
+  if (!hasLoad(s)) return "—";
+  if (s.load_type !== "absolute") return `${loadRange(s, viewer)}%`;
+  return `${loadRange(s, viewer)}${formatLoad(0, viewer).unit}`;
 };
 
 /**
@@ -85,17 +96,15 @@ const loadToken = (s: SetSpec, viewer: UnitSystem): string => {
 export function formatLoads(ex: ExerciseDraft, viewer: UnitSystem): string {
   const specs = workingSpecs(ex);
   if (specs.length === 0) return "—";
-  if (specs.every((s) => s.load_type === "absolute" && s.load_value != null)) {
-    const loads = specs.map((s) => formatLoad(s.load_value!, viewer));
-    return `${loads.map((l) => l.value).join(" / ")} ${loads[0].unit}`;
+  if (specs.every((s) => s.load_type === "absolute" && hasLoad(s))) {
+    return `${specs.map((s) => loadRange(s, viewer)).join(" / ")} ${formatLoad(0, viewer).unit}`;
   }
   if (
     specs.every(
-      (s) =>
-        (s.load_type === "pct_1rm" || s.load_type === "pct_top") && s.load_value != null,
+      (s) => (s.load_type === "pct_1rm" || s.load_type === "pct_top") && hasLoad(s),
     )
   ) {
-    return specs.map((s) => `${s.load_value}%`).join(" / ");
+    return specs.map((s) => `${loadRange(s, viewer)}%`).join(" / ");
   }
   return specs.map((s) => loadToken(s, viewer)).join(" / ");
 }

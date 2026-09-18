@@ -16,9 +16,11 @@ import { SET_TYPE_OPTIONS, type SetSpecEdit } from "./use-set-spec-mutations";
 import { DropSetEditor } from "./drop-set-editor";
 import { useUnits } from "@/contexts/units-context";
 import { formatLoad } from "@/utils/unit-conversions";
-import { commitNum } from "./commit-input";
-import { LoadValueInput, loadOptions } from "./load-value-input";
+import { commitNum, commitRange } from "./commit-input";
+import { LoadRangeInput, loadOptions } from "./load-value-input";
 import { formatRepsRange, parseRepsRange } from "@/utils/reps-range";
+import { SET_SPEC_MEASURES } from "@/utils/exercise-set-specs";
+import { formatTargetRange } from "@/utils/target-range";
 import {
   FOCUS_RING,
   MONO,
@@ -29,8 +31,10 @@ import {
 
 // One per-set prescription row. Column template is shared with the header row
 // exercise-card renders above the set list. Numeric caps mirror setSpecSchema
-// (reps ≤100, load ≤2000, RPE ≤10, per-set rest ≤3600 — NOT the exercise-level
-// 600) so the client-side safeParse belt never trips on these fields.
+// (reps ≤100, load ≤2000, RPE 1–10, per-set rest ≤3600 — NOT the exercise-level
+// 600) so the client-side safeParse belt never trips on these fields. Reps,
+// Load and RPE take one value or a range ("8-12", "100-105", "7-8"): every
+// numeric target is stored as a min/max pair.
 // Fractional columns stretch the rows to the full card width (# and the
 // duplicate/remove icon column stay fixed); minmax(0,…) lets narrow viewports
 // squeeze instead of overflowing.
@@ -193,7 +197,7 @@ export function SetRowEditor({
               onValueChange={(v) =>
                 update(
                   v === "none"
-                    ? { load_type: null, load_value: null }
+                    ? { load_type: null, load_min: null, load_max: null }
                     : { load_type: v as NonNullable<SetSpec["load_type"]> },
                 )
               }
@@ -215,29 +219,44 @@ export function SetRowEditor({
                 ))}
               </SelectContent>
             </Select>
-            <LoadValueInput
+            <LoadRangeInput
               loadType={spec.load_type}
-              value={spec.load_value ?? null}
+              min={spec.load_min ?? null}
+              max={spec.load_max ?? null}
               disabled={disabled}
               ariaLabel={`Set ${spec.set_number} load`}
-              className="w-16 shrink-0"
-              onCommit={(load_value) => update({ load_value })}
+              className="w-20 shrink-0"
+              onCommit={({ min, max }) => update({ load_min: min, load_max: max })}
             />
           </div>
         )}
 
         {fields.has("rpe") && (
+          // One value or a range ("7-8"), like Reps. Bounds are the RPE
+          // column's, 1–10: a typed 0 is clamped to 1.
           <Input
-            type="number"
-            min={0}
-            max={10}
-            step={0.5}
             disabled={disabled}
-            defaultValue={spec.rpe_target ?? ""}
+            maxLength={9}
+            defaultValue={formatTargetRange({
+              min: spec.rpe_min ?? null,
+              max: spec.rpe_max ?? null,
+            })}
             placeholder="RPE"
             aria-label={`Set ${spec.set_number} RPE`}
             className={cn(MONO_INPUT_CLASS, "h-7 px-1 text-[11px]", FOCUS_RING)}
-            onBlur={(e) => update({ rpe_target: commitNum(e, { min: 0, max: 10 }) })}
+            onFocus={(e) => {
+              e.target.select();
+            }}
+            onBlur={(e) => {
+              const commit = commitRange(
+                e,
+                { min: spec.rpe_min ?? null, max: spec.rpe_max ?? null },
+                SET_SPEC_MEASURES.rpe,
+              );
+              if (commit.changed) {
+                update({ rpe_min: commit.range.min, rpe_max: commit.range.max });
+              }
+            }}
           />
         )}
 

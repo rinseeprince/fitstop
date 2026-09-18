@@ -44,10 +44,11 @@ export type ExerciseDraft = {
   isWarmup: boolean;
   notes: string | null;
   videoUrl: string | null;
-  // Which prescription columns the coach uses for this exercise (migration
-  // 149). null = all five. Decides what the CLIENT app renders, so it must
-  // round-trip every serialize/clone/placement path like set_specs does.
-  prescribedFields: PrescribedField[] | null;
+  // The measurement columns the coach prescribes for this exercise (migration
+  // 183): never empty. Decides what the CLIENT app renders, so it must
+  // round-trip every serialize/clone/placement path like set_specs does — a
+  // column the builder has no box for yet survives every edit and save.
+  prescribedFields: PrescribedField[];
 };
 
 // A group of exercises (migration 178): its settings and its exercises, in

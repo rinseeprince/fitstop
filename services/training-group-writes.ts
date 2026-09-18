@@ -53,7 +53,8 @@ export type TrainingExerciseWrite = {
   isWarmup?: boolean;
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
-  prescribedFields?: readonly string[] | null;
+  // Required: every writer names the exercise's columns (migration 183).
+  prescribedFields: readonly string[];
 };
 
 export type TrainingGroupWrite = GroupSettingsInput & { exercises: TrainingExerciseWrite[] };
@@ -78,7 +79,7 @@ type CopiedExercise = {
   isWarmup?: boolean;
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
-  prescribedFields?: readonly string[] | null;
+  prescribedFields: readonly string[];
 };
 
 type CopiedGroup = GroupSettings & { exercises: readonly CopiedExercise[] };

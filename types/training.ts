@@ -1,5 +1,6 @@
 
 import type { SetSpec, SetType } from "@/utils/exercise-set-specs";
+import type { PrescribedField } from "@/utils/prescribed-fields";
 import type { GroupSettings } from "@/utils/exercise-groups";
 
 // Training plan split types
@@ -36,11 +37,11 @@ export type TrainingExercise = {
   isWarmup: boolean;
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
-  // Prescription columns the coach uses (migration 149). null = all five.
+  // The measurement columns the coach prescribes (migration 183): never empty.
   // REQUIRED, not optional: while it was optional, services/training-mappers.ts
   // simply never mapped the column and every client saw all five columns. A
   // mapper that forgets it is now a compile error.
-  prescribedFields: string[] | null;
+  prescribedFields: PrescribedField[];
   createdAt: string;
   updatedAt: string;
 };
@@ -323,8 +324,8 @@ export type SavedExercise = {
   notes: string | null;
   setSpecs: SetSpec[] | null;
   videoUrl: string | null;
-  // Prescription columns the coach uses (migration 149). null/absent = all five.
-  prescribedFields: string[] | null;
+  // The measurement columns the coach prescribes (migration 183): never empty.
+  prescribedFields: PrescribedField[];
   createdAt: string;
   updatedAt: string;
 };
@@ -439,9 +440,12 @@ export type ResolvedSession =
   | { source: 'live'; session: TrainingSessionHeader }
   | { source: 'snapshot'; snapshot: Record<string, unknown> };
 
+// A snapshot exercise names the exercise it was logged against
+// (`exercise_logs.training_exercise_id`): the snapshot itself carries no id,
+// and the client's log form pairs the exercise with its logged sets by it.
 export type ResolvedExercise =
   | { source: 'live'; exercise: TrainingExercise }
-  | { source: 'snapshot'; snapshot: Record<string, unknown> };
+  | { source: 'snapshot'; trainingExerciseId: string; snapshot: Record<string, unknown> };
 
 // A workout's group as the client's workout read returns it: its settings and
 // its exercises in order, each live or read off the log's snapshot.

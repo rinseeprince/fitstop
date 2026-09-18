@@ -1,13 +1,18 @@
 import { describe, it, expect } from "vitest";
-import type { SetSpec } from "./exercise-set-specs";
+import { SET_SPEC_MEASURE_KEYS, type SetSpec } from "./exercise-set-specs";
 import {
   buildPrescribedRows,
   buildSetDisplayNumbers,
   formatPrescribedLoad,
+  formatPrescribedRpe,
   isContinuationOfDropSet,
   restAfterRow,
 } from "./set-spec-rows";
-import { PRESCRIBED_FIELDS, resolvePrescribedFields } from "./prescribed-fields";
+import {
+  DEFAULT_PRESCRIBED_FIELDS,
+  PRESCRIBED_FIELDS,
+  resolvePrescribedFields,
+} from "./prescribed-fields";
 
 function spec(overrides: Partial<SetSpec> & { set_number: number }): SetSpec {
   return {
@@ -16,8 +21,10 @@ function spec(overrides: Partial<SetSpec> & { set_number: number }): SetSpec {
     reps_max: null,
     reps_target: null,
     load_type: null,
-    load_value: null,
-    rpe_target: null,
+    load_min: null,
+    load_max: null,
+    rpe_min: null,
+    rpe_max: null,
     tempo: null,
     rest_seconds: null,
     drops: null,
@@ -59,7 +66,7 @@ describe("buildPrescribedRows", () => {
         reps_min: 8,
         reps_max: 10,
         load_type: "absolute",
-        load_value: 80,
+        load_min: 80, load_max: 80,
         rest_seconds: 180,
         drops: [
           { weight: 60, reps: 8 },
@@ -76,7 +83,8 @@ describe("buildPrescribedRows", () => {
     // A drop's weight is a stored kilogram, so it reads as an absolute load.
     expect(rows[2]).toMatchObject({
       loadType: "absolute",
-      loadValue: 60,
+      loadMin: 60,
+      loadMax: 60,
       repsMin: 8,
       repsMax: 8,
     });
@@ -175,15 +183,17 @@ describe("open-ended sets prescribe no reps", () => {
         reps_min: 7,
         reps_max: 11,
         load_type: "pct_1rm",
-        load_value: 60,
-        rpe_target: 9,
+        load_min: 60, load_max: 60,
+        rpe_min: 9, rpe_max: 9,
         rest_seconds: 120,
       }),
     ]);
 
     expect(rows[0].loadType).toBe("pct_1rm");
-    expect(rows[0].loadValue).toBe(60);
-    expect(rows[0].rpeTarget).toBe(9);
+    expect(rows[0].loadMin).toBe(60);
+    expect(rows[0].loadMax).toBe(60);
+    expect(rows[0].rpeMin).toBe(9);
+    expect(rows[0].rpeMax).toBe(9);
     expect(rows[0].restSeconds).toBe(120);
   });
 
@@ -265,7 +275,7 @@ describe("a drop's load is expressed in its PARENT's type", () => {
         set_number: 1,
         set_type: "drop",
         load_type: "pct_1rm",
-        load_value: 80,
+        load_min: 80, load_max: 80,
         drops: [{ load_value: 60, reps: 8 }, { load_value: 40, reps: 6 }],
       }),
     ]);
@@ -273,7 +283,8 @@ describe("a drop's load is expressed in its PARENT's type", () => {
     // The regression: this used to be hardcoded to "absolute", so a % 1RM set's
     // drops rendered — and asked the coach for — kilograms.
     expect(rows.map((r) => r.loadType)).toEqual(["pct_1rm", "pct_1rm", "pct_1rm"]);
-    expect(rows.map((r) => r.loadValue)).toEqual([80, 60, 40]);
+    expect(rows.map((r) => r.loadMin)).toEqual([80, 60, 40]);
+    expect(rows.map((r) => r.loadMax)).toEqual([80, 60, 40]);
   });
 
   it("reads the legacy `weight` spelling", () => {
@@ -282,13 +293,13 @@ describe("a drop's load is expressed in its PARENT's type", () => {
         set_number: 1,
         set_type: "drop",
         load_type: "absolute",
-        load_value: 100,
+        load_min: 100, load_max: 100,
         drops: [{ weight: 60, reps: 8 }],
       }),
     ]);
 
     expect(rows[1].loadType).toBe("absolute");
-    expect(rows[1].loadValue).toBe(60);
+    expect(rows[1].loadMin).toBe(60);
   });
 
   it("prefers load_value when both spellings are present", () => {
@@ -301,7 +312,7 @@ describe("a drop's load is expressed in its PARENT's type", () => {
       }),
     ]);
 
-    expect(rows[1].loadValue).toBe(55);
+    expect(rows[1].loadMin).toBe(55);
   });
 
   it("defaults to absolute when the parent names no type", () => {
@@ -329,7 +340,7 @@ describe("a drop's load is expressed in its PARENT's type", () => {
     ]);
 
     expect(rows[1].loadType).toBeNull();
-    expect(rows[1].loadValue).toBeNull();
+    expect(rows[1].loadMin).toBeNull();
   });
 });
 
@@ -391,33 +402,61 @@ describe("restAfterRow", () => {
 });
 
 describe("formatPrescribedLoad", () => {
+  const display = (kg: number) => String(kg);
+
   it("renders an absolute load in the viewer's unit", () => {
     expect(
-      formatPrescribedLoad({ loadType: "absolute", loadValue: 100 }, "100", "kg"),
-    ).toBe("100kg");
+      formatPrescribedLoad({ loadType: "absolute", loadMin: 100, loadMax: 100 }, display, "kg"),
+    ).toBe("100 kg");
+  });
+
+  it("renders a range with an en dash, each end converted", () => {
+    expect(
+      formatPrescribedLoad(
+        { loadType: "absolute", loadMin: 100, loadMax: 105 },
+        (kg) => String(kg * 2),
+        "lbs",
+      ),
+    ).toBe("200–210 lbs");
+    expect(
+      formatPrescribedLoad({ loadType: "pct_1rm", loadMin: 70, loadMax: 75 }, display, "kg"),
+    ).toBe("70–75% 1RM");
   });
 
   it("renders percentages unitless, never as a weight", () => {
     expect(
-      formatPrescribedLoad({ loadType: "pct_1rm", loadValue: 60 }, "", "kg"),
+      formatPrescribedLoad({ loadType: "pct_1rm", loadMin: 60, loadMax: 60 }, display, "kg"),
     ).toBe("60% 1RM");
     expect(
-      formatPrescribedLoad({ loadType: "pct_top", loadValue: 80 }, "", "kg"),
+      formatPrescribedLoad({ loadType: "pct_top", loadMin: 80, loadMax: 80 }, display, "kg"),
     ).toBe("80% top set");
   });
 
   it("returns null when nothing is prescribed", () => {
-    expect(formatPrescribedLoad({ loadType: null, loadValue: null }, "", "kg")).toBeNull();
-    expect(formatPrescribedLoad({ loadType: "absolute", loadValue: null }, "", "kg")).toBeNull();
+    expect(
+      formatPrescribedLoad({ loadType: null, loadMin: null, loadMax: null }, display, "kg"),
+    ).toBeNull();
+    expect(
+      formatPrescribedLoad({ loadType: "absolute", loadMin: null, loadMax: null }, display, "kg"),
+    ).toBeNull();
+  });
+});
+
+describe("formatPrescribedRpe", () => {
+  it("reads one value or a range, and nothing when none is prescribed", () => {
+    expect(formatPrescribedRpe({ rpeMin: 8, rpeMax: 8 })).toBe("8");
+    expect(formatPrescribedRpe({ rpeMin: 7, rpeMax: 8 })).toBe("7–8");
+    expect(formatPrescribedRpe({ rpeMin: null, rpeMax: null })).toBeNull();
   });
 });
 
 describe("resolvePrescribedFields", () => {
-  it("treats NULL as every column — the default every pre-149 row carries", () => {
+  it("reads a snapshot with no list, or a null one, as today's five", () => {
     expect([...resolvePrescribedFields(null)].sort()).toEqual(
-      [...PRESCRIBED_FIELDS].sort(),
+      [...DEFAULT_PRESCRIBED_FIELDS].sort(),
     );
     expect([...resolvePrescribedFields(undefined)]).toHaveLength(5);
+    expect(new Set(PRESCRIBED_FIELDS).size).toBe(19);
   });
 
   it("honours an explicit subset", () => {
@@ -432,13 +471,76 @@ describe("resolvePrescribedFields", () => {
   it("drops unknown values rather than trusting a TEXT[] column", () => {
     expect([...resolvePrescribedFields(["reps", "tempo", "nonsense"])]).toEqual([
       "reps",
+      "tempo",
     ]);
   });
 
-  it("falls back to everything when the list is empty or all unknown", () => {
+  it("falls back to today's five when the list is empty or all unknown", () => {
     // Unauthorable and CHECK-refused, so reaching it means something upstream
-    // broke — show the whole prescription rather than an empty grid.
+    // broke — show the strength prescription rather than an empty grid.
     expect(resolvePrescribedFields([]).size).toBe(5);
     expect(resolvePrescribedFields(["bogus"]).size).toBe(5);
+  });
+});
+
+describe("every measure reaches the rows", () => {
+  it("carries each pair by measure, and a drop child only its reps and load", () => {
+    const rows = buildPrescribedRows([
+      spec({
+        set_number: 1,
+        set_type: "drop",
+        reps_min: 8,
+        reps_max: 10,
+        load_type: "absolute",
+        load_min: 100,
+        load_max: 105,
+        rpe_min: 7,
+        rpe_max: 8,
+        rir_min: 2,
+        rir_max: 2,
+        distance_meters_min: 5000,
+        distance_meters_max: 5000,
+        pace_seconds_per_km_min: 270,
+        pace_seconds_per_km_max: 285,
+        tempo: "3-1-X-0",
+        drops: [{ load_value: 80, reps: 6 }],
+      }),
+    ]);
+    expect(rows[0]).toMatchObject({
+      loadMin: 100,
+      loadMax: 105,
+      rpeMin: 7,
+      rpeMax: 8,
+      tempo: "3-1-X-0",
+    });
+    expect(rows[0].ranges.reps).toEqual({ min: 8, max: 10 });
+    expect(rows[0].ranges.load).toEqual({ min: 100, max: 105 });
+    expect(rows[0].ranges.rir).toEqual({ min: 2, max: 2 });
+    expect(rows[0].ranges.distance).toEqual({ min: 5000, max: 5000 });
+    expect(rows[0].ranges.pace).toEqual({ min: 270, max: 285 });
+    expect(rows[0].ranges.power).toEqual({ min: null, max: null });
+    expect(Object.keys(rows[0].ranges)).toHaveLength(SET_SPEC_MEASURE_KEYS.length);
+
+    expect(rows[1]).toMatchObject({
+      dropIndex: 1,
+      loadType: "absolute",
+      loadMin: 80,
+      loadMax: 80,
+      repsMin: 6,
+      repsMax: 6,
+      rpeMin: null,
+      rpeMax: null,
+      tempo: null,
+    });
+    expect(rows[1].ranges.distance).toEqual({ min: null, max: null });
+    expect(rows[1].ranges.load).toEqual({ min: 80, max: 80 });
+  });
+
+  it("an open-ended set reads no reps in its ranges either", () => {
+    const [row] = buildPrescribedRows([
+      spec({ set_number: 1, set_type: "amrap", reps_min: 8, reps_max: 10, rpe_min: 9, rpe_max: 10 }),
+    ]);
+    expect(row.ranges.reps).toEqual({ min: null, max: null });
+    expect(row.ranges.rpe).toEqual({ min: 9, max: 10 });
   });
 });

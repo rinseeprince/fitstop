@@ -12,32 +12,39 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import {
+  DEFAULT_PRESCRIBED_FIELDS,
+  PRESCRIBED_FIELD_LABELS,
   PRESCRIBED_FIELDS,
   type PrescribedField,
 } from "@/utils/prescribed-fields";
 import { TEXT_MUTED } from "./builder-tokens";
 
-// Which prescription columns this exercise uses. Per EXERCISE, not per coach or
+// Which measurement columns this exercise uses. Per EXERCISE, not per coach or
 // per session: a heavy compound wants load and RPE, a high-rep accessory wants
 // reps and rest and nothing else.
 //
 // This is not a display preference. Unticking a column stops the CLIENT app
 // rendering it, so it stops collecting that data — which is why unticking Load
-// ends an exercise's strength history and why the last column cannot be
-// unticked. Values already entered are untouched and return intact when the
+// ends an exercise's strength history and why an exercise's last column cannot
+// be unticked. Values already entered are untouched and return intact when the
 // column is re-shown.
+//
+// The menu offers today's five columns; commit 12's selector offers every
+// column with presets. A column the menu doesn't offer — an endurance column
+// the exercise already carries — is kept exactly as it is by every tick here.
 //
 // Built from the styled DropdownMenu primitives rather than a Popover with
 // checkboxes: DropdownMenuCheckboxItem already carries the teal tick, the 6px
 // panel and the disabled treatment, and components/ui/checkbox.tsx is still
 // un-migrated OKLCH.
-const FIELD_LABELS: Record<PrescribedField, string> = {
-  set_type: "Set type",
-  reps: "Reps",
-  load: "Load",
-  rpe: "RPE",
-  rest: "Rest",
-};
+const OFFERED: readonly PrescribedField[] = DEFAULT_PRESCRIBED_FIELDS;
+
+// The order a stored list takes: the offered five as they read in the menu,
+// then every other column in the canonical order.
+const STORED_ORDER: readonly PrescribedField[] = [
+  ...OFFERED,
+  ...PRESCRIBED_FIELDS.filter((field) => !OFFERED.includes(field)),
+];
 
 type SetColumnsMenuProps = {
   fields: ReadonlySet<PrescribedField>;
@@ -46,7 +53,7 @@ type SetColumnsMenuProps = {
   // choice is kept, not changed, by the columns ticked here.
   hiddenFields?: readonly PrescribedField[];
   exerciseName: string;
-  onChange: (next: PrescribedField[] | null) => void;
+  onChange: (next: PrescribedField[]) => void;
 };
 
 export function SetColumnsMenu({
@@ -55,16 +62,13 @@ export function SetColumnsMenu({
   exerciseName,
   onChange,
 }: SetColumnsMenuProps) {
-  const showingAll = fields.size === PRESCRIBED_FIELDS.length;
+  const offered = OFFERED.filter((field) => !hiddenFields.includes(field));
+  const showingAll = offered.every((field) => fields.has(field));
 
   const toggle = (field: PrescribedField) => {
-    const next = PRESCRIBED_FIELDS.filter((f) =>
-      f === field ? !fields.has(f) : fields.has(f),
+    onChange(
+      STORED_ORDER.filter((f) => (f === field ? !fields.has(f) : fields.has(f))),
     );
-    // All five is stored as null, not an exhaustive list — null is what every
-    // pre-149 row carries and what a forgetful write path produces, so the two
-    // must not be distinguishable.
-    onChange(next.length === PRESCRIBED_FIELDS.length ? null : next);
   };
 
   return (
@@ -87,13 +91,11 @@ export function SetColumnsMenu({
         <p className="px-2 pb-1.5 text-[11px] text-[#93b0b4]">
           What your client sees and fills in
         </p>
-        {PRESCRIBED_FIELDS.filter((field) => !hiddenFields.includes(field)).map((field) => {
+        {offered.map((field) => {
           const checked = fields.has(field);
-          // The grid must always keep one column; an exercise prescribing
-          // nothing is refused by the migration-149 CHECK too.
-          const isLastRemaining =
-            checked &&
-            [...fields].filter((f) => !hiddenFields.includes(f)).length === 1;
+          // The exercise must always keep one column; an exercise prescribing
+          // nothing is refused by the migration-183 CHECK too.
+          const isLastRemaining = checked && fields.size === 1;
           return (
             <DropdownMenuCheckboxItem
               key={field}
@@ -106,7 +108,7 @@ export function SetColumnsMenu({
                 if (!isLastRemaining) toggle(field);
               }}
             >
-              {FIELD_LABELS[field]}
+              {PRESCRIBED_FIELD_LABELS[field]}
             </DropdownMenuCheckboxItem>
           );
         })}
@@ -115,7 +117,9 @@ export function SetColumnsMenu({
           disabled={showingAll}
           onSelect={(e) => {
             e.preventDefault();
-            onChange(null);
+            onChange(
+              STORED_ORDER.filter((f) => offered.includes(f) || fields.has(f)),
+            );
           }}
         >
           Show all columns

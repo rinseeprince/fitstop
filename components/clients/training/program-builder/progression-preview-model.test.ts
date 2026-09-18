@@ -49,7 +49,7 @@ function exercise(over: Partial<ExerciseDraft> = {}): ExerciseDraft {
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    prescribedFields: null,
+    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
     ...over,
   };
 }
@@ -85,9 +85,9 @@ describe("diff formatters (working sets only)", () => {
   it("formatLoads: uniform absolute loads share one kg suffix", () => {
     const ex = exercise({
       setSpecs: [
-        { set_number: 1, set_type: "warmup", load_type: "absolute", load_value: 60 },
-        working(2, { load_type: "absolute", load_value: 100 }),
-        working(3, { load_type: "absolute", load_value: 90 }),
+        { set_number: 1, set_type: "warmup", load_type: "absolute", load_min: 60, load_max: 60 },
+        working(2, { load_type: "absolute", load_min: 100, load_max: 100 }),
+        working(3, { load_type: "absolute", load_min: 90, load_max: 90 }),
       ],
     });
     expect(formatLoads(ex, "metric")).toBe("100 / 90 kg");
@@ -96,8 +96,8 @@ describe("diff formatters (working sets only)", () => {
   it("formatLoads: uniform percent loads use per-token %", () => {
     const ex = exercise({
       setSpecs: [
-        working(1, { load_type: "pct_1rm", load_value: 70 }),
-        working(2, { load_type: "pct_top", load_value: 85 }),
+        working(1, { load_type: "pct_1rm", load_min: 70, load_max: 70 }),
+        working(2, { load_type: "pct_top", load_min: 85, load_max: 85 }),
       ],
     });
     expect(formatLoads(ex, "metric")).toBe("70% / 85%");
@@ -106,8 +106,8 @@ describe("diff formatters (working sets only)", () => {
   it("formatLoads: mixed/missing loads fall back to per-token units", () => {
     const ex = exercise({
       setSpecs: [
-        working(1, { load_type: "absolute", load_value: 100 }),
-        working(2, { load_type: "pct_1rm", load_value: 70 }),
+        working(1, { load_type: "absolute", load_min: 100, load_max: 100 }),
+        working(2, { load_type: "pct_1rm", load_min: 70, load_max: 70 }),
         working(3),
       ],
     });
@@ -174,7 +174,7 @@ describe("buildPreviewRows", () => {
             lone(
               exercise({
                 uid: "ex-bench",
-                setSpecs: [working(1, { load_type: "absolute", load_value: 100 })],
+                setSpecs: [working(1, { load_type: "absolute", load_min: 100, load_max: 100 })],
               }),
             ),
             lone(
@@ -182,7 +182,7 @@ describe("buildPreviewRows", () => {
                 uid: "ex-curl",
                 exerciseId: null,
                 name: "Cable Curl",
-                setSpecs: [working(1, { load_type: "pct_1rm", load_value: 60 })],
+                setSpecs: [working(1, { load_type: "pct_1rm", load_min: 60, load_max: 60 })],
               }),
             ),
           ],
@@ -237,7 +237,7 @@ describe("buildPreviewRows", () => {
               exercise({
                 uid: "ex-row",
                 name: "Row",
-                setSpecs: [working(1, { load_type: "absolute", load_value: 70 })],
+                setSpecs: [working(1, { load_type: "absolute", load_min: 70, load_max: 70 })],
               }),
             ),
           ],
@@ -303,8 +303,8 @@ describe("formatLoads — viewer fork", () => {
   it("renders absolute loads in the viewer's unit, snapped for imperial", () => {
     const ex = exercise({
       setSpecs: [
-        { set_number: 1, load_type: "absolute", load_value: 100 },
-        { set_number: 2, load_type: "absolute", load_value: 100 },
+        { set_number: 1, load_type: "absolute", load_min: 100, load_max: 100 },
+        { set_number: 2, load_type: "absolute", load_min: 100, load_max: 100 },
       ] as never,
     });
 

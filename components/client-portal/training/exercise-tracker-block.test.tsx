@@ -85,8 +85,8 @@ describe("prescribed load column", () => {
     reps_max: 10,
     reps_target: null,
     load_type: null,
-    load_value: null,
-    rpe_target: 8,
+    load_min: null, load_max: null,
+    rpe_min: 8, rpe_max: 8,
     tempo: null,
     rest_seconds: 180,
     drops: null,
@@ -97,13 +97,13 @@ describe("prescribed load column", () => {
     const exercise = makeExercise({
       sets: 2,
       setSpecs: [
-        spec({ set_number: 1, load_type: "absolute", load_value: 100 }),
-        spec({ set_number: 2, load_type: "absolute", load_value: 100 }),
+        spec({ set_number: 1, load_type: "absolute", load_min: 100, load_max: 100 }),
+        spec({ set_number: 2, load_type: "absolute", load_min: 100, load_max: 100 }),
       ] as never,
     });
     render(<FormHarness exercise={exercise} />);
 
-    expect(screen.getByTestId("prescribed-load-0-0")).toHaveTextContent("100kg");
+    expect(screen.getByTestId("prescribed-load-0-0")).toHaveTextContent("100 kg");
     // The weight box is the CLIENT's entry, always in their unit, never the
     // prescription — a percentage could not live there.
     expect(screen.getAllByLabelText(/weight/i)[0]).not.toHaveAttribute(
@@ -114,7 +114,7 @@ describe("prescribed load column", () => {
   it("renders a percentage prescription as a percentage", () => {
     const exercise = makeExercise({
       sets: 1,
-      setSpecs: [spec({ load_type: "pct_1rm", load_value: 60 })] as never,
+      setSpecs: [spec({ load_type: "pct_1rm", load_min: 60, load_max: 60 })] as never,
     });
     render(<FormHarness exercise={exercise} />);
     expect(screen.getByTestId("prescribed-load-0-0")).toHaveTextContent("60% 1RM");
@@ -149,14 +149,14 @@ describe("prescribed load column", () => {
           set_number: 1,
           set_type: "drop",
           load_type: "absolute",
-          load_value: 80,
+          load_min: 80, load_max: 80,
           drops: [{ weight: 60, reps: 8 }, { weight: 40, reps: 8 }],
         }),
       ] as never,
     });
     render(<FormHarness exercise={exercise} />);
     expect(screen.getAllByTestId("set-row")).toHaveLength(3);
-    expect(screen.getByTestId("prescribed-load-0-1")).toHaveTextContent("60kg");
-    expect(screen.getByTestId("prescribed-load-0-2")).toHaveTextContent("40kg");
+    expect(screen.getByTestId("prescribed-load-0-1")).toHaveTextContent("60 kg");
+    expect(screen.getByTestId("prescribed-load-0-2")).toHaveTextContent("40 kg");
   });
 });

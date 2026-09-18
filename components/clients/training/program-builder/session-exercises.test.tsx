@@ -34,7 +34,7 @@ const exercise = (uid: string, name: string, sets = 3): ExerciseDraft => ({
   isWarmup: false,
   notes: null,
   videoUrl: null,
-  prescribedFields: null,
+  prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
 });
 
 const lone = (ex: ExerciseDraft): ExerciseGroupDraft => ({ uid: `grp-${ex.uid}`, ...STRAIGHT_SETS, exercises: [ex] });

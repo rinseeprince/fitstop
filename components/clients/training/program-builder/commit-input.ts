@@ -1,7 +1,14 @@
+import { LOAD_KG_MAX } from "@/lib/constants";
 import { kgToLbs, lbsToKg, type UnitSystem } from "@/utils/unit-conversions";
+import {
+  formatTargetRange,
+  parseTargetRange,
+  type TargetRange,
+  type TargetRangeBounds,
+} from "@/utils/target-range";
 
 /**
- * Blur-commit helpers for the builder's uncontrolled number inputs.
+ * Blur-commit helpers for the builder's uncontrolled inputs.
  *
  * Lifted out of set-row-editor.tsx (which had the `int?` superset) so
  * drop-set-editor.tsx stops carrying a near-identical private copy, and so the
@@ -9,9 +16,9 @@ import { kgToLbs, lbsToKg, type UnitSystem } from "@/utils/unit-conversions";
  */
 
 /**
- * Plain clamp-and-normalize. Correct for reps, RPE, rest and percentage loads —
- * anything with no unit conversion, where a blur that writes the same value back
- * is genuinely a no-op.
+ * Plain clamp-and-normalize for a single number. Correct for a drop's reps or
+ * load and for rest — anything with no unit conversion, where a blur that
+ * writes the same value back is genuinely a no-op.
  */
 export const commitNum = (
   e: React.FocusEvent<HTMLInputElement>,
@@ -30,13 +37,42 @@ export const commitNum = (
   return result;
 };
 
+type RangeCommit =
+  | { changed: false }
+  | { changed: true; range: TargetRange };
+
+/**
+ * Commit a range box — "7-8", "70-75", "8-12" — typed in the unit it stores.
+ *
+ * Guarded on the SEEDED STRING: a blur that changed nothing writes nothing, or
+ * tabbing through a row dirties the draft. A string that is not a value or a
+ * range is reverted rather than blanking a prescription on a typo. Each end is
+ * clamped into the column's bounds (a typed 0 on a 1–10 column becomes 1).
+ */
+export const commitRange = (
+  e: React.FocusEvent<HTMLInputElement>,
+  stored: TargetRange,
+  bounds: TargetRangeBounds,
+): RangeCommit => {
+  const seeded = formatTargetRange(stored);
+  const typed = e.target.value.trim();
+  if (typed === seeded) return { changed: false };
+  const parsed = parseTargetRange(typed, bounds);
+  if (parsed === null) {
+    e.target.value = seeded;
+    return { changed: false };
+  }
+  e.target.value = formatTargetRange(parsed);
+  return { changed: true, range: parsed };
+};
+
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 /**
  * The string an absolute load is SEEDED with, in the viewer's unit.
  *
  * Deliberately NOT `formatLoad`. formatLoad snaps an imperial conversion to the
- * nearest 5 lb, which is right for a read-only readout and catastrophic for an
+ * nearest 2.5 lb, which is right for a read-only readout and catastrophic for an
  * editable field: the input below writes on every blur, so the snap would
  * round-trip into storage. An imperial coach opening a 100 kg session would see
  * 220, tab past without editing, and store 99.79 kg — per field, on first
@@ -51,6 +87,20 @@ export const displayLoad = (
   valueKg == null
     ? ""
     : String(round1(viewer === "imperial" ? kgToLbs(valueKg) : valueKg));
+
+const toDisplayNumber = (valueKg: number | null | undefined, viewer: UnitSystem) =>
+  valueKg == null ? null : Number(displayLoad(valueKg, viewer));
+
+/** The string an absolute load RANGE is seeded with, in the viewer's unit. */
+export const displayLoadRange = (
+  minKg: number | null | undefined,
+  maxKg: number | null | undefined,
+  viewer: UnitSystem,
+): string =>
+  formatTargetRange({
+    min: toDisplayNumber(minKg, viewer),
+    max: toDisplayNumber(maxKg, viewer),
+  });
 
 type LoadCommit =
   | { changed: false }
@@ -88,4 +138,39 @@ export const commitLoad = (
   }
   e.target.value = displayLoad(valueKg, viewer);
   return { changed: true, valueKg };
+};
+
+type LoadRangeCommit =
+  | { changed: false }
+  | { changed: true; minKg: number | null; maxKg: number | null };
+
+/**
+ * Commit an absolute load RANGE — "100-105" in the viewer's unit — as canonical
+ * kilograms at both ends, behind the same seeded-string guard as `commitLoad`.
+ * The typed numbers are bounded in the viewer's unit (the kilogram ceiling
+ * converted), then each end converts and is clamped in kilograms.
+ */
+export const commitLoadRange = (
+  e: React.FocusEvent<HTMLInputElement>,
+  storedMinKg: number | null | undefined,
+  storedMaxKg: number | null | undefined,
+  viewer: UnitSystem,
+): LoadRangeCommit => {
+  const seeded = displayLoadRange(storedMinKg, storedMaxKg, viewer);
+  const typed = e.target.value.trim();
+  if (typed === seeded) return { changed: false };
+  const ceiling = viewer === "imperial" ? kgToLbs(LOAD_KG_MAX) : LOAD_KG_MAX;
+  const parsed = parseTargetRange(typed, { floor: 0, ceiling, integer: false });
+  if (parsed === null) {
+    e.target.value = seeded;
+    return { changed: false };
+  }
+  const toKg = (n: number | null) =>
+    n == null
+      ? null
+      : Math.min(LOAD_KG_MAX, Math.max(0, viewer === "imperial" ? lbsToKg(n) : n));
+  const minKg = toKg(parsed.min);
+  const maxKg = toKg(parsed.max);
+  e.target.value = displayLoadRange(minKg, maxKg, viewer);
+  return { changed: true, minKg, maxKg };
 };

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import { toPrescribedFields } from "@/utils/prescribed-fields";
 import type {
   ClientTrainingPlan,
   ClientTrainingPlanState,
@@ -65,7 +66,7 @@ type TrainingExerciseRow = {
   is_warmup: boolean | null;
   set_specs: SetSpec[] | null;
   video_url: string | null;
-  prescribed_fields: string[] | null;
+  prescribed_fields: string[];
   exercise_group: ExerciseGroupRow;
 };
 
@@ -84,7 +85,7 @@ function mapExercise(row: TrainingExerciseRow): ClientTrainingExercise {
     isWarmup: row.is_warmup ?? false,
     setSpecs: row.set_specs ?? null,
     videoUrl: row.video_url ?? null,
-    prescribedFields: row.prescribed_fields ?? null,
+    prescribedFields: toPrescribedFields(row.prescribed_fields),
   };
 }
 

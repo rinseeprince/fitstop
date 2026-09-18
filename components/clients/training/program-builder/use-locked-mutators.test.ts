@@ -48,7 +48,7 @@ const EXERCISE: Omit<ExerciseDraft, "uid"> = {
   isWarmup: false,
   notes: null,
   videoUrl: null,
-  prescribedFields: null,
+  prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
 };
 
 // Weeks of 7 whose slots are `s<position>`, with a session at each listed

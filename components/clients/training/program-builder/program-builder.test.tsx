@@ -461,9 +461,9 @@ describe("ProgramBuilder save flow", () => {
 
   it("duplicate-with-progression previews, commits a progressed week, and saves it without touching week 0", async () => {
     const benchSpecs: SetSpec[] = [
-      { set_number: 1, set_type: "warmup", load_type: "absolute", load_value: 60 },
-      { set_number: 2, set_type: "working", load_type: "absolute", load_value: 100 },
-      { set_number: 3, set_type: "working", load_type: "absolute", load_value: 90 },
+      { set_number: 1, set_type: "warmup", load_type: "absolute", load_min: 60, load_max: 60 },
+      { set_number: 2, set_type: "working", load_type: "absolute", load_min: 100, load_max: 100 },
+      { set_number: 3, set_type: "working", load_type: "absolute", load_min: 90, load_max: 90 },
     ];
     const plan = makeDraftPlan();
     plan.sessions[0].groups = [
@@ -492,7 +492,7 @@ describe("ProgramBuilder save flow", () => {
             notes: null,
             setSpecs: benchSpecs.map((s) => ({ ...s })),
             videoUrl: null,
-            prescribedFields: null,
+            prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
             createdAt: "2026-01-01T00:00:00Z",
             updatedAt: "2026-01-01T00:00:00Z",
           },
@@ -529,7 +529,7 @@ describe("ProgramBuilder save flow", () => {
         weekIndex: number;
         isRest: boolean;
         groups: Array<{
-          exercises: Array<{ setSpecs: Array<{ set_type?: string; load_value?: number }> | null }>;
+          exercises: Array<{ setSpecs: Array<{ set_type?: string; load_min?: number }> | null }>;
         }>;
       }>;
     };
@@ -539,7 +539,7 @@ describe("ProgramBuilder save flow", () => {
     // Week 0 serializes byte-identical to the fixture prescription.
     expect(sessionExercises(week0Push)[0].setSpecs).toEqual(benchSpecs);
     // Week 1 carries the progressed working loads; warm-up untouched.
-    expect(sessionExercises(week1Push)[0].setSpecs!.map((s) => s.load_value)).toEqual([
+    expect(sessionExercises(week1Push)[0].setSpecs!.map((s) => s.load_min)).toEqual([
       60, 102.5, 92.5,
     ]);
   });

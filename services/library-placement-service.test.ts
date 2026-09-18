@@ -141,7 +141,7 @@ function makeExercise(overrides?: Partial<SavedExercise>): SavedExercise {
     notes: null,
     setSpecs: null,
     videoUrl: null,
-    prescribedFields: null,
+    prescribedFields: ["set_type", "reps", "load", "rpe", "rest"],
     createdAt: "2026-04-01T00:00:00Z",
     updatedAt: "2026-04-01T00:00:00Z",
     ...overrides,
@@ -806,7 +806,7 @@ describe("library-placement-service", () => {
           {
             name: "Push", focus: "chest", orderIndex: 0, dayOrder: 0, isRest: false, estimatedDurationMinutes: 60,
             calorieSurplusPercentage: 15, notes: null, sessionType: "training",
-            groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench", exerciseId: "catalog-1", sets: 3 }] }],
+            groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench", exerciseId: "catalog-1", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }] }],
           },
         ],
         ...overrides,
@@ -879,8 +879,8 @@ describe("library-placement-service", () => {
               name: "Push", focus: null, orderIndex: 0, dayOrder: 0, isRest: false, estimatedDurationMinutes: null,
               calorieSurplusPercentage: null, notes: null, sessionType: "training",
               groups: [
-                { ...STRAIGHT_SETS, exercises: [{ name: "Owned", exerciseId: "catalog-1", sets: 3 }] },
-                { ...STRAIGHT_SETS, exercises: [{ name: "Foreign", exerciseId: "not-in-catalog", sets: 3 }] },
+                { ...STRAIGHT_SETS, exercises: [{ name: "Owned", exerciseId: "catalog-1", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }] },
+                { ...STRAIGHT_SETS, exercises: [{ name: "Foreign", exerciseId: "not-in-catalog", sets: 3, prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }] },
               ],
             },
           ],

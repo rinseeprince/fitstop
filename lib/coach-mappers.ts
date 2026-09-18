@@ -16,6 +16,7 @@ import type {
 } from "@/lib/database-helpers";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { groupSettingsFromRow } from "@/utils/exercise-groups";
+import { toPrescribedFields } from "@/utils/prescribed-fields";
 
 /**
  * Pure row-to-domain mappers for the coach saved-plan / saved-session /
@@ -46,7 +47,7 @@ function mapSavedExerciseRow(
     notes: row.notes ?? null,
     setSpecs: (row.set_specs as SetSpec[] | null) ?? null,
     videoUrl: row.video_url ?? null,
-    prescribedFields: row.prescribed_fields ?? null,
+    prescribedFields: toPrescribedFields(row.prescribed_fields),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

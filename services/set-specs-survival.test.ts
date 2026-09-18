@@ -43,7 +43,7 @@ const firstInsertAt = (mock: { base: Record<string, unknown> }) =>
 // compactFromSpecs → sets = 3 (non-warmup), reps range from the working set = 6..8.
 const SPECS = [
   { set_number: 1, set_type: "warmup" },
-  { set_number: 2, set_type: "working", reps_min: 6, reps_max: 8, load_type: "pct_1rm", load_value: 75 },
+  { set_number: 2, set_type: "working", reps_min: 6, reps_max: 8, load_type: "pct_1rm", load_min: 75, load_max: 75 },
   { set_number: 3, set_type: "working" },
   { set_number: 4, set_type: "drop", drops: [{ weight: 100, reps: 8 }] },
 ];

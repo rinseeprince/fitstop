@@ -133,11 +133,11 @@ type ExerciseSnapshot = {
   // correct for historical logs once the Phase 2 builder authors it; null until
   // then. Analytics reads it via countWorkingSets, falling back to `sets`.
   set_specs: Json | null;
-  // Which prescription columns the coach uses (mig 149). Captured for the same
-  // reason as set_specs: the client tracker falls back to this snapshot when the
-  // live session is gone, and without the column it silently widens the grid
-  // back to all five and collects data the coach chose not to prescribe.
-  prescribed_fields: string[] | null;
+  // The measurement columns the coach prescribes (mig 183). Captured for the
+  // same reason as set_specs: the client tracker falls back to this snapshot
+  // when the live session is gone, and without the list it would read today's
+  // five and collect data the coach chose not to prescribe.
+  prescribed_fields: string[];
 };
 
 // --- Row → camelCase mappers ---
@@ -214,7 +214,7 @@ type PrescriptionRow = {
   notes: string | null;
   is_warmup: boolean | null;
   set_specs: Json | null;
-  prescribed_fields: string[] | null;
+  prescribed_fields: string[];
   exercise_group: GroupSnapshot;
 };
 
@@ -257,7 +257,7 @@ function toExerciseSnapshot(row: PrescriptionRow): ExerciseSnapshot {
     notes: row.notes,
     is_warmup: row.is_warmup ?? false,
     set_specs: row.set_specs ?? null,
-    prescribed_fields: row.prescribed_fields ?? null,
+    prescribed_fields: row.prescribed_fields,
   };
 }
 
@@ -363,6 +363,7 @@ function snapshotGroups(logs: ExerciseLog[]): ResolvedExerciseGroup[] {
     ...group.settings,
     exercises: exercises.map((exercise) => ({
       source: "snapshot" as const,
+      trainingExerciseId: exercise.id,
       snapshot: exercise.snapshot,
     })),
   }));

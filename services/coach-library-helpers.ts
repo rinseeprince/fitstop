@@ -79,7 +79,8 @@ export type SavedExerciseWrite = {
   isWarmup?: boolean;
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
-  prescribedFields?: readonly string[] | null;
+  // Required: every writer names the exercise's columns (migration 183).
+  prescribedFields: readonly string[];
 };
 
 /** One group on its way into a library session: its settings and its exercises, in order. */
@@ -193,7 +194,7 @@ export function copySavedGroupRows(
         notes: e.notes,
         set_specs: e.set_specs ?? null,
         video_url: e.video_url ?? null,
-        prescribed_fields: e.prescribed_fields ?? null,
+        prescribed_fields: e.prescribed_fields,
       });
     }
   }
