@@ -106,12 +106,11 @@ export function PlanTrainingCard({
 
   const cells: StatCellData[] = [
     {
-      // "Logged", because the Signals card counts the same client's training
-      // differently and the two figures disagree on purpose: this cell counts
-      // FULL session-log completions (`session_logs.completion_quality`),
-      // Signals counts `training_events.status`. Both are shipped semantics —
-      // naming the source is so a coach reading two numbers knows why, not an
-      // attempt to reconcile them.
+      // "Logged", because that is what the figure counts: every workout the
+      // client logged this week, full or partial, over the week's workouts
+      // (`getTrainingWeekSummary` — the same run the Training-tab hero
+      // renders, so the two cannot disagree). Today's session is in neither
+      // side until they log it.
       //
       // The WINDOW is deliberately left as "this week" rather than a pair of
       // weekdays: `getTrainingWeekStart` anchors the week on the client's own

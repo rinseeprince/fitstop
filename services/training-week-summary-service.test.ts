@@ -72,6 +72,68 @@ describe("getTrainingWeekSummary", () => {
     });
   });
 
+  // The cap is inclusive of today, so without the day rule a session the client
+  // can still do this afternoon sits in `planned` AND in `missed` — while the
+  // Overview's rail beside it, which derives missed from the day, calls the same
+  // session "no log".
+  it("leaves today's unlogged workout out of both sides until it is logged", async () => {
+    readEvents.mockResolvedValue([
+      workout("2026-09-15", "full"),
+      workout("2026-09-16", "partial"),
+      workout(TODAY, null), // still to be done, later today
+    ]);
+
+    expect(await getTrainingWeekSummary(CLIENT, COACH)).toMatchObject({
+      completed: 2,
+      totalPlanned: 2,
+      plannedUpToToday: 2,
+      missed: 0,
+    });
+  });
+
+  it("counts today's workout on both sides the moment it is logged", async () => {
+    readEvents.mockResolvedValue([
+      workout("2026-09-15", "full"),
+      workout("2026-09-16", "partial"),
+      workout(TODAY, "partial"),
+    ]);
+
+    expect(await getTrainingWeekSummary(CLIENT, COACH)).toMatchObject({
+      completed: 3,
+      totalPlanned: 3,
+      plannedUpToToday: 3,
+      missed: 0,
+    });
+  });
+
+  // The rule is TODAY's alone: a day that has passed with nothing logged is a
+  // miss, whether or not the client could still have trained on it.
+  it("still counts a workout missed on a day that has passed", async () => {
+    readEvents.mockResolvedValue([
+      workout("2026-09-15", null),
+      workout(TODAY, null),
+    ]);
+
+    expect(await getTrainingWeekSummary(CLIENT, COACH)).toMatchObject({
+      completed: 0,
+      plannedUpToToday: 1,
+      missed: 1,
+    });
+  });
+
+  // completed + missed === planned, on every branch. The three figures sit on
+  // one band; a coach reading 3 of 4 above "1 missed" can add them up.
+  it("always leaves three figures that add up", async () => {
+    readEvents.mockResolvedValue([
+      workout("2026-09-15", "full"),
+      workout("2026-09-16", null),
+      workout(TODAY, null),
+    ]);
+
+    const summary = await getTrainingWeekSummary(CLIENT, COACH);
+    expect(summary.completed + summary.missed).toBe(summary.plannedUpToToday);
+  });
+
   // M7: the count is the CALENDAR's, by date. A log's stored completed_at does
   // not move when the workout moves, which put a moved workout in the wrong
   // week; nothing here reads it.

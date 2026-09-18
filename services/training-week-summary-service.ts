@@ -2,7 +2,7 @@ import { getEventsForDateRange } from "./training-event-service";
 import { getCoachTodayString } from "./today-service";
 import { getClientWeekAnchor } from "./check-in-week-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
-import { eventWorkoutRead } from "@/lib/training-display-state";
+import { eventWorkoutRead, loggedDisplayQuality } from "@/lib/training-display-state";
 import { summariseTraining } from "@/lib/training-adherence";
 import type { TrainingWeekSummary } from "@/types/history";
 
@@ -21,8 +21,9 @@ import type { TrainingWeekSummary } from "@/types/history";
  *
  * Semantics: coach-local "current week" anchored on the client's check-in day;
  * `completed` counts every workout the client LOGGED, full or partial;
- * `planned` counts the week's workouts up to today (you cannot miss a future
- * session), so `missed` is the rest of them.
+ * `planned` counts the week's workouts up to today **plus today's only once
+ * they are logged** (you cannot miss a session the day has not finished with),
+ * so `missed` is the rest of them and the three figures always add up.
  */
 export type TrainingWeekSummaryWithWindow = TrainingWeekSummary & {
   weekStart: string;
@@ -47,10 +48,22 @@ export const getTrainingWeekSummary = async (
   const effectiveEnd = today < weekEnd ? today : weekEnd;
   const events = await getEventsForDateRange(clientId, weekStart, effectiveEnd);
 
+  // TODAY's workouts count only once the client has LOGGED them. The cap above
+  // is inclusive, so without this a session the client can still do this
+  // afternoon sits in `planned` and in `missed` — and the Overview's rail,
+  // which derives missed from the day (`trainingDisplayState`), calls the same
+  // session "no log" two inches away. The summariser is deliberately date-free,
+  // so the day rule is applied here, where the window's own cap lives.
+  const counted = events.filter(
+    (event) =>
+      event.date.slice(0, 10) !== today ||
+      loggedDisplayQuality(eventWorkoutRead(event)) !== null
+  );
+
   // Every figure here comes out of the one summariser, so the hero and the
   // Overview's plan card cannot spell a count differently: `missed` is what is
   // left of `planned` once the logged workouts are taken off it.
-  const summary = summariseTraining(events.map(eventWorkoutRead));
+  const summary = summariseTraining(counted.map(eventWorkoutRead));
 
   return {
     completed: summary.completed,

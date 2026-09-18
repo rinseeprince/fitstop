@@ -17,15 +17,22 @@ type AdherenceCardProps = {
   onTabChange: (tab: ClientTab) => void;
 };
 
-// Teal for done, a lighter teal for partial, warning amber for missed, the
-// faintest tint for a day the client never touched.
+// One meaning per colour, the same one every other training and nutrition
+// surface uses: teal done, the warning amber for partial, the danger rose for
+// missed, the faintest tint for a day the client never touched. The rail used
+// to spend the amber on MISSED while the calendar thumb, the Data table's chip
+// and the nutrition history badge all spend it on PARTIAL — so an amber dot
+// and an amber chip meant different things two clicks apart.
 const DOT_CLASS: Record<Exclude<DotState, "none">, string> = {
   complete: "bg-[#0d9488]",
-  partial: "bg-[rgba(13,148,136,0.40)]",
-  missed: "bg-[#d97706]",
+  partial: "bg-[#d97706]",
+  missed: "bg-[#c06060]",
   no_log: "bg-[rgba(13,148,136,0.12)]",
 };
 
+// A dot is a DAY, not a workout, so these are not the three words a workout is
+// labelled in (§4.7 M8 — Full / Partial / Missed): "Complete" here means every
+// workout that day was full, and a day can hold several.
 const LEGEND: { state: Exclude<DotState, "none">; label: string }[] = [
   { state: "complete", label: "Complete" },
   { state: "partial", label: "Partial" },
