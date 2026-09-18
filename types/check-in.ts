@@ -1,7 +1,7 @@
 import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import type { DailyLog } from "./daily-log";
 import type { OnboardingStatus } from "./client-intake";
-import type { TrainingEventStatus } from "@/types/training";
+import type { LoggedQuality, TrainingEventStatus } from "@/types/training";
 import type { GoalStatus } from "@/utils/comparison-utils";
 
 // Check-in status types
@@ -76,24 +76,6 @@ type TrainingMetrics = {
 
 // Enhanced check-in tracking types
 
-/**
- * The values `session_logs.completion_quality` can HOLD. `skipped` survives
- * here because rows written before commit 9 still carry it; the CHECK drops it
- * in commit 10. Read it where a stored value is read, never where one is
- * written or shown — that is `LoggedQuality`.
- */
-export type SessionCompletionQuality = "full" | "partial" | "skipped";
-
-/**
- * How a workout went — the only two words the product writes or shows.
- *
- * Nothing produces a skip: a save with nothing logged is refused
- * (`lib/training-log-content.ts`), so every quality the writer derives and
- * every quality a screen renders is one of these. A stored `skipped` reads as
- * not-logged (`loggedDisplayQuality`, `lib/training-display-state.ts`).
- */
-export type LoggedQuality = Exclude<SessionCompletionQuality, "skipped">;
-
 // Whether a training_event has an associated session_log (Session 6.2).
 // Single-source per-event detail keyed on training_events (the SOT for
 // completion counting), left-joined to its session_log for notes/quality.
@@ -113,7 +95,7 @@ export type CheckInTrainingEventDetail = {
    * the review's pills, the AI prompt's lines and the one summariser — takes
    * the quality from here and never from `status`.
    */
-  completionQuality: SessionCompletionQuality | null;
+  completionQuality: LoggedQuality | null;
   trainingSessionId: string | null;
   // The linked session_log id (null when the event was never logged). Used by
   // the AI prompt to join per-exercise top-set lines (keyed by session_log_id)
@@ -126,9 +108,9 @@ export type CheckInTrainingEventDetail = {
  * The check-in period's training, counted once by `summariseTraining`
  * (`lib/training-adherence.ts`) over the per-workout detail above.
  *
- * `sessionsCompleted` is FULL completions; `sessionsPartial` is the rest of
- * what was done, beside it rather than inside it, so the client's figure and
- * its breakdown come out of one run.
+ * `sessionsCompleted` is every workout the client logged, full or partial;
+ * `sessionsPartial` is how many of those were partial — the breakdown printed
+ * beside the number, never a second count. Both come out of one run.
  */
 export type CheckInTrainingPeriodStats = {
   sessionsCompleted: number;

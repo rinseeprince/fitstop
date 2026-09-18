@@ -77,13 +77,15 @@ function formatDate(iso: string) {
   });
 }
 
+// Full or Partial — how this one workout went, in the words every other
+// workout-level label uses (§4.7 M8); "completed" belongs to counts.
 function qualityLabel(quality: SessionLog["completionQuality"]) {
   switch (quality) {
     case "full":
       return (
         <span className="text-[#0d9488]">
           <Check className="-mt-px mr-0.5 inline h-3 w-3" />
-          Completed
+          Full
         </span>
       );
     case "partial":

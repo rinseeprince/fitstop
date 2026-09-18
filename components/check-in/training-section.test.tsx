@@ -44,7 +44,7 @@ describe("TrainingSection — the rail", () => {
     expect(screen.queryByText(/\d+ of \d+ completed/)).not.toBeInTheDocument();
     // The rows themselves are untouched.
     expect(screen.getByText("Push")).toBeInTheDocument();
-    expect(screen.getAllByText("Completed")).toHaveLength(4);
+    expect(screen.getAllByText("Full")).toHaveLength(4);
   });
 
   it("names each workout's day from its own date", () => {
@@ -64,7 +64,7 @@ describe("TrainingSection — the rail", () => {
     );
 
     expect(screen.getByText("Partial")).toBeInTheDocument();
-    expect(screen.queryByText("Completed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Full")).not.toBeInTheDocument();
   });
 
   it("renders a workout the client never logged as Missed, and names the session they swapped in", () => {

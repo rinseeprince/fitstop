@@ -32,41 +32,42 @@ function renderDash() {
   return <span className="text-[#93b0b4]">—</span>;
 }
 
+/**
+ * One workout, in the three words a workout is described in — Full, Partial or
+ * Missed. "Completed" is reserved for counts, so it never labels one row here
+ * while the hero above says "4 of 5 sessions completed"
+ * (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md, §4.7 M8).
+ *
+ * A logged workout reads the quality on its LOG; one the client has not logged
+ * reads its attendance word, so a day that has passed says Missed while today's
+ * still-to-be-done session says Scheduled.
+ */
 function renderStatus(row: TrainingHistoryRow) {
-  // Unlogged rows: show "Not Logged" or "Rest"
-  if (row.is_logged === false) {
-    if (row.session_name) {
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[#f0f4f4] text-[#93b0b4]">
-          Not Logged
-        </span>
-      );
-    }
-    return (
-      <span className="text-xs text-[#b8cfd3]">Rest</span>
+  if (row.status === "rest") {
+    return <span className="text-xs text-[#b8cfd3]">Rest</span>;
+  }
+
+  if (row.status === "completed") {
+    return row.completion_quality === "partial" ? (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-amber-50 text-amber-600">
+        Partial
+      </span>
+    ) : (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[rgba(13,148,136,0.08)] text-[#0d9488]">
+        Full
+      </span>
     );
   }
 
-  switch (row.completion_quality) {
-    case "full":
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[rgba(13,148,136,0.08)] text-[#0d9488]">
-          Completed
-        </span>
-      );
-    case "partial":
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-amber-50 text-amber-600">
-          Partial
-        </span>
-      );
-    default:
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[#e6edec] text-[#93b0b4]">
-          Logged
-        </span>
-      );
-  }
+  return row.status === "missed" ? (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[rgba(192,96,96,0.08)] text-[#c06060]">
+      Missed
+    </span>
+  ) : (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[#f0f4f4] text-[#93b0b4]">
+      Scheduled
+    </span>
+  );
 }
 
 const QUALITY_VALUES: Record<string, number> = {
@@ -161,7 +162,7 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
         label: "Date",
         width: "w-[100px]",
         render: (_v, row) => (
-          <span className={cn(MONO, "tabular-nums", row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]")}>
+          <span className={cn(MONO, "tabular-nums", row.status !== "completed" ? "text-[#b8cfd3]" : "text-[#93b0b4]")}>
             {formatDate(row.date)}
           </span>
         ),
@@ -171,7 +172,7 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
         label: "Day",
         width: "w-[120px]",
         render: (_v, row) => (
-          <span className={row.is_logged === false ? "text-[#b8cfd3] font-medium" : "text-[#0c1a1e] font-medium"}>
+          <span className={row.status !== "completed" ? "text-[#b8cfd3] font-medium" : "text-[#0c1a1e] font-medium"}>
             {formatDay(row.date)}
           </span>
         ),
@@ -188,7 +189,7 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
             // is pushed out of the cell instead.
             <span
               className={`flex min-w-0 items-center gap-1.5 ${
-                row.is_logged === false ? "text-[#b8cfd3]" : "text-[#0c1a1e]"
+                row.status !== "completed" ? "text-[#b8cfd3]" : "text-[#0c1a1e]"
               }`}
             >
               <span className="truncate">{row.session_name}</span>

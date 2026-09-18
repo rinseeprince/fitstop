@@ -61,7 +61,8 @@ describe("getClientTrainingWeek", () => {
         row("tue", "2026-08-25", "scheduled"), // past, never logged → missed
         row("wed", "2026-08-26", "scheduled"), // today
         row("thu", "2026-08-27", "scheduled"), // upcoming
-        row("fri", "2026-08-28", "partial"), // logged partial → done
+        // Logged, at whatever quality — the event carries no second word.
+        row("fri", "2026-08-28", "completed"),
       ],
       error: null,
     });

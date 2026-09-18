@@ -397,7 +397,7 @@ describe("SetTracker", () => {
     render(<SetTracker eventId="evt-1" />);
     await user.click(screen.getByTestId("mark-all-complete"));
     expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
-      "7 of 7 working sets logged. Will be recorded as complete.",
+      "7 of 7 working sets logged. Will be recorded as full.",
     );
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
@@ -568,7 +568,7 @@ describe("SetTracker", () => {
     await user.click(screen.getByTestId("set-complete-0-1"));
     await user.click(screen.getByTestId("set-complete-0-2"));
     expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
-      "2 of 2 working sets logged. Will be recorded as complete.",
+      "2 of 2 working sets logged. Will be recorded as full.",
     );
 
     await user.click(screen.getByTestId("save-button"));

@@ -32,7 +32,7 @@ function summary(overrides: Partial<NutritionPeriodSummary> = {}): NutritionPeri
 afterEach(cleanup);
 
 describe("the wizard's training summary renders the server's figures", () => {
-  it("states the full completions over the week's workouts, and the partials beside them", () => {
+  it("states the workouts logged over the week's workouts, and the partials inside them", () => {
     render(
       <DailyLogsTrainingSummary
         trainingPeriodStats={{ sessionsCompleted: 3, sessionsPartial: 1, sessionsPlanned: 5 }}
@@ -40,8 +40,10 @@ describe("the wizard's training summary renders the server's figures", () => {
       />
     );
 
+    // Three of five logged, one of those three partial — the breakdown sits
+    // beside the number rather than outside it.
     expect(screen.getByText("3/5")).toBeInTheDocument();
-    expect(screen.getByText("Partly Completed")).toBeInTheDocument();
+    expect(screen.getByText("Of those, partial")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument();
   });
 
@@ -54,7 +56,7 @@ describe("the wizard's training summary renders the server's figures", () => {
     );
 
     expect(screen.getByText("5/5")).toBeInTheDocument();
-    expect(screen.queryByText("Partly Completed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Of those, partial")).not.toBeInTheDocument();
   });
 
   // The fallback this block used to carry read `training_logs`, which nothing

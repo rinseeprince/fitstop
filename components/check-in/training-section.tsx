@@ -28,9 +28,12 @@ type TrainingSectionProps = {
 const dayLabel = (date: string) =>
   new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" });
 
-// Teal Summit two-colour status: teal completed, amber partial, muted missed (no red).
+// Teal Summit two-colour status: teal full, amber partial, muted missed (no
+// red). The three words a WORKOUT is described in — "completed" is reserved for
+// counts, so this pill never says it under a ribbon reading "4 of 5 completed"
+// (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md, §4.7 M8).
 const STATUS_META: Record<TrainingAdherenceStatus, { label: string; icon: LucideIcon; pill: string }> = {
-  full: { label: "Completed", icon: CheckCircle2, pill: "bg-[rgba(13,148,136,0.08)] text-[#0d9488]" },
+  full: { label: "Full", icon: CheckCircle2, pill: "bg-[rgba(13,148,136,0.08)] text-[#0d9488]" },
   partial: { label: "Partial", icon: CircleDashed, pill: "bg-[rgba(245,158,11,0.07)] text-[#d97706]" },
   missed: { label: "Missed", icon: XCircle, pill: "bg-[rgba(13,148,136,0.04)] text-[#93b0b4]" },
 };

@@ -43,12 +43,11 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
         eventId: "ev-2",
         date: "2026-04-09",
         sessionName: "Leg Day",
-        status: "skipped",
-        logStatus: "logged",
-        notes: "sick",
-        completionQuality: "skipped",
+        status: "scheduled",
+        logStatus: "not_logged",
+        completionQuality: null,
         trainingSessionId: "sess-2",
-        sessionLogId: "log-2",
+        sessionLogId: null,
       },
       {
         eventId: "ev-3",
@@ -82,11 +81,8 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
     // next line.
     expect(training).toContain("Push Day: (full)");
     expect(training).toContain("Note: felt strong");
-    // A stored skip is a session the client did not log; its note still rides
-    // the next line, because the reason is the client's own words.
-    expect(training).toContain("Leg Day: (not logged)");
-    expect(training).not.toContain("Skipped");
     // A session the client never logged says exactly that.
+    expect(training).toContain("Leg Day: (not logged)");
     expect(training).toContain("Pull Day: (not logged)");
     // The legacy workout-count fallback is suppressed when details are present.
     expect(training).not.toContain("Workouts Completed: 99");
@@ -138,17 +134,17 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
     expect(training).toContain("- Sessions: 2/2 completed (1 partial)");
   });
 
-  it("reads a stored skip as a session that was not logged", () => {
+  it("reads a workout the client never logged as not logged", () => {
     const details: CheckInTrainingEventDetail[] = [
       {
         eventId: "ev-1",
         date: "2026-04-07",
         sessionName: "Leg Day",
-        status: "skipped",
-        logStatus: "logged",
-        completionQuality: "skipped",
+        status: "scheduled",
+        logStatus: "not_logged",
+        completionQuality: null,
         trainingSessionId: "sess-1",
-        sessionLogId: "log-1",
+        sessionLogId: null,
       },
     ];
 
@@ -168,12 +164,11 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
 
     expect(training).toContain("- Sessions: 0/1 completed");
     expect(training).toContain("Leg Day: (not logged)");
-    expect(training).not.toContain("Skipped");
   });
 
   // The period's workouts are the ONE source of a training figure: there is no
   // second branch off the check-in row to fall back to. The stored column is
-  // full-only and a different statistic, and printing it beside the derived
+  // frozen at submit and never moves after, and printing it beside the derived
   // figure is how the summary came to say "completed only 2 out of 5" beneath a
   // strip reading 3/5 for the same week.
   it("has no second source — an empty week prints no count and never the stored column", () => {
@@ -319,15 +314,15 @@ describe("buildCheckInAnalysisPrompt — exercise enrichment (Session 6.3)", () 
         eventId: "ev-1",
         date: "2026-04-07",
         sessionName: "Leg Day",
-        status: "skipped",
-        logStatus: "logged",
-        notes: "sick",
-        completionQuality: "skipped",
+        status: "scheduled",
+        logStatus: "not_logged",
+        completionQuality: null,
         trainingSessionId: "sess-1",
         sessionLogId: "log-1",
       },
     ];
-    // A Map entry exists for the stored skip's log, but it must be ignored.
+    // A Map entry exists under that log id, but an unlogged workout must not
+    // pull exercise lines from it.
     const summaries = new Map<string, string[]>([
       ["log-1", ["Squat — 5 sets, top 140x5"]],
     ]);
@@ -589,7 +584,7 @@ describe("the prompt's session count agrees with every other surface", () => {
   // So this feeds ONE fixture to the kernel and to the prompt and asserts they
   // agree, rather than pinning a string either could drift from alone.
   const week: CheckInTrainingEventDetail[] = [
-    { eventId: "e1", date: "2026-08-25", sessionName: "Lower", status: "partial", completionQuality: "partial" },
+    { eventId: "e1", date: "2026-08-25", sessionName: "Lower", status: "completed", completionQuality: "partial" },
     { eventId: "e2", date: "2026-08-26", sessionName: "Upper", status: "completed", completionQuality: "full" },
     { eventId: "e3", date: "2026-08-27", sessionName: "Push", status: "completed", completionQuality: "full" },
     { eventId: "e4", date: "2026-08-28", sessionName: "Pull", status: "scheduled" },

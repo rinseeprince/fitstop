@@ -11,8 +11,8 @@ import type {
   CheckInTrainingContext,
   CheckInTrainingEventDetail,
   CheckInTrainingPeriodStats,
-  LoggedQuality,
 } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/training";
 import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 
 type StepTrainingProps = {

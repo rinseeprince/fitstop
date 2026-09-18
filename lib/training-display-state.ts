@@ -1,4 +1,4 @@
-import type { LoggedQuality, SessionCompletionQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/training";
 
 /**
  * What a screen shows for ONE calendar workout, and the only vocabulary a tick,
@@ -7,7 +7,7 @@ import type { LoggedQuality, SessionCompletionQuality } from "@/types/check-in";
  * Two facts decide it, and they live in two different places:
  *
  * - **Did the client log this workout?** `training_events.status` answers that
- *   and nothing else. A workout that has left `scheduled` is logged.
+ *   and nothing else — `completed` is logged, at any quality.
  * - **How did it go?** `session_logs.completion_quality` answers that, on the
  *   log alone. No screen reads the quality off the status word — that copy is
  *   what made the same week read 4/5 on one page and 5/5 on the next.
@@ -17,10 +17,9 @@ import type { LoggedQuality, SessionCompletionQuality } from "@/types/check-in";
  * surface belongs to (the client's for their own screens, the coach's for the
  * coach's).
  *
- * There is no skipped state. Nothing produces a skip — a save with nothing
- * logged is refused (`lib/training-log-content.ts`) — and a row written before
- * that rule reads as a workout the client did not log, which on a day that has
- * passed is `missed`.
+ * There is no skipped state. A save with nothing logged is refused
+ * (`lib/training-log-content.ts`), and "I did not do this after all" is Clear
+ * log, which puts the workout back to `scheduled` with nothing recorded.
  */
 export type TrainingDisplayState =
   | "scheduled"
@@ -33,7 +32,7 @@ export type TrainingWorkoutRead = {
   /** `training_events.status` — whether the client has logged this workout. */
   status: string;
   /** `session_logs.completion_quality` through the linked log; null when none is linked. */
-  completionQuality: SessionCompletionQuality | null;
+  completionQuality: LoggedQuality | null;
 };
 
 /**
@@ -42,7 +41,7 @@ export type TrainingWorkoutRead = {
  */
 export function eventWorkoutRead(event: {
   status: string;
-  log: { completionQuality: SessionCompletionQuality } | null;
+  log: { completionQuality: LoggedQuality } | null;
 }): TrainingWorkoutRead {
   return {
     status: event.status,
@@ -54,27 +53,23 @@ export function eventWorkoutRead(event: {
  * The quality to display for a workout, or `null` when the client has not
  * logged it.
  *
- * The log is the answer whenever there is one. A workout that left `scheduled`
- * with no log reads `full`: those rows (209 on dev in September 2026) were
- * logged before the link existed, so their quality was never recorded, and
- * "completed at a quality nobody wrote down" is a full workout, not a missing
- * one. A stored `skipped` — on the event or on its log — reads `null`: an empty
- * log is the ABSENCE of a workout done, and commit 10 turns those rows into
- * exactly that.
+ * The log is the answer whenever it carries one of the two words the product
+ * writes. A workout the event says was logged but that carries no quality reads
+ * `full`: those rows (227 on dev in September 2026) were logged before the link
+ * existed, so their quality was never recorded, and "completed at a quality
+ * nobody wrote down" is a full workout, not a missing one.
+ *
+ * The status is read POSITIVELY — logged is `completed` — rather than as
+ * "anything but scheduled", so a database read before migration 182 lands still
+ * answers truthfully: a word the product no longer stores is not a workout done.
  */
 export function loggedDisplayQuality(
   workout: TrainingWorkoutRead
 ): LoggedQuality | null {
-  if (workout.completionQuality === "skipped") return null;
-  if (workout.completionQuality !== null) return workout.completionQuality;
-  if (
-    workout.status === "scheduled" ||
-    workout.status === "missed" ||
-    workout.status === "skipped"
-  ) {
-    return null;
+  if (workout.completionQuality === "full" || workout.completionQuality === "partial") {
+    return workout.completionQuality;
   }
-  return "full";
+  return workout.status === "completed" ? "full" : null;
 }
 
 /**
@@ -89,5 +84,5 @@ export function trainingDisplayState(
   const quality = loggedDisplayQuality(workout);
   if (quality === "full") return "completed_full";
   if (quality === "partial") return "completed_partial";
-  return workout.status === "missed" || workout.date < today ? "missed" : "scheduled";
+  return workout.date < today ? "missed" : "scheduled";
 }

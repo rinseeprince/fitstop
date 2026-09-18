@@ -1,4 +1,4 @@
-import type { LoggedQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/training";
 import type { PrescribedRow } from "./set-spec-rows";
 
 // How much of a prescribed session the client completed.

@@ -74,12 +74,11 @@ describe("loggedDays", () => {
 });
 
 describe("the source predicates", () => {
-  it("a workout log is a completed or partial event, never a scheduled, missed or skipped one", () => {
+  // `completed` means logged, at any quality (migration 182), so a workout
+  // partly done is a logged day exactly as a full one is.
+  it("a workout log is a completed event and nothing else", () => {
     expect(isTrainingLogStatus("completed")).toBe(true);
-    expect(isTrainingLogStatus("partial")).toBe(true);
     expect(isTrainingLogStatus("scheduled")).toBe(false);
-    expect(isTrainingLogStatus("missed")).toBe(false);
-    expect(isTrainingLogStatus("skipped")).toBe(false);
   });
 
   it("a wellness row counts on any single reading and not on none", () => {

@@ -132,9 +132,9 @@ export async function GET(request: NextRequest) {
     // The period's training, counted ONCE from the workouts above rather than
     // by a second pair of queries of its own — the one summariser
     // (`lib/training-adherence.ts`), reading each workout's quality off its own
-    // log. `sessionsCompleted` is FULL completions and `sessionsPartial` is the
-    // rest of what was done, so the client's figure and its breakdown come out
-    // of one run.
+    // log. `sessionsCompleted` is every workout the client logged and
+    // `sessionsPartial` says how many of those were partial, so the client's
+    // figure and its breakdown come out of one run.
     const training = summariseTraining(trainingEventDetails);
 
     // CheckInContextResponse describes the WHOLE payload — it is the RN
@@ -156,7 +156,7 @@ export async function GET(request: NextRequest) {
       trainingContext,
       nutritionContext,
       trainingPeriodStats: {
-        sessionsCompleted: training.full,
+        sessionsCompleted: training.completed,
         sessionsPartial: training.partial,
         sessionsPlanned: training.planned,
       },

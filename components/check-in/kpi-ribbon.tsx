@@ -123,10 +123,10 @@ export const KPIRibbon = ({
   // Training comes from `summariseTraining` (`lib/training-adherence.ts`) —
   // completed (full + PARTIAL) over planned. One derivation feeds this cell, the
   // training section and the AI prompt; the stored
-  // `check_ins.workouts_completed` counts full only and is deliberately not read
-  // here. It is the RN wire's column, and rendering it beside a derived figure
-  // is what put "3/5" on this strip above an AI summary saying "completed only
-  // 2 out of 5".
+  // `check_ins.workouts_completed` is deliberately not read here. It is the RN
+  // wire's column, frozen when the client sent the check-in, and rendering a
+  // frozen figure beside a live one is what put "3/5" on this strip above an AI
+  // summary saying "completed only 2 out of 5".
   //
   // No fallback to that column when nothing was prescribed: a bare count with no
   // denominator, computed a different way, is not the same statistic.

@@ -236,14 +236,15 @@ All client API endpoints require authentication except where noted.
 **The period's training.** `check-in-context` carries `trainingEventDetails`
 — one entry per workout in the period, in calendar order — and
 `trainingPeriodStats`: `{ sessionsCompleted, sessionsPartial, sessionsPlanned }`.
-`sessionsCompleted` is the workouts done in FULL, `sessionsPartial` is the rest
-of what was done (additive, 2026-09-17) and `sessionsPlanned` is every workout in
-the period. Render these; never recount them from `trainingEventDetails`. How a
-workout went is `completionQuality`, off its LOG, and `null` means the client has
-not logged it — never read it off `status` (see "RN contract — how a workout went
-is on its LOG"). `GET /api/client/check-ins/{id}` carries the same
+`sessionsCompleted` is every workout the client LOGGED, full or partial;
+`sessionsPartial` says how many of those were partial — the breakdown to print
+beside the number, never a second count — and `sessionsPlanned` is every workout
+in the period. Render these; never recount them from `trainingEventDetails`. How
+a workout went is `completionQuality`, off its LOG, and `null` means the client
+has not logged it — never read it off `status` (see "RN contract — how a workout
+went is on its LOG"). `GET /api/client/check-ins/{id}` carries the same
 `trainingEventDetails` for a submitted check-in's own period, beside the stored
-`workoutsCompleted` (full completions, frozen at submit).
+`workoutsCompleted`, frozen at submit.
 
 **The nutrition summary.** `check-in-context` carries `nutritionSummary`
 (additive, 2026-09-11) — the period's nutrition figures from the server's one
@@ -411,14 +412,12 @@ type ClientTrainingExercise = {
 Source of truth: `types/training.ts`. Returned by `GET /api/client/training/events/{eventId}`.
 
 > **RN contract — how a workout went is on its LOG, never on `event.status`.** The event's `status`
-> says only whether the client has logged the workout (it has left `scheduled`); the quality —
-> `full` or `partial` — is `sessionLog.completionQuality`, and `event.log` carries the same quality
-> (with the log's id, its performed session and its note) on every event read, so a list of workouts
-> needs no second fetch. A workout that left `scheduled` with no log at all reads as `full`: it was
-> logged before the link existed and no quality was ever recorded. A stored `skipped`, on the event
-> or on its log, reads as **not logged** — nothing produces one, and a row written before that rule is
-> a workout the client did not do. `missed` is never stored — derive it: still `scheduled` on a day
-> before the client's today.
+> has two values and says one thing: `scheduled` = not logged, `completed` = logged, **at any
+> quality**. The quality — `full` or `partial` — is `sessionLog.completionQuality`, and `event.log`
+> carries the same quality (with the log's id, its performed session and its note) on every event
+> read, so a list of workouts needs no second fetch. A `completed` workout with no log at all reads
+> as `full`: it was logged before the link existed and no quality was ever recorded. `missed` is
+> never stored — derive it: still `scheduled` on a day before the client's today.
 
 ```typescript
 type TrainingEventDetail = {
@@ -540,12 +539,11 @@ type CheckIn = {
     eventId: string
     date: string            // YYYY-MM-DD, the day the workout was on
     sessionName: string
-    // The STORED words. Nothing writes `skipped` or `missed` any more; rows
-    // written before that rule still carry `skipped`, and they read as a
-    // workout the client did not log.
-    status: "scheduled" | "completed" | "partial" | "skipped" | "missed"
+    // Whether the client LOGGED it, and nothing else.
+    status: "scheduled" | "completed"
     logStatus: "logged" | "not_logged"
-    completionQuality: "full" | "partial" | "skipped" | null
+    // How it went, off the LOG. null = not logged.
+    completionQuality: "full" | "partial" | null
     trainingSessionId: string | null
     sessionLogId: string | null
     notes?: string
@@ -616,12 +614,30 @@ graph LR
 4. Submit → AI generates summary
 
 ### 3. Training Session Completion
-1. View today's planned session in Daily Pulse
-2. Toggle "Session Complete" 
-3. Or select alternative session from dropdown
-4. Add any unplanned activities
-5. System calculates total calories burned
-6. Nutrition targets auto-adjust
+
+1. The client opens a workout from their day — every session on the day is its
+   own card, and every card opens its own workout.
+2. They tick the sets they did. Typing a value and leaving the row ticks it, so
+   a client recording numbers never touches a tick; "Mark all complete" banks
+   the whole session. A ticked set with no numbers still counts — doing the work
+   is the claim.
+3. One line above the button says what will be recorded before it is
+   ("9 of 12 working sets logged. Will be recorded as partial."), from the same
+   module the server derives the quality with.
+4. **Save.** `POST /api/client/training/events/{eventId}/log`. The server derives
+   the quality from the sets sent against the session's own prescription and
+   ignores any the client supplies: `full` means every prescribed working set on
+   every exercise, `partial` is anything short of that. The workout's status
+   becomes `completed` either way.
+5. **A save that records nothing is refused** — `400 "Tick at least one set to
+   log this workout."` There is no skip: a client who did not train logs
+   nothing, and the workout reads missed once its day has passed.
+6. **"I did not do this after all" is Clear log** — `DELETE` the same path. The
+   log and its sets go and the workout is scheduled again, loggable from
+   scratch.
+7. To train on a different day, the client MOVES the session there first
+   (`POST /api/client/training/events/layout`) — a workout has one date, its
+   event's. The day's calorie target follows the session on the next read.
 
 ---
 
@@ -675,9 +691,15 @@ These are **absolute calorie deltas from `lib/constants.ts`, not percentages.**
   date**, from the quality on its LOG — one server-side summariser, so the
   client's figure and the coach's review cannot disagree about a week. A log's
   stored date is not read by any figure: it does not move when its workout does
-- `CheckIn.workoutsCompleted`, stored at submit, is the workouts done in FULL.
-  A partly completed workout is not in it: `trainingPeriodStats.sessionsPartial`
-  on `check-in-context` is how many there were
+- **A partly completed workout counts as done**, on every screen and in every
+  count: a client who started the session and stopped short still trained.
+  `trainingPeriodStats.sessionsPartial` says how many of the done ones were
+  partial, to print beside the number
+- `CheckIn.workoutsCompleted`, stored at submit, is that same count — every
+  workout the client logged over the period. It is a snapshot: it never moves
+  after, so a day backfilled later shows on the coach's live surfaces and not on
+  it. Check-ins sent before 2026-09-18 carry the older full-only number and were
+  not backfilled
 
 ### Habit Streaks
 ```typescript

@@ -9,7 +9,7 @@ import { getCoachTodayString } from "./today-service";
 import { getClientWeekAnchor } from "./check-in-week-service";
 import { getTrainingWeekSummary } from "./training-week-summary-service";
 import { createMockTrainingEvent } from "@/__tests__/helpers/mock-data-builders";
-import type { TrainingEventStatus } from "@/types/training";
+import type { LoggedQuality, TrainingEventStatus } from "@/types/training";
 
 const CLIENT = "client-1";
 const COACH = "coach-1";
@@ -23,7 +23,7 @@ const readEvents = vi.mocked(getEventsForDateRange);
 
 const workout = (
   date: string,
-  quality: "full" | "partial" | "skipped" | null,
+  quality: LoggedQuality | null,
   status: TrainingEventStatus = quality === null ? "scheduled" : "completed"
 ) =>
   createMockTrainingEvent({
@@ -47,7 +47,7 @@ describe("getTrainingWeekSummary", () => {
   });
 
   // The primary branch: a week with workouts on it, some logged.
-  it("counts the week's calendar workouts up to today, full completions only", async () => {
+  it("counts every workout the client logged in the week, up to today", async () => {
     readEvents.mockResolvedValue([
       workout("2026-09-15", "full"),
       workout("2026-09-16", "partial"),
@@ -61,12 +61,12 @@ describe("getTrainingWeekSummary", () => {
     // Friday is neither planned-against nor missed yet.
     expect(readEvents).toHaveBeenCalledWith(CLIENT, WEEK_START, TODAY);
     expect(summary).toEqual({
-      completed: 2,
+      // The partial is one of the three: a workout partly done is a workout
+      // done, so only the one nobody logged is missed.
+      completed: 3,
       totalPlanned: 4,
       plannedUpToToday: 4,
-      // A partial is not a full completion here, so it sits in missed until
-      // commit 10 moves every done-count together.
-      missed: 2,
+      missed: 1,
       weekStart: WEEK_START,
       weekEnd: WEEK_END,
     });
@@ -86,20 +86,12 @@ describe("getTrainingWeekSummary", () => {
   });
 
   it("reads a workout logged before the link existed as a full completion", async () => {
-    // 209 such rows on dev: completed, with no log to have recorded a quality.
+    // 227 such rows on dev: completed, with no log to have recorded a quality.
     readEvents.mockResolvedValue([workout("2026-09-15", null, "completed")]);
 
     const summary = await getTrainingWeekSummary(CLIENT, COACH);
 
     expect(summary).toMatchObject({ completed: 1, plannedUpToToday: 1, missed: 0 });
-  });
-
-  it("reads a stored skip as a workout that was not done", async () => {
-    readEvents.mockResolvedValue([workout("2026-09-15", "skipped", "skipped")]);
-
-    const summary = await getTrainingWeekSummary(CLIENT, COACH);
-
-    expect(summary).toMatchObject({ completed: 0, plannedUpToToday: 1, missed: 1 });
   });
 
   it("reads zero for a week with no workouts, and never a negative miss", async () => {

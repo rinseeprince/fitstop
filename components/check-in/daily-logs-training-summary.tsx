@@ -78,12 +78,13 @@ export const DailyLogsTrainingSummary = ({
             )}
           </div>
 
-          {/* The figure above counts the sessions done in FULL, so a partly
-              completed one is missing from it. Saying how many there were is
-              what keeps the number honest — the rows above already show which. */}
+          {/* The figure above counts every session the client logged, so a
+              partly completed one is inside it. This row is the breakdown
+              beside the number, never a second count — the rows above already
+              show which were which. */}
           {trainingPeriodStats && trainingPeriodStats.sessionsPartial > 0 && (
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Partly Completed</span>
+              <span className="text-sm text-muted-foreground">Of those, partial</span>
               <span className="text-sm font-semibold text-warning">
                 {trainingPeriodStats.sessionsPartial}
               </span>

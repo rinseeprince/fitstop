@@ -13,10 +13,8 @@ import {
 import { Dumbbell, Calendar, Lock } from "lucide-react";
 import { canEditDay } from "@/lib/daily-log-permissions";
 import { loggedDisplayQuality } from "@/lib/training-display-state";
-import type {
-  CheckInTrainingEventDetail,
-  LoggedQuality,
-} from "@/types/check-in";
+import type { CheckInTrainingEventDetail } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/training";
 
 // How the row reads: the quality on the workout's LOG, never its status word.
 // A workout logged before the link existed has no quality recorded and shows as
@@ -26,10 +24,11 @@ const statusLabel = (
 ): LoggedQuality | "not_logged" =>
   loggedDisplayQuality(detail) ?? "not_logged";
 
-// Completed or Partial. A workout the client did not do is left alone — it
-// reads missed once its day has passed — and there is no skip to record.
+// Full or Partial — how the workout went, in the words the coach will read it
+// in (§4.7 M8). A workout the client did not do is left alone — it reads missed
+// once its day has passed — and there is no skip to record.
 const QUALITY_OPTIONS: { value: LoggedQuality; label: string }[] = [
-  { value: "full", label: "Completed" },
+  { value: "full", label: "Full" },
   { value: "partial", label: "Partial" },
 ];
 

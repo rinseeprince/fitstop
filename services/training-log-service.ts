@@ -2,7 +2,6 @@ import { supabaseAdmin } from "./supabase-admin";
 import {
   EVENT_WITH_LOG_COLUMNS,
   linkSessionLogToEvent,
-  mapCompletionQualityToEventStatus,
   mapEventRow,
   type TrainingEventWithLogRow,
 } from "./training-event-service";
@@ -40,6 +39,7 @@ export class TrainingLogOwnershipError extends Error {
 }
 import type {
   ExerciseLog,
+  LoggedQuality,
   LogTrainingEventResponse,
   ResolvedExerciseGroup,
   ResolvedSession,
@@ -51,7 +51,6 @@ import type {
   TrainingExerciseGroup,
   TrainingSessionHeader,
 } from "@/types/training";
-import type { LoggedQuality, SessionCompletionQuality } from "@/types/check-in";
 import { toCanonicalWeightKg } from "@/utils/unit-conversions";
 // The shared mapper, deliberately. A local copy of this function lived here and
 // silently omitted set_specs and video_url, so every read through
@@ -150,7 +149,7 @@ function mapSessionLogRow(row: SessionLogRow): SessionLog {
     trainingSessionId: row.training_session_id,
     trainingEventId: row.training_event_id,
     completedAt: row.completed_at,
-    completionQuality: (row.completion_quality ?? "full") as SessionCompletionQuality,
+    completionQuality: (row.completion_quality ?? "full") as LoggedQuality,
     notes: row.notes,
     weekStartDate: row.week_start_date,
     prescribedSessionSnapshot:
@@ -792,11 +791,12 @@ async function writeSessionLog(params: {
   }
 
   // 7. Link the event + write its status — only when an event is linked.
-  // linkSessionLogToEvent writes both directions (event.session_log_id + status,
-  // and session_log.training_event_id).
+  // linkSessionLogToEvent writes both directions (event.session_log_id +
+  // status, and session_log.training_event_id) and the status is always
+  // `completed`: the column says the client logged the workout, and
+  // `derivedQuality` above is the whole answer to how it went.
   if (eventId !== null) {
-    const eventStatus = mapCompletionQualityToEventStatus(derivedQuality);
-    await linkSessionLogToEvent(eventId, sessionLogId, eventStatus);
+    await linkSessionLogToEvent(eventId, sessionLogId);
   }
 
   return sessionLogId;

@@ -711,7 +711,7 @@ RULES: §4.7 — closed.
 NOT IN THIS COMMIT: the status constraint, the type change, the counting change or labels (commit 10).
 ```
 
-### Commit 10 — Completion 4: the flip
+### Commit 10 — Completion 4: the flip — SHIPPED 2026-09-18
 
 ```text
 Implement commit 10 of 22 — Completion 4: the flip — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

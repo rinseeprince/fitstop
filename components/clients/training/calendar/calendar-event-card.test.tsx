@@ -89,22 +89,14 @@ describe("CalendarEventCard status thumb", () => {
     notes: null,
   };
 
-  it("shows a workout whose LOG is partial as partial, whatever its status word says", () => {
-    // The commit-10 shape, today: the event says only that it was logged.
+  it("shows a workout whose LOG is partial as partial, not as complete", () => {
+    // The event says only that the client logged it; its log says how it went.
     const flipped = makeEvent("2026-06-15", {
       status: "completed",
       sessionLogId: "log-1",
       log: { ...LOG, completionQuality: "partial" },
     });
     expect(thumbIcon(flipped, "2026-06-17")).toContain("lucide-minus");
-
-    // And the shape stored today reads the same, off the same log.
-    const stored = makeEvent("2026-06-15", {
-      status: "partial",
-      sessionLogId: "log-1",
-      log: { ...LOG, completionQuality: "partial" },
-    });
-    expect(thumbIcon(stored, "2026-06-17")).toContain("lucide-minus");
   });
 
   it("shows a workout logged in full as complete", () => {
@@ -117,7 +109,7 @@ describe("CalendarEventCard status thumb", () => {
   });
 
   it("shows a completed workout with no log at all as complete", () => {
-    // 209 such rows on dev: logged before the link existed, so no quality was
+    // 227 such rows on dev: logged before the link existed, so no quality was
     // ever recorded. They are complete workouts, not missing ones.
     const event = makeEvent("2026-06-15", { status: "completed" });
     expect(thumbIcon(event, "2026-06-17")).toContain("lucide-check");

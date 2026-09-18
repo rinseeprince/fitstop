@@ -126,12 +126,13 @@ export const submitCheckIn = async (
       getEventsForDateRange(clientId, periodStart, periodEnd),
     ]);
 
-    // The stored count is FULL completions, through the one summariser
-    // (`lib/training-adherence.ts`) over the same workouts the snapshot below
-    // freezes — so the column, the frozen rows, the client's card and the
-    // coach's review cannot disagree about the week. How each workout went
-    // comes off its own log, embedded on the read.
-    workoutsCompleted = summariseTraining(events.map(eventWorkoutRead)).full;
+    // The stored count is every workout the client LOGGED — full or partial —
+    // through the one summariser (`lib/training-adherence.ts`) over the same
+    // workouts the snapshot below freezes, so the column, the frozen rows, the
+    // client's card and the coach's review cannot disagree about the week. How
+    // each workout went comes off its own log, embedded on the read, and the
+    // frozen rows carry it beside the count.
+    workoutsCompleted = summariseTraining(events.map(eventWorkoutRead)).completed;
 
     // On target over the TARGETED days: a period the coach prescribed nothing
     // for has no count to store — a day with no target is in no ratio.
@@ -187,7 +188,7 @@ export const submitCheckIn = async (
       photo_front: formData.photoFront,
       photo_side: formData.photoSide,
       photo_back: formData.photoBack,
-      // Training metrics (DERIVED — full completions over the period's workouts)
+      // Training metrics (DERIVED — the workouts the client logged, full or partial)
       workouts_completed: workoutsCompleted,
       adherence_percentage: adherencePercentage,
       prs: formData.prs,

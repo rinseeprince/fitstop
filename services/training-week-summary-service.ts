@@ -19,9 +19,10 @@ import type { TrainingWeekSummary } from "@/types/history";
  * workout dragged to the 27th kept a log stamped the 26th and was counted in
  * the wrong week. No adherence figure reads `completed_at` now.
  *
- * Semantics (unchanged): coach-local "current week" anchored on the client's
- * check-in day; `completed` counts FULL workouts only; `planned` counts the
- * week's workouts up to today (you cannot miss a future session).
+ * Semantics: coach-local "current week" anchored on the client's check-in day;
+ * `completed` counts every workout the client LOGGED, full or partial;
+ * `planned` counts the week's workouts up to today (you cannot miss a future
+ * session), so `missed` is the rest of them.
  */
 export type TrainingWeekSummaryWithWindow = TrainingWeekSummary & {
   weekStart: string;
@@ -46,18 +47,16 @@ export const getTrainingWeekSummary = async (
   const effectiveEnd = today < weekEnd ? today : weekEnd;
   const events = await getEventsForDateRange(clientId, weekStart, effectiveEnd);
 
+  // Every figure here comes out of the one summariser, so the hero and the
+  // Overview's plan card cannot spell a count differently: `missed` is what is
+  // left of `planned` once the logged workouts are taken off it.
   const summary = summariseTraining(events.map(eventWorkoutRead));
 
-  // FULL completions only, as this hero has always read. Partials join the
-  // numerator in commit 10, where every done-count changes together.
-  const completed = summary.full;
-  const plannedUpToToday = summary.planned;
-
   return {
-    completed,
-    totalPlanned: plannedUpToToday,
-    plannedUpToToday,
-    missed: Math.max(0, plannedUpToToday - completed),
+    completed: summary.completed,
+    totalPlanned: summary.planned,
+    plannedUpToToday: summary.planned,
+    missed: summary.missed,
     weekStart,
     weekEnd,
   };

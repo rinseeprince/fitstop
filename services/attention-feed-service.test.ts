@@ -338,7 +338,14 @@ describe("attention-feed-service", () => {
         const range = { start: "2024-03-01", end: "2024-03-09" }
         const map = groupClientData(clients, null, null, null, [
           { client_id: "c1", date: "2024-03-03", status: "completed", estimated_calories: null },
-          { client_id: "c1", date: "2024-03-05", status: "partial", estimated_calories: null },
+          // Logged, at whatever quality: a partly done workout is a logged day.
+          {
+            client_id: "c1",
+            date: "2024-03-05",
+            status: "completed",
+            estimated_calories: null,
+            session_log: { completion_quality: "partial" },
+          },
           { client_id: "c1", date: "2024-03-07", status: "completed", estimated_calories: null },
         ], null)
         map.get("c1")!.logs = [

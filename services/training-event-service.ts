@@ -5,7 +5,6 @@ import type {
   TrainingEventStatus,
   TrainingEventSummary,
 } from "@/types/training";
-import type { LoggedQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
 import { fetchAllByChunkedIds, chunkIds } from "@/lib/paged-fetch";
@@ -340,26 +339,21 @@ export async function getFirstEventForDate(
 }
 
 /**
- * Map a logged workout's quality to its event status. Only two qualities can be
- * written, so only two statuses can be, and a skip is neither.
- */
-export function mapCompletionQualityToEventStatus(
-  quality: LoggedQuality
-): "completed" | "partial" {
-  return quality === "full" ? "completed" : "partial";
-}
-
-/**
  * Link a session log to an event, writing BOTH directions of the event-keyed
  * relationship (Session 5.2): the event's session_log_id + status, and the
  * session_log's training_event_id back-reference. Sequenced UPDATEs treated as
  * atomic for pre-launch — this is the final step of a log write. Stamping the
  * log side here also heals any legacy row whose training_event_id was null.
+ *
+ * The status is always `completed`, in the same statement as the link, so the
+ * two can never disagree: the column says the client logged the workout and
+ * nothing else, and how it went stays on the log alone (migration 182). There
+ * is no quality to map — the mapping is what made a partial workout read as
+ * not-done on half the product.
  */
 export async function linkSessionLogToEvent(
   eventId: string,
-  sessionLogId: string,
-  status: "completed" | "partial"
+  sessionLogId: string
 ): Promise<void> {
   const now = new Date().toISOString();
 
@@ -367,7 +361,7 @@ export async function linkSessionLogToEvent(
     .from("training_events")
     .update({
       session_log_id: sessionLogId,
-      status,
+      status: "completed",
       updated_at: now,
     })
     .eq("id", eventId);

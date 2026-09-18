@@ -15,32 +15,19 @@ describe("trainingAdherenceStatus (the log's quality decides)", () => {
     ).toBe("full");
   });
 
-  it("counts a partial log as partial", () => {
-    expect(
-      trainingAdherenceStatus(workout({ status: "partial", completionQuality: "partial" }))
-    ).toBe("partial");
-  });
-
-  // The one row on dev that carries it: the event says completed, the log says
-  // partial. This is commit 10's safety net — the count must follow the log,
-  // exactly as the pill beside it does.
+  // The event says only that the client logged it; the log says how it went,
+  // and the count must follow the log exactly as the pill beside it does.
   it("counts a completed event whose log says partial as partial", () => {
     expect(
       trainingAdherenceStatus(workout({ status: "completed", completionQuality: "partial" }))
     ).toBe("partial");
   });
 
-  it("counts an empty log as not done", () => {
-    expect(
-      trainingAdherenceStatus(workout({ status: "skipped", completionQuality: "skipped" }))
-    ).toBe("missed");
-  });
-
   it("counts a workout the client has not logged as not done", () => {
     expect(trainingAdherenceStatus(workout({ status: "scheduled" }))).toBe("missed");
   });
 
-  // 209 rows on dev: logged before the link existed, so no quality was ever
+  // 227 rows on dev: logged before the link existed, so no quality was ever
   // recorded. A workout done at a quality nobody wrote down is a full one.
   it("counts a completed workout with no log as full", () => {
     expect(trainingAdherenceStatus(workout({ status: "completed" }))).toBe("full");
@@ -53,9 +40,9 @@ describe("summariseTraining", () => {
       workout({ status: "completed", completionQuality: "full" }),
       workout({ status: "completed", completionQuality: "full" }),
       workout({ status: "completed", completionQuality: "full" }),
-      workout({ status: "partial", completionQuality: "partial" }),
+      workout({ status: "completed", completionQuality: "partial" }),
       workout({ status: "scheduled" }),
-      workout({ status: "skipped", completionQuality: "skipped" }),
+      workout({ status: "scheduled" }),
     ];
 
     expect(summariseTraining(workouts)).toEqual({
@@ -65,6 +52,27 @@ describe("summariseTraining", () => {
       partial: 1,
       missed: 2,
       pct: 67,
+    });
+  });
+
+  // The flip's headline, as a number: a week nobody skipped reads 100% even
+  // though one of its workouts was only partly done.
+  it("reads a week whose only shortfall is a partial as complete", () => {
+    expect(
+      summariseTraining([
+        workout({ status: "completed", completionQuality: "full" }),
+        workout({ status: "completed", completionQuality: "full" }),
+        workout({ status: "completed", completionQuality: "full" }),
+        workout({ status: "completed", completionQuality: "full" }),
+        workout({ status: "completed", completionQuality: "partial" }),
+      ])
+    ).toEqual({
+      planned: 5,
+      completed: 5,
+      full: 4,
+      partial: 1,
+      missed: 0,
+      pct: 100,
     });
   });
 
@@ -79,14 +87,15 @@ describe("summariseTraining", () => {
     });
   });
 
-  it("keeps full and completed apart — the two numerators in the product", () => {
+  it("keeps full beside completed as the breakdown, never as a second count", () => {
     const summary = summariseTraining([
       workout({ status: "completed", completionQuality: "full" }),
-      workout({ status: "partial", completionQuality: "partial" }),
+      workout({ status: "completed", completionQuality: "partial" }),
     ]);
-    // The coach's review reads `completed`; the client's wizard and the stored
-    // column read `full`.
-    expect(summary.full).toBe(1);
+    // Every done-count in the product reads `completed`; `full` and `partial`
+    // are what a surface prints beside it.
     expect(summary.completed).toBe(2);
+    expect(summary.full).toBe(1);
+    expect(summary.partial).toBe(1);
   });
 });

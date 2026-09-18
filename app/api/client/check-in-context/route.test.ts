@@ -204,17 +204,18 @@ describe('GET /api/client/check-in-context', () => {
     });
     vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([
       workout({ eventId: 'e-1', status: 'completed', logStatus: 'logged', completionQuality: 'full', sessionLogId: 'l1' }),
-      workout({ eventId: 'e-2', status: 'partial', logStatus: 'logged', completionQuality: 'partial', sessionLogId: 'l2' }),
-      // The one row on dev that drifted: the event says completed, its log says
-      // partial. The log decides, here as on every other screen.
+      // The event says only that the client logged it; the log says how it
+      // went, here as on every other screen.
+      workout({ eventId: 'e-2', status: 'completed', logStatus: 'logged', completionQuality: 'partial', sessionLogId: 'l2' }),
       workout({ eventId: 'e-3', status: 'completed', logStatus: 'logged', completionQuality: 'partial', sessionLogId: 'l3' }),
       workout({ eventId: 'e-4' }),
     ] as any);
 
     const body = await (await GET(req())).json();
 
+    // Three of the four workouts were logged; two of those three were partial.
     expect(body.data.trainingPeriodStats).toEqual({
-      sessionsCompleted: 1,
+      sessionsCompleted: 3,
       sessionsPartial: 2,
       sessionsPlanned: 4,
     });

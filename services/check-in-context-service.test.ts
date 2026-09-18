@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockTrainingEvent } from "@/__tests__/helpers/mock-data-builders";
+import type { LoggedQuality } from "@/types/training";
 
 // Mock supabase-admin before importing the service under test.
 vi.mock("./supabase-admin", () => ({
@@ -29,7 +30,7 @@ const mockGetEvents = vi.mocked(getEventsForDateRange);
 /** The log a calendar read embeds on a workout. */
 const log = (overrides: {
   id?: string;
-  completionQuality?: "full" | "partial" | "skipped";
+  completionQuality?: LoggedQuality;
   performedSessionId?: string | null;
   notes?: string | null;
 }) => ({
@@ -138,19 +139,19 @@ describe("check-in-context-service", () => {
       ]);
     });
 
-    it("includes notes + completionQuality='skipped' for an explicit skip", async () => {
+    it("carries the notes and the PARTIAL quality of a workout partly done", async () => {
       const ev = createMockTrainingEvent({
         id: "ev-2",
         date: "2026-04-09",
         sessionName: "Leg Day",
-        status: "skipped",
+        status: "completed",
         sessionLogId: "log-2",
         trainingSessionId: "sess-2",
         log: log({
           id: "log-2",
-          completionQuality: "skipped",
+          completionQuality: "partial",
           performedSessionId: "sess-2",
-          notes: "sick",
+          notes: "knee sore, cut it short",
         }),
       });
       mockGetEvents.mockResolvedValue([ev]);
@@ -159,10 +160,10 @@ describe("check-in-context-service", () => {
 
       expect(result[0]).toMatchObject({
         eventId: "ev-2",
-        status: "skipped",
+        status: "completed",
         logStatus: "logged",
-        notes: "sick",
-        completionQuality: "skipped",
+        notes: "knee sore, cut it short",
+        completionQuality: "partial",
       });
     });
 
@@ -216,7 +217,7 @@ describe("check-in-context-service", () => {
         id: "ev-c",
         date: "2026-04-11",
         sessionName: "C",
-        status: "partial",
+        status: "completed",
         sessionLogId: "log-c",
         trainingSessionId: "sess-c",
         log: log({

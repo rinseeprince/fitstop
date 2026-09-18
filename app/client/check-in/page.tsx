@@ -28,7 +28,7 @@ import {
   stepsForFields,
 } from "@/lib/check-in/form-fields";
 import { toast } from "sonner";
-import type { LoggedQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/training";
 
 function formatNextDueDate(iso: string): string {
   return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {

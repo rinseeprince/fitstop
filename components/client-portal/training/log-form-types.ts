@@ -1,5 +1,5 @@
 import type { LogTrainingEventInput } from "@/lib/validations/training";
-import type { LoggedQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/training";
 import type { ExerciseLog, SessionLog } from "@/types/training";
 import type { PrescribedExerciseView } from "./exercise-tracker-block";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";

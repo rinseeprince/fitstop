@@ -61,8 +61,9 @@ function formatEventState(e: TrainingEventSummary): string {
     return `${e.loggedExerciseCount}/${e.prescribedExerciseCount} exercises logged`;
   }
   if (e.completionQuality === null) return "Not logged yet";
+  // The coach's own word for this workout (§4.7 M8).
   return e.completionQuality === "full"
-    ? "Logged as complete"
+    ? "Logged as full"
     : "Logged as partial";
 }
 

@@ -97,15 +97,12 @@ export function hasNutritionEntry(row: NutritionValues): boolean {
 }
 
 /**
- * A workout log is a training event the client has logged, at any quality.
- * A scheduled, missed or skipped event is the ABSENCE of a log. This is the
- * one line that narrows to `completed` when the training-completion vocabulary
- * retires `partial` from the event status (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md, commit 10).
+ * A workout log is a training event the client has logged, at any quality —
+ * `completed` says exactly that and says nothing about how it went (migration
+ * 182). A still-scheduled event is the ABSENCE of a log.
  */
-const TRAINING_LOG_STATUSES = ["completed", "partial"] as const;
-
 export function isTrainingLogStatus(status: string): boolean {
-  return (TRAINING_LOG_STATUSES as readonly string[]).includes(status);
+  return status === "completed";
 }
 
 /**

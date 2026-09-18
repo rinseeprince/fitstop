@@ -230,11 +230,14 @@ describe("training-event-service", () => {
   // =========================================================================
 
   describe("linkSessionLogToEvent", () => {
-    it("updates session_log_id and status", async () => {
+    // The status is not a parameter: a logged workout is `completed`, and how
+    // it went stays on the log. There is nothing to pass in and so nothing to
+    // pass in wrongly.
+    it("writes the link and `completed` in one statement", async () => {
       const mockQuery = createMockQuery({ data: null, error: null });
       mockFrom.mockReturnValue(mockQuery as any);
 
-      await linkSessionLogToEvent("event-1", "log-1", "completed");
+      await linkSessionLogToEvent("event-1", "log-1");
 
       expect(mockFrom).toHaveBeenCalledWith("training_events");
       expect(mockQuery.update).toHaveBeenCalledWith(
@@ -409,38 +412,34 @@ describe("training-event-service", () => {
       expect(result[0].sessionName).toBe("Chest Day");
     });
 
-    it("reads the day card's quality off the LOG, whatever the status word says", async () => {
-      const partialLog = {
-        id: "log-1",
-        completionQuality: "partial" as const,
-        performedSessionId: "chest",
-        notes: null,
-      };
+    it("reads the day card's quality off the LOG, not off the status word", async () => {
+      const eventRow = createMockTrainingEventRow({
+        id: "ev-1",
+        trainingSessionId: "chest",
+        sessionName: "Chest Day",
+        date: "2026-05-08",
+        // The event says only that the client logged it.
+        status: "completed",
+        sessionLogId: "log-1",
+        log: {
+          id: "log-1",
+          completionQuality: "partial" as const,
+          performedSessionId: "chest",
+          notes: null,
+        },
+      });
+      routeByTable({
+        training_events: createMockQuery({ data: [eventRow], error: null }),
+        exercise_logs: createMockQuery({ data: [], error: null }),
+        training_exercises: createMockQuery({ data: [{ session_id: "chest" }], error: null }),
+        training_sessions: createMockQuery({
+          data: [{ id: "chest", name: "Chest Day" }],
+          error: null,
+        }),
+      });
 
-      // The commit-10 shape, and the shape stored today: one answer, partial.
-      for (const status of ["completed", "partial"] as const) {
-        const eventRow = createMockTrainingEventRow({
-          id: "ev-1",
-          trainingSessionId: "chest",
-          sessionName: "Chest Day",
-          date: "2026-05-08",
-          status,
-          sessionLogId: "log-1",
-          log: partialLog,
-        });
-        routeByTable({
-          training_events: createMockQuery({ data: [eventRow], error: null }),
-          exercise_logs: createMockQuery({ data: [], error: null }),
-          training_exercises: createMockQuery({ data: [{ session_id: "chest" }], error: null }),
-          training_sessions: createMockQuery({
-            data: [{ id: "chest", name: "Chest Day" }],
-            error: null,
-          }),
-        });
-
-        const result = await getEventSummariesForDate("c1", "2026-05-08");
-        expect(result[0].completionQuality).toBe("partial");
-      }
+      const result = await getEventSummariesForDate("c1", "2026-05-08");
+      expect(result[0].completionQuality).toBe("partial");
     });
 
     it("reads a workout logged before the link existed as full, not as unlogged", async () => {

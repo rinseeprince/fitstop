@@ -90,7 +90,8 @@ describe("buildAdherenceSummary", () => {
     today: "2026-07-23",
     trainingEvents: [
       { date: "2026-07-20", status: "completed", completionQuality: "full" },
-      { date: "2026-07-21", status: "missed", completionQuality: null },
+      // Still scheduled on a day that has passed — missed is derived, never stored.
+      { date: "2026-07-21", status: "scheduled", completionQuality: null },
       // no event on the 22nd → 'none'
       { date: "2026-07-23", status: "scheduled", completionQuality: null },
     ],
@@ -188,25 +189,22 @@ describe("buildAdherenceSummary", () => {
     expect(summary.loggedDates).toEqual(["2026-07-21", "2026-07-23"]);
   });
 
-  it("computes the training numbers over events (full completions only)", () => {
+  it("computes the training numbers over the events, through the one summariser", () => {
     const summary = buildAdherenceSummary(fixture);
     expect(summary.training).toMatchObject({ completed: 1, planned: 3, pct: 33 });
   });
 
-  it("reads a workout whose LOG is partial as partial, whatever its status word says", () => {
-    const partialDay = (status: string) =>
-      buildAdherenceSummary({
-        ...fixture,
-        trainingEvents: [{ date: "2026-07-20", status, completionQuality: "partial" }],
-      });
+  it("reads a workout whose LOG is partial as partial, and counts it as done", () => {
+    const summary = buildAdherenceSummary({
+      ...fixture,
+      trainingEvents: [
+        { date: "2026-07-20", status: "completed", completionQuality: "partial" },
+      ],
+    });
 
-    // The commit-10 shape, read today, and the shape stored today: one dot.
-    for (const status of ["completed", "partial"]) {
-      const summary = partialDay(status);
-      expect(summary.training.rail[0]).toBe("partial");
-      // The count is full completions only and does not change here.
-      expect(summary.training).toMatchObject({ completed: 0, planned: 1, pct: 0 });
-    }
+    // M9: the day keeps its partial dot — beside a number that counts it.
+    expect(summary.training.rail[0]).toBe("partial");
+    expect(summary.training).toMatchObject({ completed: 1, planned: 1, pct: 100 });
   });
 
   it("reads a workout logged before the link existed as a full completion", () => {

@@ -61,8 +61,8 @@ import { supabaseAdmin } from './supabase-admin'
  *  each with the log the read embeds, which is where the quality lives. */
 function workout(
   date: string,
-  quality: 'full' | 'partial' | 'skipped' | null,
-  status = quality === null ? 'scheduled' : quality === 'full' ? 'completed' : quality,
+  quality: 'full' | 'partial' | null,
+  status = quality === null ? 'scheduled' : 'completed',
 ) {
   return {
     id: `ev-${date}`,
@@ -511,15 +511,13 @@ describe('Check-in Service', () => {
       expect(getDailyLogsMock).toHaveBeenCalledWith('client-123', '2026-05-08', '2026-05-14')
     })
 
-    // The stored column counts FULL completions, and how a workout went comes
-    // off its own log — the one row on dev that carries the drift says
-    // `completed` on the event and `partial` on the log, and the column follows
-    // the log, exactly as every screen does.
-    it('counts full completions from the LOG, not from the status word', async () => {
+    // The stored column counts every workout the client LOGGED — a partial one
+    // is a workout they did — and the frozen rows beside it keep each one's
+    // quality, so the breakdown survives without a second count.
+    it('counts a partly completed workout towards the stored figure', async () => {
       getEventsForDateRangeMock.mockResolvedValue([
         workout('2026-05-08', 'full'),
-        // status `completed`, log `partial` — the drift row.
-        { ...workout('2026-05-09', 'partial'), status: 'completed' },
+        workout('2026-05-09', 'partial'),
         workout('2026-05-10', 'partial'),
         workout('2026-05-11', null),
       ])
@@ -528,11 +526,11 @@ describe('Check-in Service', () => {
       const { submitCheckIn } = await import('./check-in-service')
       await submitCheckIn('client-123', {})
 
-      expect(q.insert.mock.calls[0][0].workouts_completed).toBe(1)
+      expect(q.insert.mock.calls[0][0].workouts_completed).toBe(3)
     })
 
     it('stores a workout logged before the link existed as a full completion', async () => {
-      // 209 such rows on dev: completed, with no log to have recorded a quality.
+      // 227 such rows on dev: completed, with no log to have recorded a quality.
       getEventsForDateRangeMock.mockResolvedValue([
         { ...workout('2026-05-08', null), status: 'completed' },
       ])

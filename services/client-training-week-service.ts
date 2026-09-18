@@ -2,6 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getClientWeekAnchor } from "./check-in-week-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
+import { isTrainingLogStatus } from "@/lib/logged-days";
 import type {
   ClientTrainingWeek,
   ClientTrainingWeekSession,
@@ -13,10 +14,11 @@ import type {
 // no session join is needed for the picker's labels.
 const WEEK_COLUMNS = "id, training_session_id, date, session_name, session_focus, status";
 
+// A workout the client has logged is done, whatever quality it was logged at —
+// `isTrainingLogStatus` is the one reading of that word. One they have not is
+// judged by its date against their own today.
 function deriveState(status: string, date: string, today: string): ClientTrainingWeekSessionState {
-  if (status === "completed" || status === "partial") return "done";
-  if (status === "missed") return "missed";
-  // scheduled
+  if (isTrainingLogStatus(status)) return "done";
   if (date === today) return "today";
   return date > today ? "upcoming" : "missed";
 }

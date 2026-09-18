@@ -194,7 +194,7 @@ describe("SessionLogDetailDialog", () => {
       expect(
         screen.getByText(/logged this session as complete without per-set detail/i),
       ).toBeInTheDocument();
-      expect(screen.getByText("Completed")).toBeInTheDocument();
+      expect(screen.getByText("Full")).toBeInTheDocument();
       expect(screen.getByText("Felt good")).toBeInTheDocument();
     });
 

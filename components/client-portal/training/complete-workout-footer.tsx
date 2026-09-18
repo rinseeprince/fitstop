@@ -9,7 +9,7 @@ import {
   type UseFormRegister,
   type UseFormSetValue,
 } from "react-hook-form";
-import type { LoggedQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/training";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EMPTY_TRAINING_LOG_MESSAGE } from "@/lib/training-log-content";
@@ -40,10 +40,10 @@ type CompleteWorkoutFooterProps = {
   isSubmitting: boolean;
 };
 
-// Named for the client, not the column. `full` is "complete" in every other
-// sentence they read.
+// The word the COACH will read beside this workout (§4.7 M8), so the promise
+// the client agrees to and the label on the coach's screen are one word.
 const OUTCOME_LABEL: Record<LoggedQuality, string> = {
-  full: "complete",
+  full: "full",
   partial: "partial",
 };
 

@@ -122,7 +122,7 @@ function workout(
             trainingSessionId: loggedSessionId,
             trainingEventId: id,
             completedAt: "2026-05-06",
-            completionQuality: "skipped",
+            completionQuality: "partial",
             notes: loggedNotes,
             weekStartDate: "2026-05-04",
             prescribedSessionSnapshot: null,

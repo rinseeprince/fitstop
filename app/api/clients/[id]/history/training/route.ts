@@ -24,15 +24,17 @@ function generateDateRange(start: string, end: string): string[] {
 }
 
 function mapScheduleDayToRow(day: ScheduleDay): TrainingHistoryRow {
-  // Logged is the attendance word; the chip beside it reads the quality.
-  const isLogged = day.status === "completed";
+  // The row carries BOTH facts the schedule shape splits: its attendance word,
+  // and the quality on its log. The table's chip reads the quality when the
+  // workout was logged and the word when it was not, so a day that has passed
+  // reads Missed rather than the same "not logged" as today's.
   return {
     date: day.date,
     session_name: day.loggedSessionName ?? day.plannedSessionName ?? "",
     is_alternative: day.isAlternative,
+    status: day.status,
     completion_quality: day.completionQuality,
     notes: day.notes,
-    is_logged: isLogged,
     session_log_id: day.sessionLogId ?? null,
   };
 }

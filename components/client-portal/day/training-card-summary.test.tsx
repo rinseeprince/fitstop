@@ -65,7 +65,7 @@ describe("TrainingCardSummary", () => {
       />,
     );
 
-    expect(screen.getByText("Logged as complete")).toBeInTheDocument();
+    expect(screen.getByText("Logged as full")).toBeInTheDocument();
     expect(screen.getByText("Tap to view")).toBeInTheDocument();
   });
 

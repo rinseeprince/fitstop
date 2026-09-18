@@ -55,10 +55,9 @@ export const resolveCheckInReportingPeriod = async (
  *
  * **Training is deliberately NOT on this wire.** The review page counts the
  * period's training itself, from the per-workout detail it already carries,
- * through `summariseTraining` (`lib/training-adherence.ts`) — completed is
- * full + PARTIAL there, while this kernel's training half is full-only. Two
- * numbers from two definitions on one screen is the defect; so the page keeps
- * its own training figure and this returns only what it is replacing.
+ * through `summariseTraining` (`lib/training-adherence.ts`). Two numbers from
+ * two derivations on one screen is the defect; so the page keeps its own
+ * training figure and this returns only what it is replacing.
  */
 export const getCheckInPeriodAdherence = async (
   checkIn: CheckIn

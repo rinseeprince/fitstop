@@ -248,11 +248,12 @@ export function buildCheckInAnalysisPrompt(
       if (prev.weight) prompt += `   Weight: ${weight(prev.weight)}\n`;
       if (prev.adherencePercentage) prompt += `   Adherence: ${prev.adherencePercentage}%\n`;
       // No `Workouts:` line. These are bare `CheckIn` rows, so the only count on
-      // them is the stored full-only column — a different statistic from the
-      // current period's derived figure above, and putting both in one prompt is
-      // what produced a contradiction. Deriving it per row would be a query per
-      // check-in (CONVENTIONS §2 item 7); the current period's training is
-      // already described in full by the schedule block.
+      // them is the stored column, frozen when each was sent — a figure that
+      // does not move with the calendar, unlike the current period's derived
+      // one above, and putting both in one prompt is what produced a
+      // contradiction. Deriving it per row would be a query per check-in
+      // (CONVENTIONS §2 item 7); the current period's training is already
+      // described in full by the schedule block.
       if (prev.mood) prompt += `   Mood: ${prev.mood}/5\n`;
     });
   }

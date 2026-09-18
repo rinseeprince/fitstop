@@ -256,7 +256,7 @@ daily_logs (spine)         -- id, client_id, date, notes
 - Each child table has `client_id` and `date` columns for direct querying without joining the spine
 - The `DailyLog` TypeScript type remains flat. The split is DB + service layer only. Hooks, components, and utils are unaffected
 
-**A logged day is derived, never stored, and never read off the spine.** "Did the client log today?" has one answer, `loggedDays` in `lib/logged-days.ts`: a day with any log the client made themselves, on their own calendar — a nutrition entry (any consumed value), a wellness reading (any of the five), a habit log (ticked or unticked, since either is the client acting), a workout log (a `training_event` whose status is completed or partial) or a measurement they logged in the app (a `client_measurements_live` row with `source = 'client_log'`, empty until the client app can write one and read from the start so the definition cannot lose a source). One is enough. **Coach entries, intake readings and the check-in submission do not count** (owner decision D11, 2026-09-02): the question is daily engagement, not the coach's work or the weekly report. The spine row is the parent of the client's day-form (wellness, nutrition, the day note) and not an activity flag — workouts and habits never create one, so counting spine rows read a client who only trained as silent, and `lib/logged-days-ownership.test.ts` forbids it. The source predicates live beside the kernel, spelled once; the two readers that hold the rows assemble the five sources from them and ask the kernel: the Overview adherence kernel (`services/client-adherence-service.ts` — `AdherenceSummary.loggedDates`, which the habits rail reads for Missed versus No log and the check-in review's header prints over `dates`) and the attention feed (`loggedDaysFor` in `lib/attention-feed-helpers.ts`, for the logging-gap and no-engagement alerts).
+**A logged day is derived, never stored, and never read off the spine.** "Did the client log today?" has one answer, `loggedDays` in `lib/logged-days.ts`: a day with any log the client made themselves, on their own calendar — a nutrition entry (any consumed value), a wellness reading (any of the five), a habit log (ticked or unticked, since either is the client acting), a workout log (a `training_event` whose status is `completed` — logged, at any quality) or a measurement they logged in the app (a `client_measurements_live` row with `source = 'client_log'`, empty until the client app can write one and read from the start so the definition cannot lose a source). One is enough. **Coach entries, intake readings and the check-in submission do not count** (owner decision D11, 2026-09-02): the question is daily engagement, not the coach's work or the weekly report. The spine row is the parent of the client's day-form (wellness, nutrition, the day note) and not an activity flag — workouts and habits never create one, so counting spine rows read a client who only trained as silent, and `lib/logged-days-ownership.test.ts` forbids it. The source predicates live beside the kernel, spelled once; the two readers that hold the rows assemble the five sources from them and ask the kernel: the Overview adherence kernel (`services/client-adherence-service.ts` — `AdherenceSummary.loggedDates`, which the habits rail reads for Missed versus No log and the check-in review's header prints over `dates`) and the attention feed (`loggedDaysFor` in `lib/attention-feed-helpers.ts`, for the logging-gap and no-engagement alerts).
 
 ---
 
@@ -287,7 +287,7 @@ On the training track, plans are **templates/provenance** — the events carry t
 - `calorie_surplus_percentage` (NUMERIC, nullable, migration 085) - the per-date training surplus, denormalized onto the event at generation from `training_sessions.calorie_surplus_percentage`. A nutrition day reads it directly off the events — every session's surplus on the date added, as a share of the covering version's baseline (see "The window is the row"). NULL on rest days
 - `day_order` (INTEGER NOT NULL DEFAULT 0, migration 179) - the session's place among the client's sessions on its date, 0 first; every reader orders a day by `(day_order, id)`. See "Several sessions a day"
 - `is_modified` - true when a coach moved the event on the calendar, or edited its surplus — or when the **client** moved it (the same badge, deliberately: no who-moved-it provenance is stored, owner decision 2026-08-26). Both moves go through `move_training_events_atomic` (migration 150), each side keeping its own rules in its own service (the coach's drag in `services/training-event-calendar-service.ts`, the client's week in `services/training-event-layout-service.ts`); the function refuses a move whose event is no longer on the date the caller saw, so a coach's drag on a calendar loaded before the session moved is refused (409), and the coach's calendar refetches when the coach comes back to the page. It drives the calendar card's edited badge; the plan editor's save keeps it on a session saved as it was laid and clears it on every session the coach changed (see "Edit plan"), and a program's start-date move carries every session to its new day with its mark as it was (see "Moving a program's start"). It is **not a write predicate**. (An earlier `force = false` / override-after-warning regeneration flow is described in older revisions of this file; no such parameter exists in the code.)
-- `status` — whether the client has **logged** the workout, and nothing else. `scheduled` is the word every write guard keys on (`assertSessionUnlogged`, the plan editor's save, the move function, placement's window-delete). The CHECK still allows `partial` (written beside a partial log), `skipped` and `missed`; nothing writes either of the last two — a skip is not an outcome any more (see "Logging a workout") and `missed` is derived by every screen — and the CHECK loses them with the type change. **How a workout went is never read off this column**: see "How a workout reads" below
+- `status` — whether the client has **logged** the workout, and nothing else. Two values, and the CHECK allows no others (migration 182): `scheduled` is not logged and is the word every write guard keys on (`assertSessionUnlogged`, the plan editor's save, the move function, placement's window-delete); `completed` is logged, **at any quality**, written with the link in one statement and cleared back by `clear_training_event_log`. `partial`, `skipped` and `missed` are gone — a partial workout was still done, a skip is not an outcome any more (see "Logging a workout"), and `missed` is derived by every screen from the day. **How a workout went is never read off this column**: see "How a workout reads" below
 - Unique constraint: `(client_id, training_session_id, date)` partial index where `training_session_id IS NOT NULL`
 
 `training_sessions.calorie_surplus_percentage` (NUMERIC, nullable) is the **origin** of the surplus: it is copied onto each `training_events.calorie_surplus_percentage` at event generation, and a nutrition day then reads it from the event (not from the session). Rest-day sessions have NULL.
@@ -453,27 +453,27 @@ training_logs            -- did the client train today? (1:1 per day, child of d
 Two facts, kept in two places, and one pure helper that puts them together —
 `lib/training-display-state.ts`:
 
-- **Did the client log it?** `training_events.status`. A workout that has left `scheduled` is logged.
+- **Did the client log it?** `training_events.status` — `completed` says yes, at any quality, and
+  `scheduled` says no. Those are the only two it can hold (migration 182).
 - **How did it go?** `session_logs.completion_quality`, on the log alone — `full` or `partial`, the
-  two words `LoggedQuality` (`types/check-in.ts`) holds. There is no copy on the event, and no screen
+  two words `LoggedQuality` (`types/training.ts`) holds. There is no copy on the event, and no screen
   reads the status word as quality — that copy is what made one week read 4/5 on the client's
   check-in and 5/5 on the coach's review.
 
 `trainingDisplayState(workout, today)` returns the one vocabulary every tick, dash, chip and pill
 keys on — `scheduled`, `completed_full`, `completed_partial`, `missed` — and
-`loggedDisplayQuality(workout)` is its quality half for surfaces that show only that. Four rules it
+`loggedDisplayQuality(workout)` is its quality half for surfaces that show only that. Three rules it
 owns:
 
-- **The log wins** whenever there is one, whatever the status word says.
-- **A workout logged before the link existed reads `full`** — 209 such rows on dev (September 2026):
+- **The log wins** whenever it carries one of the two words the product writes.
+- **A workout logged before the link existed reads `full`** — 227 such rows on dev (September 2026):
   completed, with no log to have recorded a quality.
-- **A stored `skipped`, on the event or on its log, reads as NOT LOGGED.** Nothing produces one (see
-  "Logging a workout"); a row written before that rule is a workout the client did not do, which is
-  what a day that has passed already says. `SessionCompletionQuality` still spells the value because
-  those rows exist; `LoggedQuality` is what the product writes and shows, and no screen renders a
-  third word.
 - **`missed` is derived, never stored** — still scheduled on a day that has passed — and the day is
   the caller's own: the client's today on their screens, the coach's on the coach's.
+
+The status is read POSITIVELY — logged is `completed`, never "anything but scheduled" — so a
+database read before its migration still answers truthfully: a word the product no longer stores is
+not a workout done. `TrainingWorkoutRead.status` is a bare `string` for that reason.
 
 **Every read of calendar workouts embeds the log**, through the NAMED foreign key
 `session_logs!training_events_session_log_id_fkey` (two relationships exist between the tables, so an
@@ -495,19 +495,22 @@ rows carrying a status and a log quality — calendar events through `eventWorko
 per-workout detail a check-in read carries — classifies each through `loggedDisplayQuality` above,
 and returns `{ planned, completed, full, partial, missed, pct }`: `completed` is full + partial,
 `missed` is everything not done (still scheduled, never logged), and `pct` is
-`completed / planned`, null when nothing was planned. Every training figure on a check-in comes out
-of it — see "The figures, and what they divide by". The Overview's adherence kernel keeps its own
-full-only `completed / planned` pair beside the rail it is index-aligned with
-(`services/client-adherence-service.ts`).
+`completed / planned`, null when nothing was planned. **`completed` is the numerator of every
+done-count in the product** — the check-in review's ribbon and AI prompt, the Training-tab hero, the
+Overview's adherence card and its plan card, the client's check-in wizard and the figure the submit
+freezes — and `full` / `partial` are the breakdown a surface prints beside it, never a second count.
+The Overview's adherence kernel runs it over the same rows its rail is built from, so a day wearing a
+partial dot is inside the number next to it (`services/client-adherence-service.ts`). See "The
+figures, and what they divide by".
 
 **The Training-tab hero and the Overview's plan card count CALENDAR WORKOUTS, by their date.**
 `getTrainingWeekSummary` (`services/training-week-summary-service.ts`) reads the client's current
 week — anchored on their check-in day, on the COACH's today, capped at today because a session still
 to be done later in the week is neither planned-against nor missed — and puts those workouts through
 `summariseTraining`. It serves `GET /api/clients/[id]/history/training/summary` (the hero) and
-`GET …/overview-plan-summary` (`thisWeek`), so the two cannot disagree. Its `completed` is `full`
-alone, as this pair has always read; partials join it in the flip, where every done-count moves
-together. **No adherence figure reads `session_logs.completed_at`**: a log's stored date does not
+`GET …/overview-plan-summary` (`thisWeek`), so the two cannot disagree. Every figure it returns comes
+out of `summariseTraining`, so `missed` is what is left of `planned` once the logged workouts are
+taken off it. **No adherence figure reads `session_logs.completed_at`**: a log's stored date does not
 move when its workout does, so a moved workout used to be counted in the week it left
 (`TECHNICAL-DEBT.md` → "A moved workout leaves its log's stored date behind").
 
@@ -565,7 +568,7 @@ row list, not the log.**
 - `set_logs.set_type` (migration 119) — `TEXT NOT NULL DEFAULT 'working' CHECK (set_type IN ('warmup','working','amrap','drop','failure'))`. The per-set type of a logged set. It is **coach-prescribed** (seeded from the prescription's `set_specs` at log time), not client-chosen — the log schema accepts-but-ignores any client value, and the writer seeds each row from the prescription snapshot's per-set specs. Warm-up / AMRAP / drop rows are written today. The analytics RPCs (`get_exercise_progression_window` returns it; `get_exercise_prs` filters on it — migration 120) exclude warm-up sets from volume/compliance/PRs; `services/exercise-analytics-service.ts` counts only non-warmup sets and reads the prescribed working-set count from the snapshot's `set_specs`.
 - `exercise_logs.exercise_id` (added in 090) is a nullable FK to the global `exercises` catalog. Populated when the client picked an exercise from the typeahead picker (Add unplanned, Swap). NULL for prescribed-without-swap (catalog identity is reachable via `training_exercise_id → training_exercises.exercise_id`) and for freehand entries.
 - `exercise_logs.performed_name` (added in 090) is the canonical display name for the logged exercise. Differs from `prescribed_exercise_snapshot.name` when the client swapped a prescribed exercise or added a freehand unplanned one. Display rule: `performed_name ?? prescribed_exercise_snapshot?.name ?? "Unknown exercise"`. This is the per-**exercise** swap (Session 1.5), independent of the per-**session** swap above.
-- Session-level status: the log WRITE stamps `training_events.status` from `session_logs.completion_quality` via `mapCompletionQualityToEventStatus` (full→completed / partial→partial), in the same statement as the link, so the two cannot drift. **No reader inverts that map** — every screen reads the quality off the log (see "How a workout reads"). **Where the quality itself comes from:** It is **server-derived** whenever the payload carries `exercises`: `deriveCompletionQuality` (`utils/completion-quality.ts`) counts the sets the client sent against the session's own prescription and **ignores any client-supplied value**. `full` means every prescribed WORKING set on EVERY exercise (each exercise judged against its own prescription, so a surplus on one cannot mask a deficit on another); anything short of that is `partial`, a save whose only ticks landed on warm-ups included — warm-ups are excluded from both halves of the ratio, and the save would have been refused if the client had recorded nothing at all. The denominator therefore needs a read of its own (`loadSessionPrescription`), because an exercise the client never touched is absent from the payload entirely and must still count against them. A payload with **no** `exercises` — the check-in's fill-gap row, and any RN quick path — still uses the client's explicit `completionQuality`, and that is the only case where it is honoured.
+- Session-level status: the log WRITE stamps `training_events.status = 'completed'` in the same statement as the link, whatever the quality, so the two cannot drift. There is no quality→status map and nothing to invert — every screen reads the quality off the log (see "How a workout reads"). **Where the quality itself comes from:** It is **server-derived** whenever the payload carries `exercises`: `deriveCompletionQuality` (`utils/completion-quality.ts`) counts the sets the client sent against the session's own prescription and **ignores any client-supplied value**. `full` means every prescribed WORKING set on EVERY exercise (each exercise judged against its own prescription, so a surplus on one cannot mask a deficit on another); anything short of that is `partial`, a save whose only ticks landed on warm-ups included — warm-ups are excluded from both halves of the ratio, and the save would have been refused if the client had recorded nothing at all. The denominator therefore needs a read of its own (`loadSessionPrescription`), because an exercise the client never touched is absent from the payload entirely and must still count against them. A payload with **no** `exercises` — the check-in's fill-gap row, and any RN quick path — still uses the client's explicit `completionQuality`, and that is the only case where it is honoured.
 
 ---
 
@@ -821,7 +824,7 @@ Every write resolves plan context once via `resolvePlanContextForDate(clientId, 
 
 ### Alternative-session handling
 
-A client trains on a day other than prescribed by **moving the session there first** (owner decision 2026-08-26): the rest-day "Log a session" picker lists this week's still-to-do sessions (`GET /api/client/training/week`) and a pick moves the chosen one onto that day and opens it (`POST /api/client/training/events/layout`); on a prescribed, unlogged day "Do a different session" swaps the two days, or opens a session already on the same day. Any other rearrangement — "I'll do Thursday's session on Saturday" — is the Program tab's week view (`lib/week-layout.ts`), the same write at whole-week size. The write is `logTrainingEvent` in every case — there is no event-less writer — so every `session_log` is event-keyed and dated to its event. Snapshots: `prescribed_session_snapshot` from the event's session; `prescribed_exercise_snapshot` from the session performed. Adherence counts `training_events.status='completed'`; a moved session completes on the day it is done, and the coach calendar shows it there with the same edited badge a coach move sets.
+A client trains on a day other than prescribed by **moving the session there first** (owner decision 2026-08-26): the rest-day "Log a session" picker lists this week's still-to-do sessions (`GET /api/client/training/week`) and a pick moves the chosen one onto that day and opens it (`POST /api/client/training/events/layout`); on a prescribed, unlogged day "Do a different session" swaps the two days, or opens a session already on the same day. Any other rearrangement — "I'll do Thursday's session on Saturday" — is the Program tab's week view (`lib/week-layout.ts`), the same write at whole-week size. The write is `logTrainingEvent` in every case — there is no event-less writer — so every `session_log` is event-keyed and dated to its event. Snapshots: `prescribed_session_snapshot` from the event's session; `prescribed_exercise_snapshot` from the session performed. Adherence counts every workout the client logged — `training_events.status='completed'`, at any quality; a moved session completes on the day it is done, and the coach calendar shows it there with the same edited badge a coach move sets.
 
 ### Date-edit permissions
 
@@ -964,7 +967,7 @@ Load-bearing details:
 - **A mono datum inside a sans line uses `InlineMono`** (`overview/overview-primitives.tsx`), never a literal space. At 13px an Instrument Sans space measures **2.5px** against JetBrains Mono's **7.8px** (CDP-measured), so `Starts <date>` written with a plain space leaves the label glued to the value while the value's own internal spaces look 3× wider. `InlineMono` carries `ml-[1ch]`, which resolves against its own font and therefore always matches the datum's rhythm at any size — call sites must not add a space of their own.
 - **Three surfaces must be told when their data is still loading.** `CoachNotesCard` (`isLoading`), the identity row's check-in cluster (`isTimingLoading`) and the progression chart (`isLoading` with a null series) all receive empty-shaped data while pending *and* when the client genuinely has none. Without the flag they render a confident "no notes" / "Not scheduled" / "No measurements in this window" and contradict it a moment later. Covered by `overview/loading-states.test.tsx` and `progression-chart.test.tsx` — keep the flag threaded through any new consumer.
 - **Five wellness cards**, Soreness included. Stress and soreness are inverted (lower is better) through `getWellnessTone()` in `utils/wellness-color-thresholds.ts` — the single source for that inversion, shared with `components/check-in/mini-bar-sparkline.tsx`. **Sleep has no trigger in `lib/wellness-triggers.ts`, so its card can never flag; do not invent one.** There is deliberately no composite wellness score anywhere — only per-metric tones — so wellness is five cards rather than a fourth rail with a percentage.
-- **The training rail's `none` state renders a dash, not a dot.** No session was planned that day; losing that turns every rest day into a miss. Every other day is classified from its own workouts, each read as its display state (see "How a workout reads"): a day whose workout was partial keeps its partial dot, and a workout still scheduled on a day that has passed is a miss. The figure beside the rail counts full completions only, matching the Training-tab hero.
+- **The training rail's `none` state renders a dash, not a dot.** No session was planned that day; losing that turns every rest day into a miss. Every other day is classified from its own workouts, each read as its display state (see "How a workout reads"): a day whose workout was partial keeps its partial dot, and a workout still scheduled on a day that has passed is a miss. The figure beside the rail is `summariseTraining` over the same workouts the rail is built from, so a day wearing a partial dot is inside it — matching the Training-tab hero.
 - **Both cards in the second row show three rows, then offer the rest as a toggle.**
   `OVERVIEW_CARD_ROWS_SHOWN` (3) and `CardOverflowToggle` live in `overview/overview-primitives.tsx`
   and are shared by Needs attention and Since your last visit — **one number for both, because they
@@ -1500,8 +1503,8 @@ on target: only the first number describes anything, and what it describes is a 
 **The session count is derived** through `summariseTraining` over the period's own workouts — the
 same run the KPI ribbon and the pills beside it read, so the three cannot disagree. Previous
 check-ins in the trend block carry no count at all: they are bare `CheckIn` rows, so the only figure
-available on them is the stored full-only column, and deriving one per row would be a query per
-check-in.
+available on them is the column each froze when it was sent — which does not move with the calendar,
+unlike the live figure above it — and deriving one per row would be a query per check-in.
 
 **The task asks for a read, not a recap**: the week's story and what drove it, observations that
 carry what they connect to, and co-occurrence across metrics and across days. An uncertain
@@ -1566,8 +1569,10 @@ computes nothing — it takes no log rows (`nutrition-section.test.tsx` scans
 for it). Habits come from `perHabit`, built from the HABIT list, so a
 habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
 writes a row only when they act, and the old grid read `/habits/logs`. **Training
-is deliberately NOT on that wire**: this surface reads `completed` — full AND
-partial — while the Overview kernel's training half counts full only.
+is deliberately NOT on that wire**: the review already carries the period's own
+workouts and counts them once with `summariseTraining`, so putting a second
+training figure on this payload would be a second derivation of the same
+number.
 `periodAdherence` is `null` when a legacy row's period cannot
 be resolved (pre-038 and no schedule to anchor a week to), and the cells render
 their empty states rather than fall back to a second definition.
@@ -1583,12 +1588,15 @@ that counts them. There is no stored per-session table and no second
 per-check-in shape: the review's KPI ribbon and its pills, the wizard's Training
 Summary, the AI prompt and the figure the submit freezes all come out of that
 one summariser. A SECOND definition is what is forbidden, and
-`lib/training-adherence-ownership.test.ts` scans every check-in surface to keep
-it so: no read of the stored `check_ins.workouts_completed` column (that column
-is the client's — their own surfaces read it back legitimately) and no
-hand-rolled count over a status or a quality. Both shapes have shipped, and the
-first put "3/5" on the ribbon above an AI summary saying "completed only 2 out
-of 5" for the same week.
+`lib/training-adherence-ownership.test.ts` scans every check-in surface for the
+shape that has shipped twice: a read of the stored `check_ins.workouts_completed`
+column, which is frozen at submit and never moves after (that column is the
+client's — their own surfaces read it back legitimately). Rendering it beside a
+live figure put "3/5" on the ribbon above an AI summary saying "completed only 2
+out of 5" for the same week. The scan's second rule — no hand-rolled count over a
+status or a quality — retired with migration 182: `status === 'completed'` is now
+the same answer the summariser gives, so the rule was forbidding a spelling
+rather than a defect.
 
 **Three day sets, and every figure names its own** (owner decision
 2026-09-11). LOGGED days are coverage, over the period. TARGETED days — the
@@ -1613,6 +1621,14 @@ written by `submitCheckIn` from the ONE kernel run that also freezes
 disagree. The client wire carries `nutritionTargetedDays`, counted from the
 frozen rows, as the count's denominator, and both figures are RN-visible
 (`CLIENT-APP-REFERENCE.md` → Adherence Calculations).
+
+**`check_ins.workouts_completed` is the training one, and it counts every
+workout the client LOGGED** — `summariseTraining`'s `completed`, full or
+partial, over the same period's workouts the snapshot freezes. It is a
+submit-time snapshot: it never moves after, so a day the client backfills later
+shows on the coach's live surfaces and not on it. Check-ins submitted before
+migration 182 keep the full-only number they stored; there is no backfill (§4.7
+M13).
 
 **The client-id guard.** The detail is fetched by check-in id but the context by the page's client
 id, and `GET /api/check-in/[id]` refuses only a *foreign* coach — a coach's own other-client id in

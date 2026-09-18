@@ -19,11 +19,12 @@ import {
   loggedDays,
 } from "@/lib/logged-days";
 import type { AdherenceSummary, DotState } from "@/types/coach-overview";
-import type { SessionCompletionQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/training";
 import {
   trainingDisplayState,
   type TrainingDisplayState,
 } from "@/lib/training-display-state";
+import { summariseTraining } from "@/lib/training-adherence";
 
 /**
  * The Overview's three-rail adherence card (AdherenceSummary contract).
@@ -95,7 +96,7 @@ export type AdherenceSourceRows = {
    * The window's calendar workouts: each one's attendance word and the quality
    * on its own log (null when the client has not logged it).
    */
-  trainingEvents: { date: string; status: string; completionQuality: SessionCompletionQuality | null }[];
+  trainingEvents: { date: string; status: string; completionQuality: LoggedQuality | null }[];
   /** What the client ate — the log carries no target and no verdict. */
   nutritionLogs: {
     date: string;
@@ -155,20 +156,17 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
   // is missed.
   const today = rows.today;
   const statesByDate = new Map<string, TrainingDisplayState[]>();
-  const states: TrainingDisplayState[] = [];
   for (const event of rows.trainingEvents) {
-    const state = trainingDisplayState(event, today);
-    states.push(state);
     const list = statesByDate.get(event.date) ?? [];
-    list.push(state);
+    list.push(trainingDisplayState(event, today));
     statesByDate.set(event.date, list);
   }
   const trainingRail = dates.map((date) => classifyTrainingDay(statesByDate.get(date) ?? []));
-  const planned = rows.trainingEvents.length;
-  const completed = states.filter((state) => state === "completed_full").length;
-  // Full completions only, matching the Training-tab hero — partial shows on
-  // the dot but not in the numerator (deliberate).
-  const trainingPct = planned > 0 ? Math.round((completed / planned) * 100) : null;
+  // The figures beside the rail come out of the ONE summariser
+  // (`lib/training-adherence.ts`) over the same rows the rail is built from, so
+  // a day that wears a partial dot is inside the number next to it. Both
+  // classify through `loggedDisplayQuality`, so they cannot disagree.
+  const training = summariseTraining(rows.trainingEvents);
 
   // Nutrition: the kernel over the same rows every other surface runs it
   // over — the rows first, then the figures and the rail from the rows. The
@@ -245,7 +243,12 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
   return {
     dates,
     loggedDates,
-    training: { rail: trainingRail, completed, planned, pct: trainingPct },
+    training: {
+      rail: trainingRail,
+      completed: training.completed,
+      planned: training.planned,
+      pct: training.pct,
+    },
     nutrition: { rail: nutritionRail, ...summarizeNutritionPeriod(nutritionDays) },
     habits: { rail: habitsRail, avgPct, daysBelow50, perHabit },
   };
@@ -339,7 +342,7 @@ export const getClientAdherenceForRange = async (
       status: row.status,
       completionQuality:
         (row.session_log as { completion_quality: string | null } | null)
-          ?.completion_quality as SessionCompletionQuality | null ?? null,
+          ?.completion_quality as LoggedQuality | null ?? null,
     })),
     nutritionLogs: nutritionLogs.data ?? [],
     nutritionTargets: [...nutritionTargets.values()],

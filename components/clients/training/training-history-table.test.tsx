@@ -16,18 +16,18 @@ const BASE_ROWS: TrainingHistoryRow[] = [
     date: "2026-04-06",
     session_name: "Push Day",
     is_alternative: false,
+    status: "completed",
     completion_quality: "full",
     notes: null,
-    is_logged: true,
     session_log_id: "sl-a",
   },
   {
     date: "2026-04-07",
     session_name: "Pull Day",
     is_alternative: false,
+    status: "completed",
     completion_quality: "partial",
     notes: null,
-    is_logged: true,
     session_log_id: "sl-b",
   },
 ];
@@ -218,12 +218,51 @@ describe("TrainingHistoryTable", () => {
 describe("the Status chip", () => {
   it("reads the quality on the workout's LOG — a partial log is Partial", () => {
     // `completion_quality` reaches the row off the log (mapEventsToScheduleDays),
-    // never off the event's status word, so the same chip renders before and
-    // after the status word's meaning widens in commit 10.
+    // never off the event's status word, so a workout the event calls completed
+    // still reads Partial when that is what its log recorded.
     render(<TrainingHistoryTable clientId="client-1" onTabChange={vi.fn()} />);
 
-    expect(screen.getByText("Completed")).toBeInTheDocument(); // the full row
+    expect(screen.getByText("Full")).toBeInTheDocument(); // the full row
     expect(screen.getByText("Partial")).toBeInTheDocument(); // the partial row
+    // Never the count's word on one workout's chip (§4.7 M8).
+    expect(screen.queryByText("Completed")).not.toBeInTheDocument();
+  });
+
+  it("separates a workout missed from one still to be done, and names a rest day", () => {
+    rows = [
+      {
+        date: "2026-04-08",
+        session_name: "Legs",
+        is_alternative: false,
+        status: "missed",
+        completion_quality: null,
+        notes: null,
+        session_log_id: null,
+      },
+      {
+        date: "2026-04-09",
+        session_name: "Upper",
+        is_alternative: false,
+        status: "scheduled",
+        completion_quality: null,
+        notes: null,
+        session_log_id: null,
+      },
+      {
+        date: "2026-04-10",
+        session_name: "",
+        is_alternative: false,
+        status: "rest",
+        completion_quality: null,
+        notes: null,
+        session_log_id: null,
+      },
+    ];
+    render(<TrainingHistoryTable clientId="client-1" onTabChange={vi.fn()} />);
+
+    expect(screen.getByText("Missed")).toBeInTheDocument();
+    expect(screen.getByText("Scheduled")).toBeInTheDocument();
+    expect(screen.getByText("Rest")).toBeInTheDocument();
   });
 });
 

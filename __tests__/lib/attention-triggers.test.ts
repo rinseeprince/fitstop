@@ -488,6 +488,31 @@ describe('attention-triggers', () => {
       expect(result).toBeNull()
     })
 
+    // M10: a partly completed workout is a workout the client DID, so its
+    // calories were burned and eating at target is not a mismatch. The event's
+    // one word answers it — how the workout went is on its log.
+    it('should not trigger for a workout the client only partly completed', () => {
+      const today = new Date()
+      const dates = [5, 3].map((back) => {
+        const d = new Date(today)
+        d.setDate(today.getDate() - back)
+        return d.toISOString().split('T')[0]
+      })
+
+      const logs: DailyLog[] = dates.map((date, i) => ({
+        id: String(i), clientId: 'c1', date, caloriesConsumed: 2400, targetCalories: 2400, createdAt: '', updatedAt: '',
+      }))
+      const events: TrainingEventRow[] = dates.map((date) => ({
+        client_id: 'c1',
+        date,
+        status: 'completed',
+        estimated_calories: 400,
+        session_log: { completion_quality: 'partial' },
+      }))
+
+      expect(evaluateActivityCalMismatch(logs, events)).toBeNull()
+    })
+
     it('should not trigger for less than 2 mismatch days', () => {
       const today = new Date()
       const date1 = new Date(today)
@@ -600,20 +625,34 @@ describe('attention-triggers', () => {
 
     it('should not count partial as missed — client showed up', () => {
       const now = new Date('2026-04-01T12:00:00') // Wednesday
+      // The event says only that the client logged it; its log says how it
+      // went, and a workout partly done is a workout done.
       const events: TrainingEventRow[] = [
-        { client_id: 'c1', date: '2026-03-30', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-31', status: 'partial', estimated_calories: 300 },
+        {
+          client_id: 'c1',
+          date: '2026-03-30',
+          status: 'completed',
+          estimated_calories: 300,
+          session_log: { completion_quality: 'partial' },
+        },
+        {
+          client_id: 'c1',
+          date: '2026-03-31',
+          status: 'completed',
+          estimated_calories: 300,
+          session_log: { completion_quality: 'partial' },
+        },
       ]
 
       const result = evaluateTrainingMisses(events, now)
       expect(result).toBeNull()
     })
 
-    it('should count skipped as missed — client chose not to do it', () => {
+    it('should count a workout the client never logged as missed', () => {
       const now = new Date('2026-04-01T12:00:00') // Wednesday
       const events: TrainingEventRow[] = [
-        { client_id: 'c1', date: '2026-03-30', status: 'skipped', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-31', status: 'missed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-30', status: 'scheduled', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-31', status: 'scheduled', estimated_calories: 300 },
       ]
 
       const result = evaluateTrainingMisses(events, now)

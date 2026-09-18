@@ -319,8 +319,9 @@ describe("logTrainingEvent", () => {
     expect(exQ.delete).not.toHaveBeenCalled();
     expect(exQ.insert).not.toHaveBeenCalled();
     expect(mockFrom).not.toHaveBeenCalledWith("set_logs");
-    // Status maps from quick-log completionQuality.
-    expect(linkQ.update.mock.calls[0][0].status).toBe("partial");
+    // The status says the workout was logged; the quality it was logged at is
+    // on the log alone.
+    expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
   });
 
   // -------------------------------------------------------------------------
@@ -1396,9 +1397,9 @@ describe("logTrainingEvent", () => {
     ]);
 
     // Five non-warmup rows prescribed, three sent → partial, overriding the
-    // payload's 'full'.
+    // payload's 'full'. The event says only that the workout was logged.
     expect(upsertQ.insert.mock.calls[0][0].completion_quality).toBe("partial");
-    expect(linkQ.update.mock.calls[0][0].status).toBe("partial");
+    expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
   });
 
   // -------------------------------------------------------------------------
@@ -1527,9 +1528,10 @@ describe("logTrainingEvent", () => {
       },
     });
 
-    // Exercise A complete, exercise B untouched → partial, not full.
+    // Exercise A complete, exercise B untouched → partial, not full. The event
+    // says only that the workout was logged.
     expect(upsertQ.insert.mock.calls[0][0].completion_quality).toBe("partial");
-    expect(linkQ.update.mock.calls[0][0].status).toBe("partial");
+    expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
   });
 
   // -------------------------------------------------------------------------

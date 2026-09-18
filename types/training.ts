@@ -121,8 +121,29 @@ export type TrainingPlan = {
   deletedAt?: string;
 };
 
-// Training event status
-export type TrainingEventStatus = 'scheduled' | 'completed' | 'partial' | 'missed' | 'skipped';
+/**
+ * Whether the client has LOGGED a calendar workout, and nothing else.
+ * `completed` means logged, at any quality — the same word and meaning as the
+ * product's "5 of 5 completed". `scheduled` is what every write guard keys on
+ * (`assertSessionUnlogged`, the plan editor's save, the move function,
+ * placement's window-delete).
+ *
+ * `missed` is derived and never stored: a workout still scheduled on a day that
+ * has passed, judged on the reading surface's own calendar
+ * (`lib/training-display-state.ts`).
+ */
+export type TrainingEventStatus = 'scheduled' | 'completed';
+
+/**
+ * How a logged workout went, and the only two words the product writes or
+ * shows — `session_logs.completion_quality` (migration 182).
+ *
+ * `full` is every prescribed working set on every exercise; `partial` is
+ * anything short of that. Server-derived at save
+ * (`utils/completion-quality.ts`). It never says whether the workout was
+ * logged — `TrainingEventStatus` does.
+ */
+export type LoggedQuality = 'full' | 'partial';
 
 /**
  * The workout's log, as much of it as a calendar read needs: read through the
@@ -136,11 +157,10 @@ export type TrainingEventStatus = 'scheduled' | 'completed' | 'partial' | 'misse
 export type TrainingEventLog = {
   id: string;
   /**
-   * The STORED value, so it is read as `SessionLog.completionQuality` is: a row
-   * written before commit 9 can still carry `skipped`, which every screen reads
-   * through `loggedDisplayQuality` as a workout the client did not log.
+   * How the workout went. A log row written before the column had a value
+   * reads `full` — a workout done at a quality nobody recorded is a full one.
    */
-  completionQuality: 'full' | 'partial' | 'skipped';
+  completionQuality: LoggedQuality;
   /** The session the client PERFORMED — different from the event's when they swapped. */
   performedSessionId: string | null;
   notes: string | null;
@@ -328,8 +348,8 @@ export type SessionLog = {
   // rest-day training that found no matching prescribed event.
   trainingEventId: string | null;
   completedAt: string;
-  /** The STORED value: a row written before commit 9 can still carry `skipped`. */
-  completionQuality: 'full' | 'partial' | 'skipped';
+  /** How the workout went; a row that recorded none reads `full`. */
+  completionQuality: LoggedQuality;
   notes: string | null;
   weekStartDate: string;
   prescribedSessionSnapshot: Record<string, unknown> | null;

@@ -10,14 +10,14 @@ import {
 } from "@/lib/constants"
 import { getDateString, getTrainingWeekStart } from "@/lib/date-helpers"
 import { loggedDisplayQuality } from "@/lib/training-display-state"
-import type { SessionCompletionQuality } from "@/types/check-in"
+import type { LoggedQuality } from "@/types/training"
 
 /** How a workout went, off its own log. Null when the client has not logged it. */
-function eventQuality(event: TrainingEventRow): SessionCompletionQuality | null {
+function eventQuality(event: TrainingEventRow): LoggedQuality | null {
   return loggedDisplayQuality({
     status: event.status,
     completionQuality:
-      (event.session_log?.completion_quality as SessionCompletionQuality | null) ?? null,
+      (event.session_log?.completion_quality as LoggedQuality | null) ?? null,
   })
 }
 
@@ -125,8 +125,8 @@ export function evaluateNutritionMisses(logs: DailyLog[]): TriggerResult | null 
 /**
  * Evaluates if training sessions have been missed this week.
  * Week boundaries are based on the client's check-in day (defaults to Mon-Sun).
- * Reads from training_events directly — a past event is "missed" if its status
- * is scheduled, missed, or skipped. Partial counts as attended (client showed up).
+ * Reads from training_events directly — a past event is "missed" if the client
+ * never logged it, so a partly completed workout is not one (they showed up).
  * Today's events are excluded — the client may still train later today.
  */
 export function evaluateTrainingMisses(
@@ -142,7 +142,7 @@ export function evaluateTrainingMisses(
 
   const missedDates: string[] = []
   for (const event of weekEvents) {
-    if (event.status === "scheduled" || event.status === "missed" || event.status === "skipped") {
+    if (eventQuality(event) === null) {
       missedDates.push(event.date)
     }
   }

@@ -5,18 +5,23 @@ import { join, relative } from "node:path";
 /**
  * `summariseTraining` (`lib/training-adherence.ts`) is the ONE source of a
  * training count on every check-in surface — the coach's review, the client's
- * wizard, and the figure the submit freezes.
+ * wizard, and the figure the submit freezes. There is one numerator now:
+ * `completed`, every workout the client logged.
  *
- * Both numerators come out of it: the coach's review reads `completed` (full +
- * PARTIAL over planned), the client's wizard and the stored
- * `check_ins.workouts_completed` read `full`. What is forbidden is a SECOND
- * definition — and two shapes of it have shipped. Reading the stored column on
- * a coach surface put "3/5" on the KPI ribbon above an AI summary saying
- * "completed only 2 out of 5", for the same week. Counting statuses by hand put
- * a third spelling beside both.
+ * What survives as a scan is the LIVE-versus-FROZEN split. A coach surface
+ * reads the period's workouts as they are; `check_ins.workouts_completed` is
+ * what they were when the client sent the check-in, and it never moves after.
+ * Rendering the frozen figure beside a live one put "3/5" on the KPI ribbon
+ * above an AI summary saying "completed only 2 out of 5", for the same week.
+ * The column stays the CLIENT's — their own surfaces read it back legitimately,
+ * and they are not scanned.
  *
- * Counting a *quality* by hand is the same defect in the shape it takes now
- * that quality is what decides a count, so the scan forbids that too.
+ * The scan's second rule — no hand-rolled count over a status or a quality —
+ * retired with migration 182. It existed because `status === "completed"`
+ * silently excluded partials, so counting it by hand was a different answer;
+ * now it is the same answer, and the rule was forbidding a spelling rather than
+ * a defect. One derivation is still the design (CONVENTIONS §8 → "Adherence
+ * math is its own decision"); this file no longer polices it by regex.
  *
  * This is the guard, in the shape of `lib/check-in-week.test.ts`: the next card
  * added to these surfaces cannot quietly reintroduce the split.
@@ -71,34 +76,6 @@ describe("summariseTraining owns the check-in training count", () => {
           // service computes on both sides — not the stored column.
           if (match[1] === "changes") continue;
           offenders.push(`${relative(ROOT, file)} — ${match[0]}`);
-        }
-      }
-    }
-
-    expect(offenders).toEqual([]);
-  });
-
-  // The first version of this guard forbade only the stored-column READ, and
-  // missed `ai-prompt-builder.ts` counting `status === "completed"` itself —
-  // a third spelling that excluded partials and told the model "2 out of 5"
-  // beneath a ribbon reading 3/5. A completion count is a filter over the two
-  // facts a workout carries, so those are the shapes to forbid, not one
-  // property name.
-  it("no check-in surface hand-rolls a count over statuses or qualities", () => {
-    const offenders: string[] = [];
-    // `.filter(... status === "completed" ...).length` — a COUNT, as opposed to
-    // a single-row branch like `if (status === "completed") return <Badge/>`.
-    // `[\s\S]` rather than `[^)]`: the predicate is an arrow function, so its
-    // own `(d) =>` closes a paren before the comparison is reached — the first
-    // version of this pattern stopped there and matched nothing at all.
-    const COUNTING =
-      /\.filter\([\s\S]{0,200}?(status|completionQuality|quality)\s*===\s*"(completed|partial|full)"[\s\S]{0,200}?\.length/g;
-
-    for (const target of SCAN) {
-      for (const file of filesUnder(target)) {
-        const src = stripComments(readFileSync(file, "utf8"));
-        for (const match of src.matchAll(COUNTING)) {
-          offenders.push(`${relative(ROOT, file)} — ${match[0].slice(0, 60)}`);
         }
       }
     }

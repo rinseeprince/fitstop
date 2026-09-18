@@ -9,6 +9,7 @@ import {
   ACTIVITY_CAL_MISMATCH_WINDOW_DAYS,
 } from "@/lib/constants"
 import { getDateString } from "@/lib/date-helpers"
+import { isTrainingLogStatus } from "@/lib/logged-days"
 
 /**
  * Evaluates if habit completion has dropped off
@@ -79,7 +80,11 @@ export function evaluateHabitDropoff(
 /**
  * Evaluates if client ate as if they completed activities they actually skipped.
  * Reads training completion from training_events — sums estimated_calories from
- * uncompleted events on each log date to determine skipped activity calories.
+ * the day's workouts the client never logged.
+ *
+ * A partly completed workout is a workout they DID, so it is not skipped
+ * activity (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md, §4.7 M10): `completed`
+ * says logged at any quality, so the one word answers it.
  */
 export function evaluateActivityCalMismatch(
   logs: DailyLog[],
@@ -103,10 +108,10 @@ export function evaluateActivityCalMismatch(
       continue
     }
 
-    // Sum estimated calories from uncompleted training events on this date
+    // Sum estimated calories from the day's workouts the client never logged
     let skippedActivityCalories = 0
     for (const event of events) {
-      if (event.date === log.date && event.status !== "completed" && event.estimated_calories && event.estimated_calories > 0) {
+      if (event.date === log.date && !isTrainingLogStatus(event.status) && event.estimated_calories && event.estimated_calories > 0) {
         skippedActivityCalories += event.estimated_calories
       }
     }

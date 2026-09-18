@@ -1,3 +1,5 @@
+import type { TrainingDayStatus } from "@/types/schedule";
+
 export type NutritionHistoryRow = {
   date: string;
   calories_consumed: number | null;
@@ -27,10 +29,16 @@ export type TrainingHistoryRow = {
   date: string;
   session_name: string;
   is_alternative: boolean;
+  /**
+   * Attendance: whether the client logged the workout, and for one they did
+   * not, whether its day has passed. `rest` is a day holding no workout. The
+   * schedule shape's own word (`ScheduleDay.status`), so the table cannot
+   * spell it a second way.
+   */
+  status: TrainingDayStatus;
   /** How the workout went, off its log (`loggedDisplayQuality`); null when unlogged. */
   completion_quality: "full" | "partial" | null;
   notes: string | null;
-  is_logged?: boolean;
   session_log_id?: string | null;
 };
 

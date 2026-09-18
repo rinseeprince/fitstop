@@ -603,16 +603,16 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       // unique index caps this at one *scheduled* row per client per date.
       let eventId: string | null = null;
       let completed = false;
-      let quality: "full" | "partial" | "skipped" = "full";
+      let quality: "full" | "partial" = "full";
       if (isTrainingDay && slot) {
         eventId = seedUuid("event", coachIdx, c, dayIdx);
         completed = logRng.bool(archetype.sessionCompletion) && dayIdx < tenureDays * archetype.churnAt;
-        quality = completed
-          ? logRng.weighted([["full", 8], ["partial", 2]] as const)
-          : "skipped";
-        // Adherence counts only status='completed'. A seed that writes session
-        // logs and leaves every event 'scheduled' reads as 0% adherence.
-        const status = completed ? (quality === "full" ? "completed" : "partial") : "scheduled";
+        quality = logRng.weighted([["full", 8], ["partial", 2]] as const);
+        // The event says whether the client LOGGED the workout; how it went is
+        // the quality on the session log below (migration 182). A seed that
+        // writes session logs and leaves every event 'scheduled' reads as 0%
+        // adherence, and a workout the client did not do simply has no log.
+        const status = completed ? "completed" : "scheduled";
         const eventRow: Record<string, unknown> = {
           id: eventId,
           client_id: clientId,

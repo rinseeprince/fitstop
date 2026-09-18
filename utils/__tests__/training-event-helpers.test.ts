@@ -1,13 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
 import { createMockTrainingEvent } from "@/__tests__/helpers/mock-data-builders";
+import type { LoggedQuality } from "@/types/training";
 
 // The caller's own calendar day — the coach's for the history table, the
 // client's for the week a check-in freezes. Wednesday 8 April 2026.
 const TODAY = "2026-04-08";
 
 const log = (
-  completionQuality: "full" | "partial" | "skipped",
+  completionQuality: LoggedQuality,
   performedSessionId: string | null = null
 ) => ({ id: "log-1", completionQuality, performedSessionId, notes: null });
 
@@ -39,8 +40,8 @@ describe("mapEventsToScheduleDays", () => {
     });
   });
 
-  it("reads PARTIAL off the log, whatever the status word says", () => {
-    // The commit-10 shape, read today: the event says only that it was logged.
+  it("reads PARTIAL off the log, not off the status word", () => {
+    // The event says only that the client logged it.
     const flipped = createMockTrainingEvent({
       date: "2026-04-07",
       sessionName: "Pull Day",
@@ -54,21 +55,6 @@ describe("mapEventsToScheduleDays", () => {
       status: "completed",
       completionQuality: "partial",
       loggedSessionName: "Pull Day",
-    });
-
-    // And the shape stored today reads the same, off the same log.
-    const stored = createMockTrainingEvent({
-      date: "2026-04-07",
-      sessionName: "Pull Day",
-      status: "partial",
-      sessionLogId: "log-1",
-      trainingSessionId: "session-1",
-      log: log("partial", "session-1"),
-    });
-
-    expect(mapEventsToScheduleDays(["2026-04-07"], [stored], TODAY)[0]).toMatchObject({
-      status: "completed",
-      completionQuality: "partial",
     });
   });
 
@@ -127,20 +113,6 @@ describe("mapEventsToScheduleDays", () => {
       loggedSessionName: null,
       completionQuality: null,
       sessionLogId: null,
-    });
-  });
-
-  // Nothing produces a skip. A row written before that rule is a workout the
-  // client did not log, so a day that has passed reads missed with no quality.
-  it("maps a stored skip as missed with no quality", () => {
-    const events = [
-      createMockTrainingEvent({ date: "2026-04-06", sessionName: "Push Day", status: "skipped" }),
-    ];
-
-    expect(mapEventsToScheduleDays(["2026-04-06"], events, TODAY)[0]).toMatchObject({
-      status: "missed",
-      completionQuality: null,
-      loggedSessionName: null,
     });
   });
 

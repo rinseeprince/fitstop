@@ -5,10 +5,9 @@ import { loggedDisplayQuality, type TrainingWorkoutRead } from "@/lib/training-d
  * (`lib/training-display-state.ts` — the event says whether the client logged
  * it, the log says how it went).
  *
- * Three buckets, not five: a workout still to be done and one the client never
- * did are the same thing to a count, and an empty log ("skipped") is not a
- * workout done. Only `missed` merges states; `full` and `partial` are exactly
- * the log's own words.
+ * Three buckets: a workout still to be done and one the client never did are
+ * the same thing to a count, so only `missed` merges states; `full` and
+ * `partial` are exactly the log's own words.
  */
 export type TrainingAdherenceStatus = "full" | "partial" | "missed";
 
@@ -48,11 +47,12 @@ export type TrainingAdherence = {
  * status and its log's quality — calendar events, or the per-workout detail a
  * check-in read carries.
  *
- * It is the single definition behind every training figure a check-in shows:
- * the coach review's KPI ribbon and AI prompt read `completed`, and the
- * client's wizard and the stored `check_ins.workouts_completed` read `full`.
- * Before it there were three counts over the same rows, and one week read 4/5
- * on the client's check-in and 5/5 on the coach's review.
+ * It is the single definition behind every done-count in the product: the
+ * coach review's KPI ribbon and AI prompt, the Training-tab hero, the
+ * Overview's adherence card and plan card, the client's check-in wizard and
+ * the stored `check_ins.workouts_completed` all read `completed`. Before it
+ * there were three counts over the same rows, and one week read 4/5 on the
+ * client's check-in and 5/5 on the coach's review.
  */
 export function summariseTraining(
   workouts: readonly TrainingWorkoutRead[]
