@@ -6,14 +6,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
 import { resolvePrescribedFields, type PrescribedField } from "@/utils/prescribed-fields";
+import { orderColumns, presetColumns } from "@/utils/column-presets";
 import type { ExerciseDraft } from "./program-builder-types";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
-import { SET_GRID_BASE, SetRowEditor, setGridTemplate } from "./set-row-editor";
+import {
+  COLUMN_HEADERS,
+  PINNED_CELL_CLASS,
+  SET_GRID_BASE,
+  SetRowEditor,
+  setGridTemplate,
+} from "./set-row-editor";
 import { SetColumnsMenu } from "./set-columns-menu";
 import { FOCUS_RING, LABEL_CLASS } from "./builder-tokens";
 
-// An exercise card's open body: the per-set grid, then the exercise-level
-// fields (video URL, coach note) behind their own disclosure.
+// An exercise card's open body: the per-set grid — one column per column the
+// exercise prescribes, scrolling sideways with the number cell pinned when
+// they don't fit — then the exercise-level fields (video URL, coach note)
+// behind their own disclosure.
 //
 // `roundsAreRows`: the exercise is in a superset or circuit, so its rows are
 // the group's rounds. The first column reads Round, rows are added and removed
@@ -50,49 +59,58 @@ export function ExerciseCardBody({
   // Which prescription columns this exercise uses. Not a display preference:
   // it decides what the client app renders and can enter (migration 149).
   const fields = resolvePrescribedFields(exercise.prescribedFields);
+  const hidden = roundsAreRows ? ROUND_HIDDEN_FIELDS : [];
   const shown = roundsAreRows
-    ? new Set([...fields].filter((field) => !ROUND_HIDDEN_FIELDS.includes(field)))
+    ? new Set([...fields].filter((field) => !hidden.includes(field)))
     : fields;
 
   return (
     <div className="space-y-1 border-t border-[rgba(13,148,136,0.08)] p-2">
-      {/* Column header for the set rows */}
-      <div
-        className={cn(SET_GRID_BASE, LABEL_CLASS)}
-        style={{ gridTemplateColumns: setGridTemplate(shown, roundsAreRows) }}
-      >
-        <span className="text-center">{roundsAreRows ? "Round" : "#"}</span>
-        {shown.has("set_type") && <span>Type</span>}
-        {shown.has("reps") && <span>Reps</span>}
-        {shown.has("load") && <span>Load</span>}
-        {shown.has("rpe") && <span>RPE</span>}
-        {shown.has("rest") && <span>Rest s</span>}
-        {/* The picker sits at the end of the row it governs, in the cell
-            the duplicate/remove icons occupy below. */}
-        <span className="flex justify-end">
-          {editable && (
-            <SetColumnsMenu
-              fields={fields}
-              hiddenFields={roundsAreRows ? ROUND_HIDDEN_FIELDS : []}
-              exerciseName={exercise.name}
-              onChange={(prescribedFields) => onEdit({ prescribedFields })}
-            />
-          )}
-        </span>
+      {/* The grid scrolls sideways when its columns don't fit the card; the
+          half-pixel margins leave room for the boxes' focus rings at the
+          scroll edge. */}
+      <div className="-mx-0.5 space-y-1 overflow-x-auto px-0.5">
+        {/* Column header for the set rows */}
+        <div
+          className={cn(SET_GRID_BASE, LABEL_CLASS)}
+          style={{ gridTemplateColumns: setGridTemplate(shown, roundsAreRows) }}
+        >
+          <span className={cn("text-center", PINNED_CELL_CLASS)}>
+            {roundsAreRows ? "Round" : "#"}
+          </span>
+          {orderColumns(shown).map((field) => (
+            <span key={field}>{COLUMN_HEADERS[field]}</span>
+          ))}
+          {/* The picker sits at the end of the row it governs, in the cell
+              the duplicate/remove icons occupy below. */}
+          <span className="flex justify-end">
+            {editable && (
+              <SetColumnsMenu
+                fields={fields}
+                hiddenFields={hidden}
+                subject={exercise.name}
+                onChange={(prescribedFields) => onEdit({ prescribedFields })}
+                onPreset={(preset) =>
+                  onEdit({ prescribedFields: presetColumns(preset, fields, hidden) })
+                }
+              />
+            )}
+          </span>
+        </div>
+        {specs.map((spec, i) => (
+          <SetRowEditor
+            // Re-key on list length so removals remount rows and their
+            // uncontrolled inputs re-read defaultValue.
+            key={`${exercise.uid}-${i}-${specs.length}`}
+            spec={spec}
+            fields={shown}
+            index={i}
+            disabled={!editable}
+            isRound={roundsAreRows}
+            onEdit={onSpecEdit}
+          />
+        ))}
       </div>
-      {specs.map((spec, i) => (
-        <SetRowEditor
-          // Re-key on list length so removals remount rows and their
-          // uncontrolled inputs re-read defaultValue.
-          key={`${exercise.uid}-${i}-${specs.length}`}
-          spec={spec}
-          fields={shown}
-          index={i}
-          disabled={!editable}
-          isRound={roundsAreRows}
-          onEdit={onSpecEdit}
-        />
-      ))}
       {editable && !roundsAreRows && (
         <button
           type="button"

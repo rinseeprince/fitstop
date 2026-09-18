@@ -1654,3 +1654,89 @@ describe("a day holding several sessions", () => {
     expect(notes.join(" ")).toMatch(/identity/);
   });
 });
+
+describe("measurement columns and presets (commit 12)", () => {
+  const ENDURANCE = ["set_type", "distance", "duration", "pace", "heart_rate_zone", "rest"];
+
+  it("add_exercise takes a preset, starting the exercise on its columns with no hidden rep range", async () => {
+    const ws = makeWs();
+    const add = tool(buildExerciseTools(ws), "add_exercise");
+    const out = await add.run({ week: 1, day: 1, name: "Bench Press", columnsPreset: "endurance" } as never);
+    expect(out).toMatch(/Columns: Set type, Distance, Duration, Pace, HR zone, Rest\./);
+    const op = ws.ops[0];
+    if (op.type !== "add_exercise") throw new Error("expected add_exercise");
+    const added = op.group.exercises[0];
+    expect(added.prescribedFields).toEqual(ENDURANCE);
+    expect(added.repsMin).toBeNull();
+    expect(added.repsMax).toBeNull();
+    expect(added.sets).toBe(3);
+    expect(draftOpSchema.safeParse(JSON.parse(JSON.stringify(op))).success).toBe(true);
+  });
+
+  it("add_exercise takes an exact column list, in the builder's order, and refuses both at once", async () => {
+    const ws = makeWs();
+    const add = tool(buildExerciseTools(ws), "add_exercise");
+    await add.run({ week: 1, day: 1, name: "Bench Press", columns: ["rest", "power", "duration", "set_type"] } as never);
+    const op = ws.ops[0];
+    if (op.type !== "add_exercise") throw new Error("expected add_exercise");
+    expect(op.group.exercises[0].prescribedFields).toEqual(["set_type", "duration", "power", "rest"]);
+
+    expect(
+      await add.run({ week: 1, day: 1, name: "Bench Press", columns: ["reps"], columnsPreset: "erg" } as never),
+    ).toMatch(/not both/);
+    expect(await add.run({ week: 1, day: 1, name: "Bench Press", columns: ["weight"] } as never)).toMatch(
+      /Unknown columns: weight/,
+    );
+    expect(ws.ops).toHaveLength(1);
+  });
+
+  it("update_exercise sets the columns beside per-set programming, and says when nothing changes", async () => {
+    const ws = makeWs();
+    const update = tool(buildExerciseTools(ws), "update_exercise");
+    // Back Squat in makeWs carries per-set programming: compact edits are
+    // refused there, but the columns are the exercise's.
+    const out = await update.run({ week: 1, day: 1, exerciseName: "Back Squat", columnsPreset: "erg" } as never);
+    expect(out).toBe('Updated "Back Squat". Columns: Set type, Distance, Duration, Split, Stroke rate, Resistance, Rest.');
+    const op = ws.ops[0];
+    if (op.type !== "update_exercise") throw new Error("expected update_exercise");
+    expect(op.patch).toEqual({
+      prescribedFields: ["set_type", "distance", "duration", "split", "stroke_rate", "resistance", "rest"],
+    });
+    expect(draftOpSchema.safeParse(JSON.parse(JSON.stringify(op))).success).toBe(true);
+
+    expect(await update.run({ week: 1, day: 1, exerciseName: "Back Squat", columnsPreset: "erg" } as never)).toMatch(
+      /already has those columns/,
+    );
+    expect(ws.ops).toHaveLength(1);
+
+    // The program state names the preset now, and prints nothing for the strength columns.
+    const state = programContext(ws.draft).text;
+    expect(state).toMatch(/Back Squat.*columns: erg preset/);
+    expect(state.match(/columns:/g)).toHaveLength(1);
+  });
+
+  it("update_group applies a preset to every exercise in a group; each keeps its Rest choice in a superset", async () => {
+    const coachDraft = makeLoneDraft();
+    const ws = buildWorkspaceFromRows({ target: "library", draft: coachDraft, catalog: CATALOG });
+    const groups = buildGroupTools(ws);
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [1, 2] } as never);
+    const out = await tool(groups, "update_group").run({
+      week: 1, day: 1, exercisePosition: 1, columnsPreset: "circuit",
+    } as never);
+    expect(out).toMatch(/^Updated: Superset/);
+    const linked = dayOne(ws.draft).groups[0];
+    expect(linked.exercises.map((e) => e.prescribedFields)).toEqual([
+      ["reps", "load", "rest"],
+      ["reps", "load", "rest"],
+    ]);
+    expect(dayOne(ws.draft).groups[1].exercises[0].prescribedFields).toEqual(["set_type", "reps", "load", "rpe", "rest"]);
+
+    // The client re-validates and replays the turn to the same draft.
+    const { ops, notes } = finalizeAssistantOps(ws);
+    expect(notes).toEqual([]);
+    const received = z.array(draftOpSchema).parse(JSON.parse(JSON.stringify(ops)));
+    const replayed = applyDraftOps(coachDraft, received, { target: "library" });
+    expect(replayed.skipped).toEqual([]);
+    expect(replayed.draft).toEqual(ws.draft);
+  });
+});

@@ -9,6 +9,7 @@ import { GroupHeadingLines } from "@/components/clients/training/group-heading-l
 import type { ExerciseGroupDraft } from "./program-builder-types";
 import type { GroupSettingsPatch } from "./program-builder-groups";
 import { GroupSettingsPopover } from "./group-settings-popover";
+import { SetColumnsMenu } from "./set-columns-menu";
 import { DropLine, type DropLineEdge } from "./drop-line";
 import {
   groupDragId,
@@ -23,7 +24,8 @@ import { FOCUS_RING, TEXT_MUTED } from "./builder-tokens";
 // straight sets: a slim heading that reads exactly as the client and the
 // workout log view read it (GroupHeadingLines), then the group's exercise
 // cards on one rail. A lone exercise never gets one. In edit mode the heading
-// carries a grip that drags the whole group, the settings popover and Unlink.
+// carries a grip that drags the whole group, the settings popover, a Columns
+// menu whose presets apply to every exercise in the group, and Unlink.
 type ExerciseGroupBlockProps = {
   group: ExerciseGroupDraft;
   /** The group's place among the session's groups. */
@@ -105,6 +107,10 @@ export function ExerciseGroupBlock({
         {actions && (
           <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/grp:opacity-100 group-focus-within/grp:opacity-100 has-[[data-state=open]]:opacity-100">
             <GroupSettingsPopover group={group} onUpdate={onUpdate} />
+            <SetColumnsMenu
+              subject={`the ${name.toLowerCase()}`}
+              onPreset={(columnsPreset) => onUpdate({ columnsPreset })}
+            />
             <button
               type="button"
               aria-label={`Unlink ${name.toLowerCase()}`}

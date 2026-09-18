@@ -8,6 +8,12 @@ import type { GroupSettingsPatch } from "@/components/clients/training/program-b
 import { sessionExercises } from "@/utils/exercise-groups";
 import { groupName } from "@/utils/exercise-group-display";
 import { MAX_SET_SPECS } from "@/utils/exercise-set-specs";
+import {
+  COLUMN_PRESET_FIELDS,
+  COLUMN_PRESETS,
+  type ColumnsPreset,
+} from "@/utils/column-presets";
+import { PRESCRIBED_FIELD_LABELS } from "@/utils/prescribed-fields";
 import type { DraftWorkspace } from "./draft-workspace";
 import {
   boundaryIndex,
@@ -44,6 +50,14 @@ const groupSettingsProperties = {
     description: "Superset/circuit only",
   },
   notes: { type: ["string", "null"], maxLength: 1000 },
+  columnsPreset: {
+    type: "string",
+    enum: [...COLUMN_PRESETS],
+    description: `Set every exercise in the group to a column preset's columns: ${COLUMN_PRESETS.map(
+      (preset) =>
+        `${preset} = ${COLUMN_PRESET_FIELDS[preset].map((f) => PRESCRIBED_FIELD_LABELS[f]).join(", ")}`,
+    ).join("; ")}. In a superset or circuit each exercise keeps its own Rest choice (the group's rests apply).`,
+  },
 } as const;
 
 type SettingsInput = {
@@ -52,6 +66,7 @@ type SettingsInput = {
   restBetweenExercisesSeconds?: number | null;
   restBetweenRoundsSeconds?: number | null;
   notes?: string | null;
+  columnsPreset?: ColumnsPreset;
 };
 
 function settingsPatch(input: SettingsInput): GroupSettingsPatch {
@@ -67,6 +82,7 @@ function settingsPatch(input: SettingsInput): GroupSettingsPatch {
     patch.restBetweenRoundsSeconds = input.restBetweenRoundsSeconds;
   }
   if (input.notes !== undefined) patch.notes = input.notes;
+  if (input.columnsPreset !== undefined) patch.columnsPreset = input.columnsPreset;
   return patch;
 }
 
@@ -310,7 +326,7 @@ export function buildGroupTools(ws: DraftWorkspace) {
   const updateGroup = betaTool({
     name: "update_group",
     description:
-      "Change a linked group's settings (name any exercise in it): format (superset_or_circuit or straight_sets), rounds, rest between exercises, rest between rounds, notes. Changing rounds adds a copy of every exercise's last set or removes every exercise's last set. Straight sets have no rounds and no rest between rounds; switching to them keeps every exercise's sets.",
+      "Change a linked group's settings (name any exercise in it): format (superset_or_circuit or straight_sets), rounds, rest between exercises, rest between rounds, notes, or a column preset for every exercise in it (columnsPreset). Changing rounds adds a copy of every exercise's last set or removes every exercise's last set. Straight sets have no rounds and no rest between rounds; switching to them keeps every exercise's sets.",
     inputSchema: {
       type: "object",
       properties: {

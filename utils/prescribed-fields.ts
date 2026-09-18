@@ -40,9 +40,10 @@ export const PRESCRIBED_FIELDS = [
 export type PrescribedField = (typeof PRESCRIBED_FIELDS)[number];
 
 /**
- * The columns every exercise starts on, and the columns an exercise carried
- * before it could choose (the migration-183 backfill writes this list). The
- * builder's Columns menu offers exactly these until commit 12's selector.
+ * The columns every exercise starts on — the Strength preset
+ * (utils/column-presets.ts) — and the columns an exercise carried before it
+ * could choose (the migration-183 backfill writes this list). Commit 13 starts
+ * a new exercise on its type's preset instead.
  */
 export const DEFAULT_PRESCRIBED_FIELDS: readonly PrescribedField[] = [
   "set_type",

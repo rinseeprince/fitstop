@@ -447,8 +447,8 @@ export function defaultExerciseDraftFromCatalog({
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    // A new exercise starts on today's five columns (commit 13 starts it on
-    // its type's preset).
+    // A new exercise starts on the Strength preset — today's five columns
+    // (commit 13 starts it on its type's preset).
     prescribedFields: [...DEFAULT_PRESCRIBED_FIELDS],
   };
 }

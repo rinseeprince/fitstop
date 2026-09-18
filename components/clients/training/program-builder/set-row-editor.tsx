@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { Copy, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,17 +11,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { SetSpec } from "@/utils/exercise-set-specs";
-import type { PrescribedField } from "@/utils/prescribed-fields";
+import { SET_SPEC_MEASURES, specRange, type SetSpec } from "@/utils/exercise-set-specs";
+import { PRESCRIBED_FIELD_LABELS, type PrescribedField } from "@/utils/prescribed-fields";
+import { BUILDER_COLUMN_ORDER, orderColumns } from "@/utils/column-presets";
 import { SET_TYPE_OPTIONS, type SetSpecEdit } from "./use-set-spec-mutations";
 import { DropSetEditor } from "./drop-set-editor";
 import { useUnits } from "@/contexts/units-context";
 import { formatLoad } from "@/utils/unit-conversions";
-import { commitNum, commitRange } from "./commit-input";
+import { commitNum, commitTempo } from "./commit-input";
 import { LoadRangeInput, loadOptions } from "./load-value-input";
+import { MeasureRangeInput } from "./measure-range-input";
 import { formatRepsRange, parseRepsRange } from "@/utils/reps-range";
-import { SET_SPEC_MEASURES } from "@/utils/exercise-set-specs";
-import { formatTargetRange } from "@/utils/target-range";
 import {
   FOCUS_RING,
   MONO,
@@ -29,37 +30,72 @@ import {
   TEXT_SECONDARY,
 } from "./builder-tokens";
 
-// One per-set prescription row. Column template is shared with the header row
-// exercise-card renders above the set list. Numeric caps mirror setSpecSchema
-// (reps ≤100, load ≤2000, RPE 1–10, per-set rest ≤3600 — NOT the exercise-level
-// 600) so the client-side safeParse belt never trips on these fields. Reps,
-// Load and RPE take one value or a range ("8-12", "100-105", "7-8"): every
-// numeric target is stored as a min/max pair.
-// Fractional columns stretch the rows to the full card width (# and the
-// duplicate/remove icon column stay fixed); minmax(0,…) lets narrow viewports
-// squeeze instead of overflowing.
+// One per-set prescription row: a cell for every column the exercise
+// prescribes, in the builder's one column order (utils/column-presets.ts).
+// Numeric caps mirror setSpecSchema (SET_SPEC_MEASURES; per-set rest ≤3600 —
+// NOT the exercise-level 600) so the client-side safeParse belt never trips on
+// these fields. Every numeric target is one value or a range, stored as a
+// min/max pair: reps, RPE, RIR and the plain-number measures in the range
+// grammar ("8-12", "7-8"), load in its type's unit, and a distance, duration,
+// pace, split or zone in the entry grammar at each end, typed and read in the
+// viewer's units ("400-800 m", "3:45-3:50 /km"). Tempo is one compound value.
 export const SET_GRID_BASE = "grid items-center gap-1.5";
 
+// Each column's track: a floor so a box can show what it holds ("1:52.3 /500m"
+// needs more room than "8"), and a share of any spare width. When the columns
+// don't fit the card, the grid scrolls sideways with the number cell pinned.
+const COLUMN_WIDTHS: Record<PrescribedField, string> = {
+  set_type: "minmax(88px,1.1fr)",
+  reps: "minmax(56px,0.9fr)",
+  load: "minmax(150px,1.7fr)",
+  rpe: "minmax(48px,0.7fr)",
+  rir: "minmax(48px,0.7fr)",
+  tempo: "minmax(72px,0.9fr)",
+  distance: "minmax(84px,1fr)",
+  duration: "minmax(84px,1fr)",
+  pace: "minmax(96px,1.1fr)",
+  split: "minmax(104px,1.1fr)",
+  calories: "minmax(64px,0.8fr)",
+  cadence: "minmax(64px,0.8fr)",
+  stroke_rate: "minmax(64px,0.8fr)",
+  resistance: "minmax(64px,0.8fr)",
+  heart_rate_zone: "minmax(60px,0.8fr)",
+  heart_rate: "minmax(72px,0.9fr)",
+  power: "minmax(64px,0.8fr)",
+  ftp_percent: "minmax(64px,0.8fr)",
+  rest: "minmax(56px,0.8fr)",
+};
+
 // The header row and every set row derive their template from the same field
-// set, so a hidden column cannot leave the two misaligned. Fractional columns
-// stretch to the card width (# and the duplicate/remove column stay fixed);
-// minmax(0,…) lets narrow viewports squeeze instead of overflowing. The number
-// column fits "#" in 20px; rows that are a superset's or circuit's rounds are
-// headed "Round", which renders 39px wide, so theirs is 44px — the width of the
-// client tracker's number column.
+// set, so a hidden column cannot leave the two misaligned. The number column
+// fits "#" in 20px; rows that are a superset's or circuit's rounds are headed
+// "Round", which renders 39px wide, so theirs is 44px — the width of the
+// client tracker's number column. The last column holds the duplicate/remove
+// icons, and the columns menu above them.
 export function setGridTemplate(
   fields: ReadonlySet<PrescribedField>,
   rounds = false,
 ): string {
   const columns = [rounds ? "44px" : "20px"];
-  if (fields.has("set_type")) columns.push("minmax(0,1.1fr)");
-  if (fields.has("reps")) columns.push("minmax(0,0.9fr)");
-  if (fields.has("load")) columns.push("minmax(0,1.7fr)");
-  if (fields.has("rpe")) columns.push("minmax(0,0.7fr)");
-  if (fields.has("rest")) columns.push("minmax(0,0.8fr)");
+  for (const field of BUILDER_COLUMN_ORDER) {
+    if (fields.has(field)) columns.push(COLUMN_WIDTHS[field]);
+  }
   columns.push("48px");
   return columns.join(" ");
 }
+
+/** The header over each column of the set grid. */
+export const COLUMN_HEADERS: Record<PrescribedField, string> = {
+  ...PRESCRIBED_FIELD_LABELS,
+  set_type: "Type",
+  rest: "Rest s",
+};
+
+/**
+ * The number cell stays put while the boxes scroll sideways: sticky against
+ * the grid's scrolling wrapper, opaque so the boxes slide under it.
+ */
+export const PINNED_CELL_CLASS = "sticky left-0 z-[1] bg-white";
 
 type SetRowEditorProps = {
   spec: SetSpec;
@@ -93,17 +129,10 @@ export function SetRowEditor({
   const update = (patch: Partial<SetSpec>) =>
     onEdit({ kind: "update-set", index, patch });
 
-  return (
-    <div>
-      <div
-        className={SET_GRID_BASE}
-        style={{ gridTemplateColumns: setGridTemplate(fields, isRound) }}
-      >
-        <span className={cn(MONO, "text-center text-[11px]", TEXT_MUTED)}>
-          {spec.set_number}
-        </span>
-
-        {fields.has("set_type") && (
+  const cell = (field: PrescribedField) => {
+    switch (field) {
+      case "set_type":
+        return (
           <Select
             disabled={disabled}
             value={spec.set_type}
@@ -128,68 +157,68 @@ export function SetRowEditor({
               ))}
             </SelectContent>
           </Select>
-        )}
+        );
 
-        {fields.has("reps") && (
-          openReps ? (
-            // An AMRAP or to-failure set prescribes no rep count — that is what
-            // the type means, so the field states the instruction rather than
-            // accepting one. Disabled rather than removed, so the column stays
-            // aligned with every other row (the same shape the load value uses
-            // when no load type is chosen). The client still records the reps
-            // they achieved; only the PRESCRIPTION is closed here.
-            <Input
-              disabled
-              readOnly
-              value=""
-              placeholder={spec.set_type === "amrap" ? "AMRAP" : "To failure"}
-              aria-label={`Set ${spec.set_number} reps (not prescribed)`}
-              className={cn(MONO_INPUT_CLASS, "h-7 px-1.5 text-[11px]", FOCUS_RING)}
-            />
-          ) : (
-            // ONE input for the whole scheme ("8-12", or "12" when the range
-            // collapses), matching how reps are written everywhere else in the
-            // app. The stored model is unchanged — utils/reps-range parses on
-            // input and formats on display, and a half-open legacy range still
-            // round-trips.
-            <Input
-              disabled={disabled}
-              maxLength={9}
-              defaultValue={formatRepsRange({
+      case "reps":
+        return openReps ? (
+          // An AMRAP or to-failure set prescribes no rep count — that is what
+          // the type means, so the field states the instruction rather than
+          // accepting one. Disabled rather than removed, so the column stays
+          // aligned with every other row (the same shape the load value uses
+          // when no load type is chosen). The client still records the reps
+          // they achieved; only the PRESCRIPTION is closed here.
+          <Input
+            disabled
+            readOnly
+            value=""
+            placeholder={spec.set_type === "amrap" ? "AMRAP" : "To failure"}
+            aria-label={`Set ${spec.set_number} reps (not prescribed)`}
+            className={cn(MONO_INPUT_CLASS, "h-7 px-1.5 text-[11px]", FOCUS_RING)}
+          />
+        ) : (
+          // ONE input for the whole scheme ("8-12", or "12" when the range
+          // collapses), matching how reps are written everywhere else in the
+          // app. The stored model is unchanged — utils/reps-range parses on
+          // input and formats on display, and a half-open legacy range still
+          // round-trips.
+          <Input
+            disabled={disabled}
+            maxLength={9}
+            defaultValue={formatRepsRange({
+              min: spec.reps_min ?? null,
+              max: spec.reps_max ?? null,
+            })}
+            placeholder="reps"
+            aria-label={`Set ${spec.set_number} reps`}
+            className={cn(MONO_INPUT_CLASS, "h-7 px-1.5 text-[11px]", FOCUS_RING)}
+            onFocus={(e) => {
+              // Select-all so a prefilled scheme is typed over, not deleted.
+              e.target.select();
+            }}
+            onBlur={(e) => {
+              const seeded = formatRepsRange({
                 min: spec.reps_min ?? null,
                 max: spec.reps_max ?? null,
-              })}
-              placeholder="reps"
-              aria-label={`Set ${spec.set_number} reps`}
-              className={cn(MONO_INPUT_CLASS, "h-7 px-1.5 text-[11px]", FOCUS_RING)}
-              onFocus={(e) => {
-                // Select-all so a prefilled scheme is typed over, not deleted.
-                e.target.select();
-              }}
-              onBlur={(e) => {
-                const seeded = formatRepsRange({
-                  min: spec.reps_min ?? null,
-                  max: spec.reps_max ?? null,
-                });
-                const typed = e.target.value.trim();
-                // A blur that changed nothing must write nothing, or tabbing
-                // through the row dirties the draft.
-                if (typed === seeded) return;
-                const parsed = parseRepsRange(typed);
-                if (parsed === null) {
-                  // Not a rep scheme — revert rather than blanking a
-                  // prescription on a typo.
-                  e.target.value = seeded;
-                  return;
-                }
-                e.target.value = formatRepsRange(parsed);
-                update({ reps_min: parsed.min, reps_max: parsed.max });
-              }}
-            />
-          )
-        )}
+              });
+              const typed = e.target.value.trim();
+              // A blur that changed nothing must write nothing, or tabbing
+              // through the row dirties the draft.
+              if (typed === seeded) return;
+              const parsed = parseRepsRange(typed);
+              if (parsed === null) {
+                // Not a rep scheme — revert rather than blanking a
+                // prescription on a typo.
+                e.target.value = seeded;
+                return;
+              }
+              e.target.value = formatRepsRange(parsed);
+              update({ reps_min: parsed.min, reps_max: parsed.max });
+            }}
+          />
+        );
 
-        {fields.has("load") && (
+      case "load":
+        return (
           <div className="flex items-center gap-1">
             <Select
               disabled={disabled}
@@ -229,38 +258,29 @@ export function SetRowEditor({
               onCommit={({ min, max }) => update({ load_min: min, load_max: max })}
             />
           </div>
-        )}
+        );
 
-        {fields.has("rpe") && (
-          // One value or a range ("7-8"), like Reps. Bounds are the RPE
-          // column's, 1–10: a typed 0 is clamped to 1.
+      case "tempo":
+        return (
           <Input
             disabled={disabled}
-            maxLength={9}
-            defaultValue={formatTargetRange({
-              min: spec.rpe_min ?? null,
-              max: spec.rpe_max ?? null,
-            })}
-            placeholder="RPE"
-            aria-label={`Set ${spec.set_number} RPE`}
+            maxLength={11}
+            defaultValue={spec.tempo ?? ""}
+            placeholder="3-1-X-0"
+            aria-label={`Set ${spec.set_number} tempo`}
             className={cn(MONO_INPUT_CLASS, "h-7 px-1 text-[11px]", FOCUS_RING)}
             onFocus={(e) => {
               e.target.select();
             }}
             onBlur={(e) => {
-              const commit = commitRange(
-                e,
-                { min: spec.rpe_min ?? null, max: spec.rpe_max ?? null },
-                SET_SPEC_MEASURES.rpe,
-              );
-              if (commit.changed) {
-                update({ rpe_min: commit.range.min, rpe_max: commit.range.max });
-              }
+              const commit = commitTempo(e, spec.tempo);
+              if (commit.changed) update({ tempo: commit.tempo });
             }}
           />
-        )}
+        );
 
-        {fields.has("rest") && (
+      case "rest":
+        return (
           <Input
             type="number"
             min={0}
@@ -272,7 +292,42 @@ export function SetRowEditor({
             className={cn(MONO_INPUT_CLASS, "h-7 px-1 text-[11px]", FOCUS_RING)}
             onBlur={(e) => update({ rest_seconds: commitNum(e, { min: 0, max: 3600, int: true }) })}
           />
-        )}
+        );
+
+      default: {
+        // Every other column is a measure with a min/max pair on the spec
+        // (SET_SPEC_MEASURES), edited through one box.
+        const keys = SET_SPEC_MEASURES[field];
+        const range = specRange(spec, field);
+        return (
+          <MeasureRangeInput
+            measure={field}
+            min={range.min}
+            max={range.max}
+            setNumber={spec.set_number}
+            disabled={disabled}
+            onCommit={({ min, max }) =>
+              update({ [keys.min]: min, [keys.max]: max } as Partial<SetSpec>)
+            }
+          />
+        );
+      }
+    }
+  };
+
+  return (
+    <div>
+      <div
+        className={SET_GRID_BASE}
+        style={{ gridTemplateColumns: setGridTemplate(fields, isRound) }}
+      >
+        <span className={cn(MONO, "text-center text-[11px]", TEXT_MUTED, PINNED_CELL_CLASS)}>
+          {spec.set_number}
+        </span>
+
+        {orderColumns(fields).map((field) => (
+          <Fragment key={field}>{cell(field)}</Fragment>
+        ))}
 
         {!disabled && !isRound ? (
           <div className="flex items-center">

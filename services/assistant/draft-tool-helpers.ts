@@ -26,6 +26,8 @@ import {
   type SetSpecMeasure,
 } from "@/utils/exercise-set-specs";
 import { formatTargetRange } from "@/utils/target-range";
+import { presetOf } from "@/utils/column-presets";
+import { PRESCRIBED_FIELD_LABELS, type PrescribedField } from "@/utils/prescribed-fields";
 import { countSessionExercises, sessionExercises } from "@/utils/exercise-groups";
 import { groupHeading, groupHeadingText } from "@/utils/exercise-group-display";
 import {
@@ -326,6 +328,17 @@ const specLine = (s: SetSpec): string => {
   return `S${s.set_number} ${s.set_type}: ${reps}${load}${others}${tempo}${rest}${drops}`;
 };
 
+// An exercise's measurement columns as the model reads them: named only when
+// they aren't the strength ones every exercise starts on — as their preset
+// when they are exactly one, else the list — so the common case costs no
+// budget and a run still prints what its client fills in.
+function columnsNote(fields: readonly PrescribedField[]): string | null {
+  const preset = presetOf(fields);
+  if (preset === "strength") return null;
+  if (preset) return `columns: ${preset} preset`;
+  return `columns: ${fields.map((field) => PRESCRIBED_FIELD_LABELS[field]).join(", ")}`;
+}
+
 // `inRounds`: the exercise is in a superset or circuit, so its sets are the
 // group's rounds and its own rest isn't used.
 function exerciseLine(ex: ExerciseDraft, position: number, inRounds = false): string {
@@ -339,6 +352,8 @@ function exerciseLine(ex: ExerciseDraft, position: number, inRounds = false): st
   ];
   if (ex.rpeTarget != null) bits.push(`RPE ${ex.rpeTarget}`);
   if (ex.restSeconds != null && !inRounds) bits.push(`rest ${ex.restSeconds}s`);
+  const columns = columnsNote(ex.prescribedFields);
+  if (columns) bits.push(columns);
   if (ex.exerciseId == null) bits.push("(unlinked free-text)");
   return bits.join(" — ");
 }

@@ -6,10 +6,27 @@ import {
   findSession,
   straightSetsGroup,
 } from "@/components/clients/training/program-builder/program-builder-model";
-import { isSupersetOrCircuit } from "@/components/clients/training/program-builder/program-builder-groups";
+import {
+  hiddenColumnsIn,
+  isSupersetOrCircuit,
+} from "@/components/clients/training/program-builder/program-builder-groups";
 import type { SessionDraft } from "@/components/clients/training/program-builder/program-builder-types";
 import { countSessionExercises } from "@/utils/exercise-groups";
 import { groupName } from "@/utils/exercise-group-display";
+import {
+  COLUMN_PRESET_FIELDS,
+  COLUMN_PRESETS,
+  orderColumns,
+  presetColumns,
+  type ColumnsPreset,
+} from "@/utils/column-presets";
+import {
+  DEFAULT_PRESCRIBED_FIELDS,
+  isPrescribedField,
+  PRESCRIBED_FIELDS,
+  resolvePrescribedFields,
+  type PrescribedField,
+} from "@/utils/prescribed-fields";
 import {
   compactFromSpecs,
   expandSetSpecs,
@@ -123,6 +140,65 @@ const tempoProperty = {
   description: "Four phases, seconds or X for explosive, written like 3-1-X-0",
 } as const;
 
+// The measurement columns an exercise asks its client for, as the coach's
+// column selector sets them: the exact list, or a preset by name
+// (utils/column-presets.ts). Columns are the exercise's, whatever its sets
+// hold, so they apply beside per-set programming.
+const columnLabel = (field: PrescribedField) => PRESCRIBED_FIELD_LABELS[field];
+
+const presetGlossary = COLUMN_PRESETS.map(
+  (preset) => `${preset} = ${COLUMN_PRESET_FIELDS[preset].map(columnLabel).join(", ")}`,
+).join("; ");
+
+const columnsProperties = {
+  columns: {
+    type: "array",
+    minItems: 1,
+    maxItems: PRESCRIBED_FIELDS.length,
+    uniqueItems: true,
+    items: { type: "string", enum: [...PRESCRIBED_FIELDS] },
+    description:
+      "The exact measurement columns the client fills in for this exercise (a column left out is removed; targets already set stay stored). Or use columnsPreset.",
+  },
+  columnsPreset: {
+    type: "string",
+    enum: [...COLUMN_PRESETS],
+    description: `Set the columns to a preset's: ${presetGlossary}.`,
+  },
+} as const;
+
+type ColumnsInput = { columns?: string[]; columnsPreset?: ColumnsPreset };
+
+/**
+ * The column list an input asks for, in the builder's order: a preset's
+ * (keeping the exercise's stored choice for a column hidden where it sits —
+ * Rest in a superset or circuit), or the exact list named; null when the
+ * input names neither.
+ */
+function columnsFields(
+  input: ColumnsInput,
+  current: ReadonlySet<PrescribedField>,
+  hidden: readonly PrescribedField[],
+): PrescribedField[] | null | { error: string } {
+  if (input.columns != null && input.columnsPreset != null) {
+    return { error: "Pass columns OR columnsPreset, not both." };
+  }
+  if (input.columnsPreset != null) return presetColumns(input.columnsPreset, current, hidden);
+  if (input.columns != null) {
+    const unknown = input.columns.filter((column) => !isPrescribedField(column));
+    if (unknown.length > 0) {
+      return { error: `Unknown columns: ${unknown.join(", ")}. The columns are ${PRESCRIBED_FIELDS.join(", ")}.` };
+    }
+    return orderColumns(input.columns.filter(isPrescribedField));
+  }
+  return null;
+}
+
+const sameColumns = (a: readonly PrescribedField[], b: readonly PrescribedField[]) =>
+  a.length === b.length && a.every((field, i) => field === b[i]);
+
+const describeColumns = (fields: readonly PrescribedField[]) => fields.map(columnLabel).join(", ");
+
 // The measures set_exercise_sets can write. Any other target an exercise
 // carries — RIR and the endurance measures, which commit 13 teaches the
 // assistant — makes the tool refuse rather than rebuild the sets without them.
@@ -155,7 +231,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
   const addExercise = betaTool({
     name: "add_exercise",
     description:
-      "Add an exercise from the coach's catalog to a session. The name MUST resolve to a real catalog exercise — on a miss you get repair candidates; pick one or use search_exercises. Defaults to 3 working sets of 8-12; override with the optional prescription fields.",
+      "Add an exercise from the coach's catalog to a session. The name MUST resolve to a real catalog exercise — on a miss you get repair candidates; pick one or use search_exercises. Defaults to 3 working sets of 8-12 on the strength columns; override with the optional prescription fields, and set its measurement columns with columns or columnsPreset (a run: columnsPreset endurance).",
     inputSchema: {
       type: "object",
       properties: {
@@ -171,6 +247,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         restSeconds: { type: "integer", minimum: 0, maximum: 600 },
         tempo: tempoProperty,
         notes: { type: "string", maxLength: 500 },
+        ...columnsProperties,
         position: {
           type: "integer",
           minimum: 1,
@@ -192,27 +269,39 @@ export function buildExerciseTools(ws: DraftWorkspace) {
             : "No close catalog matches — use search_exercises or ask the coach to add it to their library first.";
         return `"${input.name}" is not in the exercise catalog, so it can't be added. ${hint}`;
       }
+      const columns = columnsFields(input, resolvePrescribedFields(DEFAULT_PRESCRIBED_FIELDS), []);
+      if (columns && "error" in columns) return columns.error;
+      const prescribedFields = columns ?? [...DEFAULT_PRESCRIBED_FIELDS];
+      // An exercise whose columns don't ask for reps (a run) doesn't start
+      // with a rep range hidden behind them; its sets are still its intervals.
+      const asksReps = prescribedFields.includes("reps");
       const exercise: ExerciseDraft = {
         ...defaultExerciseDraftFromCatalog({ name: row.name, exerciseId: row.id }),
         uid: newUid("ex"),
         sets: input.sets ?? 3,
-        repsMin: input.repsMin ?? 8,
-        repsMax: input.repsMax ?? 12,
+        repsMin: input.repsMin ?? (asksReps ? 8 : null),
+        repsMax: input.repsMax ?? (asksReps ? 12 : null),
         rpeTarget: input.rpeTarget ?? null,
         percentage1rm: input.percentage1rm ?? null,
         restSeconds: input.restSeconds ?? null,
         tempo: input.tempo ?? null,
         notes: input.notes ?? null,
+        prescribedFields,
       };
+      const scheme =
+        exercise.repsMin != null || exercise.repsMax != null
+          ? `${exercise.sets}×${exercise.repsMin ?? ""}-${exercise.repsMax ?? ""}`
+          : `${exercise.sets} sets`;
       const err = commitOp(ws, {
         type: "add_exercise",
         sessionUid: session.value.uid,
         // A lone exercise: a straight-sets group of one, its uid minted here
         // so the client replays the same group.
         group: straightSetsGroup(newUid("grp"), exercise),
-        label: `W${input.week} D${input.day}: added ${row.name} (${exercise.sets}×${exercise.repsMin}-${exercise.repsMax})`,
+        label: `W${input.week} D${input.day}: added ${row.name} (${scheme})`,
       });
       if (err) return err;
+      const columnsNote = columns ? ` Columns: ${describeColumns(prescribedFields)}.` : "";
       if (input.position != null) {
         // Clamp to the session's real length, and work the place out on the
         // working copy as it now stands: the op carries the place itself, never
@@ -234,17 +323,17 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         if (reorderErr) return `Added ${row.name}, but couldn't reposition it: ${reorderErr}`;
         const landed = exercisePositionNow(ws, session.value.uid, exercise.uid);
         if (landed !== target) {
-          return `Added "${row.name}" to "${session.value.name}" (week ${input.week} day ${input.day}). ${linkedGroupNote(row.name, landed, target)}`;
+          return `Added "${row.name}" to "${session.value.name}" (week ${input.week} day ${input.day}).${columnsNote} ${linkedGroupNote(row.name, landed, target)}`;
         }
       }
-      return `Added "${row.name}" to "${session.value.name}" (week ${input.week} day ${input.day}).${row.name !== input.name.trim() ? ` (Catalog name used: "${row.name}".)` : ""}`;
+      return `Added "${row.name}" to "${session.value.name}" (week ${input.week} day ${input.day}).${columnsNote}${row.name !== input.name.trim() ? ` (Catalog name used: "${row.name}".)` : ""}`;
     },
   });
 
   const updateExercise = betaTool({
     name: "update_exercise",
     description:
-      "Update an exercise's prescription: set count, rep range, RPE, %1RM, tempo, rest, notes, or a uniform working-set load — one value (loadKg / loadPercent1rm) or a range (add loadKgMax / loadPercent1rmMax). If the exercise has per-set programming, only notes and load changes apply here — reshape its sets with set_exercise_sets instead. Renaming is not supported: remove the exercise and add the right one.",
+      "Update an exercise's prescription: set count, rep range, RPE, %1RM, tempo, rest, notes, a uniform working-set load — one value (loadKg / loadPercent1rm) or a range (add loadKgMax / loadPercent1rmMax) — or its measurement columns (columns, or columnsPreset). If the exercise has per-set programming, only notes, load and columns changes apply here — reshape its sets with set_exercise_sets instead. Renaming is not supported: remove the exercise and add the right one.",
     inputSchema: {
       type: "object",
       properties: {
@@ -258,6 +347,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         restSeconds: { type: ["integer", "null"], minimum: 0, maximum: 600 },
         notes: { type: ["string", "null"], maxLength: 500 },
         ...loadRangeProperties,
+        ...columnsProperties,
       },
       required: ["week", "day"],
       additionalProperties: false,
@@ -271,6 +361,16 @@ export function buildExerciseTools(ws: DraftWorkspace) {
 
       const load = loadFields(input);
       if (load && "error" in load) return load.error;
+      // Columns are the exercise's, so they apply beside per-set programming
+      // too. A column hidden where the exercise sits keeps its stored choice
+      // under a preset, exactly as the coach's selector keeps it.
+      const group = exerciseGroupAt(session.value, exercise.uid)?.group;
+      const columns = columnsFields(
+        input,
+        resolvePrescribedFields(exercise.prescribedFields),
+        group ? hiddenColumnsIn(group) : [],
+      );
+      if (columns && "error" in columns) return columns.error;
 
       const patch: Partial<Omit<ExerciseDraft, "uid">> = {};
       const compactTouch =
@@ -332,8 +432,15 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         if (load.type === "pct_1rm") patch.percentage1rm = load.min;
       }
       if (input.notes !== undefined) patch.notes = input.notes;
+      if (columns && !sameColumns(columns, exercise.prescribedFields)) {
+        patch.prescribedFields = columns;
+      }
 
-      if (Object.keys(patch).length === 0) return "Nothing to change — pass at least one field.";
+      if (Object.keys(patch).length === 0) {
+        return columns
+          ? `"${exercise.name}" already has those columns (${describeColumns(columns)}).`
+          : "Nothing to change — pass at least one field.";
+      }
       const err = commitOp(ws, {
         type: "update_exercise",
         sessionUid: session.value.uid,
@@ -341,7 +448,10 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         patch,
         label: `W${input.week} D${input.day} ${exercise.name}: updated prescription`,
       });
-      return err ?? `Updated "${exercise.name}".`;
+      if (err) return err;
+      return patch.prescribedFields
+        ? `Updated "${exercise.name}". Columns: ${describeColumns(patch.prescribedFields)}.`
+        : `Updated "${exercise.name}".`;
     },
   });
 

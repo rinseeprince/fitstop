@@ -10,6 +10,7 @@ import {
   MAX_EXERCISES_PER_SESSION,
 } from "@/utils/exercise-groups";
 import { MAX_SET_SPECS, SET_SPEC_MEASURES, TEMPO_PATTERN } from "@/utils/exercise-set-specs";
+import { COLUMN_PRESETS } from "@/utils/column-presets";
 import { PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
 import type { DraftOp } from "@/components/clients/training/program-builder/program-builder-ops";
@@ -198,7 +199,8 @@ const exerciseDestinationSchema = z.discriminatedUnion("kind", [
 ]);
 
 // The settings a coach edits on a linked group; rounds follow the set cap,
-// because in a superset or circuit every exercise has one set per round.
+// because in a superset or circuit every exercise has one set per round. A
+// column preset on the patch applies to every exercise in the group.
 const groupSettingsPatchSchema = z
   .object({
     format: z.enum(["straight_sets", "circuit"]).optional(),
@@ -206,6 +208,7 @@ const groupSettingsPatchSchema = z
     restBetweenExercisesSeconds: z.number().int().min(0).max(GROUP_REST_SECONDS_MAX).nullable().optional(),
     restBetweenRoundsSeconds: z.number().int().min(0).max(GROUP_REST_SECONDS_MAX).nullable().optional(),
     notes: z.string().max(GROUP_NOTES_MAX).nullable().optional(),
+    columnsPreset: z.enum(COLUMN_PRESETS).optional(),
   })
   .strict();
 

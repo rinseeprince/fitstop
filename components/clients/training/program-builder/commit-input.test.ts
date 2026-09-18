@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { commitLoad, commitNum, displayLoad } from "./commit-input";
+import { commitEntryRange, commitLoad, commitNum, commitTempo, displayLoad } from "./commit-input";
+import { SET_SPEC_MEASURES } from "@/utils/exercise-set-specs";
 
 // A blur handler is not a pure function, so fake the one thing these read.
 const blur = (value: string) =>
@@ -109,5 +110,55 @@ describe("commitNum", () => {
   it("returns null for a blank or non-numeric field", () => {
     expect(commitNum(blur("  "), { min: 0, max: 100 })).toBeNull();
     expect(commitNum(blur("abc"), { min: 0, max: 100 })).toBeNull();
+  });
+});
+
+describe("commitEntryRange — a unit-bearing range box", () => {
+  const DISTANCE = SET_SPEC_MEASURES.distance;
+
+  it("reports no change when the box is left exactly as seeded", () => {
+    expect(commitEntryRange(blur("5 km"), { min: 5000, max: 5000 }, "distance", "metric", DISTANCE)).toEqual({
+      changed: false,
+    });
+    expect(commitEntryRange(blur("3.11 mi"), { min: 5000, max: 5000 }, "distance", "imperial", DISTANCE)).toEqual({
+      changed: false,
+    });
+  });
+
+  it("commits a typed range canonically and writes its readback into the box", () => {
+    const e = blur("400-800 m");
+    expect(commitEntryRange(e, { min: 5000, max: 5000 }, "distance", "metric", DISTANCE)).toEqual({
+      changed: true,
+      range: { min: 400, max: 800 },
+    });
+    expect(e.target.value).toBe("400-800 m");
+  });
+
+  it("reverts a typo to the seeded string and writes nothing", () => {
+    const e = blur("far");
+    expect(commitEntryRange(e, { min: 5000, max: 5000 }, "distance", "metric", DISTANCE)).toEqual({
+      changed: false,
+    });
+    expect(e.target.value).toBe("5 km");
+  });
+});
+
+describe("commitTempo — one compound value", () => {
+  it("accepts the four-phase grammar, reading a lower-case x as X", () => {
+    const e = blur("3-1-x-0");
+    expect(commitTempo(e, null)).toEqual({ changed: true, tempo: "3-1-X-0" });
+    expect(e.target.value).toBe("3-1-X-0");
+  });
+
+  it("an emptied box clears the tempo; an unchanged one writes nothing", () => {
+    expect(commitTempo(blur(""), "3-1-X-0")).toEqual({ changed: true, tempo: null });
+    expect(commitTempo(blur("3-1-X-0"), "3-1-X-0")).toEqual({ changed: false });
+    expect(commitTempo(blur(""), null)).toEqual({ changed: false });
+  });
+
+  it("reverts anything that isn't a tempo", () => {
+    const e = blur("slow");
+    expect(commitTempo(e, "3-1-X-0")).toEqual({ changed: false });
+    expect(e.target.value).toBe("3-1-X-0");
   });
 });

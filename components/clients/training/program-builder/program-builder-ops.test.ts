@@ -1257,3 +1257,13 @@ describe("applyDraftOp on the plan editor's days (placed-plan)", () => {
     expect(out.skipped).toBeUndefined();
   });
 });
+
+describe("draftOpSchema — a column preset on a group patch", () => {
+  it("accepts a preset by name and refuses an unknown one", () => {
+    const op = { type: "update_group", sessionUid: "sess-1", groupUid: "grp-1", patch: { columnsPreset: "erg" } };
+    expect(draftOpSchema.parse(op)).toEqual(op);
+    expect(
+      draftOpSchema.safeParse({ ...op, patch: { columnsPreset: "cardio" } }).success,
+    ).toBe(false);
+  });
+});

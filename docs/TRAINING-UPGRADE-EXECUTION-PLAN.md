@@ -1020,7 +1020,7 @@ strength stays four columns wide and a run shows Set, Distance, Duration, Pace; 
 780px, and an exercise's table scrolls sideways inside its own card when its columns still don't fit, with the Set
 column pinned; columns still follow the data, so anything logged that wasn't prescribed still shows.
 
-### Commit 12 — Measurement columns and presets in the builder
+### Commit 12 — Measurement columns and presets in the builder — SHIPPED 2026-09-18
 
 ```text
 Implement commit 12 of 22 — Measurement columns and presets in the builder — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
@@ -1043,6 +1043,14 @@ RULES: §4.4 — closed. Include a frame test for the selector and presets (§2)
 
 NOT IN THIS COMMIT: exercise types (commit 13).
 ```
+
+*The presets as built (put to the owner 2026-09-18 with the smoke; §4.4's "(confirm)")* — Strength: set
+type, reps, load, RPE, rest. Bodyweight: set type, reps, RPE, rest. Endurance: set type, distance,
+duration, pace, HR zone, rest. Erg: set type, distance, duration, split, stroke rate, resistance, rest.
+Carry & sled: set type, load, distance, duration, rest. Holds: set type, RPE, duration, rest. Circuit:
+reps, load — no Rest, because a superset's or circuit's rests are the group's, and no Set type, because
+its rows are rounds. A preset sets an exercise's columns to exactly its own; Rest inside a superset or
+circuit keeps the exercise's stored choice. The table is `COLUMN_PRESET_FIELDS` (`utils/column-presets.ts`).
 
 ### Commit 13 — Exercise types
 

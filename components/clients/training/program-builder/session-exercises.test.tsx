@@ -330,3 +330,29 @@ describe("Session editor — dragging", () => {
     expect(dragCopy(container)?.textContent).toBe("Superset·3 rounds");
   });
 });
+
+describe("Session editor — a column preset for a whole group", () => {
+  beforeEach(() => cleanup());
+
+  it("the heading's Columns menu sets every exercise in the superset in one edit", async () => {
+    const user = userEvent.setup();
+    render(<Host groups={[lone(SQUAT), superset()]} />);
+    await user.click(screen.getByRole("button", { name: "Columns for the superset" }));
+    await user.click(screen.getByRole("menuitem", { name: "Circuit" }));
+    await user.keyboard("{Escape}");
+
+    const heading = screen.getByRole("region", { name: "Superset · 3 rounds" });
+    for (const name of ["Bench Press", "Pendlay Row"]) {
+      const card = within(heading).getByText(name).closest<HTMLElement>(".group\\/ex")!;
+      fireEvent.click(within(card).getByRole("button", { name: "Expand sets" }));
+      const header = within(card).getByText("Round").parentElement!;
+      expect([...header.querySelectorAll("span")].map((span) => span.textContent)).toEqual([
+        "Round", "Reps", "Load", "",
+      ]);
+    }
+    // The lone exercise outside the group is untouched.
+    const squat = screen.getByText("Back Squat").closest<HTMLElement>(".group\\/ex")!;
+    fireEvent.click(within(squat).getByRole("button", { name: "Expand sets" }));
+    expect(within(squat).getByText("RPE")).toBeInTheDocument();
+  });
+});

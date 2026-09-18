@@ -1,12 +1,16 @@
 import { LOAD_KG_MAX } from "@/lib/constants";
+import { isTempo } from "@/utils/exercise-set-specs";
 import {
   formatLoadEntry,
   kgToLbs,
   lbsToKg,
+  type EntryKind,
   type UnitSystem,
 } from "@/utils/unit-conversions";
 import {
+  formatEntryRange,
   formatTargetRange,
+  parseEntryRange,
   parseTargetRange,
   type TargetRange,
   type TargetRangeBounds,
@@ -69,6 +73,57 @@ export const commitRange = (
   }
   e.target.value = formatTargetRange(parsed);
   return { changed: true, range: parsed };
+};
+
+/**
+ * Commit a unit-bearing range box — "400-800 m", "3:45-3:50 /km", "2:00-2:30",
+ * "Z2-Z3" — typed in the viewer's units and stored canonically, behind the
+ * same seeded-string guard as `commitRange`. Each end is read by the entry
+ * grammar and clamped into the column's bounds in canonical units; a string
+ * that is not a value or a range is reverted rather than blanking a target.
+ */
+export const commitEntryRange = (
+  e: React.FocusEvent<HTMLInputElement>,
+  stored: TargetRange,
+  kind: EntryKind,
+  viewer: UnitSystem,
+  bounds: TargetRangeBounds,
+): RangeCommit => {
+  const seeded = formatEntryRange(kind, stored, viewer);
+  const typed = e.target.value.trim();
+  if (typed === seeded) return { changed: false };
+  const parsed = parseEntryRange(kind, typed, viewer, bounds);
+  if (parsed === null) {
+    e.target.value = seeded;
+    return { changed: false };
+  }
+  e.target.value = formatEntryRange(kind, parsed, viewer);
+  return { changed: true, range: parsed };
+};
+
+type TempoCommit = { changed: false } | { changed: true; tempo: string | null };
+
+/**
+ * Commit a tempo box: four phases, seconds or X for explosive, "3-1-X-0"
+ * (`TEMPO_PATTERN`). A lower-case x is read as X; anything else that isn't a
+ * tempo is reverted; an emptied box clears the tempo.
+ */
+export const commitTempo = (
+  e: React.FocusEvent<HTMLInputElement>,
+  stored: string | null | undefined,
+): TempoCommit => {
+  const seeded = stored ?? "";
+  const typed = e.target.value.trim().toUpperCase();
+  if (typed === seeded) {
+    e.target.value = seeded;
+    return { changed: false };
+  }
+  if (typed !== "" && !isTempo(typed)) {
+    e.target.value = seeded;
+    return { changed: false };
+  }
+  e.target.value = typed;
+  return { changed: true, tempo: typed === "" ? null : typed };
 };
 
 /**

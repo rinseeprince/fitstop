@@ -435,3 +435,46 @@ describe("progressGroupRounds", () => {
     ).toBeNull();
   });
 });
+
+describe("updateGroup — a column preset for every exercise in the group", () => {
+  const superset = () =>
+    session([
+      circuit("grp-c", [
+        exercise("a", { prescribedFields: ["set_type", "reps", "load", "rpe", "rest"] }),
+        exercise("b", { prescribedFields: ["set_type", "reps", "load", "rpe"] }),
+      ]),
+    ]);
+
+  it("sets every exercise to the preset, each keeping its own Rest choice in a superset or circuit", () => {
+    const next = ok(updateGroup(superset(), "grp-c", { columnsPreset: "circuit" }));
+    expect(next.groups[0].exercises.map((e) => e.prescribedFields)).toEqual([
+      ["reps", "load", "rest"],
+      ["reps", "load"],
+    ]);
+    // The group's own settings are untouched.
+    expect(next.groups[0]).toMatchObject({ format: "circuit", rounds: 3, notes: "Back to back" });
+  });
+
+  it("applies Rest as the preset says once the rows aren't rounds — a preset with a switch to straight sets", () => {
+    const next = ok(updateGroup(superset(), "grp-c", { format: "straight_sets", columnsPreset: "circuit" }));
+    expect(next.groups[0].exercises.map((e) => e.prescribedFields)).toEqual([
+      ["reps", "load"],
+      ["reps", "load"],
+    ]);
+  });
+
+  it("is the same session when every exercise already has the preset's columns", () => {
+    const s = session([
+      circuit("grp-c", [
+        exercise("a", { prescribedFields: ["set_type", "distance", "duration", "pace", "heart_rate_zone", "rest"] }),
+        exercise("b", { prescribedFields: ["set_type", "distance", "duration", "pace", "heart_rate_zone"] }),
+      ]),
+    ]);
+    expect(ok(updateGroup(s, "grp-c", { columnsPreset: "endurance" }))).toBe(s);
+  });
+
+  it("a lone exercise has no group settings, its preset included", () => {
+    const s = session([lone("a")]);
+    expect(updateGroup(s, "grp-a", { columnsPreset: "erg" }).ok).toBe(false);
+  });
+});

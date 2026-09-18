@@ -12,6 +12,8 @@ import {
   STRAIGHT_SETS,
   sessionExercises,
 } from "@/utils/exercise-groups";
+import { presetColumns, type ColumnsPreset } from "@/utils/column-presets";
+import { resolvePrescribedFields, type PrescribedField } from "@/utils/prescribed-fields";
 import type {
   ExerciseDraft,
   ExerciseGroupDraft,
@@ -47,14 +49,45 @@ export type ExerciseDestination =
   | { kind: "group"; groupUid: string; index: number }
   | { kind: "session"; index: number };
 
-/** The settings a coach edits on a linked group. */
+/**
+ * The settings a coach edits on a linked group. `columnsPreset` applies a
+ * column preset to every exercise in the group (utils/column-presets.ts) —
+ * "a preset applies to one exercise or a whole group" — in the same edit as
+ * any setting, so a format switch and the preset land in one commit.
+ */
 export type GroupSettingsPatch = {
   format?: "straight_sets" | "circuit";
   rounds?: number;
   restBetweenExercisesSeconds?: number | null;
   restBetweenRoundsSeconds?: number | null;
   notes?: string | null;
+  columnsPreset?: ColumnsPreset;
 };
+
+/** The columns the selector doesn't offer where an exercise sits: Rest in a superset or circuit. */
+export function hiddenColumnsIn(group: {
+  format: string;
+  exercises: ReadonlyArray<unknown>;
+}): readonly PrescribedField[] {
+  return isSupersetOrCircuit(group) ? ["rest"] : [];
+}
+
+/**
+ * `exercise` on a preset's columns, keeping its stored choice for a column
+ * hidden where it sits; the same reference when its columns already are those.
+ */
+export function applyColumnsPreset(
+  exercise: ExerciseDraft,
+  preset: ColumnsPreset,
+  hidden: readonly PrescribedField[],
+): ExerciseDraft {
+  const current = resolvePrescribedFields(exercise.prescribedFields);
+  const next = presetColumns(preset, current, hidden);
+  const same =
+    next.length === exercise.prescribedFields.length &&
+    next.every((field, i) => field === exercise.prescribedFields[i]);
+  return same ? exercise : { ...exercise, prescribedFields: next };
+}
 
 /** A superset (two exercises) or circuit (three or more): its exercises' sets are its rounds. */
 export function isSupersetOrCircuit(group: {
@@ -357,6 +390,17 @@ export function updateGroup(
       restBetweenRoundsSeconds,
       notes,
       exercises: fitted.exercises,
+    };
+  }
+  if (patch.columnsPreset) {
+    // Judged against the group as it will be, so a preset applied together
+    // with a switch to a superset keeps each exercise's Rest choice.
+    const hidden = hiddenColumnsIn(next);
+    next = {
+      ...next,
+      exercises: next.exercises.map((exercise) =>
+        applyColumnsPreset(exercise, patch.columnsPreset as ColumnsPreset, hidden),
+      ),
     };
   }
 

@@ -254,13 +254,13 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
     expect(screen.getByLabelText("Set 1 reps")).toBeInTheDocument();
   });
 
-  it("'Show all columns' restores every column", async () => {
+  it("the Strength preset restores today's five columns", async () => {
     const user = userEvent.setup();
     render(
       <Wrapper exercise={makeExercise({ prescribedFields: ["reps"] })} defaultExpanded />,
     );
     await openMenu(user);
-    await user.click(screen.getByRole("menuitem", { name: "Show all columns" }));
+    await user.click(screen.getByRole("menuitem", { name: "Strength" }));
     for (const label of [
       "Set 1 type",
       "Set 1 reps",
@@ -270,6 +270,109 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
     ]) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
+  });
+
+  it("the Endurance preset swaps the grid to its columns, each with its own box", async () => {
+    const user = userEvent.setup();
+    render(<Wrapper exercise={makeExercise()} defaultExpanded />);
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Endurance" }));
+    await user.keyboard("{Escape}");
+    for (const label of ["Set 1 type", "Set 1 distance", "Set 1 duration", "Set 1 pace", "Set 1 HR zone", "Set 1 rest seconds"]) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    }
+    expect(screen.queryByLabelText("Set 1 reps")).toBeNull();
+    expect(screen.queryByLabelText("Set 1 load type")).toBeNull();
+    expect(screen.queryByLabelText("Set 1 RPE")).toBeNull();
+    // The header names them, in the grid's order.
+    const header = screen.getByText("Distance").parentElement!;
+    expect([...header.querySelectorAll("span")].map((span) => span.textContent)).toEqual([
+      "#", "Type", "Distance", "Duration", "Pace", "HR zone", "Rest s", "",
+    ]);
+  });
+
+  it("every chosen column edits its own target: a range in the viewer's units, a tempo, a zone", async () => {
+    const user = userEvent.setup();
+    const onSpecEdit = vi.fn();
+    const exercise = makeExercise({
+      sets: 1,
+      setSpecs: [
+        {
+          set_number: 1, set_type: "working",
+          distance_meters_min: 5000, distance_meters_max: 5000,
+          duration_seconds_min: 1500, duration_seconds_max: 1500,
+          pace_seconds_per_km_min: 285, pace_seconds_per_km_max: 285,
+          tempo: "3-1-X-0",
+        },
+      ],
+      prescribedFields: ["set_type", "distance", "duration", "pace", "tempo", "heart_rate_zone", "rest"],
+    });
+    // Records every edit AND applies it through the kernel, as the draft
+    // does, so a box re-seeds from what it committed and a later blur on it
+    // is the focus-through the guard exists for.
+    function Harness() {
+      const [current, setCurrent] = useState(exercise);
+      return (
+        <DndContext>
+          <ExerciseCard
+            exercise={current}
+            ordinal={1}
+            mode="edit"
+            expanded
+            onToggleExpanded={() => undefined}
+            roundsAreRows={false}
+            drop={{ id: "item:grp-ex-1", data: { type: "item", index: 0, linked: false } }}
+            dropLine={null}
+            pick={null}
+            onEdit={() => undefined}
+            onSpecEdit={(edit) => {
+              onSpecEdit(edit);
+              const result = applySetSpecEdit(current, edit);
+              if (result.ok) setCurrent(result.exercise);
+            }}
+            onRemove={() => undefined}
+          />
+        </DndContext>
+      );
+    }
+    render(<Harness />);
+    expect(screen.getByLabelText("Set 1 distance")).toHaveValue("5 km");
+    expect(screen.getByLabelText("Set 1 duration")).toHaveValue("25:00");
+    expect(screen.getByLabelText("Set 1 pace")).toHaveValue("4:45 /km");
+    expect(screen.getByLabelText("Set 1 tempo")).toHaveValue("3-1-X-0");
+
+    const distance = screen.getByLabelText("Set 1 distance");
+    await user.clear(distance);
+    await user.type(distance, "400-800 m");
+    await user.tab();
+    expect(onSpecEdit).toHaveBeenLastCalledWith({
+      kind: "update-set", index: 0, patch: { distance_meters_min: 400, distance_meters_max: 800 },
+    });
+    expect(distance).toHaveValue("400-800 m");
+
+    const zone = screen.getByLabelText("Set 1 HR zone");
+    await user.type(zone, "2-3");
+    await user.tab();
+    expect(onSpecEdit).toHaveBeenLastCalledWith({
+      kind: "update-set", index: 0, patch: { heart_rate_zone_min: 2, heart_rate_zone_max: 3 },
+    });
+    expect(zone).toHaveValue("Z2-Z3");
+
+    const tempo = screen.getByLabelText("Set 1 tempo");
+    await user.clear(tempo);
+    await user.type(tempo, "2-0-x-1");
+    await user.tab();
+    expect(onSpecEdit).toHaveBeenLastCalledWith({ kind: "update-set", index: 0, patch: { tempo: "2-0-X-1" } });
+    expect(tempo).toHaveValue("2-0-X-1");
+
+    // A typo reverts and writes nothing.
+    onSpecEdit.mockClear();
+    const pace = screen.getByLabelText("Set 1 pace");
+    await user.clear(pace);
+    await user.type(pace, "fast");
+    await user.tab();
+    expect(onSpecEdit).not.toHaveBeenCalled();
+    expect(pace).toHaveValue("4:45 /km");
   });
 
   it("hides the picker in view mode — a locked session prescribes nothing new", () => {
