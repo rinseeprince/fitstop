@@ -260,7 +260,10 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
       <Wrapper exercise={makeExercise({ prescribedFields: ["reps"] })} defaultExpanded />,
     );
     await openMenu(user);
-    await user.click(screen.getByRole("menuitem", { name: "Strength" }));
+    // Nothing is ticked on a list that matches no preset; Strength is once picked.
+    expect(screen.getByRole("menuitemcheckbox", { name: "Strength" })).toHaveAttribute("aria-checked", "false");
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Strength" }));
+    expect(screen.getByRole("menuitemcheckbox", { name: "Strength" })).toHaveAttribute("aria-checked", "true");
     for (const label of [
       "Set 1 type",
       "Set 1 reps",
@@ -276,7 +279,7 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
     const user = userEvent.setup();
     render(<Wrapper exercise={makeExercise()} defaultExpanded />);
     await openMenu(user);
-    await user.click(screen.getByRole("menuitem", { name: "Endurance" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Endurance" }));
     await user.keyboard("{Escape}");
     for (const label of ["Set 1 type", "Set 1 distance", "Set 1 duration", "Set 1 pace", "Set 1 HR zone", "Set 1 rest seconds"]) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();

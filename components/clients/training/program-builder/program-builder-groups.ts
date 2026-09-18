@@ -12,7 +12,7 @@ import {
   STRAIGHT_SETS,
   sessionExercises,
 } from "@/utils/exercise-groups";
-import { presetColumns, type ColumnsPreset } from "@/utils/column-presets";
+import { presetColumns, presetOf, type ColumnsPreset } from "@/utils/column-presets";
 import { resolvePrescribedFields, type PrescribedField } from "@/utils/prescribed-fields";
 import type {
   ExerciseDraft,
@@ -73,10 +73,22 @@ export function hiddenColumnsIn(group: {
 }
 
 /**
+ * The preset every exercise in a linked group is on, under the group's hidden
+ * columns; null when they differ or any is on none. What the group heading's
+ * Columns menu ticks.
+ */
+export function groupColumnsPreset(group: ExerciseGroupDraft): ColumnsPreset | null {
+  const hidden = hiddenColumnsIn(group);
+  const presets = group.exercises.map((exercise) => presetOf(exercise.prescribedFields, hidden));
+  const first = presets[0] ?? null;
+  return first != null && presets.every((preset) => preset === first) ? first : null;
+}
+
+/**
  * `exercise` on a preset's columns, keeping its stored choice for a column
  * hidden where it sits; the same reference when its columns already are those.
  */
-export function applyColumnsPreset(
+function applyColumnsPreset(
   exercise: ExerciseDraft,
   preset: ColumnsPreset,
   hidden: readonly PrescribedField[],

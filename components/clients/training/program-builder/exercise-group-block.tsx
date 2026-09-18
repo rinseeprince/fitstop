@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { groupHeading, groupHeadingText, groupName } from "@/utils/exercise-group-display";
 import { GroupHeadingLines } from "@/components/clients/training/group-heading-lines";
 import type { ExerciseGroupDraft } from "./program-builder-types";
-import type { GroupSettingsPatch } from "./program-builder-groups";
+import { groupColumnsPreset, type GroupSettingsPatch } from "./program-builder-groups";
 import { GroupSettingsPopover } from "./group-settings-popover";
 import { SetColumnsMenu } from "./set-columns-menu";
 import { DropLine, type DropLineEdge } from "./drop-line";
@@ -108,6 +108,7 @@ export function ExerciseGroupBlock({
           <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/grp:opacity-100 group-focus-within/grp:opacity-100 has-[[data-state=open]]:opacity-100">
             <GroupSettingsPopover group={group} onUpdate={onUpdate} />
             <SetColumnsMenu
+              activePreset={groupColumnsPreset(group)}
               subject={`the ${name.toLowerCase()}`}
               onPreset={(columnsPreset) => onUpdate({ columnsPreset })}
             />

@@ -127,13 +127,23 @@ export function presetColumns(
   return orderColumns(next);
 }
 
-/** The preset a column list is exactly, or null when it matches none. */
-export function presetOf(fields: Iterable<PrescribedField>): ColumnsPreset | null {
-  const chosen = new Set(fields);
+/**
+ * The preset a column list is exactly, or null when it matches none. A column
+ * hidden where the exercise sits (Rest in a superset or circuit) is left out
+ * of the comparison on both sides, since the selector neither shows nor sets
+ * it there: an exercise on reps, load and a kept Rest is on Circuit.
+ */
+export function presetOf(
+  fields: Iterable<PrescribedField>,
+  hidden: readonly PrescribedField[] = [],
+): ColumnsPreset | null {
+  const visible = (columns: Iterable<PrescribedField>) =>
+    new Set([...columns].filter((field) => !hidden.includes(field)));
+  const chosen = visible(fields);
   return (
     COLUMN_PRESETS.find((preset) => {
-      const columns = COLUMN_PRESET_FIELDS[preset];
-      return columns.length === chosen.size && columns.every((field) => chosen.has(field));
+      const columns = visible(COLUMN_PRESET_FIELDS[preset]);
+      return columns.size === chosen.size && [...columns].every((field) => chosen.has(field));
     }) ?? null
   );
 }

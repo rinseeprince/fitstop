@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
 import { resolvePrescribedFields, type PrescribedField } from "@/utils/prescribed-fields";
-import { orderColumns, presetColumns } from "@/utils/column-presets";
+import { orderColumns, presetColumns, presetOf } from "@/utils/column-presets";
 import type { ExerciseDraft } from "./program-builder-types";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
 import {
@@ -88,6 +88,7 @@ export function ExerciseCardBody({
               <SetColumnsMenu
                 fields={fields}
                 hiddenFields={hidden}
+                activePreset={presetOf(fields, hidden)}
                 subject={exercise.name}
                 onChange={(prescribedFields) => onEdit({ prescribedFields })}
                 onPreset={(preset) =>

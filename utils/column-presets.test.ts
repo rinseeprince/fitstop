@@ -117,4 +117,11 @@ describe("presetOf", () => {
     expect(presetOf(["reps", "load", "rest"])).toBeNull();
     expect(presetOf(["set_type", "reps", "load", "rpe", "rest", "tempo"])).toBeNull();
   });
+
+  it("leaves a hidden column out of the comparison — a kept Rest in a superset is still Circuit", () => {
+    expect(presetOf(["reps", "load", "rest"], ["rest"])).toBe("circuit");
+    expect(presetOf(["reps", "load"], ["rest"])).toBe("circuit");
+    expect(presetOf(["set_type", "reps", "load", "rpe"], ["rest"])).toBe("strength");
+    expect(presetOf(["reps"], ["rest"])).toBeNull();
+  });
 });

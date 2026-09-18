@@ -338,7 +338,12 @@ describe("Session editor — a column preset for a whole group", () => {
     const user = userEvent.setup();
     render(<Host groups={[lone(SQUAT), superset()]} />);
     await user.click(screen.getByRole("button", { name: "Columns for the superset" }));
-    await user.click(screen.getByRole("menuitem", { name: "Circuit" }));
+    // Both exercises start on the strength columns, so Strength is ticked.
+    expect(screen.getByRole("menuitemcheckbox", { name: "Strength" })).toHaveAttribute("aria-checked", "true");
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Circuit" }));
+    // The cards are collapsed, so the tick moving IS the confirmation.
+    expect(screen.getByRole("menuitemcheckbox", { name: "Circuit" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("menuitemcheckbox", { name: "Strength" })).toHaveAttribute("aria-checked", "false");
     await user.keyboard("{Escape}");
 
     const heading = screen.getByRole("region", { name: "Superset · 3 rounds" });

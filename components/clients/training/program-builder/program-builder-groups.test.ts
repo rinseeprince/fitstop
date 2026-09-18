@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   fitExerciseSets,
+  groupColumnsPreset,
   isSupersetOrCircuit,
   linkExercises,
   moveExercise,
@@ -476,5 +477,32 @@ describe("updateGroup — a column preset for every exercise in the group", () =
   it("a lone exercise has no group settings, its preset included", () => {
     const s = session([lone("a")]);
     expect(updateGroup(s, "grp-a", { columnsPreset: "erg" }).ok).toBe(false);
+  });
+});
+
+describe("groupColumnsPreset — what the group heading's Columns menu ticks", () => {
+  it("is the preset every exercise is on, a hidden Rest ignored in a superset or circuit", () => {
+    const both = circuit("grp-c", [
+      exercise("a", { prescribedFields: ["reps", "load", "rest"] }),
+      exercise("b", { prescribedFields: ["reps", "load"] }),
+    ]);
+    expect(groupColumnsPreset(both)).toBe("circuit");
+    expect(groupColumnsPreset(ok(updateGroup(session([both]), "grp-c", { columnsPreset: "erg" })).groups[0])).toBe("erg");
+  });
+
+  it("is null when the exercises differ or one is on no preset", () => {
+    expect(
+      groupColumnsPreset(
+        circuit("grp-c", [
+          exercise("a", { prescribedFields: ["reps", "load"] }),
+          exercise("b", { prescribedFields: ["set_type", "reps", "load", "rpe"] }),
+        ]),
+      ),
+    ).toBeNull();
+    expect(
+      groupColumnsPreset(
+        circuit("grp-c", [exercise("a", { prescribedFields: ["reps"] }), exercise("b", { prescribedFields: ["reps"] })]),
+      ),
+    ).toBeNull();
   });
 });

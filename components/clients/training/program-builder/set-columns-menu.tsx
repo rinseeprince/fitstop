@@ -6,7 +6,6 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -40,7 +39,9 @@ import { LABEL_CLASS, TEXT_MUTED } from "./builder-tokens";
 // offers the presets alone, and a pick applies to every exercise in the group.
 // A column the selector doesn't offer where the exercise sits — Rest in a
 // superset or circuit, whose rests are the group's — keeps its stored choice
-// through every tick and every preset.
+// through every tick and every preset. The preset the exercise is on — on a
+// group, the one every exercise is on — carries the tick, so a pick made while
+// the cards are collapsed is confirmed in the menu itself (owner, 2026-09-18).
 //
 // Built from the styled DropdownMenu primitives rather than a Popover with
 // checkboxes: DropdownMenuCheckboxItem already carries the teal tick, the 6px
@@ -56,6 +57,8 @@ type SetColumnsMenuProps = {
   // Columns that don't apply where the exercise sits and so aren't offered —
   // Rest in a superset or circuit. Their stored choice is kept, not changed.
   hiddenFields?: readonly PrescribedField[];
+  /** The preset the columns are on (`presetOf`; a group's, `groupColumnsPreset`), ticked; null for none. */
+  activePreset: ColumnsPreset | null;
   /** What the menu is for, in its accessible name: "Bench Press", "the superset". */
   subject: string;
   onChange?: (next: PrescribedField[]) => void;
@@ -67,6 +70,7 @@ const GROUP_LABEL_CLASS = cn(LABEL_CLASS, "px-2.5 pb-1 pt-2");
 export function SetColumnsMenu({
   fields,
   hiddenFields = [],
+  activePreset,
   subject,
   onChange,
   onPreset,
@@ -115,8 +119,11 @@ export function SetColumnsMenu({
           <div className={GROUP_LABEL_CLASS}>Presets</div>
           <div className={cn("grid", forGroup ? "grid-cols-1" : "grid-cols-4")}>
             {COLUMN_PRESETS.map((preset) => (
-              <DropdownMenuItem
+              // The preset the columns are on is ticked; picking it again
+              // changes nothing.
+              <DropdownMenuCheckboxItem
                 key={preset}
+                checked={preset === activePreset}
                 title={describePresetColumns(preset)}
                 onSelect={(e) => {
                   // Keep the menu open so the ticks the preset set can be
@@ -126,7 +133,7 @@ export function SetColumnsMenu({
                 }}
               >
                 {COLUMN_PRESET_LABELS[preset]}
-              </DropdownMenuItem>
+              </DropdownMenuCheckboxItem>
             ))}
           </div>
         </DropdownMenuGroup>

@@ -23,7 +23,7 @@ import { FOCUS_RING, MONO_INPUT_CLASS } from "./builder-tokens";
 // Uncontrolled and committed on blur behind the seeded-string guard, like
 // every box in the set grid: a focus-through writes nothing, a typo reverts,
 // and the box shows what it recorded when the coach leaves it.
-export type MeasureColumn = Exclude<SetSpecMeasure, "reps" | "load">;
+type MeasureColumn = Exclude<SetSpecMeasure, "reps" | "load">;
 
 /** The hint in an empty box: the viewer's unit, or the measure's own word. */
 function placeholderFor(measure: MeasureColumn, viewer: UnitSystem): string {
