@@ -53,15 +53,11 @@ const runsMiddleware = (pathname: string) =>
 // Every file in /public. It has no nested folders -- if that ever changes, the
 // matcher has to change with it, and these cases are where it surfaces.
 const PUBLIC_ASSETS = [
-  "/apple-icon.png",
-  "/icon-dark-32x32.png",
-  "/icon-light-32x32.png",
-  "/icon.svg",
-  "/placeholder-logo.png",
-  "/placeholder-logo.svg",
-  "/placeholder-user.jpg",
-  "/placeholder.jpg",
-  "/placeholder.svg",
+  "/apple-touch-icon-180.png",
+  "/favicon-16.png",
+  "/favicon-32.png",
+  "/favicon-48.png",
+  "/monogram-af.png",
 ]
 
 const IMAGE_EXTENSIONS = ["svg", "png", "jpg", "jpeg", "gif", "webp"]
