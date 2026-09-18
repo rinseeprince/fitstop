@@ -50,12 +50,7 @@ export function CollapsedIconStrip() {
     <aside className="hidden lg:flex w-[52px] flex-col bg-[#0f2027] fixed inset-y-0 left-0 z-20">
       {/* Logo */}
       <div className="flex h-[52px] items-center justify-center">
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[11px] font-bold text-white"
-          style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
-        >
-          CH
-        </div>
+        <img src="/monogram-af.png" alt="Atletafit" className="h-11 w-11" />
       </div>
 
       {/* Nav icons */}
