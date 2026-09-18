@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import {
@@ -76,14 +77,24 @@ export function ProgressionPreview({
                 )}
               </div>
               {row.perSet && (
-                <div className={cn(MONO, "mt-1 space-y-0.5 pl-4 text-[11px]")}>
+                // The same right-hand column as the one-line diff: one grid
+                // pushed to the row's right edge — label · before · arrow ·
+                // after — with the arrows lined up, so an exercise whose sets
+                // differ sits exactly where its neighbours' diffs sit.
+                <div
+                  data-testid="per-set-diff"
+                  className={cn(
+                    MONO,
+                    "ml-auto mt-1 grid w-fit max-w-full grid-cols-[auto_auto_auto_auto] items-baseline gap-x-2 gap-y-0.5 text-[11px]",
+                  )}
+                >
                   {row.perSet.map((line) => (
-                    <div key={line.label} className="flex flex-wrap items-baseline gap-x-2">
-                      <span className="w-6 shrink-0 text-[#93b0b4]">{line.label}</span>
-                      <span className={TEXT_SECONDARY}>{line.before}</span>
+                    <Fragment key={line.label}>
+                      <span className="text-[#93b0b4]">{line.label}</span>
+                      <span className={cn("justify-self-end", TEXT_SECONDARY)}>{line.before}</span>
                       <span className={TEXT_SECONDARY}>→</span>
                       <span className="font-semibold text-[#0d9488]">{line.after}</span>
-                    </div>
+                    </Fragment>
                   ))}
                 </div>
               )}

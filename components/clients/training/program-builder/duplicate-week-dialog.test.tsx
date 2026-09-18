@@ -162,6 +162,8 @@ describe("DuplicateWeekDialog", () => {
     expect(screen.getByText("1 of 2 exercises change")).toBeInTheDocument();
     // The bench's sets differ, so it reads one line per set under its name.
     expect(screen.getAllByText(/^S\d+$/)).toHaveLength(3);
+    // The per-set block takes the row's right-hand column, like a one-line diff.
+    expect(screen.getByTestId("per-set-diff")).toHaveClass("ml-auto", "w-fit");
     expect(screen.getByText("102.5 kg")).toBeInTheDocument();
     expect(screen.getAllByText("92.5 kg")).toHaveLength(2);
     expect(screen.queryByText("100 / 90 / 90 kg")).toBeNull();
