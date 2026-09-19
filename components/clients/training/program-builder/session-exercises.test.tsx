@@ -10,8 +10,21 @@ import { makeStandaloneDraft } from "@/components/programs/use-standalone-sessio
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import type { ExerciseDraft, ExerciseGroupDraft, SessionDraft } from "./program-builder-types";
 
+// The picker stub hands back one catalog pick, so the add path from the
+// popover down is the real one.
 vi.mock("./exercise-picker", () => ({
-  ExercisePicker: () => <div data-testid="exercise-picker" />,
+  ExercisePicker: ({
+    onPick,
+  }: {
+    onPick: (pick: { name: string; exerciseId: string | null; exerciseType: "strength" | null }) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() => onPick({ name: "Bench Press", exerciseId: "e-bench", exerciseType: "strength" })}
+    >
+      Pick Bench Press
+    </button>
+  ),
 }));
 vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
@@ -359,5 +372,24 @@ describe("Session editor — a column preset for a whole group", () => {
     const squat = screen.getByText("Back Squat").closest<HTMLElement>(".group\\/ex")!;
     fireEvent.click(within(squat).getByRole("button", { name: "Expand sets" }));
     expect(within(squat).getByText("RPE")).toBeInTheDocument();
+  });
+});
+
+describe("Session editor — adding an exercise from the popover", () => {
+  beforeEach(() => {
+    cleanup();
+    vi.mocked(toast.success).mockClear();
+  });
+
+  it("a pick adds the card, toasts the exercise's name, and keeps the popover open for the next pick", async () => {
+    render(<Host groups={[lone(SQUAT)]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add exercise" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pick Bench Press" }));
+
+    expect(toast.success).toHaveBeenCalledWith("Exercise added", { description: "Bench Press" });
+    // The new card opens expanded, so it reads Collapse where the others read Expand.
+    expect(screen.getAllByRole("button", { name: /^(Expand|Collapse) sets$/ })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Collapse sets" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pick Bench Press" })).toBeInTheDocument();
   });
 });

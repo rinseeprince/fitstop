@@ -87,7 +87,7 @@ export function buildReadTools(ws: DraftWorkspace) {
   const searchExercises = betaTool({
     name: "search_exercises",
     description:
-      "Search the coach's exercise catalog (their custom exercises + the global library). Every exercise you ADD must come from this catalog — if add_exercise can't resolve a name, search here and pick a real entry. Each result names the exercise's type (strength, bodyweight, endurance, erg, carry_sled or holds): the column preset it starts on when added.",
+      "Search the coach's exercise catalog (their custom exercises + the global library). Every exercise you ADD must come from this catalog — if add_exercise can't resolve a name, search here and pick a real entry. Each result names the exercise's type (strength, bodyweight, endurance, erg, carry_sled or holds): the column preset it starts on when added unless the coach names another.",
     inputSchema: {
       type: "object",
       properties: {
@@ -101,15 +101,24 @@ export function buildReadTools(ws: DraftWorkspace) {
       const max = limit ?? 10;
       const normalized = normalizeExerciseName(query);
       const terms = normalized.split(/\s+/).filter(Boolean);
+      // An exercise the query names outright ranks first, then one whose name
+      // begins with it, then the rest by how many terms they carry: the plain
+      // "Sprint" must not fall off the end of a page of "… Sprint" rows and
+      // read to the model as an exercise the catalog lacks.
       const matches = ws.catalog
         .map((row) => {
           const haystacks = [row.name, ...(row.aliases ?? [])].map((h) => h.toLowerCase());
           const hits = terms.filter((t) => haystacks.some((h) => h.includes(t))).length;
-          return { row, hits };
+          const rank = haystacks.some((h) => h === normalized)
+            ? 0
+            : row.name.toLowerCase().startsWith(normalized)
+              ? 1
+              : 2;
+          return { row, hits, rank };
         })
         .filter(({ hits }) => hits > 0)
         .sort(
-          (a, b) => b.hits - a.hits || a.row.name.localeCompare(b.row.name),
+          (a, b) => a.rank - b.rank || b.hits - a.hits || a.row.name.localeCompare(b.row.name),
         )
         .slice(0, max);
       if (matches.length === 0) {

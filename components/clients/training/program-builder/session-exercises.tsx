@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/core";
 import { Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { sessionExercises } from "@/utils/exercise-groups";
 import { exerciseGroupPlace, groupName } from "@/utils/exercise-group-display";
@@ -217,7 +218,13 @@ export function SessionExercises({
         <Link2 className="h-3.5 w-3.5" strokeWidth={1.5} />
       </button>
       <AddExercisePopover
-        onPick={(pick) => onAddExercise(session.uid, defaultExerciseDraftFromCatalog(pick))}
+        onPick={(pick) => {
+          onAddExercise(session.uid, defaultExerciseDraftFromCatalog(pick));
+          // The card joins the end of a list that may be scrolled out of view,
+          // so the add is confirmed where the coach is looking (owner,
+          // 2026-09-19). The popover stays open for the next pick.
+          toast.success("Exercise added", { description: pick.name });
+        }}
       />
     </div>
   ) : undefined;

@@ -5,7 +5,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { XIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { ignoringToasts } from '@/lib/toast-interaction'
+import { ignoringOverlays } from '@/lib/outside-interaction'
 import { FOCUS_RING } from '@/components/clients/training/program-builder/builder-tokens'
 
 function Dialog({
@@ -65,9 +65,9 @@ function DialogContent({
         data-slot="dialog-content"
         // A toast is never an outside click: pressing one over this dialog
         // neither dismisses it nor reaches the call site's handler
-        // (lib/toast-interaction.ts).
-        onPointerDownOutside={ignoringToasts(onPointerDownOutside)}
-        onInteractOutside={ignoringToasts(onInteractOutside)}
+        // (lib/outside-interaction.ts), and nor is the program assistant's panel.
+        onPointerDownOutside={ignoringOverlays(onPointerDownOutside)}
+        onInteractOutside={ignoringOverlays(onInteractOutside)}
         className={cn(
           // No edge border, for the reason the Sheet has none (see sheet.tsx):
           // the 8%-teal hairline composites over the card's white background

@@ -20,7 +20,7 @@ import { FOCUS_RING } from '@/components/clients/training/program-builder/builde
  * shared across toasts and could go stale. Sonner is not a layer and pauses
  * per toast. Its toaster sits above every overlay; `pointer-events-auto` on
  * the toast keeps it clickable under a modal, and the Dialog and Sheet
- * primitives treat a press on it as no outside click (lib/toast-interaction.ts).
+ * primitives treat a press on it as no outside click (lib/outside-interaction.ts).
  *
  * ON THE IMPORTANT MODIFIER (`!`). Sonner injects its stylesheet at runtime,
  * unlayered. Tailwind v4 puts every utility in a cascade layer, and an

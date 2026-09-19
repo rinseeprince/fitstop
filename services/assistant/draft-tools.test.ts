@@ -1785,3 +1785,23 @@ describe("exercise types (commit 13)", () => {
     expect(await search.run({ query: "bench" } as never)).toBe("- Bench Press — type strength — compound");
   });
 });
+
+describe("search_exercises ranks the exercise the query names first", () => {
+  it("lists the plain Sprint before a page of variants, and an alias match counts as naming it", async () => {
+    const variants = [
+      "Airdyne Sprint", "Assault Bike Sprint", "Band Resisted Sprint", "Band Sprint", "Bike Erg Sprint",
+      "Hill Sprint", "Parachute Sprint", "Rowing Machine Sprint", "Rowing Sprint", "Sled Push Sprint",
+      "SkiErg Sprint", "Tabata Sprints", "Treadmill Sprint",
+    ].map((name, i) => row({ id: `${i}0000000-0000-4000-8000-000000000000`.slice(0, 36), name, exercise_type: "endurance" }));
+    const plain = row({ id: RUN_ID, name: "Sprint", exercise_type: "endurance", aliases: ["Running Sprint"] });
+    const ws = buildWorkspaceFromRows({ target: "library", draft: makeDraft(), catalog: [...variants, plain] });
+    const search = tool(buildReadTools(ws), "search_exercises");
+
+    const lines = (await search.run({ query: "sprint", limit: 3 } as never)).split("\n");
+    expect(lines[0]).toBe("- Sprint — type endurance");
+    expect(lines).toHaveLength(3);
+
+    const byAlias = (await search.run({ query: "running sprint", limit: 2 } as never)).split("\n");
+    expect(byAlias[0]).toBe("- Sprint — type endurance");
+  });
+});

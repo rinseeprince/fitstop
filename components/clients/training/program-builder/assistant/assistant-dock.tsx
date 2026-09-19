@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronDown, RotateCcw, SendHorizontal, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING, HEADER_EYEBROW_CLASS, TEXT_SECONDARY } from "../builder-tokens";
@@ -15,23 +16,32 @@ import { AssistantMessages } from "./assistant-messages";
 // Dialog ancestor would hijack position:fixed and offset the panel. z-[60]
 // sits above all z-50 builder chrome and below the z-[100] toast viewport
 // (toasts transiently overlap the corner — accepted). Mounted only inside
-// ProgramBuilder, so useProgramDraft context always resolves; in the
-// client-draft overlay it exists only in editor state, where the Dialog is
-// non-modal (modal={false}) and body-portaled content stays interactive.
-
-// `open` is lifted so the session-editor sheet's footer button can open the
-// panel, and `hideLauncher` suppresses the fixed corner chip while that sheet
-// is up — it sat directly on top of the sheet's own footer actions.
+// ProgramBuilder, so useProgramDraft context always resolves.
+//
+// The open panel is a Radix layer of its own — a non-modal Dialog with no
+// overlay — because the session editor is a MODAL sheet: Radix switches
+// pointer events off for everything outside the top-most modal layer and
+// bounces focus back into it, so a plain div over the sheet could be neither
+// clicked (its chevron included) nor typed into. A layer registered after the
+// sheet's gets pointer events and pauses the sheet's focus trap while it is
+// open; the sheet, for its part, treats a press in the panel as no outside
+// click (lib/outside-interaction.ts). The layer is keyed on the sheet being
+// open so it re-registers ABOVE a sheet opened while the panel was already
+// up. Escape collapses the panel — the top-most layer — and a second Escape
+// reaches the sheet. Nothing about the panel is an address: `open` is lifted
+// so the session sheet's footer button can open it, and `sessionSheetOpen`
+// also hides the fixed corner chip while that sheet is up, where it sat on
+// top of the sheet's own footer actions.
 type AssistantDockProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  hideLauncher?: boolean;
+  sessionSheetOpen?: boolean;
 };
 
 export function AssistantDock({
   open,
   onOpenChange,
-  hideLauncher = false,
+  sessionSheetOpen = false,
 }: AssistantDockProps) {
   const { mode, setMode, isSaving } = useProgramDraft();
   const chat = useAssistantChat();
@@ -49,18 +59,41 @@ export function AssistantDock({
   };
 
   return createPortal(
-    <div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end">
+    <div data-assistant-dock="" className="fixed bottom-5 right-5 z-[60] flex flex-col items-end">
       {open ? (
-        // Fixed height, not max-height: with max-h the panel collapsed to its
-        // content, so an empty conversation opened as a sliver and squashed the
-        // composer. The viewport cap keeps it usable on short screens.
-        <div className="flex h-[540px] max-h-[calc(100vh-7rem)] w-[380px] flex-col overflow-hidden rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white shadow-[0_10px_40px_rgba(13,148,136,0.18)]">
+        <DialogPrimitive.Root
+          key={sessionSheetOpen ? "over-sheet" : "over-grid"}
+          open
+          modal={false}
+          onOpenChange={(next) => {
+            if (!next) onOpenChange(false);
+          }}
+        >
+          {/* Fixed height, not max-height: with max-h the panel collapsed to
+              its content, so an empty conversation opened as a sliver and
+              squashed the composer. The viewport cap keeps it usable on short
+              screens. No Portal of its own — the dock is already on the body —
+              and no overlay: the panel floats over whatever is open. Clicks
+              and focus elsewhere never collapse it; only the chevron and
+              Escape do. Focus is left where it was on open and on close, so
+              re-registering over a sheet steals nothing from it. */}
+          <DialogPrimitive.Content
+            className="flex h-[540px] max-h-[calc(100vh-7rem)] w-[380px] flex-col overflow-hidden rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white shadow-[0_10px_40px_rgba(13,148,136,0.18)] outline-none"
+            onPointerDownOutside={(e) => e.preventDefault()}
+            onInteractOutside={(e) => e.preventDefault()}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+            onCloseAutoFocus={(e) => e.preventDefault()}
+          >
+            <DialogPrimitive.Description className="sr-only">
+              Describe a change to the program and the assistant makes it.
+            </DialogPrimitive.Description>
           <div className="flex items-center justify-between bg-[#0f2027] px-3 py-2.5">
             <div className="flex flex-col">
               <span className={HEADER_EYEBROW_CLASS}>Assistant</span>
-              <span className="text-[13px] font-semibold text-white">
+              {/* The visible heading is the dialog's own title. */}
+              <DialogPrimitive.Title className="text-[13px] font-semibold text-white">
                 Program assistant
-              </span>
+              </DialogPrimitive.Title>
             </div>
             <div className="flex items-center gap-1">
               {chat.canUndo && (
@@ -132,12 +165,12 @@ export function AssistantDock({
                 )}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
-                  // Esc collapses the dock and must never fall through to the
-                  // client-draft overlay's (deliberately guarded) leave path.
+                  // Esc collapses the dock through its own Radix layer (the
+                  // top-most one, so the sheet under it stays). It must never
+                  // fall through React's tree to the client-draft overlay's
+                  // (deliberately guarded) leave path.
                   if (e.key === "Escape") {
-                    e.preventDefault();
                     e.stopPropagation();
-                    onOpenChange(false);
                     return;
                   }
                   // nativeEvent.isComposing: Enter during IME composition
@@ -163,8 +196,9 @@ export function AssistantDock({
               </button>
             </div>
           )}
-        </div>
-      ) : hideLauncher ? null : (
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Root>
+      ) : sessionSheetOpen ? null : (
         <button
           type="button"
           aria-label="Open the program assistant"

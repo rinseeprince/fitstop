@@ -693,8 +693,9 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         open={assistantOpen}
         onOpenChange={setAssistantOpen}
         // The fixed corner chip lands on top of the session sheet's own footer;
-        // while that sheet is up, its Assistant button is the way in.
-        hideLauncher={sessionSheetOpen}
+        // while that sheet is up, its Assistant button is the way in — and the
+        // open panel re-registers as a layer above the sheet (see the dock).
+        sessionSheetOpen={sessionSheetOpen}
       />
 
       {/* The plan editor's save: confirm → PUT; a 409 (the calendar changed

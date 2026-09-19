@@ -231,7 +231,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
   const addExercise = betaTool({
     name: "add_exercise",
     description:
-      "Add an exercise from the coach's catalog to a session. The name MUST resolve to a real catalog exercise — on a miss you get repair candidates; pick one or use search_exercises. Defaults to 3 working sets on the columns of the exercise's catalog type (its preset: a run starts on endurance, a rower on erg, a carry on carry_sled, a plank on holds), with 8-12 reps where those columns ask for reps; override with the optional prescription fields, or set its measurement columns with columns or columnsPreset.",
+      "Add an exercise from the coach's catalog to a session. The name MUST resolve to a real catalog exercise — on a miss you get repair candidates; pick one or use search_exercises. Defaults to 3 working sets on the columns of the exercise's catalog type (its preset: a run starts on endurance, a rower on erg, a carry on carry_sled, a plank on holds), with 8-12 reps where those columns ask for reps; override with the optional prescription fields, or set its measurement columns with columns or columnsPreset. The type is a default, not a rule: any preset or column list the coach names applies to any exercise.",
     inputSchema: {
       type: "object",
       properties: {
@@ -345,7 +345,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
   const updateExercise = betaTool({
     name: "update_exercise",
     description:
-      "Update an exercise's prescription: set count, rep range, RPE, %1RM, tempo, rest, notes, a uniform working-set load — one value (loadKg / loadPercent1rm) or a range (add loadKgMax / loadPercent1rmMax) — or its measurement columns (columns, or columnsPreset). If the exercise has per-set programming, only notes, load and columns changes apply here — reshape its sets with set_exercise_sets instead. Renaming is not supported: remove the exercise and add the right one.",
+      "Update an exercise's prescription: set count, rep range, RPE, %1RM, tempo, rest, notes, a uniform working-set load — one value (loadKg / loadPercent1rm) or a range (add loadKgMax / loadPercent1rmMax) — or its measurement columns (columns, or columnsPreset — any preset applies to any exercise, whatever its type). If the exercise has per-set programming, only notes, load and columns changes apply here — reshape its sets with set_exercise_sets instead. Renaming is not supported: remove the exercise and add the right one.",
     inputSchema: {
       type: "object",
       properties: {

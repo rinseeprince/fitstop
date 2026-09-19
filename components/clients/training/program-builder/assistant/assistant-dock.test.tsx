@@ -180,3 +180,38 @@ describe("suggestion chips", () => {
     mockChat.messages = [];
   });
 });
+
+// The open panel is a Radix layer of its own, so it stays usable over the
+// modal session sheet; it re-registers when that sheet opens so it sits
+// above it, and Escape collapses it through the layer.
+describe("the panel as its own layer", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockContext.mode = "edit";
+    mockChat.busy = false;
+    mockChat.pending = null;
+  });
+
+  it("is a dialog that re-registers when the session sheet opens, and hides the launcher meanwhile", () => {
+    const { rerender } = render(<AssistantDock open onOpenChange={vi.fn()} sessionSheetOpen={false} />);
+    const before = screen.getByRole("dialog");
+    expect(before).toHaveTextContent("Program assistant");
+
+    rerender(<AssistantDock open onOpenChange={vi.fn()} sessionSheetOpen />);
+    const after = screen.getByRole("dialog");
+    expect(after).not.toBe(before);
+    expect(after).toHaveTextContent("Program assistant");
+
+    rerender(<AssistantDock open={false} onOpenChange={vi.fn()} sessionSheetOpen />);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /open the program assistant/i })).not.toBeInTheDocument();
+  });
+
+  it("Escape anywhere in the panel collapses it through the layer, once", () => {
+    const onOpenChange = vi.fn();
+    render(<AssistantDock open onOpenChange={onOpenChange} />);
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(onOpenChange).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
