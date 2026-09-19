@@ -1085,7 +1085,7 @@ The Exercises tab shows the type on each card, with no filter; the client catalo
 PROD's catalog was empty when this shipped: the migration adds the column and Burpee Broad Jump
 there, and the seed script writes the types when the catalog is seeded.*
 
-### Commit 14 — Timed groups: scores and client logging
+### Commit 14 — Timed groups: scores and client logging — SHIPPED 2026-09-19
 
 ```text
 Implement commit 14 of 22 — Timed groups: scores and client logging — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
@@ -1107,6 +1107,16 @@ RULES: §4.2 and §4.5 — closed except the items marked (confirm).
 
 NOT IN THIS COMMIT: choosing timed formats in the builder, or Full versus Partial for timed groups (commit 15).
 ```
+
+*Settled with the owner on 2026-09-19: an EMOM takes no score and logs its rows like a circuit;
+its rounds are its minutes (an interval starts on its 0-second mark, the work is done, what is left
+is rest), so the cue reads "Minute 3 of 8" and no setting says whether the minute's work is every
+exercise or one in turn — commit 15 may add that as a builder setting. Until commit 15 decides Full
+versus Partial for timed groups, an AMRAP's or a For time's rows are left out of the working-set
+count and its score never makes the workout Partial on its own. On the log POST a list that is
+present replaces what the log holds, an empty one included, and an absent list leaves it alone —
+for `exercises` and the new `groupScores` alike. The score is a row on the log
+(`session_log_group_scores`, migration 186).*
 
 ### Commit 15 — Timed groups in the builder, and their completion
 

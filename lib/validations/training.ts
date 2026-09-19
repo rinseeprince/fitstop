@@ -32,6 +32,15 @@ import {
   type ActualNumberKey,
   type LoggedMeasure,
 } from "@/utils/set-log-measures";
+import {
+  GROUP_SCORE_FINISH_SCALE,
+  GROUP_SCORE_FINISH_SECONDS_MAX,
+  GROUP_SCORE_FINISH_SECONDS_MIN,
+  GROUP_SCORE_MESSAGES,
+  GROUP_SCORE_REPS_MAX,
+  GROUP_SCORE_ROUNDS_MAX,
+  groupScoreValue,
+} from "@/utils/group-scores";
 import { programDays, programRowsIssue } from "@/utils/program-days";
 import type { TrainingPlan } from "@/types/training";
 
@@ -624,10 +633,44 @@ const exercisePerformanceSchema = z
     }
   );
 
+// A timed group's score (utils/group-scores.ts, migration 186): rounds and
+// reps together, or a finish time alone — the shape says whether a For time
+// was capped. Which shapes the group's FORMAT allows is the writer's check,
+// against the group as it is prescribed; this is the wire half.
+const groupScoreSchema = z
+  .object({
+    groupId: z.string().uuid(),
+    rounds: z.number().int().min(0).max(GROUP_SCORE_ROUNDS_MAX).optional(),
+    reps: z.number().int().min(0).max(GROUP_SCORE_REPS_MAX).optional(),
+    finishSeconds: z
+      .number()
+      .min(GROUP_SCORE_FINISH_SECONDS_MIN)
+      .max(GROUP_SCORE_FINISH_SECONDS_MAX)
+      .refine((value) => atScale(value, GROUP_SCORE_FINISH_SCALE), {
+        message: `finishSeconds is recorded to ${GROUP_SCORE_FINISH_SCALE} decimal place`,
+      })
+      .optional(),
+  })
+  .refine((score) => groupScoreValue(score) !== null, {
+    message: GROUP_SCORE_MESSAGES.shape,
+  });
+
+export type GroupScoreInput = z.infer<typeof groupScoreSchema>;
+
 export const logTrainingEventSchema = z.object({
   completionQuality: completionQualitySchema,
   notes: z.string().max(1000).optional(),
+  // A list that is present replaces what the log holds, an empty one included;
+  // an absent list leaves it alone (the check-in's fill-gap row and any quick
+  // path omit both). The same rule for both lists.
   exercises: z.array(exercisePerformanceSchema).max(50).optional(),
+  groupScores: z
+    .array(groupScoreSchema)
+    .max(50)
+    .refine((scores) => new Set(scores.map((s) => s.groupId)).size === scores.length, {
+      message: "groupId must be unique across the scores",
+    })
+    .optional(),
   // Session-level swap: the session the client actually performed, when it
   // differs from what was prescribed (planned-day swap or rest-day training).
   // Absent on a normal prescribed log — the writer defaults it to the event's

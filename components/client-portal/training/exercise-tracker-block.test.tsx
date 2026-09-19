@@ -62,6 +62,8 @@ function FormHarness({ exercise }: { exercise: PrescribedExerciseView }) {
     // could disagree with what the app builds — and the row count is precisely
     // where drop-set flattening lives.
     defaultValues: seedDefaultValues({
+      groups: [],
+      groupScores: [],
       prescribedViews: [exercise],
       sessionLog: null,
       exerciseLogs: [],

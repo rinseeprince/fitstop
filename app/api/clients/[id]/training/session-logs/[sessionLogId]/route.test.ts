@@ -57,6 +57,7 @@ const mockSessionLog = {
 const mockResult = {
   sessionLog: mockSessionLog,
   exerciseLogs: [],
+  groupScores: [],
   performedSessionName: null,
   prescribedGroups: [],
 };
@@ -142,6 +143,7 @@ describe("GET /api/clients/[id]/training/session-logs/[sessionLogId]", () => {
     vi.mocked(getSessionLogDetail).mockResolvedValue({
       sessionLog: { ...mockSessionLog, clientId: OTHER_CLIENT_ID },
       exerciseLogs: [],
+      groupScores: [],
       performedSessionName: null,
       prescribedGroups: [],
     });

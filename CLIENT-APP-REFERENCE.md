@@ -177,8 +177,8 @@ All client API endpoints require authentication except where noted.
 
 - `GET /api/client/training-plan` - The active plan, self-describing (`ClientTrainingPlan | null`)
 - `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: `training: TrainingEventSummary[]`, nutrition, wellness, habits. `training` lists every session on the day, in the day's order. **`nutrition` is always present** — `hasLog`, `caloriesConsumed`, `targetCalories` (null when no nutrition plan covers the day) and the coach's `note` — because a day with no target still takes a log: only the future and a closed week refuse one. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
-- `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, groups, sessionLog, exerciseLogs }` (`TrainingEventDetail`, below). `session` is the session's header — live, its name, focus and duration with no groups of its own; or the log's `prescribed_session_snapshot` once the session is gone. `groups` is the workout in order, each group with its settings and its exercises in order, each exercise live or read off its log's snapshot: the live session's groups first, then any logged exercise the live session no longer holds (all of them when the session is gone), in the group its snapshot records — a snapshot logged before groups existed reads as a straight-sets group of one whose `id` is the exercise's own. Each `exerciseLogs[].prescribedExerciseSnapshot` records the prescription as logged, including `order_index` (its place in its group) and `group` (`id`, `order_index`, `format` and every setting in snake_case). Render it group by group — see "RN contract — how a group reads" and "RN contract — logging a group"
-- `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `400` the save records nothing, body `"Tick at least one set to log this workout."` (see "RN contract — a save records something") · `403` day locked, body `"This day is locked."` (outside `logsOpenFrom`…today) · `404` not found / not this client
+- `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, groups, sessionLog, exerciseLogs, groupScores }` (`TrainingEventDetail`, below). `groupScores` is the log's timed-group scores, one per scored group (see "RN contract — timed groups"). `session` is the session's header — live, its name, focus and duration with no groups of its own; or the log's `prescribed_session_snapshot` once the session is gone. `groups` is the workout in order, each group with its settings and its exercises in order, each exercise live or read off its log's snapshot: the live session's groups first, then any logged exercise the live session no longer holds (all of them when the session is gone), in the group its snapshot records — a snapshot logged before groups existed reads as a straight-sets group of one whose `id` is the exercise's own. Each `exerciseLogs[].prescribedExerciseSnapshot` records the prescription as logged, including `order_index` (its place in its group) and `group` (`id`, `order_index`, `format` and every setting in snake_case). Render it group by group — see "RN contract — how a group reads" and "RN contract — logging a group"
+- `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `400` the save records nothing, body `"Tick at least one set to log this workout."` (see "RN contract — a save records something"), or a group score its group cannot take, body its sentence (see "RN contract — timed groups") · `403` day locked, body `"This day is locked."` (outside `logsOpenFrom`…today) · `404` not found / not this client, a score naming a group outside the performed session included
 - `DELETE /api/client/training/events/{eventId}/log` - **Clear log**: "I did not do this after all". Deletes the workout's log and everything under it — its exercise logs and their sets — and puts the workout back to `scheduled` with nothing recorded, in one transaction. `200 { cleared: boolean }` — `false` when the workout carried no log, which is **not** an error · `403` day locked, body `"This day is locked."` — allowed exactly where a log write is · `404` not found / not this client. Refresh the day after it: the workout is loggable again
 - `GET /api/client/training/sessions/{sessionId}` - Session + its groups of exercises; 404 unless the session belongs to the client's ACTIVE plan. Powers the rest-day picker
 - `GET /api/client/training/week?date={YYYY-MM-DD}` - The training week containing `date` (`ClientTrainingWeek`, `types/client-training-week.ts`): `{ weekStart, weekEnd, today, sessions[] }`, each session `{ eventId, sessionId, name, focus, date, state }` with `state` = `done | today | upcoming | missed` derived against the client's today. Sessions come by date, each day's in the day's order; a day can hold several, so a week can hold more than seven. `no-store`. The session picker and the week view list THIS — it is exactly the set a layout write may touch
@@ -404,7 +404,7 @@ type ClientTrainingExercise = {
 
 > **RN contract — every exercise sits in a group.** A session is an ordered list of groups and a group an ordered list of exercises (migration 178). A lone exercise is a `straight_sets` group of one with every setting null — exactly the exercise it always was. Render a session's exercises group by group, each group's exercises in turn; that is the order the coach wrote. A group's format and settings are the coach's prescription for how its exercises are done together.
 
-> **RN contract — how a group reads.** A group of one is a plain exercise: no heading, its own rests. A group of two or more is known by its format's name and never by a letter — `circuit` is **Superset** for two exercises and **Circuit** for three or more, `straight_sets` **Straight sets**, `amrap` **AMRAP**, `emom` **EMOM**, `for_time` **For time** — under one heading with its `rounds` (every format but straight sets), its rests (between exercises, then between rounds for every format but straight sets; `0` reads "no rest", `null` isn't mentioned) and its `notes`. In every format but straight sets a group loops through its exercises, so **each exercise's rows are its rounds**: row n of its flattened `setSpecs` is round n, with that round's own targets — 21-15-9 is three rows asking 21, 15 and 9. A superset or circuit (`circuit` with two or more exercises) always carries `rounds`, and every exercise in it has exactly that many sets — its `setSpecs` entries (a drop set's drops belong to their round), else `sets` — so the heading's rounds and each exercise's rows agree; the coach's builder keeps it so and the save endpoints refuse anything else. A group of one carries no settings.
+> **RN contract — how a group reads.** A `straight_sets` group of one is a plain exercise: no heading, its own rests. A group of two or more, and a timed group of any size, is known by its format's name and never by a letter — `circuit` is **Superset** for two exercises and **Circuit** for three or more, `straight_sets` **Straight sets**, `amrap` **AMRAP**, `emom` **EMOM**, `for_time` **For time** — under one heading with its `rounds` (every format but straight sets), its rests (between exercises, then between rounds for every format but straight sets; `0` reads "no rest", `null` isn't mentioned) and its `notes`. In every format but straight sets a group loops through its exercises, so **each exercise's rows are its rounds**: row n of its flattened `setSpecs` is round n, with that round's own targets — 21-15-9 is three rows asking 21, 15 and 9. A superset or circuit (`circuit` with two or more exercises) always carries `rounds`, and every exercise in it has exactly that many sets — its `setSpecs` entries (a drop set's drops belong to their round), else `sets` — so the heading's rounds and each exercise's rows agree; the coach's builder keeps it so and the save endpoints refuse anything else. A group of one carries no settings.
 
 > **RN contract — the rest after a row.** A lone exercise rests as its `setSpecs` say. In a group whose rows are rounds: after a row of any exercise but the last, the group's `restBetweenExercisesSeconds`; after a row of the last exercise, its `restBetweenRoundsSeconds`; after the last exercise's final row, nothing. An exercise's own per-set rest isn't used there. In a linked straight-sets group: the exercise's own rests between its sets, then `restBetweenExercisesSeconds` after its last set unless it is the last exercise. Never between the rows of one drop set, and a rest of `0` is no rest. The web client's rule is `restAfterGroupedRow` (`utils/exercise-group-display.ts`).
 
@@ -436,6 +436,23 @@ type TrainingEventDetail = {
   groups: ResolvedExerciseGroup[] // the workout, in order
   sessionLog: SessionLog | null
   exerciseLogs: ExerciseLog[] // each with `sets: SetLog[]` — every measure the set recorded, by the log payload's keys (reps, weight in kg, rpe, rir, tempo, distanceMeters, …, restSeconds), null where nothing was
+  groupScores: GroupScore[] // the timed groups' scores on the log; [] when unlogged or none scored
+}
+
+// A timed group's score (migration 186). Exactly one of the two shapes: rounds
+// and reps together, or a finish time alone — on a For time the shape says
+// whether it was capped. `groupId` is the group scored (match it to
+// `groups[].id`); null once that group row is gone, when
+// `prescribedGroupSnapshot` (the same nine snake_case keys as a snapshot
+// exercise's `group`) still says what it was.
+type GroupScore = {
+  id: string
+  sessionLogId: string
+  groupId: string | null
+  prescribedGroupSnapshot: Record<string, unknown>
+  rounds: number | null        // 0–1000
+  reps: number | null          // 0–1000, always beside rounds
+  finishSeconds: number | null // 0.1–86,400 s, to a tenth
 }
 
 type ResolvedExerciseGroup = {
@@ -504,6 +521,14 @@ type LogTrainingEventInput = {
   completionQuality: "full" | "partial"   // no third value — see below
   notes?: string              // <= 1000
   performedSessionId?: string // only when the client swapped sessions
+  // A list PRESENT replaces what the log holds (empty included); an ABSENT
+  // list leaves it alone. The same rule for both lists.
+  groupScores?: Array<{
+    groupId: string             // a group of the performed session (`groups[].id`)
+    rounds?: number             // 0–1000, whole — with `reps`
+    reps?: number               // 0–1000, whole — with `rounds`
+    finishSeconds?: number      // 0.1–86,400, to a tenth — alone
+  }>
   exercises?: Array<{
     trainingExerciseId?: string
     exerciseId?: string
@@ -549,12 +574,45 @@ type LogTrainingEventInput = {
 > save button while nothing is recorded — so the app and the server say one
 > thing.
 
-> **RN contract — a save replaces exactly what it carries.** A payload WITH
+> **RN contract — a save replaces exactly what it carries.** A list that is
+> PRESENT replaces what the log holds, an empty list included; an ABSENT list
+> leaves it alone — for `exercises` and `groupScores` alike. A payload WITH
 > `exercises` full-replaces the log's exercise logs and their sets: send the
-> complete list, never a delta. A payload WITHOUT `exercises` — the quick path —
-> records `completionQuality` and `notes` and **touches no exercise row**, so
-> marking a workout the client already logged in detail never erases what they
-> logged. To remove a log, call `DELETE` on the same path.
+> complete list, never a delta, and send `[]` to clear them (a client who
+> unticks every row and keeps a score). A payload WITHOUT `exercises` — the
+> quick path — records `completionQuality` and `notes` and **touches no
+> exercise row**, so marking a workout the client already logged in detail never
+> erases what they logged. The same for `groupScores`: a list replaces the
+> scores, `[]` clears them, no key leaves them. To remove a log, call `DELETE`
+> on the same path.
+
+> **RN contract — timed groups.** An `amrap`, `emom` or `for_time` group runs
+> on a clock, and reads as a group even when it holds one exercise (a
+> `straight_sets` group of one stays a plain exercise). Its heading names the
+> clock beside its rounds: "AMRAP · 12m" (`timeCapSeconds`), "For time · 3
+> rounds · 12m cap", "EMOM · 8 rounds · every 1m" (`intervalSeconds`); a
+> setting the coach left null isn't mentioned. **Timers are the app's own** —
+> the web harness has a countdown to the cap, an interval cue and a stopwatch;
+> build the real ones. An EMOM's interval starts on its 0-second mark, the work
+> is done, and what is left of the interval is rest; a round is one interval,
+> so `rounds` is how many intervals to cue. **Scores:** an `amrap` scores
+> `rounds` + `reps` (reps past the last full round, 0 allowed); a `for_time`
+> scores `finishSeconds` when the client finished, or `rounds` + `reps` when the
+> cap ran out — the shape is the record of which; an `emom` takes NO score and
+> logs its rows like a circuit's; nothing else scores. Send exactly one shape per
+> group, the group's id from `groups[].id`; a score on a group that cannot take
+> it is `400` with its sentence, a group outside the performed session `404`. A
+> score alone records the workout ("Tick at least one set" does not apply — a
+> scored group is logged, §4.7 amendment 1). Entering a score ticks no rows; a
+> timed group's rows still take sets like any round-based group's. **Until
+> commit 15 decides Full versus Partial for timed groups, an AMRAP's or a For
+> time's rows are left out of the working-set count, so a scored one never makes
+> the workout `partial` on its own; an EMOM's rows count like a circuit's.**
+> Reopening a logged workout: `groupScores[]` carries every score under the
+> keys above — put each back in its group's boxes, and resend it unless the
+> client changed it; a finish time is read and typed as a duration ("8:32",
+> "8:32.5", stored to a tenth). The web client's rule is `utils/group-scores.ts`
+> and its words `formatGroupScore` (`utils/exercise-group-display.ts`).
 
 > **RN contract — `setType` is coach-prescribed, never client-chosen.** The schema accepts a `setType` per set and the server **ignores it**: `set_logs.set_type` is seeded from the prescription snapshot. Do not build a set-type picker.
 

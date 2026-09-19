@@ -42,6 +42,7 @@ const mockDetail = {
   groups: [],
   sessionLog: null,
   exerciseLogs: [],
+  groupScores: [],
 };
 
 describe("GET /api/client/training/events/[eventId]", () => {

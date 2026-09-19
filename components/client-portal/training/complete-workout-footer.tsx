@@ -12,7 +12,10 @@ import {
 import type { LoggedQuality } from "@/types/training";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { EMPTY_TRAINING_LOG_MESSAGE } from "@/lib/training-log-content";
+import {
+  EMPTY_TRAINING_LOG_MESSAGE,
+  EMPTY_TRAINING_LOG_WITH_SCORES_MESSAGE,
+} from "@/lib/training-log-content";
 import {
   resolveLogOutcome,
   type LogFormValues,
@@ -62,7 +65,8 @@ export function CompleteWorkoutFooter({
   // Subscribed here rather than in the form so a keystroke re-renders this block
   // alone. The outcome has to be live: it is what the client is agreeing to.
   const exercises = useWatch({ control, name: "exercises" }) ?? [];
-  const outcome = resolveLogOutcome(exercises, prescribedRows);
+  const groupScores = useWatch({ control, name: "groupScores" }) ?? [];
+  const outcome = resolveLogOutcome(exercises, prescribedRows, groupScores);
 
   const markAllComplete = () => {
     getValues("exercises").forEach((exercise, exerciseIndex) => {
@@ -77,12 +81,28 @@ export function CompleteWorkoutFooter({
   };
 
   const label = outcome.quality === null ? null : OUTCOME_LABEL[outcome.quality];
+  // What will be recorded, part by part: the timed groups scored, then the
+  // working sets logged — each only where the workout has any.
+  const recorded = [
+    ...(outcome.scoringGroups > 0
+      ? [
+          `${outcome.scoredGroups} of ${outcome.scoringGroups} ${
+            outcome.scoringGroups === 1 ? "group" : "groups"
+          } scored`,
+        ]
+      : []),
+    ...(outcome.prescribedWorkingSets > 0
+      ? [`${outcome.completedWorkingSets} of ${outcome.prescribedWorkingSets} working sets logged`]
+      : []),
+  ];
   const sentence =
     label === null
-      ? EMPTY_TRAINING_LOG_MESSAGE
-      : outcome.prescribedWorkingSets === 0
+      ? outcome.scoringGroups > 0
+        ? EMPTY_TRAINING_LOG_WITH_SCORES_MESSAGE
+        : EMPTY_TRAINING_LOG_MESSAGE
+      : recorded.length === 0
         ? `No working sets prescribed. Will be recorded as ${label}.`
-        : `${outcome.completedWorkingSets} of ${outcome.prescribedWorkingSets} working sets logged. Will be recorded as ${label}.`;
+        : `${recorded.join(" · ")}. Will be recorded as ${label}.`;
 
   return (
     <section className="space-y-3 rounded-[6px] bg-white p-4">

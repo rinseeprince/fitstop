@@ -5,6 +5,7 @@ import { buildPrescribedRows, restAfterRow } from "./set-spec-rows";
 import {
   LONE_EXERCISE,
   exerciseGroupPlace,
+  formatGroupScore,
   formatRestDuration,
   formatRoundReps,
   formatRoundRepsShort,
@@ -12,6 +13,7 @@ import {
   groupHeadingText,
   groupName,
   isLinkedGroup,
+  readsAsGroup,
   restAfterGroupedRow,
   type ExerciseGroupPlace,
 } from "./exercise-group-display";
@@ -74,6 +76,7 @@ describe("groupHeading", () => {
     expect(heading).toEqual({
       name: "Superset",
       rounds: { count: 3, words: "rounds" },
+      timing: null,
       rests: [
         { duration: "30s", words: "rest between exercises" },
         { duration: "1m 30s", words: "rest between rounds" },
@@ -256,5 +259,77 @@ describe("formatRoundRepsShort", () => {
     expect(
       formatRoundRepsShort(buildPrescribedRows([spec({ set_number: 1, set_type: "failure" })])),
     ).toBeNull();
+  });
+});
+
+// Timed groups (section 4.5, commit 14): a clock in the heading, and a score.
+describe("timed groups", () => {
+  const AMRAP = group({ format: "amrap", timeCapSeconds: 720 }, 3);
+  const FOR_TIME = group({ format: "for_time", rounds: 3, timeCapSeconds: 720 }, 2);
+  const EMOM = group({ format: "emom", rounds: 8, intervalSeconds: 60 }, 2);
+
+  it("reads as a group even with one exercise, unlike straight sets of one", () => {
+    expect(readsAsGroup(group({ format: "amrap", timeCapSeconds: 600 }, 1))).toBe(true);
+    expect(readsAsGroup(group({ format: "emom", rounds: 8, intervalSeconds: 60 }, 1))).toBe(true);
+    expect(readsAsGroup(group({ format: "for_time", rounds: 3 }, 1))).toBe(true);
+    expect(readsAsGroup(group({}, 1))).toBe(false);
+    expect(readsAsGroup(SUPERSET)).toBe(true);
+    expect(isLinkedGroup(group({ format: "amrap", timeCapSeconds: 600 }, 1))).toBe(false);
+  });
+
+  it("a timed group of one takes a group's place: its rows are rounds", () => {
+    const place = exerciseGroupPlace(
+      group({ format: "amrap", timeCapSeconds: 600, restBetweenRoundsSeconds: 30 }, 1),
+      0,
+    );
+    expect(place).toEqual({
+      linked: true,
+      roundsAreRows: true,
+      isLastExercise: true,
+      restBetweenExercisesSeconds: null,
+      restBetweenRoundsSeconds: 30,
+    });
+  });
+
+  it("names the clock in the heading: the cap, the cap as a cap, the interval", () => {
+    expect(groupHeadingText(groupHeading(AMRAP)).title).toBe("AMRAP · 12m");
+    expect(groupHeadingText(groupHeading(FOR_TIME)).title).toBe("For time · 3 rounds · 12m cap");
+    expect(groupHeadingText(groupHeading(EMOM)).title).toBe("EMOM · 8 rounds · every 1m");
+    expect(groupHeading(AMRAP).timing).toEqual({ duration: "12m", words: null, before: false });
+    expect(groupHeading(FOR_TIME).timing).toEqual({ duration: "12m", words: "cap", before: false });
+    expect(groupHeading(EMOM).timing).toEqual({ duration: "1m", words: "every", before: true });
+  });
+
+  it("leaves the clock out where the coach set none, and never on a superset", () => {
+    expect(groupHeadingText(groupHeading(group({ format: "amrap" }, 2))).title).toBe("AMRAP");
+    expect(groupHeadingText(groupHeading(group({ format: "for_time", rounds: 2 }, 2))).title).toBe(
+      "For time · 2 rounds",
+    );
+    expect(groupHeadingText(groupHeading(group({ format: "emom", rounds: 8 }, 2))).title).toBe(
+      "EMOM · 8 rounds",
+    );
+    expect(groupHeading({ ...SUPERSET, timeCapSeconds: 600, intervalSeconds: 60 }).timing).toBeNull();
+  });
+
+  it("reads a score: rounds and reps, a finish time, or a capped For time", () => {
+    expect(formatGroupScore("amrap", { rounds: 7, reps: 12, finishSeconds: null })).toBe(
+      "7 rounds + 12 reps",
+    );
+    expect(formatGroupScore("amrap", { rounds: 7, reps: 0, finishSeconds: null })).toBe("7 rounds");
+    expect(formatGroupScore("amrap", { rounds: 1, reps: 1, finishSeconds: null })).toBe(
+      "1 round + 1 rep",
+    );
+    expect(formatGroupScore("for_time", { rounds: null, reps: null, finishSeconds: 512 })).toBe(
+      "Finished in 8:32",
+    );
+    expect(formatGroupScore("for_time", { rounds: null, reps: null, finishSeconds: 512.5 })).toBe(
+      "Finished in 8:32.5",
+    );
+    expect(formatGroupScore("for_time", { rounds: null, reps: null, finishSeconds: 3725 })).toBe(
+      "Finished in 1:02:05",
+    );
+    expect(formatGroupScore("for_time", { rounds: 2, reps: 15, finishSeconds: null })).toBe(
+      "Capped · 2 rounds + 15 reps",
+    );
   });
 });

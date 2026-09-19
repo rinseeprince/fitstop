@@ -78,6 +78,20 @@ function isGroupFormat(value: string): value is GroupFormat {
   return (GROUP_FORMATS as readonly string[]).includes(value);
 }
 
+/**
+ * A group as a log snapshot records it (migration 178): its id, its place in
+ * the session and its settings, in the row's own spelling. An exercise
+ * snapshot carries one under `group`; a timed group's score row carries one
+ * as `prescribed_group_snapshot` (migration 186).
+ */
+export type GroupSnapshot = GroupSettingsRow & { id: string; order_index: number };
+
+/** The format a group snapshot records, or null when the snapshot has none this reader trusts. */
+export function groupSnapshotFormat(snapshot: Readonly<Record<string, unknown>>): GroupFormat | null {
+  const format = snapshot.format;
+  return typeof format === "string" && isGroupFormat(format) ? format : null;
+}
+
 export function groupSettingsFromRow(row: GroupSettingsRow): GroupSettings {
   // The CHECK refuses any other value, so one reaching here means the list and
   // the constraint have drifted apart.

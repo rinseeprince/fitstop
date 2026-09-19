@@ -21,6 +21,7 @@ import {
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type {
   ExerciseLog,
+  GroupScore,
   SessionLog,
   SessionLogDetail,
   SessionLogPrescribedExercise,
@@ -28,8 +29,9 @@ import type {
 } from "@/types/training";
 import {
   exerciseGroupPlace,
-  isLinkedGroup,
+  readsAsGroup,
 } from "@/utils/exercise-group-display";
+import { groupSettingsFromRow, groupSnapshotFormat } from "@/utils/exercise-groups";
 import { SessionLogExerciseCard } from "./session-log-exercise-card";
 import { SessionLogGroup } from "./session-log-group";
 
@@ -93,6 +95,35 @@ function qualityLabel(quality: SessionLog["completionQuality"]) {
     default:
       return null;
   }
+}
+
+/**
+ * A scored group the performed session no longer holds, as the group its score
+ * row's snapshot records — the nine keys an exercise snapshot's `group` carries.
+ * Null when the snapshot names no format this reader trusts.
+ */
+function snapshotScoredGroup(score: GroupScore): SessionLogPrescribedGroup | null {
+  const row = score.prescribedGroupSnapshot;
+  const format = groupSnapshotFormat(row);
+  if (format === null) return null;
+  const num = (key: string) => {
+    const value = row[key];
+    return typeof value === "number" ? value : null;
+  };
+  return {
+    id: score.groupId ?? score.id,
+    orderIndex: num("order_index") ?? 0,
+    ...groupSettingsFromRow({
+      format,
+      rounds: num("rounds"),
+      time_cap_seconds: num("time_cap_seconds"),
+      interval_seconds: num("interval_seconds"),
+      rest_between_exercises_seconds: num("rest_between_exercises_seconds"),
+      rest_between_rounds_seconds: num("rest_between_rounds_seconds"),
+      notes: typeof row.notes === "string" ? row.notes : null,
+    }),
+    exercises: [],
+  };
 }
 
 function snapshotString(snapshot: Record<string, unknown> | null, key: string): string | null {
@@ -193,12 +224,29 @@ export function SessionLogDetailDialog({
     [data],
   );
   const performedSessionName: string | null = data?.data?.performedSessionName ?? null;
+  const groupScores = useMemo(() => data?.data?.groupScores ?? [], [data]);
 
   const entries = useMemo(
     () => buildExerciseEntries(prescribedGroups, exerciseLogs),
     [prescribedGroups, exerciseLogs],
   );
-  const hasEntries = entries.groups.length > 0 || entries.extras.length > 0;
+  // The log's scores by the group they score; the rest — a score whose group
+  // the performed session no longer holds — read as the groups their snapshots
+  // record, after the prescription, with no cards under them.
+  const scoreByGroupId = useMemo(
+    () => new Map(groupScores.flatMap((s) => (s.groupId ? [[s.groupId, s] as const] : []))),
+    [groupScores],
+  );
+  const orphanScores = useMemo(() => {
+    const prescribedIds = new Set(prescribedGroups.map((group) => group.id));
+    return groupScores.flatMap((score) => {
+      if (score.groupId !== null && prescribedIds.has(score.groupId)) return [];
+      const group = snapshotScoredGroup(score);
+      return group ? [{ score, group }] : [];
+    });
+  }, [groupScores, prescribedGroups]);
+  const hasEntries =
+    entries.groups.length > 0 || entries.extras.length > 0 || orphanScores.length > 0;
 
   const sessionSnapshot = sessionLog?.prescribedSessionSnapshot ?? null;
   const sessionName = snapshotString(sessionSnapshot, "name") ?? "Training Session";
@@ -327,11 +375,15 @@ export function SessionLogDetailDialog({
                           onExerciseDrillDown={onExerciseDrillDown}
                         />
                       ));
-                      // A lone exercise is a plain card; only a linked group reads
-                      // as a group.
-                      return isLinkedGroup(group)
+                      // A lone exercise is a plain card; a linked group and a
+                      // timed group read as a group.
+                      return readsAsGroup(group)
                         ? [
-                            <SessionLogGroup key={group.id} group={group}>
+                            <SessionLogGroup
+                              key={group.id}
+                              group={group}
+                              score={scoreByGroupId.get(group.id) ?? null}
+                            >
                               {cards}
                             </SessionLogGroup>,
                           ]
@@ -344,6 +396,11 @@ export function SessionLogDetailDialog({
                         prescribed={entry.prescribed}
                         onExerciseDrillDown={onExerciseDrillDown}
                       />
+                    ))}
+                    {orphanScores.map(({ score, group }) => (
+                      <SessionLogGroup key={score.id} group={group} score={score}>
+                        {null}
+                      </SessionLogGroup>
                     ))}
                   </div>
                 </div>

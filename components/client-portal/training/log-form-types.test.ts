@@ -2,17 +2,28 @@ import { describe, it, expect } from "vitest";
 import {
   buildLogPayload,
   emptySet,
+  parseGroupScore,
   prescribedRowsForView,
+  resolveLogOutcome,
   seedDefaultValues,
+  seedGroupScores,
 } from "./log-form-types";
 import type {
+  GroupScoreFormValues,
   LogFormValues,
   LogPayloadResult,
   PrescribedRowsByIndex,
   SetRowValues,
 } from "./log-form-types";
 import type { PrescribedExerciseView } from "./exercise-tracker-block";
-import type { ExerciseLog, SessionLog, SetLog } from "@/types/training";
+import type {
+  ExerciseLog,
+  GroupScore,
+  ResolvedExerciseGroup,
+  SessionLog,
+  SetLog,
+} from "@/types/training";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import {
   emptyLoggedActuals,
@@ -62,6 +73,7 @@ const ticked = (over: Parameters<typeof row>[0] = {}) => row({ ...over, complete
 function values(sets: SetRowValues[]): LogFormValues {
   return {
     notes: "",
+    groupScores: [],
     exercises: [
       {
         trainingExerciseId: EX_A,
@@ -498,6 +510,8 @@ const SESSION_LOG: SessionLog = {
 describe("seedDefaultValues — reopening a logged session", () => {
   it("rebuilds the FULL prescription and ticks only the rows that were logged", () => {
     const seeded = seedDefaultValues({
+      groups: [],
+      groupScores: [],
       prescribedViews: [view({ sets: 6 })],
       sessionLog: SESSION_LOG,
       exerciseLogs: [exerciseLog([setLog(3), setLog(4), setLog(5)])],
@@ -522,6 +536,8 @@ describe("seedDefaultValues — reopening a logged session", () => {
 
   it("re-saves a restored partial log with its ORIGINAL set numbers", () => {
     const seeded = seedDefaultValues({
+      groups: [],
+      groupScores: [],
       prescribedViews: [view({ sets: 6 })],
       sessionLog: SESSION_LOG,
       exerciseLogs: [exerciseLog([setLog(3), setLog(4), setLog(5)])],
@@ -544,6 +560,8 @@ describe("seedDefaultValues — reopening a logged session", () => {
   // the viewer's units.
   it("restores every value a logged set carries and resubmits it untouched, byte-identical", () => {
     const seeded = seedDefaultValues({
+      groups: [],
+      groupScores: [],
       prescribedViews: [view({ sets: 1 })],
       sessionLog: SESSION_LOG,
       exerciseLogs: [exerciseLog([setLog(1, EVERYTHING)])],
@@ -578,6 +596,8 @@ describe("seedDefaultValues — reopening a logged session", () => {
 
   it("reads a logged set back in an imperial client's units and still resubmits the stored value", () => {
     const seeded = seedDefaultValues({
+      groups: [],
+      groupScores: [],
       prescribedViews: [view({ sets: 1 })],
       sessionLog: SESSION_LOG,
       exerciseLogs: [exerciseLog([setLog(1, { distanceMeters: 5000, paceSecondsPerKm: 300, weight: 100 })])],
@@ -598,6 +618,8 @@ describe("seedDefaultValues — reopening a logged session", () => {
   // DELETED from the database on the next save: reopen, save, gone.
   it("keeps a logged set past the prescription, and still sends it on re-save", () => {
     const seeded = seedDefaultValues({
+      groups: [],
+      groupScores: [],
       prescribedViews: [view({ sets: 3 })],
       sessionLog: SESSION_LOG,
       exerciseLogs: [
@@ -616,6 +638,8 @@ describe("seedDefaultValues — reopening a logged session", () => {
 
   it("seeds a never-logged exercise as the full prescription, unticked", () => {
     const seeded = seedDefaultValues({
+      groups: [],
+      groupScores: [],
       prescribedViews: [view({ sets: 4 })],
       sessionLog: null,
       exerciseLogs: [],
@@ -627,6 +651,8 @@ describe("seedDefaultValues — reopening a logged session", () => {
 
   it("flattens a drop set into its top set plus one row per drop", () => {
     const seeded = seedDefaultValues({
+      groups: [],
+      groupScores: [],
       prescribedViews: [
         view({
           sets: 1,
@@ -653,6 +679,8 @@ describe("seedDefaultValues — reopening a logged session", () => {
       performedName: "Calf Raises",
     };
     const seeded = seedDefaultValues({
+      groups: [],
+      groupScores: [],
       prescribedViews: [],
       sessionLog: SESSION_LOG,
       exerciseLogs: [orphan],
@@ -664,5 +692,143 @@ describe("seedDefaultValues — reopening a logged session", () => {
       true,
       true,
     ]);
+  });
+});
+
+// Timed groups' scores (section 4.5, commit 14).
+describe("group scores", () => {
+  const GROUP_AMRAP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const GROUP_FT = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const GROUP_EMOM = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+  const group = (id: string, over: Partial<ResolvedExerciseGroup>): ResolvedExerciseGroup => ({
+    id,
+    orderIndex: 0,
+    ...STRAIGHT_SETS,
+    exercises: [],
+    ...over,
+  });
+  const GROUPS = [
+    group(GROUP_AMRAP, { format: "amrap", timeCapSeconds: 720 }),
+    group(GROUP_EMOM, { format: "emom", rounds: 8, intervalSeconds: 60, orderIndex: 1 }),
+    group(GROUP_FT, { format: "for_time", rounds: 3, timeCapSeconds: 720, orderIndex: 2 }),
+    group("lone", { orderIndex: 3 }),
+  ];
+  const score = (over: Partial<GroupScore> & Pick<GroupScore, "groupId">): GroupScore => ({
+    id: "score-1",
+    sessionLogId: "log-1",
+    prescribedGroupSnapshot: {},
+    rounds: null,
+    reps: null,
+    finishSeconds: null,
+    ...over,
+  } as GroupScore);
+  const entry = (over: Partial<GroupScoreFormValues>): GroupScoreFormValues => ({
+    groupId: GROUP_AMRAP,
+    format: "amrap",
+    capped: false,
+    rounds: "",
+    reps: "",
+    finishTime: "",
+    ...over,
+  });
+
+  it("seeds one entry per group that takes a score, in session order, empty when unscored", () => {
+    expect(seedGroupScores(GROUPS, [])).toEqual([
+      { groupId: GROUP_AMRAP, format: "amrap", capped: false, rounds: "", reps: "", finishTime: "" },
+      { groupId: GROUP_FT, format: "for_time", capped: false, rounds: "", reps: "", finishTime: "" },
+    ]);
+  });
+
+  it("drops a logged score into its boxes: rounds and reps, a finish time, or a capped For time", () => {
+    const seeded = seedGroupScores(GROUPS, [
+      score({ groupId: GROUP_AMRAP, rounds: 7, reps: 12 }),
+      score({ id: "score-2", groupId: GROUP_FT, finishSeconds: 512.5 }),
+    ]);
+    expect(seeded[0]).toMatchObject({ rounds: "7", reps: "12", capped: false });
+    expect(seeded[1]).toMatchObject({ finishTime: "8:32.5", capped: false });
+
+    const capped = seedGroupScores(GROUPS, [score({ groupId: GROUP_FT, rounds: 2, reps: 15 })]);
+    expect(capped[1]).toMatchObject({ capped: true, rounds: "2", reps: "15", finishTime: "" });
+  });
+
+  it("reads the boxes: whole numbers within their limit, a duration to a tenth, or names the box", () => {
+    expect(parseGroupScore(entry({ rounds: "7", reps: "12" }))).toEqual({
+      ok: true,
+      score: { rounds: 7, reps: 12, finishSeconds: null },
+    });
+    expect(parseGroupScore(entry({ rounds: " 7 ", reps: "0" }))).toEqual({
+      ok: true,
+      score: { rounds: 7, reps: 0, finishSeconds: null },
+    });
+    expect(parseGroupScore(entry({}))).toEqual({ ok: true, score: null });
+    expect(parseGroupScore(entry({ rounds: "7" }))).toEqual({ ok: false, box: "reps" });
+    expect(parseGroupScore(entry({ reps: "3" }))).toEqual({ ok: false, box: "rounds" });
+    expect(parseGroupScore(entry({ rounds: "seven", reps: "3" }))).toEqual({ ok: false, box: "rounds" });
+    expect(parseGroupScore(entry({ rounds: "7", reps: "1001" }))).toEqual({ ok: false, box: "reps" });
+    expect(parseGroupScore(entry({ rounds: "7.5", reps: "1" }))).toEqual({ ok: false, box: "rounds" });
+
+    const ft = (over: Partial<GroupScoreFormValues>) =>
+      parseGroupScore(entry({ groupId: GROUP_FT, format: "for_time", ...over }));
+    expect(ft({ finishTime: "8:32" })).toEqual({ ok: true, score: { rounds: null, reps: null, finishSeconds: 512 } });
+    expect(ft({ finishTime: "8:32.5" })).toEqual({ ok: true, score: { rounds: null, reps: null, finishSeconds: 512.5 } });
+    // A bare number is minutes, as every duration box reads it.
+    expect(ft({ finishTime: "8" })).toEqual({ ok: true, score: { rounds: null, reps: null, finishSeconds: 480 } });
+    expect(ft({ finishTime: "" })).toEqual({ ok: true, score: null });
+    expect(ft({ finishTime: "fast" })).toEqual({ ok: false, box: "finishTime" });
+    expect(ft({ finishTime: "8:32.55" })).toEqual({ ok: false, box: "finishTime" });
+    expect(ft({ finishTime: "25:00:00" })).toEqual({ ok: false, box: "finishTime" });
+    // Capped: rounds and reps, the finish box ignored.
+    expect(ft({ capped: true, rounds: "2", reps: "15", finishTime: "8:32" })).toEqual({
+      ok: true,
+      score: { rounds: 2, reps: 15, finishSeconds: null },
+    });
+  });
+
+  it("a score alone records work, as full — its rows are out of the count until commit 15", () => {
+    const form = { ...values([row({ completed: false })]), groupScores: [entry({ rounds: "7", reps: "12" })] };
+    // The one exercise sits in the AMRAP: nothing to count.
+    const outcome = resolveLogOutcome(form.exercises, [null], form.groupScores);
+    expect(outcome).toEqual({
+      completedWorkingSets: 0,
+      prescribedWorkingSets: 0,
+      scoringGroups: 1,
+      scoredGroups: 1,
+      quality: "full",
+    });
+    const payload = saved(buildLogPayload(form, "metric", NOTHING_DIRTY, [null]));
+    expect(payload).toEqual({
+      completionQuality: "full",
+      exercises: [],
+      groupScores: [{ groupId: GROUP_AMRAP, rounds: 7, reps: 12 }],
+    });
+  });
+
+  it("an unscored group beside unticked sets records nothing, and an empty score box is no score", () => {
+    const form = { ...values([row({ completed: false })]), groupScores: [entry({})] };
+    expect(resolveLogOutcome(form.exercises, working(3), form.groupScores).quality).toBeNull();
+    expect(buildLogPayload(form, "metric", NOTHING_DIRTY, working(3))).toEqual({ ok: false, reason: "nothing" });
+  });
+
+  it("both lists always travel: ticked sets and a For time's finish, the rest of the count from the sets", () => {
+    const form = {
+      ...values([ticked({ reps: "5" }), ticked({ reps: "5" }), row({ completed: false })]),
+      groupScores: [entry({ groupId: GROUP_FT, format: "for_time", finishTime: "8:32" })],
+    };
+    const outcome = resolveLogOutcome(form.exercises, working(3), form.groupScores);
+    expect(outcome).toMatchObject({ completedWorkingSets: 2, prescribedWorkingSets: 3, scoredGroups: 1, quality: "partial" });
+    const payload = saved(buildLogPayload(form, "metric", ALL_DIRTY, working(3)));
+    expect(payload.exercises).toHaveLength(1);
+    expect(payload.groupScores).toEqual([{ groupId: GROUP_FT, finishSeconds: 512 }]);
+  });
+
+  it("a score box it can't read refuses the save and names the group's box", () => {
+    const form = { ...values([ticked({ reps: "5" })]), groupScores: [entry({ rounds: "7", reps: "" })] };
+    expect(buildLogPayload(form, "metric", ALL_DIRTY, working(1))).toEqual({
+      ok: false,
+      reason: "unreadable-score",
+      groupIndex: 0,
+      box: "reps",
+    });
   });
 });

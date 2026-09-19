@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { SessionLogDetailDialog } from "./session-log-detail-dialog";
 import { emptyLoggedActuals } from "@/utils/set-log-measures";
 import type {
+  GroupScore,
   SessionLog,
   ExerciseLog,
   SetLog,
@@ -129,6 +130,7 @@ function setupSWR(options: {
   sessionLog?: SessionLog;
   exerciseLogs?: ExerciseLog[];
   prescribedGroups?: SessionLogPrescribedGroup[];
+  groupScores?: GroupScore[];
   performedSessionName?: string | null;
   isLoading?: boolean;
   error?: Error | null;
@@ -142,6 +144,7 @@ function setupSWR(options: {
             sessionLog: options.sessionLog ?? makeSessionLog(),
             exerciseLogs: options.exerciseLogs ?? [],
             prescribedGroups: options.prescribedGroups ?? [],
+            groupScores: options.groupScores ?? [],
             performedSessionName: options.performedSessionName ?? null,
           },
         },
@@ -961,6 +964,98 @@ describe("SessionLogDetailDialog", () => {
         .filter((t) => t && t !== "Close");
       expect(names).toEqual(["Back Squat", "Bench Press", "Pendlay Row", "Unplanned Curl"]);
       expect(screen.getByRole("button", { name: "Unplanned Curl" }).closest("section")).toBeNull();
+    });
+  });
+
+  // Timed groups' scores (section 4.5, commit 14): under the heading, in the
+  // score's words; a timed group reads as a group even alone.
+  describe("timed groups", () => {
+    const amrapSnapshot = {
+      id: "grp-amrap",
+      order_index: 0,
+      format: "amrap",
+      rounds: null,
+      time_cap_seconds: 720,
+      interval_seconds: null,
+      rest_between_exercises_seconds: null,
+      rest_between_rounds_seconds: null,
+      notes: null,
+    };
+    const scoreOf = (over: Partial<GroupScore>): GroupScore =>
+      ({
+        id: "score-1",
+        sessionLogId: "sl-1",
+        groupId: "grp-amrap",
+        prescribedGroupSnapshot: amrapSnapshot,
+        rounds: null,
+        reps: null,
+        finishSeconds: null,
+        ...over,
+      }) as GroupScore;
+
+    it("shows each timed group's score under its heading, and Not scored where none was entered", () => {
+      setupSWR({
+        prescribedGroups: [
+          makeGroup("grp-amrap", 0, [makePrescribed({ trainingExerciseId: "te-1", name: "Kettlebell Swing" }), makePrescribed({ trainingExerciseId: "te-2", name: "Push Up" })], {
+            format: "amrap",
+            timeCapSeconds: 720,
+          }),
+          makeGroup("grp-ft", 1, [makePrescribed({ trainingExerciseId: "te-3", name: "Thruster" })], {
+            format: "for_time",
+            rounds: 3,
+            timeCapSeconds: 720,
+          }),
+          makeGroup("grp-emom", 2, [makePrescribed({ trainingExerciseId: "te-4", name: "Burpee" })], {
+            format: "emom",
+            rounds: 8,
+            intervalSeconds: 60,
+          }),
+        ],
+        groupScores: [scoreOf({ rounds: 7, reps: 12 })],
+      });
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const amrap = screen.getByRole("region", { name: "AMRAP · 12m" });
+      expect(within(amrap).getByTestId("group-score")).toHaveTextContent("7 rounds + 12 reps");
+      // A timed group of one is still a group, with its cap and its score line.
+      const forTime = screen.getByRole("region", { name: "For time · 3 rounds · 12m cap" });
+      expect(within(forTime).getByTestId("group-score")).toHaveTextContent("Not scored");
+      // An EMOM has no score line.
+      const emom = screen.getByRole("region", { name: "EMOM · 8 rounds · every 1m" });
+      expect(within(emom).queryByTestId("group-score")).toBeNull();
+    });
+
+    it("reads a For time's finish, or its capped rounds and reps", () => {
+      const forTime = makeGroup("grp-ft", 0, [makePrescribed({ trainingExerciseId: "te-3", name: "Thruster" })], {
+        format: "for_time",
+        rounds: 3,
+        timeCapSeconds: 720,
+      });
+      setupSWR({
+        prescribedGroups: [forTime],
+        groupScores: [scoreOf({ groupId: "grp-ft", finishSeconds: 512.5 })],
+      });
+      const { unmount } = render(<SessionLogDetailDialog {...defaultProps} />);
+      expect(screen.getByTestId("group-score")).toHaveTextContent("Finished in 8:32.5");
+      unmount();
+
+      setupSWR({
+        prescribedGroups: [forTime],
+        groupScores: [scoreOf({ groupId: "grp-ft", rounds: 2, reps: 15 })],
+      });
+      render(<SessionLogDetailDialog {...defaultProps} />);
+      expect(screen.getByTestId("group-score")).toHaveTextContent("Capped · 2 rounds + 15 reps");
+    });
+
+    it("a score whose group the session no longer holds reads as the group its snapshot records, after the prescription", () => {
+      setupSWR({
+        prescribedGroups: [makeGroup("grp-squat", 0, [makePrescribed()])],
+        groupScores: [scoreOf({ groupId: null, rounds: 5, reps: 0 })],
+      });
+      render(<SessionLogDetailDialog {...defaultProps} />);
+      const amrap = screen.getByRole("region", { name: "AMRAP · 12m" });
+      expect(within(amrap).getByTestId("group-score")).toHaveTextContent("5 rounds");
+      expect(screen.getAllByText("Bench Press")).toHaveLength(1);
     });
   });
 

@@ -21,6 +21,8 @@ import { toast } from "sonner";
 import { logTrainingEventSchema } from "@/lib/validations/training";
 import { EMPTY_TRAINING_LOG_MESSAGE } from "@/lib/training-log-content";
 import { BOX_LABELS } from "@/utils/set-log-measures";
+import { takesScore } from "@/utils/group-scores";
+import { groupName } from "@/utils/exercise-group-display";
 import type { Client } from "@/types/check-in";
 import type {
   ResolvedExercise,
@@ -30,6 +32,7 @@ import type {
   TrainingSession,
 } from "@/types/training";
 import type { PrescribedExerciseView } from "./exercise-tracker-block";
+import type { PrescribedRow } from "@/utils/set-spec-rows";
 import { TrackerExerciseList } from "./tracker-exercise-list";
 import { CompleteWorkoutFooter } from "./complete-workout-footer";
 import { AddExerciseRow } from "./add-exercise-row";
@@ -43,9 +46,11 @@ import { useUnits } from "@/contexts/units-context";
 import {
   buildLogPayload,
   prescribedRowsForView,
+  SCORE_BOX_LABELS,
   seedDefaultValues,
   type ExerciseFormValues,
   type LogFormValues,
+  type PrescribedRowsByIndex,
 } from "./log-form-types";
 import { asLiveGroups, sessionExercises } from "@/utils/exercise-groups";
 
@@ -223,6 +228,7 @@ function EventModeTracker({
         ? {
             sessionLog: eventData.data.sessionLog,
             exerciseLogs: eventData.data.exerciseLogs,
+            groupScores: eventData.data.groupScores,
           }
         : undefined,
     );
@@ -284,21 +290,40 @@ function TrainingLogForm({
 
   // The flattened prescription per form position. Only the prescribed prefix has
   // one — an orphan log or an appended unplanned exercise sits past the end and
-  // reads as undefined, which scores neither half of the outcome.
-  const prescribedRowsByIndex = useMemo(
-    () => prescribedViews.map((v) => prescribedRowsForView(v)),
-    [prescribedViews],
-  );
+  // reads as undefined, which scores neither half of the outcome. An exercise
+  // in an AMRAP or For time reads null for the same reason: until commit 15
+  // decides Full versus Partial for timed groups, its rows are left out of the
+  // working-set count and its group's score is what records it.
+  const prescribedRowsByIndex = useMemo<PrescribedRowsByIndex>(() => {
+    const rows: (PrescribedRow[] | null)[] = [];
+    let index = 0;
+    for (const group of detail.groups) {
+      for (const _exercise of group.exercises) {
+        const view = prescribedViews[index];
+        rows.push(!view || takesScore(group.format) ? null : prescribedRowsForView(view));
+        index += 1;
+      }
+    }
+    return rows;
+  }, [detail.groups, prescribedViews]);
 
   const defaultValues = useMemo<LogFormValues>(
     () =>
       seedDefaultValues({
         prescribedViews,
+        groups: detail.groups,
         sessionLog: detail.sessionLog,
         exerciseLogs: detail.exerciseLogs,
+        groupScores: detail.groupScores,
         viewer: preference,
       }),
-    [prescribedViews, detail.sessionLog, detail.exerciseLogs, preference],
+    [prescribedViews, detail.groups, detail.sessionLog, detail.exerciseLogs, detail.groupScores, preference],
+  );
+
+  // Where each scoring group's boxes live in the form, by the group's id.
+  const scoreIndexByGroupId = useMemo(
+    () => new Map(defaultValues.groupScores.map((score, index) => [score.groupId, index])),
+    [defaultValues.groupScores],
   );
 
   const {
@@ -338,6 +363,22 @@ function TrainingLogForm({
         // belt for a submit that reached here another way.
         toast.error("Couldn't save workout", {
           description: EMPTY_TRAINING_LOG_MESSAGE,
+        });
+        return;
+      }
+      if (result.reason === "unreadable-score") {
+        // A score box that can't be read, or one of a pair left empty: marked
+        // and focused, and the message names the group and the box.
+        const { groupIndex, box } = result;
+        const path = `groupScores.${groupIndex}.${box}` as const;
+        const group = detail.groups.find(
+          (g) => g.id === values.groupScores[groupIndex]?.groupId,
+        );
+        const name = group ? groupName(group.format, group.exercises.length) : "this group";
+        setError(path, { type: "manual", message: `Check ${SCORE_BOX_LABELS[box]}` });
+        setFocus(path);
+        toast.error("Couldn't save workout", {
+          description: `${SCORE_BOX_LABELS[box]} on the ${name} isn't something it can read.`,
         });
         return;
       }
@@ -563,6 +604,7 @@ function TrainingLogForm({
               groups={detail.groups}
               prescribedViews={prescribedViews}
               fields={exerciseFields}
+              scoreIndexByGroupId={scoreIndexByGroupId}
               form={{ control, register, setValue, getValues }}
               onRemoveExercise={removeExercise}
             />
@@ -585,6 +627,7 @@ function syntheticDetailFromSession(
   logged?: {
     sessionLog: TrainingEventDetail["sessionLog"];
     exerciseLogs: TrainingEventDetail["exerciseLogs"];
+    groupScores: TrainingEventDetail["groupScores"];
   },
 ): TrainingEventDetail {
   const { groups, ...header } = session;
@@ -594,6 +637,7 @@ function syntheticDetailFromSession(
     groups: asLiveGroups(groups),
     sessionLog: logged?.sessionLog ?? null,
     exerciseLogs: logged?.exerciseLogs ?? [],
+    groupScores: logged?.groupScores ?? [],
   };
 }
 

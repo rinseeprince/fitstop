@@ -1,19 +1,33 @@
 import type { GroupFormat, GroupSettings } from "./exercise-groups";
+import { isTimedFormat, type GroupScoreValue } from "./group-scores";
 import { formatRepsRange } from "./reps-range";
 import { isContinuationOfDropSet, restAfterRow, type PrescribedRow } from "./set-spec-rows";
+import { formatDuration } from "./unit-conversions";
 
 // How a group reads to a client or a coach (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md
-// section 4.2). A group of one is a plain exercise, exactly as it was before
-// groups existed; only a linked group (two or more exercises) reads as a group,
-// and it is known by its format's name, never a letter (owner, 2026-09-16).
+// sections 4.2 and 4.5). A straight-sets group of one is a plain exercise,
+// exactly as it was before groups existed; a linked group (two or more
+// exercises) and a timed group (AMRAP, EMOM, For time — a clock, and for two
+// of them a score) read as a group, known by the format's name, never a letter
+// (owner, 2026-09-16).
 //
 // Pure and client-safe. The client's workout, their program page and the
 // coach's workout log view all read groups through this module, and
 // CLIENT-APP-REFERENCE.md states the same rules for the React Native app.
 
-/** Two or more exercises: the only groups that read as a group. */
+/** Two or more exercises: a linked group. */
 export function isLinkedGroup(group: { exercises: ReadonlyArray<unknown> }): boolean {
   return group.exercises.length > 1;
+}
+
+/**
+ * Which groups read as a group — a heading, a rail, a timer and a score. A
+ * linked group always does; so does a timed group of one, because its cap,
+ * its timer and its score must never be hidden. A straight-sets group of one
+ * is a plain exercise, exactly as before groups existed.
+ */
+export function readsAsGroup(group: { format: GroupFormat; exercises: ReadonlyArray<unknown> }): boolean {
+  return isLinkedGroup(group) || isTimedFormat(group.format);
 }
 
 /** What coaches and clients call a linked group. */
@@ -48,10 +62,36 @@ type GroupHeading = {
   name: string;
   /** The coach's rounds, only where the group's rows are rounds. */
   rounds: { count: number; words: "round" | "rounds" } | null;
+  /**
+   * The clock the group runs on: an AMRAP's time cap ("12m"), a For time's cap
+   * ("12m", read with "cap"), an EMOM's interval ("1m", read with "every").
+   * Absent where the coach set none.
+   */
+  timing: { duration: string; words: "cap" | "every" | null; before: boolean } | null;
   /** Between exercises, then between rounds; a rest the coach didn't set is absent. */
   rests: GroupRest[];
   notes: string | null;
 };
+
+function groupTiming(group: GroupSettings): GroupHeading["timing"] {
+  switch (group.format) {
+    case "amrap":
+      // "AMRAP · 12m": the cap is what an AMRAP is, so it carries no word.
+      return group.timeCapSeconds != null
+        ? { duration: formatRestDuration(group.timeCapSeconds), words: null, before: false }
+        : null;
+    case "for_time":
+      return group.timeCapSeconds != null
+        ? { duration: formatRestDuration(group.timeCapSeconds), words: "cap", before: false }
+        : null;
+    case "emom":
+      return group.intervalSeconds != null
+        ? { duration: formatRestDuration(group.intervalSeconds), words: "every", before: true }
+        : null;
+    default:
+      return null;
+  }
+}
 
 function groupRest(seconds: number | null, between: "exercises" | "rounds"): GroupRest[] {
   if (seconds == null) return [];
@@ -68,6 +108,7 @@ export function groupHeading(group: GroupSettings & { exercises: ReadonlyArray<u
       looped && group.rounds != null
         ? { count: group.rounds, words: group.rounds === 1 ? "round" : "rounds" }
         : null,
+    timing: groupTiming(group),
     rests: [
       ...groupRest(group.restBetweenExercisesSeconds, "exercises"),
       ...(looped ? groupRest(group.restBetweenRoundsSeconds, "rounds") : []),
@@ -76,11 +117,23 @@ export function groupHeading(group: GroupSettings & { exercises: ReadonlyArray<u
   };
 }
 
-/** "Superset · 3 rounds" and "30s rest between exercises · 1m 30s rest between rounds", as plain text. */
+/** "12m", "12m cap", "every 1m" — the timing part as plain text. */
+function groupTimingText(timing: NonNullable<GroupHeading["timing"]>): string {
+  if (timing.words === null) return timing.duration;
+  return timing.before ? `${timing.words} ${timing.duration}` : `${timing.duration} ${timing.words}`;
+}
+
+/**
+ * "Superset · 3 rounds", "AMRAP · 12m", "For time · 3 rounds · 12m cap",
+ * "EMOM · 8 rounds · every 1m", and "30s rest between exercises · 1m 30s rest
+ * between rounds", as plain text.
+ */
 export function groupHeadingText(heading: GroupHeading): { title: string; rests: string | null } {
-  const title = heading.rounds
-    ? `${heading.name} · ${heading.rounds.count} ${heading.rounds.words}`
-    : heading.name;
+  const title = [
+    heading.name,
+    ...(heading.rounds ? [`${heading.rounds.count} ${heading.rounds.words}`] : []),
+    ...(heading.timing ? [groupTimingText(heading.timing)] : []),
+  ].join(" · ");
   const rests = heading.rests
     .map((rest) => (rest.duration ? `${rest.duration} ${rest.words}` : rest.words))
     .join(" · ");
@@ -89,9 +142,9 @@ export function groupHeadingText(heading: GroupHeading): { title: string; rests:
 
 /** Where an exercise stands in its group: what its rows are, and which rests follow them. */
 export type ExerciseGroupPlace = {
-  /** In a linked group. A lone exercise reads exactly as a plain exercise. */
+  /** In a group that reads as a group (`readsAsGroup`). A lone exercise reads exactly as a plain exercise. */
   linked: boolean;
-  /** In a linked group of any format but straight sets, each row is a round. */
+  /** In such a group of any format but straight sets, each row is a round. */
   roundsAreRows: boolean;
   isLastExercise: boolean;
   restBetweenExercisesSeconds: number | null;
@@ -111,7 +164,7 @@ export function exerciseGroupPlace(
   group: GroupSettings & { exercises: ReadonlyArray<unknown> },
   position: number,
 ): ExerciseGroupPlace {
-  if (!isLinkedGroup(group)) return LONE_EXERCISE;
+  if (!readsAsGroup(group)) return LONE_EXERCISE;
   return {
     linked: true,
     roundsAreRows: group.format !== "straight_sets",
@@ -198,4 +251,26 @@ export function formatRoundRepsShort(rows: PrescribedRow[]): string | null {
   const reps = roundReps(rows);
   if (!reps) return null;
   return new Set(reps).size === 1 ? `${reps.length}×${reps[0]}` : repScheme(reps);
+}
+
+// --- A timed group's score, in words ------------------------------------------
+
+/** "7 rounds + 12 reps", "1 round", "7 rounds" — rounds and the reps past the last full one. */
+function formatRoundsAndReps(rounds: number, reps: number): string {
+  const roundsText = `${rounds} ${rounds === 1 ? "round" : "rounds"}`;
+  return reps > 0 ? `${roundsText} + ${reps} ${reps === 1 ? "rep" : "reps"}` : roundsText;
+}
+
+/**
+ * A score as the coach's readout and the client's reopened workout read it:
+ * an AMRAP's "7 rounds + 12 reps"; a For time's "Finished in 8:32" (the
+ * duration readout, so an hour carries), or "Capped · 2 rounds + 15 reps" when
+ * the time ran out — the shape says which. Nothing else scores.
+ */
+export function formatGroupScore(format: GroupFormat, score: GroupScoreValue): string {
+  if (score.finishSeconds !== null) {
+    return `Finished in ${formatDuration(score.finishSeconds)}`;
+  }
+  const roundsAndReps = formatRoundsAndReps(score.rounds, score.reps);
+  return format === "for_time" ? `Capped · ${roundsAndReps}` : roundsAndReps;
 }

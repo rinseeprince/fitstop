@@ -293,41 +293,278 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 2. Quick log with exercises: []
   // -------------------------------------------------------------------------
-  it("[2] empty exercises array is a quick-log: touches no exercise_log", async () => {
+  it("[2] an empty exercises list with no score records nothing: refused, nothing written", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { next_check_in_due: "2026-05-03" },
       error: null,
     });
-    const sessionSnapQ = createMockQuery({
-      data: SESSION_PRESCRIPTION,
+    const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+
+    installRouter({
+      training_events: eventQ,
+      clients: clientQ,
+      session_logs: upsertQ,
+    });
+
+    await expect(
+      logTrainingEvent({
+        eventId: EVENT_ID,
+        clientId: CLIENT_ID,
+        payload: { completionQuality: "partial", exercises: [] },
+      }),
+    ).rejects.toBeInstanceOf(EmptyTrainingLogError);
+    expect(upsertQ.insert).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalledWith("exercise_logs");
+  });
+
+  // -------------------------------------------------------------------------
+  // 2c–2g. Timed groups' scores (migration 186). A list present replaces the
+  //        log's rows, so an empty exercises list beside a score clears the
+  //        sets; a score is judged against the group before anything is
+  //        written; a scored AMRAP's rows are left out of the quality until
+  //        commit 15 (owner, 2026-09-19).
+  // -------------------------------------------------------------------------
+  const AMRAP_GROUP: GroupEmbed = {
+    id: "grp-amrap",
+    order_index: 0,
+    format: "amrap",
+    rounds: null,
+    time_cap_seconds: 720,
+    interval_seconds: null,
+    rest_between_exercises_seconds: null,
+    rest_between_rounds_seconds: null,
+    notes: null,
+  };
+  const FOR_TIME_GROUP: GroupEmbed = { ...AMRAP_GROUP, id: "grp-ft", order_index: 1, format: "for_time", rounds: 3 };
+  const GROUP_A = "11111111-1111-4111-8111-11111111aaaa";
+  const GROUP_B = "11111111-1111-4111-8111-11111111bbbb";
+  const AMRAP_PRESCRIPTION = {
+    ...EXERCISE_A_PRESCRIPTION,
+    id: "ex-amrap",
+    name: "Kettlebell Swing",
+    sets: 1,
+    exercise_group: { ...AMRAP_GROUP, id: GROUP_A },
+  };
+  const LONE_PRESCRIPTION = {
+    ...EXERCISE_A_PRESCRIPTION,
+    exercise_group: loneGroup("grp-lone", 1),
+  };
+
+  function scoreRouter(over: {
+    prescription: unknown[];
+    existingLogId?: string | null;
+    existingScores?: unknown[];
+  }) {
+    const eventQ = createMockQuery({
+      data: eventRow({ session_log_id: over.existingLogId ?? null }),
       error: null,
     });
+    const clientQ = createMockQuery({ data: { next_check_in_due: "2026-05-03" }, error: null });
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    const prescriptionQ = createMockQuery({ data: over.prescription, error: null });
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
-    const exQ = createMockQuery({ data: null, error: null });
+    const existingExLogsQ = createMockQuery({ data: [], error: null });
+    const deleteExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-a"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
+    const existingScoresQ = createMockQuery({ data: over.existingScores ?? [], error: null });
+    const deleteScoresQ = createMockQuery({ data: null, error: null });
+    const insertScoresQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
-
     installRouter({
       training_events: [eventQ, linkQ],
       clients: clientQ,
       training_sessions: sessionSnapQ,
+      training_exercises: prescriptionQ,
       session_logs: upsertQ,
-      exercise_logs: exQ,
+      exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
+      session_log_group_scores: over.existingScores
+        ? [existingScoresQ, deleteScoresQ, insertScoresQ]
+        : [deleteScoresQ, insertScoresQ],
     });
+    return { upsertQ, deleteExQ, insertExQ, setLogsInsertQ, deleteScoresQ, insertScoresQ, linkQ };
+  }
+
+  it("[2c] an empty exercises list beside a score clears the sets and writes the score with the group's snapshot", async () => {
+    const q = scoreRouter({ prescription: [AMRAP_PRESCRIPTION] });
 
     await logTrainingEvent({
       eventId: EVENT_ID,
       clientId: CLIENT_ID,
-      payload: { completionQuality: "partial", exercises: [] },
+      payload: {
+        completionQuality: "full",
+        exercises: [],
+        groupScores: [{ groupId: GROUP_A, rounds: 7, reps: 12 }],
+      },
     });
 
-    // Nothing carried, nothing replaced.
-    expect(exQ.delete).not.toHaveBeenCalled();
-    expect(exQ.insert).not.toHaveBeenCalled();
-    expect(mockFrom).not.toHaveBeenCalledWith("set_logs");
-    // The status says the workout was logged; the quality it was logged at is
-    // on the log alone.
-    expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
+    // The list present: the log's exercise rows go and none come back.
+    expect(q.deleteExQ.delete).toHaveBeenCalledTimes(1);
+    expect(q.insertExQ.insert).not.toHaveBeenCalled();
+    expect(q.setLogsInsertQ.insert).not.toHaveBeenCalled();
+    // The scores present: replaced with the one row, carrying the group as prescribed.
+    expect(q.deleteScoresQ.delete).toHaveBeenCalledTimes(1);
+    expect(q.insertScoresQ.insert).toHaveBeenCalledWith([
+      {
+        session_log_id: SESSION_LOG_ID,
+        group_id: GROUP_A,
+        prescribed_group_snapshot: { ...AMRAP_GROUP, id: GROUP_A },
+        rounds: 7,
+        reps: 12,
+        finish_seconds: null,
+      },
+    ]);
+    // A scored AMRAP never makes the workout partial on its own: nothing else
+    // was prescribed, so the client's own word stands.
+    expect(q.upsertQ.insert.mock.calls[0][0].completion_quality).toBe("full");
+    expect(q.linkQ.update.mock.calls[0][0].status).toBe("completed");
+  });
+
+  it("[2d] a For time takes a finish time; a capped one takes rounds and reps", async () => {
+    const forTime = { ...AMRAP_PRESCRIPTION, id: "ex-ft", exercise_group: { ...FOR_TIME_GROUP, id: GROUP_B } };
+    const q = scoreRouter({ prescription: [forTime] });
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: { completionQuality: "full", groupScores: [{ groupId: GROUP_B, finishSeconds: 512.5 }] },
+    });
+    expect(q.insertScoresQ.insert.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ group_id: GROUP_B, rounds: null, reps: null, finish_seconds: 512.5 }),
+    ]);
+    // No exercises key: the quick path — no exercise row is touched.
+    expect(mockFrom).not.toHaveBeenCalledWith("exercise_logs");
+
+    vi.clearAllMocks();
+    const q2 = scoreRouter({ prescription: [forTime] });
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: { completionQuality: "full", groupScores: [{ groupId: GROUP_B, rounds: 2, reps: 15 }] },
+    });
+    expect(q2.insertScoresQ.insert.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ group_id: GROUP_B, rounds: 2, reps: 15, finish_seconds: null }),
+    ]);
+  });
+
+  it("[2e] a score the group's format cannot take is refused before anything is written", async () => {
+    // An AMRAP with a finish time.
+    let q = scoreRouter({ prescription: [AMRAP_PRESCRIPTION] });
+    await expect(
+      logTrainingEvent({
+        eventId: EVENT_ID,
+        clientId: CLIENT_ID,
+        payload: { completionQuality: "full", groupScores: [{ groupId: GROUP_A, finishSeconds: 300 }] },
+      }),
+    ).rejects.toMatchObject({ name: "InvalidGroupScoreError", message: "An AMRAP's score is rounds and reps." });
+    expect(q.upsertQ.insert).not.toHaveBeenCalled();
+    expect(q.deleteScoresQ.delete).not.toHaveBeenCalled();
+
+    // A straight-sets group.
+    vi.clearAllMocks();
+    q = scoreRouter({ prescription: [LONE_PRESCRIPTION] });
+    await expect(
+      logTrainingEvent({
+        eventId: EVENT_ID,
+        clientId: CLIENT_ID,
+        payload: { completionQuality: "full", groupScores: [{ groupId: "grp-lone", rounds: 3, reps: 0 }] },
+      }),
+    ).rejects.toMatchObject({ name: "InvalidGroupScoreError", message: "Only an AMRAP or For time group takes a score." });
+    expect(q.upsertQ.insert).not.toHaveBeenCalled();
+  });
+
+  it("[2f] a score naming a group outside the performed session is foreign: 404, nothing written", async () => {
+    const q = scoreRouter({ prescription: [AMRAP_PRESCRIPTION] });
+    await expect(
+      logTrainingEvent({
+        eventId: EVENT_ID,
+        clientId: CLIENT_ID,
+        payload: { completionQuality: "full", groupScores: [{ groupId: GROUP_B, rounds: 7, reps: 12 }] },
+      }),
+    ).rejects.toMatchObject({ name: "TrainingLogOwnershipError" });
+    expect(q.upsertQ.insert).not.toHaveBeenCalled();
+    expect(q.deleteScoresQ.delete).not.toHaveBeenCalled();
+  });
+
+  it("[2f2] once the session is gone, a group already scored on this log is still the client's — its snapshot decides", async () => {
+    const q = scoreRouter({
+      prescription: [],
+      existingLogId: SESSION_LOG_ID,
+      existingScores: [
+        {
+          id: "score-1",
+          session_log_id: SESSION_LOG_ID,
+          group_id: GROUP_A,
+          prescribed_group_snapshot: { ...AMRAP_GROUP, id: GROUP_A },
+          rounds: 5,
+          reps: 0,
+          finish_seconds: null,
+          created_at: "2026-05-04T00:00:00Z",
+          updated_at: "2026-05-04T00:00:00Z",
+        },
+      ],
+    });
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: { completionQuality: "full", groupScores: [{ groupId: GROUP_A, rounds: 6, reps: 3 }] },
+    });
+    expect(q.insertScoresQ.insert.mock.calls[0][0]).toEqual([
+      expect.objectContaining({
+        group_id: GROUP_A,
+        prescribed_group_snapshot: { ...AMRAP_GROUP, id: GROUP_A },
+        rounds: 6,
+        reps: 3,
+      }),
+    ]);
+  });
+
+  it("[2g] a scored AMRAP's rows are left out of the quality: the lone exercise decides", async () => {
+    // The AMRAP's exercise untouched, the lone exercise's three sets all done.
+    const q = scoreRouter({ prescription: [AMRAP_PRESCRIPTION, LONE_PRESCRIPTION] });
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "partial",
+        exercises: [
+          {
+            trainingExerciseId: EXERCISE_A,
+            exerciseName: "Bench Press",
+            sets: [{ setNumber: 1 }, { setNumber: 2 }, { setNumber: 3 }],
+            weightUnit: "kg",
+          },
+        ],
+        groupScores: [{ groupId: GROUP_A, rounds: 7, reps: 12 }],
+      },
+    });
+    expect(q.upsertQ.insert.mock.calls[0][0].completion_quality).toBe("full");
+
+    // And an untouched lone exercise beside a scored AMRAP is still partial.
+    vi.clearAllMocks();
+    const q2 = scoreRouter({ prescription: [AMRAP_PRESCRIPTION, LONE_PRESCRIPTION] });
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "full",
+        exercises: [],
+        groupScores: [{ groupId: GROUP_A, rounds: 7, reps: 12 }],
+      },
+    });
+    expect(q2.upsertQ.insert.mock.calls[0][0].completion_quality).toBe("partial");
+  });
+
+  it("[2h] an absent groupScores key leaves the log's scores alone", async () => {
+    const q = scoreRouter({ prescription: [AMRAP_PRESCRIPTION, LONE_PRESCRIPTION], existingLogId: SESSION_LOG_ID });
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: { completionQuality: "partial", notes: "from the check-in" },
+    });
+    expect(mockFrom).not.toHaveBeenCalledWith("session_log_group_scores");
+    expect(q.deleteScoresQ.delete).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
@@ -3251,5 +3488,102 @@ describe("clearTrainingEventLog", () => {
     expect(
       await clearTrainingEventLog({ eventId: EVENT_ID, clientId: CLIENT_ID }),
     ).toEqual({ cleared: false });
+  });
+});
+
+
+describe("group scores on the detail reads", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const SCORE_ROW = {
+    id: "score-1",
+    session_log_id: SESSION_LOG_ID,
+    group_id: "grp-amrap",
+    prescribed_group_snapshot: {
+      id: "grp-amrap",
+      order_index: 0,
+      format: "amrap",
+      rounds: null,
+      time_cap_seconds: 720,
+      interval_seconds: null,
+      rest_between_exercises_seconds: null,
+      rest_between_rounds_seconds: null,
+      notes: null,
+    },
+    rounds: 7,
+    reps: 12,
+    finish_seconds: null,
+    created_at: "2026-05-04T00:00:00Z",
+    updated_at: "2026-05-04T00:00:00Z",
+  };
+  const LOG_ROW = {
+    id: SESSION_LOG_ID,
+    client_id: CLIENT_ID,
+    training_session_id: null,
+    training_event_id: EVENT_ID,
+    completed_at: "2026-05-04",
+    completion_quality: "full",
+    notes: null,
+    week_start_date: "2026-05-04",
+    prescribed_session_snapshot: { name: "Metcon" },
+    created_at: "2026-05-04T00:00:00Z",
+    updated_at: "2026-05-04T00:00:00Z",
+  };
+
+  it("getTrainingEventDetail carries the log's scores, mapped to their shape", async () => {
+    installRouter({
+      training_events: createMockQuery({
+        data: {
+          id: EVENT_ID,
+          client_id: CLIENT_ID,
+          training_plan_id: null,
+          training_session_id: null,
+          date: "2026-05-04",
+          session_name: "Metcon",
+          session_focus: null,
+          estimated_calories: null,
+          status: "completed",
+          session_log_id: SESSION_LOG_ID,
+          is_modified: false,
+          calorie_surplus_percentage: null,
+          created_at: "2026-05-04T00:00:00Z",
+          updated_at: "2026-05-04T00:00:00Z",
+          session_logs: null,
+        },
+        error: null,
+      }),
+      session_logs: createMockQuery({ data: LOG_ROW, error: null }),
+      exercise_logs: createMockQuery({ data: [], error: null }),
+      session_log_group_scores: createMockQuery({ data: [SCORE_ROW], error: null }),
+    });
+    const detail = await getTrainingEventDetail(EVENT_ID, CLIENT_ID);
+    expect(detail?.groupScores).toEqual([
+      {
+        id: "score-1",
+        sessionLogId: SESSION_LOG_ID,
+        groupId: "grp-amrap",
+        prescribedGroupSnapshot: SCORE_ROW.prescribed_group_snapshot,
+        rounds: 7,
+        reps: 12,
+        finishSeconds: null,
+      },
+    ]);
+  });
+
+  it("getSessionLogDetail carries them too, a finish time included", async () => {
+    installRouter({
+      session_logs: createMockQuery({ data: LOG_ROW, error: null }),
+      exercise_logs: createMockQuery({ data: [], error: null }),
+      session_log_group_scores: createMockQuery({
+        data: [{ ...SCORE_ROW, id: "score-2", group_id: null, rounds: null, reps: null, finish_seconds: 512.5 }],
+        error: null,
+      }),
+    });
+    const detail = await getSessionLogDetail(SESSION_LOG_ID);
+    expect(detail?.groupScores).toEqual([
+      expect.objectContaining({ id: "score-2", groupId: null, rounds: null, reps: null, finishSeconds: 512.5 }),
+    ]);
   });
 });

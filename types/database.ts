@@ -2180,6 +2180,57 @@ export type Database = {
         }
         Relationships: []
       }
+      session_log_group_scores: {
+        Row: {
+          created_at: string
+          finish_seconds: number | null
+          group_id: string | null
+          id: string
+          prescribed_group_snapshot: Json
+          reps: number | null
+          rounds: number | null
+          session_log_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          finish_seconds?: number | null
+          group_id?: string | null
+          id?: string
+          prescribed_group_snapshot: Json
+          reps?: number | null
+          rounds?: number | null
+          session_log_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          finish_seconds?: number | null
+          group_id?: string | null
+          id?: string
+          prescribed_group_snapshot?: Json
+          reps?: number | null
+          rounds?: number | null
+          session_log_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_log_group_scores_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "training_exercise_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_log_group_scores_session_log_id_fkey"
+            columns: ["session_log_id"]
+            isOneToOne: false
+            referencedRelation: "session_logs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       session_logs: {
         Row: {
           client_id: string

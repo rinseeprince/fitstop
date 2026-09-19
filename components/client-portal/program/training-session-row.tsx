@@ -15,7 +15,7 @@ import {
   exerciseGroupPlace,
   groupHeading,
   groupHeadingText,
-  isLinkedGroup,
+  readsAsGroup,
 } from "@/utils/exercise-group-display";
 import { resolvePrescribedFields } from "@/utils/prescribed-fields";
 import { formatPrescriptionSummary } from "@/utils/prescription-summary";
@@ -163,7 +163,7 @@ export function TrainingSessionRow({ session }: Props) {
           ) : (
             <ul className="space-y-2">
               {session.groups.flatMap((group) =>
-                isLinkedGroup(group)
+                readsAsGroup(group)
                   ? [<GroupItem key={group.id} group={group} />]
                   : group.exercises.map((ex) => (
                       <ExerciseItem key={ex.id} ex={ex} roundsAreRows={false} />

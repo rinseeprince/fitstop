@@ -184,6 +184,7 @@ function baseFixture(): TrainingEventDetail {
     ],
     sessionLog: null,
     exerciseLogs: [],
+    groupScores: [],
   };
 }
 
@@ -280,6 +281,66 @@ function groupedFixture(): TrainingEventDetail {
         liveExercise(THRUSTER_UUID, "Thruster", "grp-circuit", 0, { setSpecs: rounds([21, 15, 9]) }),
         liveExercise(PULL_UP_UUID, "Pull-up", "grp-circuit", 1, { setSpecs: rounds([21, 15, 9]) }),
         liveExercise(BURPEE_UUID, "Burpee", "grp-circuit", 2, { setSpecs: rounds([10, 10, 10]) }),
+      ],
+    },
+  ];
+  return detail;
+}
+
+// Group ids are UUIDs: the form validates the payload through the wire schema
+// before sending, and a score names its group by id.
+const AMRAP_GROUP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const EMOM_GROUP = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const FOR_TIME_GROUP = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const SWING_UUID = "99999999-9999-4999-8999-999999999999";
+const PUSH_UP_UUID = "aaaaaaaa-1111-4111-8111-111111111111";
+const ROW_ERG_UUID = "bbbbbbbb-2222-4222-8222-222222222222";
+
+/** A lone squat, an AMRAP, an EMOM and a For time — the seeded smoke workout's shape. */
+function timedFixture(): TrainingEventDetail {
+  const detail = baseFixture();
+  detail.groups = [
+    {
+      id: "grp-squat",
+      orderIndex: 0,
+      ...STRAIGHT_SETS,
+      exercises: [
+        liveExercise(SQUAT_UUID, "Back Squat", "grp-squat", 0, { sets: 2, setSpecs: rounds([5, 5], 120) }),
+      ],
+    },
+    {
+      id: AMRAP_GROUP,
+      orderIndex: 1,
+      ...STRAIGHT_SETS,
+      format: "amrap",
+      timeCapSeconds: 720,
+      exercises: [
+        liveExercise(SWING_UUID, "Kettlebell Swing", AMRAP_GROUP, 0, { sets: 1, setSpecs: rounds([10]) }),
+        liveExercise(PUSH_UP_UUID, "Push Up", AMRAP_GROUP, 1, { sets: 1, setSpecs: rounds([10]) }),
+      ],
+    },
+    {
+      id: EMOM_GROUP,
+      orderIndex: 2,
+      ...STRAIGHT_SETS,
+      format: "emom",
+      rounds: 3,
+      intervalSeconds: 60,
+      exercises: [
+        liveExercise(ROW_ERG_UUID, "Rowing Machine", EMOM_GROUP, 0, { setSpecs: rounds([12, 12, 12]) }),
+        liveExercise(BURPEE_UUID, "Burpee", EMOM_GROUP, 1, { setSpecs: rounds([5, 5, 5]) }),
+      ],
+    },
+    {
+      id: FOR_TIME_GROUP,
+      orderIndex: 3,
+      ...STRAIGHT_SETS,
+      format: "for_time",
+      rounds: 3,
+      timeCapSeconds: 720,
+      exercises: [
+        liveExercise(THRUSTER_UUID, "Thruster", FOR_TIME_GROUP, 0, { setSpecs: rounds([21, 15, 9]) }),
+        liveExercise(PULL_UP_UUID, "Pull-up", FOR_TIME_GROUP, 1, { setSpecs: rounds([21, 15, 9]) }),
       ],
     },
   ];
@@ -1782,5 +1843,192 @@ describe("SetTracker", () => {
     // The day is open, so the form's editable affordances are all offered; the
     // save waits on a tick, as it does on any open day.
     expect(screen.getByTestId("mark-all-complete")).toBeInTheDocument();
+  });
+
+  // ---- timed groups (section 4.5, commit 14) --------------------------------
+
+  it("[timed-heading] each timed group reads under its heading with its timer; only an AMRAP and a For time have score boxes", () => {
+    setEventReady(timedFixture());
+    render(<SetTracker eventId="evt-1" />);
+
+    const amrap = screen.getByRole("region", { name: "AMRAP · 12m" });
+    expect(within(amrap).getByTestId("group-timer-readout")).toHaveTextContent("12:00");
+    expect(within(amrap).getByLabelText("AMRAP rounds")).toBeInTheDocument();
+    expect(within(amrap).getByLabelText("AMRAP reps")).toBeInTheDocument();
+    // Its rows are rounds, and it takes a round, not a set.
+    expect(within(amrap).getAllByText("Round")).toHaveLength(2);
+
+    const emom = screen.getByRole("region", { name: "EMOM · 3 rounds · every 1m" });
+    expect(within(emom).getByTestId("group-timer-cue")).toHaveTextContent("Minute 1 of 3");
+    expect(within(emom).queryByTestId(/^group-score-/)).toBeNull();
+
+    const forTime = screen.getByRole("region", { name: "For time · 3 rounds · 12m cap" });
+    expect(within(forTime).getByTestId("group-timer-readout")).toHaveTextContent("0:00.0");
+    expect(within(forTime).getByLabelText("For time finish time")).toBeInTheDocument();
+    expect(within(forTime).getByRole("button", { name: "Didn't finish" })).toBeInTheDocument();
+
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "Tick a set or enter a score to log this workout.",
+    );
+  });
+
+  it("[timed-score] a score records the workout; the AMRAP's rows stay out of the count; both lists travel", async () => {
+    setEventReady(timedFixture());
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+
+    expect(screen.getByTestId("save-button")).toBeDisabled();
+    await user.type(screen.getByLabelText("AMRAP rounds"), "7");
+    await user.type(screen.getByLabelText("AMRAP reps"), "12");
+    // The squat's two sets and the EMOM's six rows are the count; the AMRAP's
+    // and the For time's rows are not.
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "1 of 2 groups scored · 0 of 8 working sets logged. Will be recorded as partial.",
+    );
+    await user.click(screen.getByTestId("set-complete-0-0"));
+    await user.click(screen.getByTestId("set-complete-0-1"));
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "1 of 2 groups scored · 2 of 8 working sets logged. Will be recorded as partial.",
+    );
+
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const payload = getLastFetchPayload() as {
+      completionQuality: string;
+      exercises: Array<{ trainingExerciseId?: string }>;
+      groupScores: unknown[];
+    };
+    expect(payload.completionQuality).toBe("partial");
+    expect(payload.exercises.map((e) => e.trainingExerciseId)).toEqual([SQUAT_UUID]);
+    expect(payload.groupScores).toEqual([{ groupId: AMRAP_GROUP, rounds: 7, reps: 12 }]);
+  });
+
+  it("[timed-score-alone] a score with nothing ticked still saves, with an empty sets list", async () => {
+    const detail = timedFixture();
+    detail.groups = detail.groups.filter((g) => g.id === AMRAP_GROUP);
+    setEventReady(detail);
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+
+    await user.type(screen.getByLabelText("AMRAP rounds"), "7");
+    await user.type(screen.getByLabelText("AMRAP reps"), "0");
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "1 of 1 group scored. Will be recorded as full.",
+    );
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(getLastFetchPayload()).toEqual({
+      completionQuality: "full",
+      exercises: [],
+      groupScores: [{ groupId: AMRAP_GROUP, rounds: 7, reps: 0 }],
+    });
+  });
+
+  it("[timed-for-time] a finish time is typed as a duration; Didn't finish swaps to rounds and reps", async () => {
+    setEventReady(timedFixture());
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    const forTime = screen.getByRole("region", { name: "For time · 3 rounds · 12m cap" });
+
+    const finish = within(forTime).getByLabelText("For time finish time");
+    await user.type(finish, "8:32.5");
+    await user.tab();
+    expect(finish).toHaveValue("8:32.5");
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect((getLastFetchPayload() as { groupScores: unknown[] }).groupScores).toEqual([
+      { groupId: FOR_TIME_GROUP, finishSeconds: 512.5 },
+    ]);
+
+  });
+
+  it("[timed-capped] Didn't finish swaps the finish box for rounds and reps, and Finished swaps back", async () => {
+    setEventReady(timedFixture());
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    const forTime = screen.getByRole("region", { name: "For time · 3 rounds · 12m cap" });
+
+    await user.click(within(forTime).getByRole("button", { name: "Didn't finish" }));
+    expect(within(forTime).queryByLabelText("For time finish time")).toBeNull();
+    await user.type(within(forTime).getByLabelText("For time rounds"), "2");
+    await user.type(within(forTime).getByLabelText("For time reps"), "15");
+    // Back to a finish: the boxes swap in the same render; the rounds are kept
+    // out of the payload by the shape, not erased.
+    await user.click(within(forTime).getByRole("button", { name: "Finished" }));
+    expect(within(forTime).getByLabelText("For time finish time")).toBeInTheDocument();
+    await user.click(within(forTime).getByRole("button", { name: "Didn't finish" }));
+    expect(within(forTime).getByLabelText("For time rounds")).toHaveValue("2");
+
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect((getLastFetchPayload() as { groupScores: unknown[] }).groupScores).toEqual([
+      { groupId: FOR_TIME_GROUP, rounds: 2, reps: 15 },
+    ]);
+  });
+
+  it("[timed-unreadable] a score box it can't read refuses the save and names the group's box", async () => {
+    setEventReady(timedFixture());
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.type(screen.getByLabelText("AMRAP rounds"), "7");
+    // Rounds alone is not a score: the line says nothing is recorded yet, so
+    // the button holds; typing a rep count the box can't read lets the save be
+    // tried, and it is refused naming the box.
+    expect(screen.getByTestId("save-button")).toBeDisabled();
+    await user.type(screen.getByLabelText("AMRAP reps"), "lots");
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockToast.error).toHaveBeenCalledWith("Couldn't save workout", {
+      description: "Reps on the AMRAP isn't something it can read.",
+    });
+    expect(screen.getByLabelText("AMRAP reps")).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("[timed-restore] a logged workout reopens with its scores in their boxes", () => {
+    const detail = timedFixture();
+    detail.event.status = "completed";
+    detail.event.sessionLogId = "log-1";
+    detail.sessionLog = {
+      id: "log-1",
+      clientId: "c-1",
+      trainingSessionId: "s-1",
+      trainingEventId: "evt-1",
+      completedAt: "2026-05-06",
+      completionQuality: "full",
+      notes: null,
+      weekStartDate: "2026-05-04",
+      prescribedSessionSnapshot: null,
+      createdAt: ISO,
+      updatedAt: ISO,
+    };
+    detail.groupScores = [
+      {
+        id: "score-1",
+        sessionLogId: "log-1",
+        groupId: AMRAP_GROUP,
+        prescribedGroupSnapshot: {},
+        rounds: 7,
+        reps: 12,
+        finishSeconds: null,
+      },
+      {
+        id: "score-2",
+        sessionLogId: "log-1",
+        groupId: FOR_TIME_GROUP,
+        prescribedGroupSnapshot: {},
+        rounds: null,
+        reps: null,
+        finishSeconds: 512.5,
+      },
+    ];
+    setEventReady(detail);
+    render(<SetTracker eventId="evt-1" />);
+    expect(screen.getByLabelText("AMRAP rounds")).toHaveValue("7");
+    expect(screen.getByLabelText("AMRAP reps")).toHaveValue("12");
+    expect(screen.getByLabelText("For time finish time")).toHaveValue("8:32.5");
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "2 of 2 groups scored · 0 of 8 working sets logged. Will be recorded as partial.",
+    );
   });
 });

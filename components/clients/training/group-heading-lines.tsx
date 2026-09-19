@@ -45,7 +45,11 @@ export function GroupHeadingLines({ group }: { group: HeadingGroup }) {
   );
 }
 
-/** The heading's first line, its name and rounds — also what a dragged group shows. */
+/**
+ * The heading's first line — its name, its rounds and, for a timed group, its
+ * cap or interval ("AMRAP · 12m", "For time · 3 rounds · 12m cap", "EMOM · 8
+ * rounds · every 1m") — also what a dragged group shows.
+ */
 export function GroupHeadingTitle({ group }: { group: HeadingGroup }) {
   const heading = groupHeading(group);
   return (
@@ -55,6 +59,22 @@ export function GroupHeadingTitle({ group }: { group: HeadingGroup }) {
         <span className={cn("font-normal", TEXT_SECONDARY)}>
           <span className="mx-1.5">·</span>
           <span className={MONO}>{heading.rounds.count}</span> {heading.rounds.words}
+        </span>
+      )}
+      {heading.timing && (
+        <span className={cn("font-normal", TEXT_SECONDARY)}>
+          <span className="mx-1.5">·</span>
+          {heading.timing.words === null ? (
+            <span className={MONO}>{heading.timing.duration}</span>
+          ) : heading.timing.before ? (
+            <>
+              {heading.timing.words} <span className={MONO}>{heading.timing.duration}</span>
+            </>
+          ) : (
+            <>
+              <span className={MONO}>{heading.timing.duration}</span> {heading.timing.words}
+            </>
+          )}
         </span>
       )}
     </p>

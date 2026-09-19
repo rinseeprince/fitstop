@@ -22,6 +22,8 @@ export type SessionLogUpdate = Database["public"]["Tables"]["session_logs"]["Upd
 export type ExerciseLogRow = Database["public"]["Tables"]["exercise_logs"]["Row"];
 export type ExerciseLogInsert = Database["public"]["Tables"]["exercise_logs"]["Insert"];
 
+export type SessionLogGroupScoreRow = Database["public"]["Tables"]["session_log_group_scores"]["Row"];
+export type SessionLogGroupScoreInsert = Database["public"]["Tables"]["session_log_group_scores"]["Insert"];
 export type SetLogRow = Database["public"]["Tables"]["set_logs"]["Row"];
 export type SetLogInsert = Database["public"]["Tables"]["set_logs"]["Insert"];
 

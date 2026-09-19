@@ -7,27 +7,33 @@ import {
   exerciseGroupPlace,
   groupHeading,
   groupHeadingText,
-  isLinkedGroup,
+  readsAsGroup,
   type ExerciseGroupPlace,
 } from "@/utils/exercise-group-display";
+import { isTimedFormat } from "@/utils/group-scores";
 import {
   ExerciseTrackerBlock,
   type ExerciseFormContext,
   type PrescribedExerciseView,
 } from "./exercise-tracker-block";
 import type { LogFormValues } from "./log-form-types";
+import { TimedGroupSection } from "./timed-group-section";
 
 // The workout's exercise blocks, laid out by their groups: a lone exercise as a
-// plain block, a linked group (two or more exercises) under one heading. The
-// form underneath stays flat — its leading exercises are the prescription group
-// by group, then anything unplanned — so a group changes where a block sits and
-// never which form entry, row or set number it logs to.
+// plain block, a linked group (two or more exercises) under one heading, a
+// timed group under its heading with its timer and its score boxes. The form
+// underneath stays flat — its leading exercises are the prescription group by
+// group, then anything unplanned — so a group changes where a block sits and
+// never which form entry, row or set number it logs to; a score is its own
+// entry in the form's `groupScores`, found by the group's id.
 
 type Props = {
   groups: ResolvedExerciseGroup[];
   /** The prescription group by group, index-aligned with the form's leading exercises. */
   prescribedViews: PrescribedExerciseView[];
   fields: FieldArrayWithId<LogFormValues, "exercises", "id">[];
+  /** Each scoring group's entry in the form's `groupScores`, by group id. */
+  scoreIndexByGroupId: ReadonlyMap<string, number>;
   form: Pick<ExerciseFormContext, "control" | "register" | "setValue" | "getValues">;
   onRemoveExercise: (index: number) => void;
 };
@@ -36,6 +42,7 @@ export function TrackerExerciseList({
   groups,
   prescribedViews,
   fields,
+  scoreIndexByGroupId,
   form,
   onRemoveExercise,
 }: Props) {
@@ -80,7 +87,19 @@ export function TrackerExerciseList({
     const blocks = group.exercises.map((_, position) =>
       block(first + position, exerciseGroupPlace(group, position)),
     );
-    if (!isLinkedGroup(group)) return blocks;
+    if (!readsAsGroup(group)) return blocks;
+    if (isTimedFormat(group.format)) {
+      return [
+        <TimedGroupSection
+          key={group.id}
+          group={group}
+          scoreIndex={scoreIndexByGroupId.get(group.id) ?? null}
+          form={form}
+        >
+          {blocks}
+        </TimedGroupSection>,
+      ];
+    }
     return [
       <ExerciseGroupSection key={group.id} group={group}>
         {blocks}

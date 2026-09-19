@@ -130,6 +130,7 @@ function workout(
             updatedAt: ISO,
           },
     exerciseLogs: [],
+    groupScores: [],
   };
 }
 

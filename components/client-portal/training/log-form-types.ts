@@ -1,6 +1,11 @@
 import type { LogTrainingEventInput } from "@/lib/validations/training";
 import type { LoggedQuality } from "@/types/training";
-import type { ExerciseLog, SessionLog } from "@/types/training";
+import type {
+  ExerciseLog,
+  GroupScore,
+  ResolvedExerciseGroup,
+  SessionLog,
+} from "@/types/training";
 import type { PrescribedExerciseView } from "./exercise-tracker-block";
 import { expandSetSpecs, TEMPO_PATTERN } from "@/utils/exercise-set-specs";
 import {
@@ -13,7 +18,22 @@ import {
   type ScoredExercise,
 } from "@/utils/completion-quality";
 import { trainingLogRecordsWork } from "@/lib/training-log-content";
-import { formatEntry, parseEntry, type UnitSystem } from "@/utils/unit-conversions";
+import {
+  formatDuration,
+  formatEntry,
+  parseDuration,
+  parseEntry,
+  type UnitSystem,
+} from "@/utils/unit-conversions";
+import {
+  GROUP_SCORE_FINISH_SCALE,
+  GROUP_SCORE_FINISH_SECONDS_MAX,
+  GROUP_SCORE_FINISH_SECONDS_MIN,
+  GROUP_SCORE_REPS_MAX,
+  GROUP_SCORE_ROUNDS_MAX,
+  takesScore,
+  type GroupScoreValue,
+} from "@/utils/group-scores";
 import {
   boxEntry,
   boxKey,
@@ -70,6 +90,33 @@ export type ExerciseFormValues = {
   isUnplanned: boolean;
 };
 
+/** The boxes a timed group's score is typed into. */
+export type ScoreBox = "rounds" | "reps" | "finishTime";
+
+export const SCORE_BOX_LABELS: Record<ScoreBox, string> = {
+  rounds: "Rounds",
+  reps: "Reps",
+  finishTime: "Finish time",
+};
+
+/**
+ * A timed group's score as the form holds it (utils/group-scores.ts): one
+ * entry per group that takes a score, in session order. An AMRAP's boxes are
+ * rounds and reps. A For time's is a finish time, or — `capped`, the client's
+ * "Didn't finish" — rounds and reps. The strings are the boxes' own; a finish
+ * time is typed as a duration ("8:32", "8:32.5") and reads back at the stored
+ * tenth, so re-parsing an untouched box is an exact no-op and it needs no seed
+ * (CONVENTIONS section 20's guard exists for a display that rounds).
+ */
+export type GroupScoreFormValues = {
+  groupId: string;
+  format: "amrap" | "for_time";
+  capped: boolean;
+  rounds: string;
+  reps: string;
+  finishTime: string;
+};
+
 // No `completionQuality`. The client no longer claims one — it is derived from
 // the ticks (resolveLogOutcome) at the moment the payload is built, so a stored
 // form field could only ever be a second answer to a question the ticks have
@@ -77,7 +124,116 @@ export type ExerciseFormValues = {
 export type LogFormValues = {
   notes: string;
   exercises: ExerciseFormValues[];
+  groupScores: GroupScoreFormValues[];
 };
+
+/**
+ * The groups that take a score, in session order, each seeded from the log's
+ * score for it — by the group's id, which a live group and a group read off a
+ * snapshot both carry. A score whose group the workout no longer shows has no
+ * entry: nothing on screen could edit it.
+ */
+export function seedGroupScores(
+  groups: ResolvedExerciseGroup[],
+  scores: GroupScore[],
+): GroupScoreFormValues[] {
+  const byGroup = new Map(scores.flatMap((s) => (s.groupId ? [[s.groupId, s] as const] : [])));
+  return groups.flatMap((group) => {
+    if (!takesScore(group.format)) return [];
+    const score = byGroup.get(group.id) ?? null;
+    const format = group.format;
+    if (score === null) {
+      return [{ groupId: group.id, format, capped: false, rounds: "", reps: "", finishTime: "" }];
+    }
+    if (score.finishSeconds !== null) {
+      return [
+        {
+          groupId: group.id,
+          format,
+          capped: false,
+          rounds: "",
+          reps: "",
+          finishTime: formatDuration(score.finishSeconds),
+        },
+      ];
+    }
+    return [
+      {
+        groupId: group.id,
+        format,
+        // Rounds and reps on a For time is the capped shape.
+        capped: format === "for_time",
+        rounds: String(score.rounds),
+        reps: String(score.reps),
+        finishTime: "",
+      },
+    ];
+  });
+}
+
+/** Whether a score's boxes take rounds and reps (else a finish time). */
+export function scoreTakesRounds(score: Pick<GroupScoreFormValues, "format" | "capped">): boolean {
+  return score.format === "amrap" || score.capped;
+}
+
+/**
+ * Does this entry hold a score? Both rounds and reps, or a finish time — the
+ * live outcome line asks this; whether the boxes can be READ is the save's
+ * question (`parseGroupScore`).
+ */
+function scoreEntered(score: GroupScoreFormValues): boolean {
+  return scoreTakesRounds(score)
+    ? score.rounds.trim() !== "" && score.reps.trim() !== ""
+    : score.finishTime.trim() !== "";
+}
+
+type ParsedScore =
+  /** `null` is no score: every box of the shape empty. */
+  | { ok: true; score: GroupScoreValue | null }
+  | { ok: false; box: ScoreBox };
+
+const WHOLE_NUMBER = /^\d+$/;
+
+function parseCount(text: string, max: number): number | null {
+  const trimmed = text.trim();
+  if (!WHOLE_NUMBER.test(trimmed)) return null;
+  const value = Number(trimmed);
+  return value <= max ? value : null;
+}
+
+/**
+ * The boxes as a score: rounds and reps both whole numbers within their limit,
+ * or a finish time the duration grammar reads within a day, to a tenth. A box
+ * that can't be read is named, so the save can mark and focus it; a shape with
+ * one box filled and the other empty names the empty one.
+ */
+export function parseGroupScore(values: GroupScoreFormValues): ParsedScore {
+  if (scoreTakesRounds(values)) {
+    const roundsText = values.rounds.trim();
+    const repsText = values.reps.trim();
+    if (roundsText === "" && repsText === "") return { ok: true, score: null };
+    if (roundsText === "") return { ok: false, box: "rounds" };
+    if (repsText === "") return { ok: false, box: "reps" };
+    const rounds = parseCount(roundsText, GROUP_SCORE_ROUNDS_MAX);
+    if (rounds === null) return { ok: false, box: "rounds" };
+    const reps = parseCount(repsText, GROUP_SCORE_REPS_MAX);
+    if (reps === null) return { ok: false, box: "reps" };
+    return { ok: true, score: { rounds, reps, finishSeconds: null } };
+  }
+  const text = values.finishTime.trim();
+  if (text === "") return { ok: true, score: null };
+  const seconds = parseDuration(text);
+  if (
+    seconds === null ||
+    seconds < GROUP_SCORE_FINISH_SECONDS_MIN ||
+    seconds > GROUP_SCORE_FINISH_SECONDS_MAX
+  ) {
+    return { ok: false, box: "finishTime" };
+  }
+  const scaled = seconds * 10 ** GROUP_SCORE_FINISH_SCALE;
+  if (Math.abs(scaled - Math.round(scaled)) > 1e-6) return { ok: false, box: "finishTime" };
+  return { ok: true, score: { rounds: null, reps: null, finishSeconds: seconds } };
+}
 
 function emptyEntries(): Record<LoggedBox, string> {
   return Object.fromEntries(LOGGED_BOXES.map((box) => [box, ""])) as Record<LoggedBox, string>;
@@ -174,6 +330,9 @@ function scoreFormExercises(
 type LogOutcome = {
   completedWorkingSets: number;
   prescribedWorkingSets: number;
+  /** The groups that take a score, and how many hold one. */
+  scoringGroups: number;
+  scoredGroups: number;
   /** What this form would be recorded as, or null when it records nothing. */
   quality: LoggedQuality | null;
 };
@@ -186,28 +345,33 @@ type LogOutcome = {
  * buildLogPayload puts on the wire. Two derivations could disagree, and the
  * client would be the one telling the lie.
  *
- * `null` means the form records nothing — no set ticked — and the save is
- * refused, on this screen and on the server, by the one rule
+ * `null` means the form records nothing — no set ticked, no group scored —
+ * and the save is refused, on this screen and on the server, by the one rule
  * (`lib/training-log-content.ts`). A client who did not train logs nothing;
  * one who saved by mistake clears the log.
  *
  * The `full` fallback covers a session with nothing scorable prescribed — no
- * exercises at all, or only warm-ups — where `summariseCompletion` returns null
- * and the server defers to this value: a client who ticked anything there did
- * everything there was to do.
+ * exercises at all, only warm-ups, or only timed groups whose rows are left
+ * out of the count until commit 15 — where `summariseCompletion` returns null
+ * and the server defers to this value: a client who ticked or scored anything
+ * there did everything there was to do.
  */
 export function resolveLogOutcome(
   exercises: ExerciseFormValues[],
   prescribedRows: PrescribedRowsByIndex,
+  groupScores: GroupScoreFormValues[],
 ): LogOutcome {
   const summary = summariseCompletion(
     scoreFormExercises(exercises, prescribedRows),
   );
   const ticked = exercises.some((ex) => ex.sets.some((set) => set.completed));
+  const scoredGroups = groupScores.filter(scoreEntered).length;
   return {
     completedWorkingSets: summary.completedWorkingSets,
     prescribedWorkingSets: summary.prescribedWorkingSets,
-    quality: ticked ? (summary.quality ?? "full") : null,
+    scoringGroups: groupScores.length,
+    scoredGroups,
+    quality: ticked || scoredGroups > 0 ? (summary.quality ?? "full") : null,
   };
 }
 
@@ -216,7 +380,9 @@ export type LogPayloadResult =
   /** Nothing ticked: the save is refused with the one sentence. */
   | { ok: false; reason: "nothing" }
   /** A box holds something the grammar can't read, or a value outside its column's limit. */
-  | { ok: false; reason: "unreadable"; exerciseIndex: number; setIndex: number; box: LoggedBox };
+  | { ok: false; reason: "unreadable"; exerciseIndex: number; setIndex: number; box: LoggedBox }
+  /** A score box can't be read, or its partner is empty. */
+  | { ok: false; reason: "unreadable-score"; groupIndex: number; box: ScoreBox };
 
 /** Within the column's limit and at its scale — the wire schema's rule, asked here so the box can be named. */
 function withinLimit(box: LoggedBox, value: number | string): boolean {
@@ -249,6 +415,10 @@ function withinLimit(box: LoggedBox, value: number | string): boolean {
  * `weightUnit` therefore leaves as "kg" always. The wire schema still carries it
  * (lib/validations/training.ts) and the writer still applies it, so any other
  * caller — the React Native client — is unaffected.
+ *
+ * Both lists always travel, empty included: a list that is present replaces
+ * what the log holds, so a client who unticks every row and keeps a score has
+ * the sets cleared, and one who clears a score box has the score removed.
  */
 export function buildLogPayload(
   values: LogFormValues,
@@ -314,11 +484,23 @@ export function buildLogPayload(
     });
   }
 
-  const quality = resolveLogOutcome(values.exercises, prescribedRows).quality;
+  const groupScores: NonNullable<LogTrainingEventInput["groupScores"]> = [];
+  for (const [groupIndex, entry] of values.groupScores.entries()) {
+    const parsed = parseGroupScore(entry);
+    if (!parsed.ok) return { ok: false, reason: "unreadable-score", groupIndex, box: parsed.box };
+    if (parsed.score === null) continue;
+    groupScores.push(
+      parsed.score.finishSeconds !== null
+        ? { groupId: entry.groupId, finishSeconds: parsed.score.finishSeconds }
+        : { groupId: entry.groupId, rounds: parsed.score.rounds, reps: parsed.score.reps },
+    );
+  }
+
+  const quality = resolveLogOutcome(values.exercises, prescribedRows, values.groupScores).quality;
   if (quality === null) return { ok: false, reason: "nothing" };
 
   const trimmedNotes = values.notes.trim();
-  const base: LogTrainingEventInput = {
+  const payload: LogTrainingEventInput = {
     // The client no longer selects this. The server ignores it whenever the
     // payload carries `exercises` and derives its own (Phase 1), but the field
     // is required by the schema and IS honoured for an exercise-less payload —
@@ -326,8 +508,9 @@ export function buildLogPayload(
     // one path where the client's value still decides.
     completionQuality: quality,
     ...(trimmedNotes && { notes: trimmedNotes }),
+    exercises: detailed,
+    groupScores,
   };
-  const payload = detailed.length > 0 ? { ...base, exercises: detailed } : base;
   // The belt: the outcome above and the rule below answer the same question,
   // and the server asks the rule.
   return trainingLogRecordsWork(payload)
@@ -402,16 +585,21 @@ function displayName(log: ExerciseLog): string {
 
 export function seedDefaultValues(args: {
   prescribedViews: PrescribedExerciseView[];
+  /** The workout's groups, for the timed groups' score entries. */
+  groups: ResolvedExerciseGroup[];
   sessionLog: SessionLog | null;
   exerciseLogs: ExerciseLog[];
+  /** The log's scores, dropped into their groups' boxes. */
+  groupScores: GroupScore[];
   /** The VIEWER's system. Display seeds convert to it; storage stays canonical. */
   viewer: UnitSystem;
 }): LogFormValues {
-  const { prescribedViews, sessionLog, exerciseLogs, viewer } = args;
+  const { prescribedViews, groups, sessionLog, exerciseLogs, groupScores, viewer } = args;
 
   if (sessionLog === null) {
     return {
       notes: "",
+      groupScores: seedGroupScores(groups, []),
       exercises: prescribedViews.map((v) => ({
         trainingExerciseId: v.id,
         exerciseId: undefined,
@@ -489,5 +677,6 @@ export function seedDefaultValues(args: {
   return {
     notes: sessionLog.notes ?? "",
     exercises: [...prescribedExercises, ...orphanExercises],
+    groupScores: seedGroupScores(groups, groupScores),
   };
 }

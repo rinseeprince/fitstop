@@ -4,6 +4,7 @@ import type { PrescribedField } from "@/utils/prescribed-fields";
 import type { ExerciseType } from "@/utils/exercise-types";
 import type { LoggedActuals } from "@/utils/set-log-measures";
 import type { GroupSettings } from "@/utils/exercise-groups";
+import type { GroupScoreValue } from "@/utils/group-scores";
 
 // Training plan split types
 export type TrainingSplitType =
@@ -379,6 +380,19 @@ export type SetLog = {
   updatedAt: string;
 };
 
+// A timed group's score on a workout's log (migration 186): rounds and reps,
+// or a finish time (`GroupScoreValue` — the shape says whether a For time was
+// capped). `groupId` is the client group scored, null once that group row is
+// gone; `prescribedGroupSnapshot` is the group's settings as logged, the same
+// nine snake_case keys an exercise snapshot's `group` carries, so a scored
+// group describes itself without its exercises.
+export type GroupScore = GroupScoreValue & {
+  id: string;
+  sessionLogId: string;
+  groupId: string | null;
+  prescribedGroupSnapshot: Record<string, unknown>;
+};
+
 // Camel-case mirror of the exercise_logs row, plus a service-attached `sets`
 // array of child set_logs (populated by the reader, not present on the row).
 //
@@ -424,6 +438,8 @@ export type SessionLogPrescribedGroup = GroupSettings & {
 export type SessionLogDetail = {
   sessionLog: SessionLog;
   exerciseLogs: ExerciseLog[];
+  /** The timed groups' scores, one per scored group. */
+  groupScores: GroupScore[];
   /** Live name of the session PERFORMED; null if it was hard-deleted. */
   performedSessionName: string | null;
   /**
@@ -470,6 +486,8 @@ export type TrainingEventDetail = {
   groups: ResolvedExerciseGroup[];
   sessionLog: SessionLog | null;
   exerciseLogs: ExerciseLog[];
+  /** The timed groups' scores on the log; empty when unlogged or none scored. */
+  groupScores: GroupScore[];
 };
 
 // =============================================================================

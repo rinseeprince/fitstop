@@ -733,10 +733,11 @@ List area `min-h-0 flex-1 space-y-2 overflow-y-auto px-[14px] pb-2`; search `h-8
 
 Reference: `components/clients/training/session-log-group.tsx`, the coach's workout log view. The words come from `utils/exercise-group-display.ts`, which the client app shares, so a group reads the same to a coach and a client.
 
-- **A group of one is a plain exercise card** — no heading, no rail. Coaches never see a group around a single exercise.
+- **A straight-sets group of one is a plain exercise card** — no heading, no rail. Coaches never see a group around a single exercise. A timed group (AMRAP, EMOM, For time) reads as a group whatever it holds: its cap and its score are the point (`readsAsGroup`).
 - **Groups carry no letters, anywhere.** A linked group is known by its format's name: Superset (a looped pair), Circuit (three or more), Straight sets, AMRAP, EMOM, For time.
-- **A linked group (two or more exercises)** is `<section aria-label={title} className="flex flex-col gap-2">`:
-  - Heading `px-1`: the name `text-[13px] font-semibold text-[#0c1a1e]`, then `·` (`mx-1.5`) and the rounds in `font-normal text-[#5a7d82]`, the count in `MONO`. Under it the rests, `mt-0.5 text-[12px] text-[#5a7d82]`, each duration in `MONO` — "30s rest between exercises · 1m 30s rest between rounds". Then the coach's notes, `mt-0.5 whitespace-pre-wrap text-[12px] text-[#93b0b4]`.
+- **A linked group (two or more exercises), or a timed group,** is `<section aria-label={title} className="flex flex-col gap-2">`:
+  - Heading `px-1`: the name `text-[13px] font-semibold text-[#0c1a1e]`, then `·` (`mx-1.5`) and the rounds in `font-normal text-[#5a7d82]`, the count in `MONO`, then the clock the same way — an AMRAP's cap "AMRAP · 12m", a For time's "For time · 3 rounds · 12m cap", an EMOM's "EMOM · 8 rounds · every 1m", the duration in `MONO` and its word in sans (`GroupHeadingTitle`). Under it the rests, `mt-0.5 text-[12px] text-[#5a7d82]`, each duration in `MONO` — "30s rest between exercises · 1m 30s rest between rounds". Then the coach's notes, `mt-0.5 whitespace-pre-wrap text-[12px] text-[#93b0b4]`.
+  - **The score line** (an AMRAP's or a For time's, never an EMOM's): `mt-0.5 text-[12px]` ink, the whole line in `MONO` because its words are numbers with their nouns — "7 rounds + 12 reps", "Finished in 8:32", "Capped · 2 rounds + 15 reps" (`formatGroupScore`) — or "Not scored" in `TEXT_MUTED` sans.
   - Its cards on one rail: `flex flex-col gap-[10px] border-l-2 border-[rgba(13,148,136,0.15)] pl-3`.
 - **Where a group's rows are rounds** (every format but straight sets) the set table's first column reads **Round**.
 

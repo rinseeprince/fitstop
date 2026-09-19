@@ -10,6 +10,7 @@ import { getClientWeekAnchor } from "./check-in-week-service";
 import { assertCanEdit } from "./daily-log-permissions-service";
 import {
   EmptyTrainingLogError,
+  InvalidGroupScoreError,
   trainingLogRecordsWork,
 } from "@/lib/training-log-content";
 import type {
@@ -39,6 +40,7 @@ export class TrainingLogOwnershipError extends Error {
 }
 import type {
   ExerciseLog,
+  GroupScore,
   LoggedQuality,
   LogTrainingEventResponse,
   ResolvedExerciseGroup,
@@ -73,10 +75,21 @@ import {
 import {
   asLiveGroups,
   groupSettingsFromRow,
+  groupSnapshotFormat,
   nestRowsIntoGroups,
   sessionExercises,
   snapshotGroup,
+  type GroupSnapshot,
 } from "@/utils/exercise-groups";
+import { takesScore } from "@/utils/group-scores";
+// A timed group's score (migration 186): resolved against the performed
+// session's groups before anything is written, replaced with the log's rows,
+// and read beside the exercise logs.
+import {
+  loadGroupScores,
+  replaceGroupScores,
+  resolveGroupScores,
+} from "./training-log-group-scores";
 // The one flattening. The client's log form seeds its rows from this same
 // function, so a drop set's expansion cannot differ between what the client
 // filled in and what set_type each row is stamped with here.
@@ -107,21 +120,10 @@ type SessionSnapshot = {
 };
 
 // The group an exercise sat in when it was logged (migration 178): the group's
-// id and place in the session, and its settings. With the exercise's own
-// order_index — its place in that group — a snapshot says where the exercise
-// stood in its session even after the session's rows are gone.
-type GroupSnapshot = {
-  id: string;
-  order_index: number;
-  format: string;
-  rounds: number | null;
-  time_cap_seconds: number | null;
-  interval_seconds: number | null;
-  rest_between_exercises_seconds: number | null;
-  rest_between_rounds_seconds: number | null;
-  notes: string | null;
-};
-
+// id and place in the session, and its settings (`GroupSnapshot`,
+// utils/exercise-groups.ts). With the exercise's own order_index — its place
+// in that group — a snapshot says where the exercise stood in its session even
+// after the session's rows are gone.
 type ExerciseSnapshot = {
   name: string;
   order_index: number;
@@ -494,13 +496,21 @@ async function writeSessionLog(params: {
     }
   }
 
-  // 4. Mode dispatch + the two prescription reads (detailed mode only).
-  const isDetailedMode =
-    Array.isArray(payload.exercises) && payload.exercises.length > 0;
+  // 4. Mode dispatch + the two prescription reads. A list that is present
+  // replaces what the log holds — an empty one clears it — and an absent list
+  // leaves it alone: `exercises` absent is the quick path (the check-in's
+  // fill-gap row, a React Native quick log), which records the outcome and
+  // touches no exercise row. The prescription is read whenever the payload
+  // carries either list: the exercise rows need their snapshots and the
+  // denominator, and a score needs the group it names.
+  const isDetailedMode = Array.isArray(payload.exercises);
+  const hasScores = Array.isArray(payload.groupScores);
 
   const freshExerciseSnapshotMap = new Map<string, ExerciseSnapshot>();
   const sessionPrescribedRows = new Map<string, PrescribedRow[]>();
-  if (isDetailedMode) {
+  // The performed session's live groups, by id, for the scores.
+  const sessionLiveGroups = new Map<string, GroupSnapshot>();
+  if (isDetailedMode || hasScores) {
     const distinctExerciseIds = [
       ...new Set(
         (payload.exercises ?? [])
@@ -521,11 +531,20 @@ async function writeSessionLog(params: {
     for (const row of snapshotRows) {
       freshExerciseSnapshotMap.set(row.id, toExerciseSnapshot(row));
     }
-    for (const row of sessionExercises({ groups: sessionGroups })) {
-      sessionPrescribedRows.set(
-        row.id,
-        buildPrescribedRows(snapshotToSpecs(toExerciseSnapshot(row))),
-      );
+    for (const { group, exercises } of sessionGroups) {
+      sessionLiveGroups.set(group.id, group);
+      // Until commit 15 decides Full versus Partial for timed groups, an AMRAP
+      // or For time group's rows are left out of the working-set count: its
+      // score is what records it, and it never makes the workout Partial on
+      // its own (owner, 2026-09-19). An EMOM's rows count as a circuit's do.
+      const format = groupSnapshotFormat(group);
+      if (format !== null && takesScore(format)) continue;
+      for (const row of exercises) {
+        sessionPrescribedRows.set(
+          row.id,
+          buildPrescribedRows(snapshotToSpecs(toExerciseSnapshot(row))),
+        );
+      }
     }
   }
 
@@ -564,6 +583,10 @@ async function writeSessionLog(params: {
       if (sessionPrescribedRows.has(exerciseId)) continue;
       const snapshot = freshExerciseSnapshotMap.get(exerciseId);
       if (!snapshot) continue;
+      // The same rule for an exercise the session no longer holds: its
+      // snapshot names the group it sat in.
+      const format = groupSnapshotFormat(snapshot.group);
+      if (format !== null && takesScore(format)) continue;
       scored.push({
         prescribedRows: buildPrescribedRows(snapshotToSpecs(snapshot)),
         completedSetNumbers: setNumbers,
@@ -571,6 +594,20 @@ async function writeSessionLog(params: {
     }
 
     derivedQuality = deriveCompletionQuality(scored) ?? payload.completionQuality;
+  }
+
+  // 4c. The scores, judged before anything is written: each names a group of
+  // the performed session (client-scoped, so a foreign id is not there) or one
+  // already scored on this log, and takes only the shape its format allows.
+  // A refusal reaches the route as a 404 (foreign) or a 400 (its sentence),
+  // and the log is untouched.
+  let scoreRows: Awaited<ReturnType<typeof resolveScoreRows>> = [];
+  if (hasScores) {
+    scoreRows = await resolveScoreRows({
+      scores: payload.groupScores ?? [],
+      liveGroups: sessionLiveGroups,
+      existingLogId,
+    });
   }
 
   // 5. Write session_logs (event-keyed, Session 5.2). training_session_id holds
@@ -650,10 +687,10 @@ async function writeSessionLog(params: {
   }
 
   // 6. Reconcile exercise_logs. A save REPLACES EXACTLY WHAT IT CARRIES: a
-  // payload with exercises full-replaces the log's exercise_logs (and its
-  // set_logs via FK CASCADE), and a payload without them — the quick path, and
-  // the check-in's fill-gap row — records an outcome and touches no exercise
-  // row at all.
+  // payload with an exercises list full-replaces the log's exercise_logs (and
+  // its set_logs via FK CASCADE) — an empty list clears them — and a payload
+  // without the list — the quick path, and the check-in's fill-gap row —
+  // records an outcome and touches no exercise row at all.
   //
   // The DELETE used to run unconditionally, which is how marking a workout from
   // the check-in erased the sets the client had already logged for it: the row
@@ -791,6 +828,12 @@ async function writeSessionLog(params: {
     }
   }
 
+  // 6e. The scores, the same way: the list present replaces the log's rows,
+  // an empty list clears them, an absent list leaves them.
+  if (hasScores) {
+    await replaceGroupScores(sessionLogId, scoreRows);
+  }
+
   // 7. Link the event + write its status — only when an event is linked.
   // linkSessionLogToEvent writes both directions (event.session_log_id +
   // status, and session_log.training_event_id) and the status is always
@@ -801,6 +844,30 @@ async function writeSessionLog(params: {
   }
 
   return sessionLogId;
+}
+
+/**
+ * The payload's scores as rows, or the refusal the route maps. The log's
+ * existing scores are read only when a score names a group the performed
+ * session no longer holds — the snapshot fallback for a session that is gone.
+ */
+async function resolveScoreRows(args: {
+  scores: readonly NonNullable<LogTrainingEventInput["groupScores"]>[number][];
+  liveGroups: ReadonlyMap<string, GroupSnapshot>;
+  existingLogId: string | null;
+}) {
+  const needsExisting =
+    args.existingLogId !== null && args.scores.some((score) => !args.liveGroups.has(score.groupId));
+  const existing = new Map(
+    (needsExisting && args.existingLogId ? await loadGroupScores(args.existingLogId) : [])
+      .flatMap((score) => (score.groupId ? [[score.groupId, score] as const] : [])),
+  );
+  const resolved = resolveGroupScores({ scores: args.scores, liveGroups: args.liveGroups, existing });
+  if (!resolved.ok) {
+    if (resolved.kind === "foreign") throw new TrainingLogOwnershipError();
+    throw new InvalidGroupScoreError(resolved.message);
+  }
+  return resolved.rows;
 }
 
 // =============================================================================
@@ -1008,18 +1075,24 @@ export async function getTrainingEventDetail(
 
   const sessionLog = sessionLogRow ? mapSessionLogRow(sessionLogRow) : null;
 
-  // Fetch exercise_logs.
+  // Fetch exercise_logs, and the timed groups' scores beside them — two
+  // independent reads of the same log, issued together.
   let exerciseLogRows: ExerciseLogRow[] = [];
+  let groupScores: GroupScore[] = [];
   if (sessionLog) {
-    const { data, error } = await supabaseAdmin
-      .from("exercise_logs")
-      .select("*")
-      .eq("session_log_id", sessionLog.id)
-      .order("created_at", { ascending: true });
-    if (error) {
-      throw new Error(`Failed to load exercise logs: ${error.message}`);
+    const [logsResult, scores] = await Promise.all([
+      supabaseAdmin
+        .from("exercise_logs")
+        .select("*")
+        .eq("session_log_id", sessionLog.id)
+        .order("created_at", { ascending: true }),
+      loadGroupScores(sessionLog.id),
+    ]);
+    if (logsResult.error) {
+      throw new Error(`Failed to load exercise logs: ${logsResult.error.message}`);
     }
-    exerciseLogRows = data ?? [];
+    exerciseLogRows = logsResult.data ?? [];
+    groupScores = scores;
   }
   const exerciseLogs = await attachSetLogs(exerciseLogRows.map(mapExerciseLogRow));
 
@@ -1055,6 +1128,7 @@ export async function getTrainingEventDetail(
     groups,
     sessionLog,
     exerciseLogs,
+    groupScores,
   };
 }
 
@@ -1088,8 +1162,8 @@ export async function getSessionLogDetail(
     (exerciseRows ?? []).map((r) => mapExerciseLogRow(r as ExerciseLogRow)),
   );
 
-  // Two reads of the PERFORMED session (the log's training_session_id), issued
-  // together because neither depends on the other:
+  // Two reads of the PERFORMED session (the log's training_session_id) and the
+  // log's scores, issued together because none depends on another:
   //
   //  - its live name, for the session-level "Prescribed X · Performed Y" line.
   //    Null if the session was hard-deleted.
@@ -1104,7 +1178,7 @@ export async function getSessionLogDetail(
   //
   // Scope comes from the log row's own client_id. The route proves the caller
   // owns that client by matching it against the URL before returning anything.
-  const [sessionRowResult, prescription] = await Promise.all([
+  const [sessionRowResult, prescription, groupScores] = await Promise.all([
     row.training_session_id
       ? supabaseAdmin
           .from("training_sessions")
@@ -1115,6 +1189,7 @@ export async function getSessionLogDetail(
     row.training_session_id
       ? loadSessionPrescription(row.client_id, row.training_session_id)
       : Promise.resolve<PrescriptionGroup[]>([]),
+    loadGroupScores(sessionLogId),
   ]);
   if (sessionRowResult.error) {
     throw new Error(
@@ -1139,6 +1214,7 @@ export async function getSessionLogDetail(
   return {
     sessionLog: mapSessionLogRow(row as SessionLogRow),
     exerciseLogs,
+    groupScores,
     performedSessionName,
     prescribedGroups,
   };
