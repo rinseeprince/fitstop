@@ -2,7 +2,7 @@
 
 import type { WindowCap } from "@/services/program-event-walk";
 import { addDaysToDateString, formatDateOnlyShort } from "@/lib/date-helpers";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { leaveCoachPage } from "@/lib/coach-history";
@@ -154,6 +154,14 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   // Owned here, not in the dock: the session-editor sheet's footer button opens
   // the same panel, and the dock's fixed launcher hides while that sheet is up.
   const [assistantOpen, setAssistantOpen] = useState(false);
+  // The session sheet's content mounts a render after the sheet opens (Radix
+  // portals on a layout effect). The assistant dock re-registers its layer on
+  // THAT, so an open panel always ends up above the sheet (assistant-dock.tsx).
+  const [sessionSheetMounted, setSessionSheetMounted] = useState(false);
+  const onSessionSheetContent = useCallback(
+    (element: HTMLDivElement | null) => setSessionSheetMounted(element != null),
+    [],
+  );
   // The uid only — the week resolves live at render, so a vanished uid or a
   // mode flip closes the progression dialog by unmounting it.
   const [progressionWeekUid, setProgressionWeekUid] = useState<string | null>(null);
@@ -552,6 +560,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
 
       <SessionEditorSheet
         open={sessionSheetOpen}
+        contentRef={onSessionSheetContent}
         session={editingSession}
         // A session on a locked day opens read-only — the guarded mutators
         // would refuse its edits anyway.
@@ -696,6 +705,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         // while that sheet is up, its Assistant button is the way in — and the
         // open panel re-registers as a layer above the sheet (see the dock).
         sessionSheetOpen={sessionSheetOpen}
+        sessionSheetMounted={sessionSheetMounted}
       />
 
       {/* The plan editor's save: confirm → PUT; a 409 (the calendar changed

@@ -35,6 +35,10 @@ type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session" | "chrome"
   // Opens the program assistant. Optional because only the builder mounts one;
   // without it the footer's left slot is simply empty.
   onOpenAssistant?: () => void;
+  // The sheet's content element, reported when it mounts and unmounts — a
+  // render AFTER the sheet opens, since Radix portals on a layout effect. The
+  // assistant dock re-registers its own layer on it (see assistant-dock.tsx).
+  contentRef?: (element: HTMLDivElement | null) => void;
 };
 
 export function SessionEditorSheet({
@@ -46,6 +50,7 @@ export function SessionEditorSheet({
   onSaveAsWorkout,
   isSavingWorkout,
   onOpenAssistant,
+  contentRef,
   ...bodyProps
 }: SessionEditorSheetProps) {
   const editable = mode === "edit";
@@ -58,6 +63,7 @@ export function SessionEditorSheet({
       }}
     >
       <SheetContent
+        ref={contentRef}
         side="right"
         hideClose
         className="flex w-full flex-col gap-0 bg-[#f4f7f6] p-0 sm:w-[780px] sm:max-w-full"

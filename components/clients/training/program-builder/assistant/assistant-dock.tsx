@@ -25,23 +25,29 @@ import { AssistantMessages } from "./assistant-messages";
 // clicked (its chevron included) nor typed into. A layer registered after the
 // sheet's gets pointer events and pauses the sheet's focus trap while it is
 // open; the sheet, for its part, treats a press in the panel as no outside
-// click (lib/outside-interaction.ts). The layer is keyed on the sheet being
-// open so it re-registers ABOVE a sheet opened while the panel was already
-// up. Escape collapses the panel — the top-most layer — and a second Escape
-// reaches the sheet. Nothing about the panel is an address: `open` is lifted
-// so the session sheet's footer button can open it, and `sessionSheetOpen`
-// also hides the fixed corner chip while that sheet is up, where it sat on
-// top of the sheet's own footer actions.
+// click (lib/outside-interaction.ts). Layers rank by the order they mount, so
+// the panel is keyed on the sheet's CONTENT being mounted (`sessionSheetMounted`,
+// reported by the sheet's content ref) and re-registers ABOVE a sheet opened
+// while the panel was already up. Not on the sheet being open: Radix portals
+// the content a render later, so a panel re-mounted on the open flag landed
+// below the sheet and read pointer-events none. Escape collapses the panel —
+// the top-most layer — and a second Escape reaches the sheet. Nothing about
+// the panel is an address: `open` is lifted so the session sheet's footer
+// button can open it, and `sessionSheetOpen` hides the fixed corner chip
+// while that sheet is up, where it sat on top of the sheet's own footer
+// actions.
 type AssistantDockProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionSheetOpen?: boolean;
+  sessionSheetMounted?: boolean;
 };
 
 export function AssistantDock({
   open,
   onOpenChange,
   sessionSheetOpen = false,
+  sessionSheetMounted = false,
 }: AssistantDockProps) {
   const { mode, setMode, isSaving } = useProgramDraft();
   const chat = useAssistantChat();
@@ -62,7 +68,7 @@ export function AssistantDock({
     <div data-assistant-dock="" className="fixed bottom-5 right-5 z-[60] flex flex-col items-end">
       {open ? (
         <DialogPrimitive.Root
-          key={sessionSheetOpen ? "over-sheet" : "over-grid"}
+          key={sessionSheetMounted ? "over-sheet" : "over-grid"}
           open
           modal={false}
           onOpenChange={(next) => {

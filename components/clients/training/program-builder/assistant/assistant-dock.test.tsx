@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
@@ -192,12 +193,12 @@ describe("the panel as its own layer", () => {
     mockChat.pending = null;
   });
 
-  it("is a dialog that re-registers when the session sheet opens, and hides the launcher meanwhile", () => {
+  it("is a dialog that re-registers when the session sheet's content mounts, and hides the launcher meanwhile", () => {
     const { rerender } = render(<AssistantDock open onOpenChange={vi.fn()} sessionSheetOpen={false} />);
     const before = screen.getByRole("dialog");
     expect(before).toHaveTextContent("Program assistant");
 
-    rerender(<AssistantDock open onOpenChange={vi.fn()} sessionSheetOpen />);
+    rerender(<AssistantDock open onOpenChange={vi.fn()} sessionSheetOpen sessionSheetMounted />);
     const after = screen.getByRole("dialog");
     expect(after).not.toBe(before);
     expect(after).toHaveTextContent("Program assistant");
@@ -213,5 +214,62 @@ describe("the panel as its own layer", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onOpenChange).toHaveBeenCalledTimes(1);
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+// Radix turns pointer events off outside the top-most modal layer and marks
+// every layer's content inline: "auto" above the sheet, "none" below it. The
+// panel must read "auto" whichever opened first — the sheet's content mounts a
+// render after the sheet opens, which is what the mount signal is for.
+describe("the panel over a modal session sheet", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockContext.mode = "edit";
+    mockChat.busy = false;
+    mockChat.pending = null;
+  });
+
+  function Both({ dockFirst }: { dockFirst: boolean }) {
+    const [sheetOpen, setSheetOpen] = useState(!dockFirst);
+    const [dockOpen, setDockOpen] = useState(dockFirst);
+    const [mounted, setMounted] = useState(false);
+    const contentRef = useCallback((element: HTMLDivElement | null) => setMounted(element != null), []);
+    return (
+      <>
+        <button type="button" onClick={() => setSheetOpen(true)}>
+          Open sheet
+        </button>
+        <button type="button" onClick={() => setDockOpen(true)}>
+          Open dock
+        </button>
+        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <SheetContent ref={contentRef}>
+            <SheetTitle>A session</SheetTitle>
+          </SheetContent>
+        </Sheet>
+        <AssistantDock
+          open={dockOpen}
+          onOpenChange={setDockOpen}
+          sessionSheetOpen={sheetOpen}
+          sessionSheetMounted={mounted}
+        />
+      </>
+    );
+  }
+  // Radix marks everything outside a modal sheet aria-hidden, the panel
+  // included, so the role query must look past that.
+  const panel = () => screen.getByRole("dialog", { name: "Program assistant", hidden: true });
+
+  it("keeps its pointer events when the sheet opens over an already open panel", () => {
+    render(<Both dockFirst />);
+    fireEvent.click(screen.getByText("Open sheet"));
+    expect(screen.getByRole("dialog", { name: "A session" })).toBeInTheDocument();
+    expect(panel().style.pointerEvents).toBe("auto");
+  });
+
+  it("keeps its pointer events when opened over the sheet", () => {
+    render(<Both dockFirst={false} />);
+    fireEvent.click(screen.getByText("Open dock"));
+    expect(panel().style.pointerEvents).toBe("auto");
   });
 });
