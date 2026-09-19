@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { SessionDraft } from "../program-builder-types";
 
@@ -288,12 +288,30 @@ describe("the panel inside the session sheet", () => {
     expect(launcher()).toBeNull();
   };
 
+  // jsdom computes no animation, so Radix unmounts a closing sheet at once.
+  // Naming the content's exit animation holds the closing frame on the page to
+  // be read (the delete-plan dialog's recipe). The content has no entrance of
+  // its own while open and slides out on close, as in a browser.
+  function holdExitAnimation() {
+    const computed = window.getComputedStyle.bind(window);
+    vi.spyOn(window, "getComputedStyle").mockImplementation((element, pseudo) => {
+      const styles = computed(element, pseudo);
+      if (element instanceof HTMLElement && element.dataset.slot === "sheet-content") {
+        Object.defineProperty(styles, "animationName", {
+          get: () => (element.dataset.state === "closed" ? "exit" : "none"),
+        });
+      }
+      return styles;
+    });
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockContext.mode = "edit";
     mockChat.busy = false;
     mockChat.pending = null;
   });
+  afterEach(() => vi.restoreAllMocks());
 
   it("is hosted by the sheet, with pointer events and not aria-hidden, when the sheet opens over an already open panel", () => {
     render(<Builder />);
@@ -323,6 +341,48 @@ describe("the panel inside the session sheet", () => {
     fireEvent.keyDown(within(sheet()).getByRole("button", { name: "Done" }), { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Push Day" })).toBeNull();
     expect(launcher()).toBeInTheDocument();
+  });
+
+  // The content is the modal's scope and the panel's anchor, so it must not
+  // move while the sheet arrives: it carries no entrance of its own, and the
+  // body inside it is what slides. The panel hangs off the frame, never the
+  // body, so it holds its corner while the sheet slides in beneath it.
+  it("anchors the panel to a still frame: the content has no entrance of its own, the body inside it slides", () => {
+    render(<Builder sessionOpen />);
+    fireEvent.click(within(sheet()).getByRole("button", { name: "Assistant" }));
+
+    const frame = sheet();
+    expect(frame.style.animation).toBe("none");
+    const body = frame.firstElementChild as HTMLElement;
+    expect(body.className).toMatch(/\banimate-in\b/);
+    expect(body.className).toMatch(/\bslide-in-from-right\b/);
+    expect(body).toHaveTextContent("Push Day");
+    expect(body.contains(panel())).toBe(false);
+    expect(panel().parentElement).toBe(frame);
+  });
+
+  it("a closing sheet keeps its session but holds no panel: the corner has it in the same frame", () => {
+    holdExitAnimation();
+    render(<Builder sessionOpen />);
+    fireEvent.click(within(sheet()).getByRole("button", { name: "Assistant" }));
+
+    fireEvent.click(within(sheet()).getByRole("button", { name: "Done" }));
+
+    const closing = document.querySelector<HTMLElement>(
+      '[data-slot="sheet-content"][data-state="closed"]',
+    );
+    expect(closing).not.toBeNull();
+    expect(closing).toHaveTextContent("Push Day");
+    // No exit animation on the frame's own inline style: the slide-out is the class's.
+    expect(closing!.style.animation).toBe("");
+    expect(closing!.querySelector('[role="dialog"]')).toBeNull();
+    // The closing sheet is still a modal layer, so the corner's copy is
+    // aria-hidden until it unmounts.
+    const corner = screen.getByRole("dialog", { name: "Program assistant", hidden: true });
+    expect(closing!.contains(corner)).toBe(false);
+    expect(
+      screen.getAllByRole("dialog", { name: "Program assistant", hidden: true }),
+    ).toHaveLength(1);
   });
 
   it("the open panel and the command being typed survive a session opening and closing", () => {

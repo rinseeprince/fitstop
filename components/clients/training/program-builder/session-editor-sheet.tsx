@@ -36,6 +36,17 @@ import { countSessionExercises } from "@/utils/exercise-groups";
 // state is the provider's, so the conversation is the one the corner dock
 // showed). Escape belongs to whatever it was pressed in: inside the panel it
 // collapses the panel, anywhere else it closes the sheet.
+//
+// The content is a STILL FRAME, and the body inside it is what slides. The
+// content is the modal's scope and the panel's anchor, so it must not move
+// while the sheet arrives: a panel anchored to a sliding content rode in from
+// the right edge with it (the owner's veto, 2026-09-19). So the content carries
+// no entrance of its own (`animation: none` while open, inline, because the
+// base sheet's entrance is a class the class merge does not know), shows
+// nothing of its own (transparent, no shadow) and holds the panel in place,
+// while the body carries the sheet's look and its slide-in beneath the panel.
+// The slide-out stays on the content: Radix reads the closing node's animation
+// to keep it mounted, and by then the panel is back in the corner.
 type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session" | "chrome"> & {
   // Its own prop, never derived from `session`: a closing sheet keeps
   // rendering the session it showed (CONVENTIONS §7 → "No frame disagrees").
@@ -70,7 +81,8 @@ export function SessionEditorSheet({
       <SheetContent
         side="right"
         hideClose
-        className="flex w-full flex-col gap-0 bg-[#f4f7f6] p-0 sm:w-[780px] sm:max-w-full"
+        className="w-full gap-0 bg-transparent p-0 shadow-none sm:w-[780px] sm:max-w-full"
+        style={open ? { animation: "none" } : undefined}
         // Radix brings every Escape on the page to the top layer — this sheet.
         // One pressed inside the hosted panel is the panel's to answer (its own
         // key handler collapses it), so the sheet declines it and stays;
@@ -81,6 +93,7 @@ export function SessionEditorSheet({
           }
         }}
       >
+        <div className="flex h-full min-h-0 flex-col bg-[#f4f7f6] shadow-lg ease-in-out duration-500 animate-in slide-in-from-right">
         {session && (
           <>
             {/* The visible title is the hero's inline-edit input, which has no
@@ -148,18 +161,20 @@ export function SessionEditorSheet({
             </div>
           </>
         )}
+        </div>
 
-        {/* The hosted panel, last in the content so the tab order reaches it
-            after Done. The content is flush with the viewport's right and
-            bottom edges, so bottom-5 right-5 here is the corner the dock uses
-            over the grid: the panel lands where it was, over the footer's right
-            end. It is part of the content, so it arrives with the sheet —
-            during the sheet's slide-in it travels with it — and on `open`, not
-            `session`: a closing sheet keeps its session for its slide-out but
-            hands the panel back to the corner dock in the same commit, so there
-            is one panel on every frame and it never moves on a close. */}
+        {/* The hosted panel, anchored to the still content and last in it so
+            the tab order reaches it after Done. The content is flush with the
+            viewport's right and bottom edges, so bottom-5 right-5 here is the
+            corner the dock uses over the grid: the panel keeps its pixels while
+            the body slides in beneath it. z-10 paints it over everything in the
+            body, whose pinned set cells carry a z-index of their own
+            (PINNED_CELL_CLASS in set-row-editor.tsx). On `open`, not `session`:
+            a closing sheet keeps its session for its slide-out but hands the
+            panel back to the corner dock in the same commit, so there is one
+            panel on every frame and it never moves on a close either. */}
         {open && assistant.open && (
-          <AssistantPanel ref={panelRef} className="absolute bottom-5 right-5" />
+          <AssistantPanel ref={panelRef} className="absolute bottom-5 right-5 z-10" />
         )}
       </SheetContent>
     </Sheet>
