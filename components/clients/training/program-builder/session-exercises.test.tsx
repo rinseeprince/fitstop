@@ -145,14 +145,14 @@ describe("Session editor — groups", () => {
     render(<Host groups={[lone(SQUAT), lone(BENCH), lone(ROW), lone(CRUNCH)]} />);
     fireEvent.click(screen.getByRole("button", { name: "Link exercises" }));
     expect(screen.getByText("0 selected")).toBeInTheDocument();
-    const make = screen.getByRole("button", { name: "Make superset" });
+    const make = screen.getByRole("button", { name: "Superset" });
     expect(make).toBeDisabled();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Cable Crunch" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Bench Press" }));
     expect(screen.getByText("2 selected")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Bench Press" })).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(screen.getByRole("button", { name: "Make superset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Superset" }));
 
     const group = screen.getByRole("region", { name: "Superset · 3 rounds" });
     expect(within(group).getByText("Bench Press")).toBeInTheDocument();
@@ -173,7 +173,7 @@ describe("Session editor — groups", () => {
     for (const name of ["Back Squat", "Bench Press", "Pendlay Row"]) {
       fireEvent.click(screen.getByRole("checkbox", { name }));
     }
-    expect(screen.getByRole("button", { name: "Make circuit" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Circuit" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("region")).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
@@ -183,13 +183,13 @@ describe("Session editor — groups", () => {
     render(<Host groups={[lone(SQUAT), lone(CRUNCH)]} />);
     fireEvent.click(screen.getByRole("button", { name: "Link exercises" }));
     // The timed formats take one pick; a superset still needs two.
-    for (const name of ["Make AMRAP", "Make EMOM", "Make For time"]) {
+    for (const name of ["AMRAP", "EMOM", "For time"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
     }
     fireEvent.click(screen.getByRole("checkbox", { name: "Back Squat" }));
-    expect(screen.getByRole("button", { name: "Make superset" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Make AMRAP" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Make AMRAP" }));
+    expect(screen.getByRole("button", { name: "Superset" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "AMRAP" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "AMRAP" }));
 
     const group = screen.getByRole("region", { name: "AMRAP · 10m" });
     expect(within(group).getByText("Back Squat")).toBeInTheDocument();
@@ -209,7 +209,7 @@ describe("Session editor — groups", () => {
     render(<Host groups={[lone(SQUAT)]} />);
     fireEvent.click(screen.getByRole("button", { name: "Link exercises" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Back Squat" }));
-    fireEvent.click(screen.getByRole("button", { name: "Make EMOM" }));
+    fireEvent.click(screen.getByRole("button", { name: "EMOM" }));
     expect(screen.getByRole("region", { name: "EMOM · 3 rounds · every 1m" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Unlink emom" }));
     expect(screen.queryByRole("region")).toBeNull();
@@ -299,6 +299,35 @@ describe("Session editor — groups", () => {
     expect(screen.getByLabelText("Set 1 reps")).toBeInTheDocument();
     expect(screen.queryByLabelText("Set 2 reps")).toBeNull();
     expect(screen.queryByRole("button", { name: /Add set/ })).toBeNull();
+  });
+
+  it("the settings card stays open while focus moves inside it after a commit, and closes on a click outside", async () => {
+    const user = userEvent.setup();
+    render(<Host groups={[superset()]} />);
+    await user.click(screen.getByRole("button", { name: "Superset settings" }));
+
+    // Typing rounds and clicking the next box commits the rounds — the box
+    // remounts and the grid behind re-lays — and the card stays.
+    const rounds = screen.getByRole("spinbutton", { name: "Rounds" });
+    await user.click(rounds);
+    await user.clear(rounds);
+    await user.type(rounds, "4");
+    await user.click(screen.getByRole("spinbutton", { name: "Rest between exercises in seconds" }));
+    expect(screen.getByRole("region", { name: "Superset · 4 rounds" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Rounds" })).toHaveValue(4);
+    expect(screen.getByRole("spinbutton", { name: "Rest between exercises in seconds" })).toHaveFocus();
+
+    // Notes commit the same way, and the card is still there.
+    const notes = screen.getByRole("textbox", { name: "Notes" });
+    await user.click(notes);
+    await user.type(notes, " Fast.");
+    await user.click(screen.getByRole("spinbutton", { name: "Rounds" }));
+    expect(screen.getByRole("textbox", { name: "Notes" })).toHaveValue("Pair these back to back. Fast.");
+
+    // A click outside the card closes it.
+    await user.click(document.body);
+    expect(screen.queryByRole("spinbutton", { name: "Rounds" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Superset · 4 rounds" })).toHaveTextContent("Fast.");
   });
 
   it("switching to EMOM offers its interval and rounds, typed as m:ss", async () => {

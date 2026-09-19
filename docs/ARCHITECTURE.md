@@ -551,7 +551,8 @@ inversion: **the PRESCRIPTION drives the row list, not the log.**
   group the performed session no longer holds reads as the group its snapshot records, after the
   prescription, with no cards under it.
 - **The grouping is the prescription's.** A lone exercise is a plain card. A linked group, and a
-  timed group of any size, sits under a slim heading — its name, rounds, clock, rests and notes —
+  timed group of any size, sits under a slim heading — its name, rounds, clock and rests, never the
+  group's notes, which are the coach's own instructions to the client (owner, 2026-09-19) —
   with its cards on one rail
   (`session-log-group.tsx`; see "Groups" → "How a group reads"), and where its rows are rounds the
   first column reads Round. Exercises logged outside the prescription follow the groups, in none of

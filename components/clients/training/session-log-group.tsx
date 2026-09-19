@@ -17,7 +17,8 @@ import { GroupHeadingLines } from "./group-heading-lines";
 // cards on one rail. A straight-sets group of one never gets one — coaches
 // never see a group around a single exercise (docs/TRAINING-UPGRADE-EXECUTION-
 // PLAN.md section 4.2) — while a timed group always does, its cap and its
-// score being the point.
+// score being the point. The group's notes are the coach's instructions to the
+// client and are not shown here (owner, 2026-09-19): the coach wrote them.
 export function SessionLogGroup({
   group,
   score = null,
@@ -31,7 +32,7 @@ export function SessionLogGroup({
   return (
     <section aria-label={groupHeadingText(groupHeading(group)).title} className="flex flex-col gap-2">
       <div className="px-1">
-        <GroupHeadingLines group={group} />
+        <GroupHeadingLines group={group} withNotes={false} />
         {takesScore(group.format) && (
           <p data-testid="group-score" className={cn("mt-0.5 text-[12px]", TEXT_PRIMARY)}>
             {score ? (

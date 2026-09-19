@@ -41,10 +41,17 @@ import {
 // time — then the settings that format uses (GROUP_FORMAT_SETTINGS, the one
 // table): rounds where the rows are rounds, a time cap and an interval typed as
 // minutes or m:ss and read back as m:ss, rests typed in seconds, and notes.
-// Every field writes straight through to the draft on blur, like every other
-// field in the session editor, and the heading behind reads the new values at
-// once. A format switch is one edit, so the heading, the grid and these rows
-// change in one render.
+// Every control on the card is one width, and a box says its grammar as its
+// placeholder ("m:ss", "s") rather than beside it (owner, 2026-09-19). Every
+// field writes straight through to the draft on blur, like every other field
+// in the session editor, and the heading behind reads the new values at once.
+// A format switch is one edit, so the heading, the grid and these rows change
+// in one render.
+//
+// The card stays open until the coach clicks outside it or presses Escape
+// (owner, 2026-09-19). Focus leaving it never closes it: a commit remounts the
+// box it came from and can re-lay the grid behind, and the card must survive
+// both — `onFocusOutside` is declined for that reason.
 //
 // The inputs are uncontrolled and keyed by the value they show, so a value the
 // draft changes — here or by the assistant — remounts them. A blur puts the
@@ -56,7 +63,9 @@ type GroupSettingsPopoverProps = {
   onUpdate: (patch: GroupSettingsPatch) => void;
 };
 
-const NUMBER_INPUT_CLASS = cn(MONO_INPUT_CLASS, "h-8 w-20 text-xs", FOCUS_RING);
+// One width for every control, so the card's boxes line up.
+const CONTROL_WIDTH = "w-[140px]";
+const NUMBER_INPUT_CLASS = cn(MONO_INPUT_CLASS, "h-8 text-xs", CONTROL_WIDTH, FOCUS_RING);
 const ROW_CLASS = "flex items-center justify-between gap-3";
 
 // The formats the dropdown offers, in this order; a superset or circuit only
@@ -98,19 +107,16 @@ export function GroupSettingsPopover({ group, onUpdate }: GroupSettingsPopoverPr
   ) => (
     <label className={ROW_CLASS}>
       <span className={LABEL_CLASS}>{label}</span>
-      <span className="flex items-center gap-1.5">
-        <Input
-          key={`${field}-${group.uid}-${group[field]}`}
-          type="text"
-          inputMode="numeric"
-          aria-label={`${label} in minutes and seconds`}
-          placeholder="m:ss"
-          defaultValue={group[field] == null ? "" : formatDuration(group[field])}
-          className={NUMBER_INPUT_CLASS}
-          onBlur={commitClock(field, max, required)}
-        />
-        <span className={cn("text-[11px]", TEXT_MUTED)}>m:ss</span>
-      </span>
+      <Input
+        key={`${field}-${group.uid}-${group[field]}`}
+        type="text"
+        inputMode="numeric"
+        aria-label={`${label} in minutes and seconds`}
+        placeholder="m:ss"
+        defaultValue={group[field] == null ? "" : formatDuration(group[field])}
+        className={NUMBER_INPUT_CLASS}
+        onBlur={commitClock(field, max, required)}
+      />
     </label>
   );
 
@@ -120,20 +126,18 @@ export function GroupSettingsPopover({ group, onUpdate }: GroupSettingsPopoverPr
   ) => (
     <label className={ROW_CLASS}>
       <span className={LABEL_CLASS}>{label}</span>
-      <span className="flex items-center gap-1.5">
-        <Input
-          key={`${field}-${group.uid}-${group[field]}`}
-          type="number"
-          min={0}
-          max={GROUP_REST_SECONDS_MAX}
-          step={1}
-          aria-label={`${label} in seconds`}
-          defaultValue={group[field] ?? ""}
-          className={NUMBER_INPUT_CLASS}
-          onBlur={commitRest(field)}
-        />
-        <span className={cn("text-[11px]", TEXT_MUTED)}>s</span>
-      </span>
+      <Input
+        key={`${field}-${group.uid}-${group[field]}`}
+        type="number"
+        min={0}
+        max={GROUP_REST_SECONDS_MAX}
+        step={1}
+        aria-label={`${label} in seconds`}
+        placeholder="s"
+        defaultValue={group[field] ?? ""}
+        className={NUMBER_INPUT_CLASS}
+        onBlur={commitRest(field)}
+      />
     </label>
   );
 
@@ -157,6 +161,7 @@ export function GroupSettingsPopover({ group, onUpdate }: GroupSettingsPopoverPr
         align="end"
         sideOffset={6}
         className="w-[320px] rounded-[6px] border-[rgba(13,148,136,0.08)] p-0"
+        onFocusOutside={(event) => event.preventDefault()}
       >
         <div className="px-3.5 pb-2 pt-3">
           <div className={cn("text-sm font-semibold", TEXT_PRIMARY)}>{name}</div>
@@ -171,7 +176,7 @@ export function GroupSettingsPopover({ group, onUpdate }: GroupSettingsPopoverPr
               value={group.format}
               onValueChange={(format) => onUpdate({ format: format as GroupFormat })}
             >
-              <SelectTrigger aria-label="Format" className="h-8 w-[150px] text-xs">
+              <SelectTrigger aria-label="Format" className={cn("h-8 text-xs", CONTROL_WIDTH)}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

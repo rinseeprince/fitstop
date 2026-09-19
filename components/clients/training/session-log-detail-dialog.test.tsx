@@ -911,7 +911,7 @@ describe("SessionLogDetailDialog", () => {
       });
     }
 
-    it("sits a linked group under a slim heading with its name, rounds, rests and notes", () => {
+    it("sits a linked group under a slim heading with its name, rounds and rests — never the coach's own notes", () => {
       setupSuperset();
 
       render(<SessionLogDetailDialog {...defaultProps} />);
@@ -921,7 +921,8 @@ describe("SessionLogDetailDialog", () => {
       // The separators are spaced by margin, as in the dialog's header line.
       expect(superset).toHaveTextContent("30s rest between exercises");
       expect(superset).toHaveTextContent("1m 30s rest between rounds");
-      expect(within(superset).getByText("Back to back")).toBeInTheDocument();
+      // The notes are the coach's instructions to the client; the coach wrote them.
+      expect(within(superset).queryByText("Back to back")).toBeNull();
       expect(
         within(superset)
           .getAllByRole("button")

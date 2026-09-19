@@ -92,7 +92,8 @@ const MAKE_ACTION = cn(
 );
 
 // The timed formats Link makes, each from one exercise or more; a superset or
-// circuit (two or more) is the first action and named by the count.
+// circuit (two or more) is the first action and named by the count. Each
+// action is the format's name alone (owner, 2026-09-19).
 const TIMED_MAKES: ReadonlyArray<{ format: LinkFormat; label: string }> = [
   { format: "amrap", label: groupName("amrap", 1) },
   { format: "emom", label: groupName("emom", 1) },
@@ -188,7 +189,7 @@ export function SessionExercises({
     return line.index === size && position === size - 1 ? "member-bottom" : null;
   };
 
-  const linkName = groupName("circuit", Math.max(2, livePicked.length)).toLowerCase();
+  const linkName = groupName("circuit", Math.max(2, livePicked.length));
   // One click makes the group and ends the picking: the draft edit and the
   // local state land in one handler, so nothing renders between them.
   const make = (format: LinkFormat) => {
@@ -210,7 +211,7 @@ export function SessionExercises({
         className={MAKE_ACTION}
         onClick={() => make("circuit")}
       >
-        Make {linkName}
+        {linkName}
       </button>
       {TIMED_MAKES.map(({ format, label }) => (
         <button
@@ -220,7 +221,7 @@ export function SessionExercises({
           className={MAKE_ACTION}
           onClick={() => make(format)}
         >
-          Make {label}
+          {label}
         </button>
       ))}
     </div>

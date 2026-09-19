@@ -15,8 +15,16 @@ type HeadingGroup = GroupSettings & { exercises: ReadonlyArray<unknown> };
 // A linked group's heading as a coach reads it: its name and rounds, its rests
 // and its notes, in the words utils/exercise-group-display.ts gives every
 // screen. Shared by the workout log view and the session editor, so the group
-// a coach builds reads exactly as the group they later review.
-export function GroupHeadingLines({ group }: { group: HeadingGroup }) {
+// a coach builds reads exactly as the group they later review. The notes are
+// the coach's instructions to the client, so the log view leaves them out
+// (`withNotes={false}`; owner, 2026-09-19): the coach wrote them.
+export function GroupHeadingLines({
+  group,
+  withNotes = true,
+}: {
+  group: HeadingGroup;
+  withNotes?: boolean;
+}) {
   const heading = groupHeading(group);
   return (
     <>
@@ -36,7 +44,7 @@ export function GroupHeadingLines({ group }: { group: HeadingGroup }) {
           ))}
         </p>
       )}
-      {heading.notes && (
+      {withNotes && heading.notes && (
         <p className={cn("mt-0.5 whitespace-pre-wrap text-[12px]", TEXT_MUTED)}>
           {heading.notes}
         </p>
