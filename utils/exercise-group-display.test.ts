@@ -214,7 +214,7 @@ describe("formatRoundReps", () => {
       formatRoundReps(
         buildPrescribedRows([
           spec({ set_number: 1, reps_min: 10, reps_max: 10 }),
-          spec({ set_number: 2, set_type: "amrap", reps_min: 10, reps_max: 10 }),
+          spec({ set_number: 2, set_type: "failure", reps_min: 10, reps_max: 10 }),
         ]),
       ),
     ).toBeNull();

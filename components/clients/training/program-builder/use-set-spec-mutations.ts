@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { toast } from "sonner";
-import type { SetType } from "@/utils/exercise-set-specs";
+import { SET_TYPES, type SetType } from "@/utils/exercise-set-specs";
 import {
   applySetSpecEdit,
   type SetSpecEdit,
@@ -16,14 +16,17 @@ import type { ExerciseDraft } from "./program-builder-types";
 
 export type { SetSpecEdit };
 
-/** Set types in authoring order for the set-type select. */
-export const SET_TYPE_OPTIONS: Array<{ value: SetType; label: string }> = [
-  { value: "warmup", label: "Warm-up" },
-  { value: "working", label: "Working" },
-  { value: "amrap", label: "AMRAP" },
-  { value: "drop", label: "Drop" },
-  { value: "failure", label: "Failure" },
-];
+/** Each set type's word in the Type menu — a Record, so a type can't go unlabelled. */
+const SET_TYPE_LABELS: Record<SetType, string> = {
+  warmup: "Warm-up",
+  working: "Working",
+  drop: "Drop",
+  failure: "Failure",
+};
+
+/** The set types in authoring order for the set-type select: the one list, labelled. */
+export const SET_TYPE_OPTIONS: ReadonlyArray<{ value: SetType; label: string }> =
+  SET_TYPES.map((value) => ({ value, label: SET_TYPE_LABELS[value] }));
 
 /**
  * Hook adapter: applies an edit to the RENDERED exercise (the parent-owned

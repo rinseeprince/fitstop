@@ -102,16 +102,15 @@ export function buildPrescribedRows(specs: SetSpec[]): PrescribedRow[] {
       ? spec.set_number
       : specIndex + 1;
 
-    // AMRAP and to-failure sets prescribe NO rep count — that is what the type
-    // means. The reps fields are read type-aware here, in the one place every
-    // renderer goes through, rather than scrubbed on write: switching a set's
-    // type in the editor leaves reps_min/reps_max behind, and the assistant can
-    // author them too, so a write-side clear would cover neither the ~11k rows
-    // that already carry a stale range nor a future writer. Expressing it here
-    // makes the stale value unreadable instead of merely tidied, and it costs a
-    // coach nothing when they switch a type back and forth.
-    const openEnded =
-      spec.set_type === "amrap" || spec.set_type === "failure";
+    // A to-failure set prescribes NO rep count — that is what the type means.
+    // The reps fields are read type-aware here, in the one place every renderer
+    // goes through, rather than scrubbed on write: switching a set's type in
+    // the editor leaves reps_min/reps_max behind, and the assistant can author
+    // them too, so a write-side clear would cover neither the rows that already
+    // carry a stale range nor a future writer. Expressing it here makes the
+    // stale value unreadable instead of merely tidied, and it costs a coach
+    // nothing when they switch a type back and forth.
+    const openEnded = spec.set_type === "failure";
 
     rows.push({
       setNumber,

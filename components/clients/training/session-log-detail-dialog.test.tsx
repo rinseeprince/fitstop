@@ -540,7 +540,7 @@ describe("SessionLogDetailDialog", () => {
       expect(measure(warmupRow, "Reps").actual).toHaveTextContent(/^10$/);
     });
 
-    it("shows no rep target for an AMRAP row, only its load and RPE", () => {
+    it("shows no rep target for a to-failure row, only its load and RPE", () => {
       setupExercise(
         {
           name: "Bench Press",
@@ -548,11 +548,11 @@ describe("SessionLogDetailDialog", () => {
           set_specs: [
             spec({ set_number: 1, reps_min: 8, reps_max: 12 }),
             // A stale range the editor left behind when the coach switched
-            // this set to AMRAP. It must not reach the coach as though it
+            // this set to failure. It must not reach the coach as though it
             // were prescribed.
             spec({
               set_number: 2,
-              set_type: "amrap",
+              set_type: "failure",
               reps_min: 7,
               reps_max: 11,
               load_type: "pct_1rm",
@@ -566,12 +566,12 @@ describe("SessionLogDetailDialog", () => {
 
       render(<SessionLogDetailDialog {...defaultProps} />);
 
-      const [working, amrap] = rows();
+      const [working, failure] = rows();
       expect(measure(working, "Reps").target).toBe("8–12");
-      expect(measure(amrap, "Reps").target).toBe("");
-      expect(measure(amrap, "Reps").actual).not.toHaveClass(AMBER);
-      expect(measure(amrap, "Load (kg)").target).toBe("60% 1RM");
-      expect(measure(amrap, "RPE").target).toBe("9");
+      expect(measure(failure, "Reps").target).toBe("");
+      expect(measure(failure, "Reps").actual).not.toHaveClass(AMBER);
+      expect(measure(failure, "Load (kg)").target).toBe("60% 1RM");
+      expect(measure(failure, "RPE").target).toBe("9");
       expect(screen.queryByText(/7–11|7-11/)).not.toBeInTheDocument();
     });
 
@@ -583,7 +583,7 @@ describe("SessionLogDetailDialog", () => {
           set_specs: [
             spec({ set_number: 1, set_type: "warmup" }),
             spec({ set_number: 2 }),
-            spec({ set_number: 3, set_type: "amrap" }),
+            spec({ set_number: 3, set_type: "drop" }),
             spec({ set_number: 4, set_type: "failure" }),
           ],
         },
@@ -593,11 +593,14 @@ describe("SessionLogDetailDialog", () => {
       render(<SessionLogDetailDialog {...defaultProps} />);
 
       expect(screen.getByText("Warm-up")).toBeInTheDocument();
-      expect(screen.getByText("AMRAP")).toBeInTheDocument();
-      expect(screen.getByText("Failure")).toBeInTheDocument();
+      // Drop keeps the teal chip and Failure the destructive-soft one; no row
+      // reads AMRAP, a word that names a group format alone.
+      expect(screen.getByText("Drop")).toHaveClass("text-[#0a5c55]");
+      expect(screen.getByText("Failure")).toHaveClass("text-[#c06060]");
+      expect(screen.queryByText("AMRAP")).toBeNull();
       // The working set carries no tag — it is the default.
       const [, working] = rows();
-      expect(within(working).queryByText(/warm-up|failure|drop|amrap/i)).toBeNull();
+      expect(within(working).queryByText(/warm-up|failure|drop/i)).toBeNull();
     });
 
     it("flattens a drop set into its sibling rows", () => {

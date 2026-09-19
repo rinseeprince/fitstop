@@ -494,10 +494,10 @@ describe("getExerciseProgressionSeries", () => {
     expect(result[0].topSetWeight).toBe(100); // the 40kg warm-up is not the top set
   });
 
-  it("counts amrap/failure/drop sets in volume using their logged reps", async () => {
+  it("counts failure/drop sets in volume using their logged reps", async () => {
     mockRpcResolve([
       progressionRow({ setId: "s1", setNumber: 1, reps: 5, weight: 100, setType: "working" }),
-      progressionRow({ setId: "s2", setNumber: 2, reps: 12, weight: 80, setType: "amrap" }),
+      progressionRow({ setId: "s2", setNumber: 2, reps: 12, weight: 80, setType: "failure" }),
       progressionRow({ setId: "s3", setNumber: 3, reps: 3, weight: 110, setType: "failure" }),
       progressionRow({ setId: "s4", setNumber: 4, reps: 10, weight: 60, setType: "drop" }),
       progressionRow({ setId: "s5", setNumber: 5, reps: 8, weight: 40, setType: "drop" }),

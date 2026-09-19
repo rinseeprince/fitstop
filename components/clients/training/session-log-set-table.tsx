@@ -53,7 +53,7 @@ import type { UnitSystem } from "@/utils/unit-conversions";
  * client's grid keeps its letters on a phone's width, which is also RN's call.
  *
  * Colours are the design system's own (docs/newdesignsystem.md): warning for a
- * warm-up, the teal chip for drop/AMRAP, destructive-soft for failure. The
+ * warm-up, the teal chip for a drop set, destructive-soft for failure. The
  * client tracker has a twin of this map; it is not shared because the two sit on
  * opposite sides of the coach/client audience split (CONVENTIONS §6) and the
  * client's copy is web-harness code on the RN-replacement path.
@@ -67,11 +67,6 @@ const TYPE_TAG: Record<SetType, { word: string; title: string; className: string
   drop: {
     word: "Drop",
     title: "Drop set",
-    className: "bg-[rgba(13,148,136,0.08)] text-[#0a5c55]",
-  },
-  amrap: {
-    word: "AMRAP",
-    title: "As many reps as possible",
     className: "bg-[rgba(13,148,136,0.08)] text-[#0a5c55]",
   },
   failure: {

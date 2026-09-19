@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   countWorkingSets,
+  isSetType,
   compactFromSpecs,
   expandSetSpecs,
   projectExerciseCompact,
@@ -8,6 +11,7 @@ import {
   type SetSpec,
   SET_SPEC_MEASURES,
   SET_SPEC_MEASURE_KEYS,
+  SET_TYPES,
   specRange,
   specMeasures,
   isTempo,
@@ -39,7 +43,7 @@ describe("countWorkingSets", () => {
       spec("warmup", 1),
       spec("working", 2),
       spec("working", 3),
-      spec("amrap", 4),
+      spec("working", 4),
       spec("drop", 5),
       spec("failure", 6),
     ];
@@ -81,7 +85,7 @@ describe("compactFromSpecs", () => {
 
 describe("expandSetSpecs", () => {
   it("returns the authored specs verbatim when present", () => {
-    const authored: SetSpec[] = [{ set_number: 1, set_type: "amrap", reps_min: 5 }];
+    const authored: SetSpec[] = [{ set_number: 1, set_type: "failure", reps_min: 5 }];
     expect(expandSetSpecs({ setSpecs: authored, sets: 3 })).toBe(authored);
   });
 
@@ -224,5 +228,43 @@ describe("projectExerciseCompact narrows the column list", () => {
     expect(
       projectExerciseCompact({ setSpecs: null, sets: 3, prescribedFields: [] }).prescribed_fields,
     ).toEqual(["set_type", "reps", "load", "rpe", "rest"]);
+  });
+});
+
+describe("the set types and migration 187 agree", () => {
+  // The four types are defined once in code and mirrored by migration 187's
+  // CHECK on set_logs. This test reads the migration file, so the two cannot
+  // drift silently — and a store the migration forgot to rewrite fails here.
+  const MIGRATION = readFileSync(
+    join(process.cwd(), "supabase/migrations/187_a_set_to_failure_has_one_type.sql"),
+    "utf8",
+  );
+
+  it("names four distinct types, and AMRAP is not one of them", () => {
+    expect(SET_TYPES).toHaveLength(4);
+    expect(new Set(SET_TYPES).size).toBe(4);
+    for (const type of SET_TYPES) expect(isSetType(type)).toBe(true);
+    expect(isSetType("amrap")).toBe(false);
+    expect(isSetType(null)).toBe(false);
+  });
+
+  it("the CHECK on set_logs lists exactly the code's types, in the code's order", () => {
+    const check = MIGRATION.match(/CHECK \(set_type IN \(([^)]+)\)\)/);
+    expect(check).not.toBeNull();
+    const names = [...check![1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(names).toEqual([...SET_TYPES]);
+  });
+
+  it("rewrites every store that holds a set type, amrap to failure", () => {
+    for (const store of [
+      "UPDATE set_logs",
+      "UPDATE coach_saved_exercises",
+      "UPDATE training_exercises",
+      "UPDATE exercise_logs",
+    ]) {
+      expect(MIGRATION).toContain(store);
+    }
+    expect(MIGRATION).toContain("SET set_type = 'failure'\nWHERE set_type = 'amrap'");
+    expect(MIGRATION.match(/'\{"set_type":"failure"\}'::jsonb/g)).toHaveLength(3);
   });
 });

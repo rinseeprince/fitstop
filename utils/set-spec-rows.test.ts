@@ -101,18 +101,18 @@ describe("buildPrescribedRows", () => {
     expect(rows).toHaveLength(2);
   });
 
-  it("emits no rep prescription for AMRAP and failure rows", () => {
-    // REVERSES an earlier assertion that these rows KEPT their reps_target.
+  it("emits no rep prescription for a to-failure row, and keeps a working row's", () => {
+    // REVERSES an earlier assertion that a to-failure row KEPT its reps_target.
     // "As many reps as possible" is the prescription; a rep count alongside it
     // contradicts the type, and the stale ranges the editor left behind were
     // reaching the client as though a coach had prescribed them. See the
-    // "open-ended sets prescribe no reps" block below.
+    // "a to-failure set prescribes no reps" block below.
     const rows = buildPrescribedRows([
-      spec({ set_number: 1, set_type: "amrap", reps_target: "AMRAP" }),
-      spec({ set_number: 2, set_type: "failure", reps_target: "To failure" }),
+      spec({ set_number: 1, set_type: "failure", reps_target: "To failure" }),
+      spec({ set_number: 2, set_type: "working", reps_target: "8-10" }),
     ]);
-    expect(rows.map((r) => r.repsTarget)).toEqual([null, null]);
-    expect(rows.map((r) => r.setType)).toEqual(["amrap", "failure"]);
+    expect(rows.map((r) => r.repsTarget)).toEqual([null, "8-10"]);
+    expect(rows.map((r) => r.setType)).toEqual(["failure", "working"]);
   });
 
   it("falls back to position when a legacy row has no usable set_number", () => {
@@ -144,21 +144,21 @@ describe("buildPrescribedRows", () => {
   });
 });
 
-describe("open-ended sets prescribe no reps", () => {
-  it("drops a stale rep range from an AMRAP set", () => {
+describe("a to-failure set prescribes no reps", () => {
+  it("drops a stale rep range from a to-failure set", () => {
     // Reachable two ways: the editor leaves reps_min/reps_max behind when a
-    // coach switches a working set to AMRAP, and the assistant can author both.
+    // coach switches a working set to failure, and the assistant can author both.
     const rows = buildPrescribedRows([
-      spec({ set_number: 1, set_type: "amrap", reps_min: 7, reps_max: 11 }),
+      spec({ set_number: 1, set_type: "failure", reps_min: 7, reps_max: 11 }),
     ]);
 
     expect(rows[0].repsMin).toBeNull();
     expect(rows[0].repsMax).toBeNull();
     expect(rows[0].repsTarget).toBeNull();
-    expect(rows[0].setType).toBe("amrap");
+    expect(rows[0].setType).toBe("failure");
   });
 
-  it("does the same for a to-failure set", () => {
+  it("drops a legacy reps_target from a to-failure set too", () => {
     const rows = buildPrescribedRows([
       spec({
         set_number: 1,
@@ -178,7 +178,7 @@ describe("open-ended sets prescribe no reps", () => {
     const rows = buildPrescribedRows([
       spec({
         set_number: 1,
-        set_type: "amrap",
+        set_type: "failure",
         reps_min: 7,
         reps_max: 11,
         load_type: "pct_1rm",
@@ -527,11 +527,22 @@ describe("every measure reaches the rows", () => {
     expect(rows[1].ranges.load).toEqual({ min: 80, max: 80 });
   });
 
-  it("an open-ended set reads no reps in its ranges either", () => {
+  it("a to-failure set reads no reps in its ranges either", () => {
     const [row] = buildPrescribedRows([
-      spec({ set_number: 1, set_type: "amrap", reps_min: 8, reps_max: 10, rpe_min: 9, rpe_max: 10 }),
+      spec({ set_number: 1, set_type: "failure", reps_min: 8, reps_max: 10, rpe_min: 9, rpe_max: 10 }),
     ]);
     expect(row.ranges.reps).toEqual({ min: null, max: null });
     expect(row.ranges.rpe).toEqual({ min: 9, max: 10 });
+  });
+
+  it("every other type keeps its range: the rule is the failure type's alone", () => {
+    for (const setType of ["warmup", "working", "drop"] as const) {
+      const [row] = buildPrescribedRows([
+        spec({ set_number: 1, set_type: setType, reps_min: 8, reps_max: 10 }),
+      ]);
+      expect(row.repsMin, setType).toBe(8);
+      expect(row.repsMax, setType).toBe(10);
+      expect(row.ranges.reps, setType).toEqual({ min: 8, max: 10 });
+    }
   });
 });

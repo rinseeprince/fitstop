@@ -68,11 +68,11 @@ describe("progressSetSpecs — load kg", () => {
       absWorking(2, 100),
       spec("working", 3, { load_type: "pct_1rm", load_min: 70, load_max: 70 }),
       spec("drop", 4, { load_type: "absolute", load_min: 80, load_max: 80 }),
-      spec("amrap", 5, { load_type: "absolute", load_min: 90, load_max: 90 }),
+      spec("failure", 5, { load_type: "absolute", load_min: 90, load_max: 90 }),
     ];
     const next = progressSetSpecs(specs, kg(2.5))!;
     expect(next[1].load_min).toBe(102.5);
-    // warmup / pct working / drop / amrap: untouched by reference
+    // warmup / pct working / drop / failure: untouched by reference
     expect(next[0]).toBe(specs[0]);
     expect(next[2]).toBe(specs[2]);
     expect(next[3]).toBe(specs[3]);
@@ -254,7 +254,7 @@ describe("progressSetSpecs — sets", () => {
   });
 
   it("no working set to clone -> null", () => {
-    expect(progressSetSpecs([spec("warmup", 1), spec("amrap", 2)], sets(1))).toBeNull();
+    expect(progressSetSpecs([spec("warmup", 1), spec("failure", 2)], sets(1))).toBeNull();
   });
 
   it("negative amounts remove the LAST working sets; warm-ups/finishers survive, renumbered", () => {

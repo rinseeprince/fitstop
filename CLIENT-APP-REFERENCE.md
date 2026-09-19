@@ -412,7 +412,7 @@ type ClientTrainingExercise = {
 
 > **RN contract — days are POSITIONAL, not weekdays.** `dayOfWeek` is gone: placement writes `day_of_week: null` and tiles the whole authored program as a sequential date-walk. Render by `weekIndex` + `orderIndex`, never by weekday name. Entries sharing an `orderIndex` are one day's sessions, in the order the array gives them — keep that order (a stable sort by `orderIndex` does).
 
-> **RN contract — `setSpecs` wins over `sets`/`repsMin`/`repsMax`.** The compact trio is a maintained projection (non-warmup set count; reps span the working sets). A renderer reading only the trio is truthful but lossy — it loses warm-ups, AMRAP/drop/failure sets, per-set loads and per-set rest. Seed the log form from `setSpecs` when present; otherwise synthesize N `working` specs from the trio.
+> **RN contract — `setSpecs` wins over `sets`/`repsMin`/`repsMax`.** The compact trio is a maintained projection (non-warmup set count; reps span the working sets). A renderer reading only the trio is truthful but lossy — it loses warm-ups, drop and failure sets, per-set loads and per-set rest. Seed the log form from `setSpecs` when present; otherwise synthesize N `working` specs from the trio.
 
 > **RN contract — every entry is a training day or a rest day.** There is no session-type axis.
 
@@ -475,7 +475,7 @@ type ResolvedExerciseGroup = {
 ### SetSpec (per-set prescription)
 
 ```typescript
-type SetType = "warmup" | "working" | "amrap" | "drop" | "failure"
+type SetType = "warmup" | "working" | "drop" | "failure"
 
 // Every numeric target is a min/max pair: a single value is the same number at
 // both ends, a range runs low to high, and a null end is "not prescribed".
@@ -508,6 +508,7 @@ type SetSpec = {
 ```
 
 Invariants RN must respect:
+- **Four set types, and AMRAP is not one of them.** `amrap` is a group `format` (see "How a group reads"); a set taken to failure is `failure`, and it prescribes no rep count — the client still records the reps achieved. A prescription or a log naming any other set type is refused (400).
 - Max 30 specs per exercise; at least one non-warmup spec is always present.
 - `setSpecs === null` means "not authored per-set" — synthesize from the compact trio rather than showing nothing (the compact `rpeTarget` / `percentage1rm` become a pair at both ends).
 - **A range reads with an en dash** — "7–8", "100–105 kg", "70–75% 1RM" — as the coach's hint beside the client's box; a single value reads as itself. The web client's rule is `formatTargetReadout` (`utils/target-range.ts`).

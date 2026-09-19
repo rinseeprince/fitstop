@@ -151,7 +151,8 @@ commit's plan.
   - *For time* — a fixed amount of work as fast as possible, usually with a time cap; the score is
     the finish time, or how far they got when capped.
 
-  "AMRAP" also stays a set type (one set to failure); the context tells them apart.
+  A set taken to failure has one type, Failure; "AMRAP" names a group format and nothing else
+  (owner, 2026-09-19).
 - **Group settings:** rounds, time cap, EMOM interval, rest between exercises, rest between rounds,
   notes.
 - **Rows are rounds:** in a looped group, each row of an exercise is one round, so rounds can have
@@ -413,7 +414,7 @@ anything you rely on.
   taught to a path vanishes without an error. Survival tests (`services/set-specs-survival.test.ts`
   and neighbours) cover some paths only; `prescribed_fields` survival is untested on placement,
   duplicate, promote, standalone and the tray's save.
-- The per-set prescription is `set_specs` JSON: set type (warm-up, working, AMRAP, drop, failure),
+- The per-set prescription is `set_specs` JSON: set type (warm-up, working, drop, failure),
   reps range, load type (absolute, % 1RM, % top set), RPE, tempo (no builder control; only the
   assistant writes it), rest, drops.
 - `utils/set-spec-rows.ts` (`buildPrescribedRows`) is the one place a prescription becomes rows. The

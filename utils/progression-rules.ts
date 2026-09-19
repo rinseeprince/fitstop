@@ -10,7 +10,7 @@ import {
 // per-set model: given one exercise's specs and a rule, produce the next
 // week's prescription. Invariants (owner-decided, tested):
 // - WORKING-TYPE sets only ((set_type ?? 'working') === 'working' — missing
-//   type counts as working, matching countWorkingSets). Warm-up/AMRAP/drop/
+//   type counts as working, matching countWorkingSets). Warm-up, drop and
 //   failure specs copy by reference, a deliberate divergence from the
 //   non-warmup definition analytics use; a drop's own load is never scaled.
 // - A load or rep RANGE moves at both ends by the same rule.
@@ -20,8 +20,8 @@ import {
 // - null = the rule changes nothing (compact-only exercises then stay
 //   compact, per the applySetSpecEdit discipline). Negative amounts are
 //   deloads on every rule; the sets rule removes working sets from the end,
-//   flooring at one. AMRAP-result-keyed rules are a future seam (no logged
-//   results exist at library-authoring time).
+//   flooring at one. Result-keyed rules (a to-failure set's logged reps) are a
+//   future seam (no logged results exist at library-authoring time).
 
 // `mode` is a progression MODE, not a physical unit. It used to be
 // `unit: "kg" | "percent"`, which fused two independent axes: how the delta is

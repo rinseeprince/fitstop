@@ -444,7 +444,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
               // not a camelCase invention: countWorkingSets keys off `set_type`
               // and silently treats an unrecognised spec as a working set, so a
               // wrong-shaped array mis-counts every prescription instead of
-              // failing. A last-set amrap keeps the set_type-aware analytics
+              // failing. A last set to failure keeps the set_type-aware analytics
               // (migration 120) on a non-degenerate distribution.
               const specs: SetSpec[] = [
                 {
@@ -459,7 +459,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
                 ...Array.from({ length: workingSets }, (_, s) => ({
                   set_number: s + 2,
                   set_type: (s === workingSets - 1 && planRng.bool(0.15)
-                    ? "amrap"
+                    ? "failure"
                     : "working") as SetType,
                   reps_min: repsMin,
                   reps_max: repsMax,
@@ -766,7 +766,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
                 rpe: logRng.int(6, 10), // CHECK 1..10
                 set_type: isWarmup
                   ? "warmup"
-                  : logRng.weighted([["working", 12], ["amrap", 1], ["drop", 1], ["failure", 1]] as const),
+                  : logRng.weighted([["working", 12], ["drop", 1], ["failure", 2]] as const),
                 created_at: timestampAt(iso, hour, logRng),
                 updated_at: timestampAt(iso, hour, logRng),
               });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SET_SPEC_MEASURES, SET_SPEC_MEASURE_KEYS } from '@/utils/exercise-set-specs'
+import { SET_SPEC_MEASURES, SET_SPEC_MEASURE_KEYS, SET_TYPES } from '@/utils/exercise-set-specs'
 import { PRESCRIBED_FIELDS } from '@/utils/prescribed-fields'
 import {
   planStatusSchema,
@@ -1023,5 +1023,34 @@ describe('prescribedFields — every writer names the list (migration 183)', () 
     expect(r(0)).toBe(false)
     expect(r(1)).toBe(true)
     expect(r(10)).toBe(true)
+  })
+})
+
+describe('set types — four, and AMRAP is a group format (migration 187)', () => {
+  const base = { set_number: 1 }
+
+  // setSpecSchema is the one per-set schema: the library save, the client
+  // plan writes and the assistant's snapshot all parse through it.
+  it('accepts exactly the four types the code names', () => {
+    for (const setType of SET_TYPES) {
+      expect(setSpecSchema.safeParse({ ...base, set_type: setType }).success, setType).toBe(true)
+    }
+  })
+
+  it('refuses an amrap set on every prescription path', () => {
+    expect(setSpecSchema.safeParse({ ...base, set_type: 'amrap' }).success).toBe(false)
+  })
+
+  it('the log payload refuses an amrap set type too, and accepts the four it ignores', () => {
+    const payload = (setType: string) => ({
+      completionQuality: 'full' as const,
+      exercises: [
+        { exerciseName: 'Bench Press', sets: [{ setNumber: 1, reps: 5, setType }], weightUnit: 'kg' as const },
+      ],
+    })
+    expect(logTrainingEventSchema.safeParse(payload('amrap')).success).toBe(false)
+    for (const setType of SET_TYPES) {
+      expect(logTrainingEventSchema.safeParse(payload(setType)).success, setType).toBe(true)
+    }
   })
 })

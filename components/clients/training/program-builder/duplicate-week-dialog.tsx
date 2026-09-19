@@ -293,7 +293,7 @@ export function DuplicateWeekDialog({
                 onToggleKey={toggleKey}
               />
               <p className={cn("mt-1.5 text-[10px]", TEXT_MUTED)}>
-                Working sets only — warm-ups, special sets (AMRAP, drop, failure),
+                Working sets only — warm-ups, drop and failure sets,
                 session notes, and calorie surplus copy over unchanged.
               </p>
             </div>

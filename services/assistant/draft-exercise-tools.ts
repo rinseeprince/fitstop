@@ -33,12 +33,13 @@ import {
   MAX_SET_SPECS,
   MAX_WORKING_SETS,
   SET_SPEC_MEASURES,
+  SET_TYPES,
+  isSetType,
   setSpecCount,
   specMeasures,
   TEMPO_PATTERN,
   type SetSpec,
   type SetSpecMeasure,
-  type SetType,
 } from "@/utils/exercise-set-specs";
 import { PRESCRIBED_FIELD_LABELS } from "@/utils/prescribed-fields";
 import {
@@ -474,7 +475,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
   const setExerciseSets = betaTool({
     name: "set_exercise_sets",
     description:
-      "Replace an exercise's full per-set list (set-by-set programming: warm-ups, working sets, AMRAP/drop/failure finishers, per-set reps/loads/RPE). At least one non-warmup set; max 30 sets, 20 working. Each load and RPE is one value or a range: loadKg (absolute) or loadPercent1rm, with loadKgMax / loadPercent1rmMax for the high end; rpe with rpeMax for the high end. In a superset, circuit, EMOM or For time each set is one round: send exactly the group's rounds; in an AMRAP send one set, the work of a round. Refuses an exercise carrying targets this tool can't write (RIR, distance, duration, pace and the other endurance measures) rather than dropping them.",
+      "Replace an exercise's full per-set list (set-by-set programming: warm-ups, working sets, drop and failure finishers, per-set reps/loads/RPE). At least one non-warmup set; max 30 sets, 20 working. Each load and RPE is one value or a range: loadKg (absolute) or loadPercent1rm, with loadKgMax / loadPercent1rmMax for the high end; rpe with rpeMax for the high end. In a superset, circuit, EMOM or For time each set is one round: send exactly the group's rounds; in an AMRAP send one set, the work of a round. Refuses an exercise carrying targets this tool can't write (RIR, distance, duration, pace and the other endurance measures) rather than dropping them.",
     inputSchema: {
       type: "object",
       properties: {
@@ -488,7 +489,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
             properties: {
               setType: {
                 type: "string",
-                enum: ["warmup", "working", "amrap", "drop", "failure"],
+                enum: [...SET_TYPES],
               },
               repsMin: { type: "integer", minimum: 0, maximum: 100 },
               repsMax: { type: "integer", minimum: 0, maximum: 100 },
@@ -531,13 +532,17 @@ export function buildExerciseTools(ws: DraftWorkspace) {
 
       const specs: SetSpec[] = [];
       for (const [i, s] of input.sets.entries()) {
+        const setType = s.setType;
+        if (!isSetType(setType)) {
+          return `Set ${i + 1}: "${String(setType)}" is not a set type — a set is ${SET_TYPES.join(", ")}. (AMRAP is a group format: link_exercises.)`;
+        }
         const load = loadFields(s);
         if (load && "error" in load) return `Set ${i + 1}: ${load.error}`;
         const rpe = rpeFields(s);
         if (rpe && "error" in rpe) return `Set ${i + 1}: ${rpe.error}`;
         specs.push({
           set_number: i + 1,
-          set_type: s.setType as SetType,
+          set_type: setType,
           reps_min: s.repsMin ?? null,
           reps_max: s.repsMax ?? null,
           load_type: load?.type ?? null,

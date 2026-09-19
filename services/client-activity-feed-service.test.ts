@@ -95,7 +95,7 @@ describe("collectNewExerciseBests", () => {
           performed_name: "Bench Press",
           prescribed_exercise_snapshot: null,
           training_exercises: { exercise_id: "ex-1" },
-          set_logs: [{ weight: 102.5, set_type: "amrap" }],
+          set_logs: [{ weight: 102.5, set_type: "failure" }],
         },
       ],
       sessionAt

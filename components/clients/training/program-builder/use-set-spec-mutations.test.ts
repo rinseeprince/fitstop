@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import type { ExerciseDraft } from "./program-builder-types";
 import { applySetSpecEdit } from "@/utils/set-spec-edits";
-import { MAX_SET_SPECS } from "@/utils/exercise-set-specs";
+import { MAX_SET_SPECS, SET_TYPES } from "@/utils/exercise-set-specs";
+import { SET_TYPE_OPTIONS } from "./use-set-spec-mutations";
 
 function makeExercise(overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
   return {
@@ -168,5 +169,12 @@ describe("applySetSpecEdit", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.exercise.setSpecs![1].drops).toBeNull();
+  });
+});
+
+describe("SET_TYPE_OPTIONS", () => {
+  it("offers the four set types in authoring order, each with its word", () => {
+    expect(SET_TYPE_OPTIONS.map((o) => o.value)).toEqual([...SET_TYPES]);
+    expect(SET_TYPE_OPTIONS.map((o) => o.label)).toEqual(["Warm-up", "Working", "Drop", "Failure"]);
   });
 });

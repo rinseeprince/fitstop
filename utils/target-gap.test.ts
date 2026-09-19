@@ -61,9 +61,9 @@ describe("boxGap", () => {
     expect(boxGap("rpe", row({ rpe_min: 8, rpe_max: 8 }), null, "metric")).toBeNull();
   });
 
-  it("never marks the reps of an AMRAP or to-failure set, which prescribe none", () => {
-    const amrap = row({ set_type: "amrap", reps_min: 8, reps_max: 8 });
-    expect(boxGap("reps", amrap, did({ reps: 20 }), "metric")).toBeNull();
+  it("never marks the reps of a to-failure set, which prescribes none", () => {
+    const failure = row({ set_type: "failure", reps_min: 8, reps_max: 8 });
+    expect(boxGap("reps", failure, did({ reps: 20 }), "metric")).toBeNull();
   });
 
   it("compares a kilogram load with the kilograms lifted", () => {

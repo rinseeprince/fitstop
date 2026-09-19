@@ -401,6 +401,15 @@ describe("set programming tools", () => {
     expect(ws.ops).toHaveLength(0);
   });
 
+  it("set_exercise_sets refuses an amrap set type: AMRAP is a group format, and a set to failure is failure", async () => {
+    const ws = makeWs();
+    const setSets = tool(buildExerciseTools(ws), "set_exercise_sets");
+    expect(
+      await setSets.run({ week: 1, day: 1, exerciseName: "Back Squat", sets: [{ setType: "working" }, { setType: "amrap" }] } as never),
+    ).toMatch(/Set 2: "amrap" is not a set type — a set is warmup, working, drop, failure/);
+    expect(ws.ops).toHaveLength(0);
+  });
+
   it("set_exercise_sets refuses an exercise carrying targets it can't write, rather than dropping them", async () => {
     const ws = makeWs();
     const sessionUid = ws.draft.weeks[0].days[0].sessions[0].uid;

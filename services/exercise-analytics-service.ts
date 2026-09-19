@@ -106,7 +106,7 @@ export async function getExerciseProgressionSeries(
 
   for (const [sessionLogId, group] of groups) {
     // Warm-ups don't count toward any performance metric (top set, volume,
-    // e1RM) or compliance — only working/amrap/failure/drop sets do.
+    // e1RM) or compliance — only working/failure/drop sets do.
     const workingSets = group.sets.filter((s) => s.setType !== "warmup");
 
     // Top set: highest weight, tiebreak by highest reps
@@ -127,7 +127,7 @@ export async function getExerciseProgressionSeries(
     }
 
     // Total volume: SUM(reps * weight) over working sets with both values.
-    // AMRAP/failure use their logged reps; drop sets contribute each logged row.
+    // Failure sets use their logged reps; drop sets contribute each logged row.
     let totalVolume: number | null = null;
     for (const s of workingSets) {
       if (s.reps != null && s.weight != null) {

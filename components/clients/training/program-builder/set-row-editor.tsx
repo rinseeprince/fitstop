@@ -123,7 +123,7 @@ export function SetRowEditor({
   const { preference } = useUnits();
   const loadUnit = formatLoad(0, preference).unit;
   const LOAD_OPTIONS = loadOptions(loadUnit);
-  const openReps = spec.set_type === "amrap" || spec.set_type === "failure";
+  const openReps = spec.set_type === "failure";
   // Working sets get the teal-wash pill (mockup `.type-pill.work`).
   const isWorking = spec.set_type === "working";
   const update = (patch: Partial<SetSpec>) =>
@@ -161,7 +161,7 @@ export function SetRowEditor({
 
       case "reps":
         return openReps ? (
-          // An AMRAP or to-failure set prescribes no rep count — that is what
+          // A to-failure set prescribes no rep count — that is what
           // the type means, so the field states the instruction rather than
           // accepting one. Disabled rather than removed, so the column stays
           // aligned with every other row (the same shape the load value uses
@@ -171,7 +171,7 @@ export function SetRowEditor({
             disabled
             readOnly
             value=""
-            placeholder={spec.set_type === "amrap" ? "AMRAP" : "To failure"}
+            placeholder="To failure"
             aria-label={`Set ${spec.set_number} reps (not prescribed)`}
             className={cn(MONO_INPUT_CLASS, "h-7 px-1.5 text-[11px]", FOCUS_RING)}
           />

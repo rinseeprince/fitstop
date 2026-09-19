@@ -21,6 +21,7 @@ import {
   LOAD_PERCENT_MAX,
   SET_SPEC_MEASURES,
   SET_SPEC_MEASURE_KEYS,
+  SET_TYPES,
   TEMPO_PATTERN,
   type SetSpecMeasure,
 } from "@/utils/exercise-set-specs";
@@ -92,13 +93,7 @@ export const updateTrainingPlanSchema = z.object({
 // Per-set prescription model (Training Builder S1/S2; ranges since migration
 // 183). Mirrors the SetSpec type in utils/exercise-set-specs.ts; stored verbatim
 // in the set_specs JSONB column (snake_case keys match the stored shape).
-const setTypeSchema = z.enum([
-  "warmup",
-  "working",
-  "amrap",
-  "drop",
-  "failure",
-]);
+const setTypeSchema = z.enum(SET_TYPES);
 const loadTypeSchema = z.enum(["absolute", "pct_1rm", "pct_top"]);
 
 // Every numeric target is a min/max pair with its column's bounds, from the

@@ -18,7 +18,21 @@ import { toPrescribedFields, type PrescribedField } from "./prescribed-fields";
 // clone sites splat the source row's columns verbatim. Writing the compact
 // three by hand silently corrupts a coach's programming.
 
-export type SetType = "warmup" | "working" | "amrap" | "drop" | "failure";
+/**
+ * The four set types, defined once (owner, 2026-09-19: a set taken to failure
+ * has one type, Failure; "AMRAP" names a group format and nothing else). The
+ * zod schemas, the assistant's tool schema, the builder's Type menu and the tag
+ * maps derive from this list, and migration 187's CHECK on `set_logs.set_type`
+ * mirrors it (`exercise-set-specs.test.ts` reads the file).
+ */
+export const SET_TYPES = ["warmup", "working", "drop", "failure"] as const;
+
+export type SetType = (typeof SET_TYPES)[number];
+
+/** Whether a stored or sent word is one of the four set types. */
+export function isSetType(value: unknown): value is SetType {
+  return typeof value === "string" && (SET_TYPES as readonly string[]).includes(value);
+}
 
 export type LoadType = "absolute" | "pct_1rm" | "pct_top";
 
@@ -87,7 +101,7 @@ export type SetSpec = MeasurePairs & {
   set_number: number;
   set_type: SetType;
   // No longer authored per set (the builder's writer went with the disabled
-  // amrap/failure reps input; the assistant's went in the 2026-08 sweep). It is
+  // to-failure reps input; the assistant's went in the 2026-08 sweep). It is
   // populated only by `expandSetSpecs` / `snapshotToSpecs` from the LIVE
   // exercise-level `training_exercises.reps_target` column for compact-only
   // exercises, and rendered by set-row / the coach readout — retire it WITH that

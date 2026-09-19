@@ -129,8 +129,8 @@ describe("formatBoxTarget", () => {
     expect(formatBoxTarget("tempo", row({}), "metric")).toBeNull();
     expect(formatBoxTarget("reps", row({ reps_target: "" }), "metric")).toBeNull();
     expect(formatBoxTarget("reps", null, "metric")).toBeNull();
-    // An AMRAP set prescribes no rep count, whatever its spec still carries.
-    expect(formatBoxTarget("reps", row({ set_type: "amrap", reps_min: 8, reps_max: 8 }), "metric")).toBeNull();
+    // A to-failure set prescribes no rep count, whatever its spec still carries.
+    expect(formatBoxTarget("reps", row({ set_type: "failure", reps_min: 8, reps_max: 8 }), "metric")).toBeNull();
   });
 });
 
