@@ -10,7 +10,7 @@ import {
   readsAsGroup,
   type ExerciseGroupPlace,
 } from "@/utils/exercise-group-display";
-import { isTimedFormat } from "@/utils/group-scores";
+import { isTimedFormat } from "@/utils/exercise-groups";
 import {
   ExerciseTrackerBlock,
   type ExerciseFormContext,

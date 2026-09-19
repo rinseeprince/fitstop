@@ -198,13 +198,17 @@ const exerciseDestinationSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
-// The settings a coach edits on a linked group; rounds follow the set cap,
-// because in a superset or circuit every exercise has one set per round. A
-// column preset on the patch applies to every exercise in the group.
+// The settings a coach edits on a group; rounds follow the set cap, because
+// where rounds are a setting every exercise has one set per round. Which
+// settings a format takes is the group module's rule (program-builder-groups.ts,
+// through GROUP_FORMAT_SETTINGS), applied when the op is replayed. A column
+// preset on the patch applies to every exercise in the group.
 const groupSettingsPatchSchema = z
   .object({
-    format: z.enum(["straight_sets", "circuit"]).optional(),
+    format: z.enum(GROUP_FORMATS).optional(),
     rounds: z.number().int().min(1).max(MAX_SET_SPECS).optional(),
+    timeCapSeconds: z.number().int().min(1).max(GROUP_TIME_CAP_SECONDS_MAX).nullable().optional(),
+    intervalSeconds: z.number().int().min(1).max(GROUP_INTERVAL_SECONDS_MAX).nullable().optional(),
     restBetweenExercisesSeconds: z.number().int().min(0).max(GROUP_REST_SECONDS_MAX).nullable().optional(),
     restBetweenRoundsSeconds: z.number().int().min(0).max(GROUP_REST_SECONDS_MAX).nullable().optional(),
     notes: z.string().max(GROUP_NOTES_MAX).nullable().optional(),
@@ -279,8 +283,11 @@ export const draftOpSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("link_exercises"),
     sessionUid: uidSchema,
-    exerciseUids: z.array(uidSchema).min(2).max(MAX_EXERCISES_PER_SESSION),
+    // One exercise is enough for a timed group; a superset needs two, which
+    // the group module refuses at replay.
+    exerciseUids: z.array(uidSchema).min(1).max(MAX_EXERCISES_PER_SESSION),
     groupUid: uidSchema,
+    format: z.enum(["circuit", "amrap", "emom", "for_time"]).optional(),
     label: opLabel,
   }),
   z.object({

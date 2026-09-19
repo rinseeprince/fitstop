@@ -16,7 +16,7 @@ import type {
   SessionDraft,
   WeekDraft,
 } from "./program-builder-types";
-import type { ExerciseDestination, GroupSettingsPatch } from "./program-builder-groups";
+import type { ExerciseDestination, GroupSettingsPatch, LinkFormat } from "./program-builder-groups";
 import type { ProgramBuilderState } from "./use-program-builder-state";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
 
@@ -132,9 +132,9 @@ export function useLockedMutators({
       if (sessionRefused(sessionUid)) return;
       state.updateExercise(sessionUid, exerciseUid, patchOrFn);
     },
-    linkExercises: (sessionUid: string, exerciseUids: string[]) => {
+    linkExercises: (sessionUid: string, exerciseUids: string[], format?: LinkFormat) => {
       if (sessionRefused(sessionUid)) return;
-      state.linkExercises(sessionUid, exerciseUids);
+      state.linkExercises(sessionUid, exerciseUids, format);
     },
     unlinkGroup: (sessionUid: string, groupUid: string) => {
       if (sessionRefused(sessionUid)) return;

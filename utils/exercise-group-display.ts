@@ -1,5 +1,5 @@
-import type { GroupFormat, GroupSettings } from "./exercise-groups";
-import { isTimedFormat, type GroupScoreValue } from "./group-scores";
+import { isTimedFormat, type GroupFormat, type GroupSettings } from "./exercise-groups";
+import type { GroupScoreValue } from "./group-scores";
 import { formatRepsRange } from "./reps-range";
 import { isContinuationOfDropSet, restAfterRow, type PrescribedRow } from "./set-spec-rows";
 import { formatDuration } from "./unit-conversions";
@@ -251,6 +251,15 @@ export function formatRoundRepsShort(rows: PrescribedRow[]): string | null {
   const reps = roundReps(rows);
   if (!reps) return null;
   return new Set(reps).size === 1 ? `${reps.length}×${reps[0]}` : repScheme(reps);
+}
+
+/**
+ * The reps of one round, for an exercise whose one row is the work of a round
+ * (an AMRAP's): "10", "8-10". Null when the round asks no rep count.
+ */
+export function formatRoundRepsOnce(rows: PrescribedRow[]): string | null {
+  const reps = roundReps(rows);
+  return reps ? reps[0] : null;
 }
 
 // --- A timed group's score, in words ------------------------------------------

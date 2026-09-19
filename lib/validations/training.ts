@@ -15,12 +15,12 @@ import {
   GROUP_ROUNDS_MAX,
   GROUP_TIME_CAP_SECONDS_MAX,
   MAX_EXERCISES_PER_SESSION,
+  groupRuleIssue,
 } from "@/utils/exercise-groups";
 import {
   LOAD_PERCENT_MAX,
   SET_SPEC_MEASURES,
   SET_SPEC_MEASURE_KEYS,
-  setSpecCount,
   TEMPO_PATTERN,
   type SetSpecMeasure,
 } from "@/utils/exercise-set-specs";
@@ -251,56 +251,13 @@ const groupSettingsInputShape = {
   notes: z.string().max(GROUP_NOTES_MAX).nullish(),
 };
 
-// The three rules the builder keeps (program-builder-groups.ts), refused here
-// for every other caller: a group of one is a plain exercise with nothing set;
-// in a superset or circuit every exercise has one set per round; and a group
-// stores no setting its format doesn't use. AMRAP, EMOM and For time are
-// commits 14-15's.
-type GroupInput = {
-  format: string;
-  rounds?: number | null;
-  timeCapSeconds?: number | null;
-  intervalSeconds?: number | null;
-  restBetweenExercisesSeconds?: number | null;
-  restBetweenRoundsSeconds?: number | null;
-  notes?: string | null;
-  exercises: Array<{ sets: number; setSpecs?: unknown[] | null }>;
-};
-
-function groupRuleIssue(group: GroupInput): string | null {
-  const set = (value: unknown) => value != null;
-  if (group.exercises.length === 1) {
-    const plain =
-      group.format === "straight_sets" &&
-      !set(group.rounds) &&
-      !set(group.timeCapSeconds) &&
-      !set(group.intervalSeconds) &&
-      !set(group.restBetweenExercisesSeconds) &&
-      !set(group.restBetweenRoundsSeconds) &&
-      !set(group.notes);
-    return plain ? null : "A single exercise can't carry group settings";
-  }
-  if (group.format === "straight_sets") {
-    return set(group.rounds) ||
-      set(group.restBetweenRoundsSeconds) ||
-      set(group.timeCapSeconds) ||
-      set(group.intervalSeconds)
-      ? "Straight sets have no rounds"
-      : null;
-  }
-  if (group.format === "circuit") {
-    if (set(group.timeCapSeconds) || set(group.intervalSeconds)) {
-      return "A superset or circuit has no time cap or interval";
-    }
-    if (group.rounds == null) return "A superset or circuit needs its rounds";
-    const rounds = group.rounds;
-    return group.exercises.every((exercise) => setSpecCount(exercise) === rounds)
-      ? null
-      : "Every exercise in a superset or circuit needs one set per round";
-  }
-  return null;
-}
-
+// The rules the builder keeps after every edit (program-builder-groups.ts),
+// refused here for every other caller: `groupRuleIssue` (utils/exercise-groups.ts)
+// — a straight-sets group of one is a plain exercise with nothing set, a
+// superset needs two exercises, a group stores no setting its format doesn't
+// use and carries the ones it needs, and every exercise has the rows its format
+// asks for (one per round in a superset, circuit, EMOM or For time; one in an
+// AMRAP).
 function exerciseGroupsSchema<
   E extends z.ZodType<{ sets: number; setSpecs?: unknown[] | null }, z.ZodTypeDef, unknown>,
 >(exercise: E) {

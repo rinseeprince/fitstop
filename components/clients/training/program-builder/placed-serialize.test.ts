@@ -377,14 +377,15 @@ const SQUAT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ROW_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const BENCH_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
-// A timed group with every setting set, so a dropped setting shows. (An EMOM:
-// a superset or circuit stores no time cap or interval, and the write schemas
-// refuse one that does.)
+// A timed group with every setting its format uses set, so a dropped setting
+// shows. (A For time: rounds, a cap, both rests and notes — the most any one
+// format stores; the write schemas refuse a setting a format doesn't use, so
+// no group carries all seven. Its rounds are its exercises' rows.)
 const EVERY_SETTING: GroupSettings = {
-  format: "emom",
-  rounds: 3,
+  format: "for_time",
+  rounds: 2,
   timeCapSeconds: 900,
-  intervalSeconds: 60,
+  intervalSeconds: null,
   restBetweenExercisesSeconds: 15,
   restBetweenRoundsSeconds: 90,
   notes: "A",
@@ -412,7 +413,7 @@ function makeGroupedGroups(): TrainingExerciseGroup[] {
         id: "row-ex-row",
         exerciseId: ROW_ID,
         name: "Bent-over Row",
-        sets: 3,
+        sets: 2,
         repsMin: 10,
         repsMax: 12,
         rpeTarget: undefined,
@@ -451,7 +452,7 @@ const GROUPED_INPUT = [
       {
         name: "Bent-over Row",
         exerciseId: ROW_ID,
-        sets: 3,
+        sets: 2,
         repsMin: 10,
         repsMax: 12,
         repsTarget: null,

@@ -22,16 +22,18 @@ import {
   reorderSessionInDay,
 } from "./program-builder-model";
 import {
-  isSupersetOrCircuit,
   linkExercises,
   moveExercise,
   moveGroup,
+  rowsAreRounds,
   updateGroup,
   type ExerciseDestination,
   type GroupEditResult,
   type GroupSettingsPatch,
+  type LinkFormat,
 } from "./program-builder-groups";
 import { setSpecCount } from "@/utils/exercise-set-specs";
+import type { GroupFormat } from "@/utils/exercise-groups";
 import {
   PAST_LOCKED,
   insertWeekRefusal,
@@ -108,10 +110,13 @@ export type DraftOp =
   // The group edits (program-builder-groups.ts). Every uid a new group takes
   // rides on the op, minted by the server.
   | {
+      // `format` is the group Link makes — a superset or circuit when absent,
+      // or a timed format, which takes one exercise or more.
       type: "link_exercises";
       sessionUid: string;
       exerciseUids: string[];
       groupUid: string;
+      format?: LinkFormat;
       label?: string;
     }
   | {
@@ -341,8 +346,8 @@ export function applyDraftOp(
     case "update_exercise": {
       const refused = sessionLocked(op.sessionUid);
       if (refused) return { draft, skipped: refused };
-      // In a superset or circuit an exercise's sets are the group's rounds:
-      // only the group changes how many there are.
+      // Where an exercise's rows are its group's rounds, only the group changes
+      // how many there are; an AMRAP's exercise has its one row.
       const group = findSession(draft, op.sessionUid)?.groups.find((g) =>
         g.exercises.some((e) => e.uid === op.exerciseUid),
       );
@@ -350,10 +355,10 @@ export function applyDraftOp(
       if (
         group &&
         exercise &&
-        isSupersetOrCircuit(group) &&
+        rowsAreRounds(group) &&
         setSpecCount({ ...exercise, ...op.patch }) !== setSpecCount(exercise)
       ) {
-        return { draft, skipped: ROUNDS_ON_GROUP };
+        return { draft, skipped: roundsOnGroup(group.format) };
       }
       let found = false;
       let changed = false;
@@ -387,7 +392,9 @@ export function applyDraftOp(
       const refused = sessionLocked(op.sessionUid);
       if (refused) return { draft, skipped: refused };
       if (hasUid(draft, op.groupUid)) return { draft, skipped: "Those exercises are already linked" };
-      return editGroups(draft, op.sessionUid, (s) => linkExercises(s, op.exerciseUids, op.groupUid));
+      return editGroups(draft, op.sessionUid, (s) =>
+        linkExercises(s, op.exerciseUids, op.groupUid, op.format),
+      );
     }
 
     case "move_exercise": {
@@ -413,8 +420,10 @@ export function applyDraftOp(
   }
 }
 
-const ROUNDS_ON_GROUP =
-  "That exercise is in a superset or circuit — its sets are the group's rounds, so change the rounds instead";
+const roundsOnGroup = (format: GroupFormat) =>
+  format === "amrap"
+    ? "That exercise is in an AMRAP — it has one row, the work of one round"
+    : "That exercise's rows are its group's rounds, so change the group's rounds instead";
 
 // One group edit on one session: a refusal is the skip reason, and a session
 // the edit leaves as it is leaves the draft as it is.

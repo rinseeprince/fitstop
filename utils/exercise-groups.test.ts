@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
+  AMRAP_ROWS_PER_EXERCISE,
+  DEFAULT_AMRAP_TIME_CAP_SECONDS,
+  DEFAULT_EMOM_INTERVAL_SECONDS,
   GROUP_FORMATS,
+  GROUP_FORMAT_SETTINGS,
+  GROUP_RULE_WORDS,
+  GROUP_SETTING_KEYS,
   STRAIGHT_SETS,
   asLiveGroups,
+  clearUnusedGroupSettings,
   countSessionExercises,
+  formatHasRounds,
+  groupRuleIssue,
   groupSettingsFromRow,
   groupSettingsOf,
   groupSettingsToRow,
+  isTimedFormat,
   nestRowsIntoGroups,
+  rowsPerExercise,
   sessionExercises,
   snapshotGroup,
   type GroupSettings,
@@ -216,5 +227,107 @@ describe("snapshotGroup", () => {
     );
     expect(settings.rounds).toBeNull();
     expect(settings.notes).toBeNull();
+  });
+});
+
+// The per-format rules (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md sections 4.2
+// and 4.5): what each format uses and needs, the rows its exercises have, and
+// the sentences a group that breaks them is refused with.
+describe("format rules", () => {
+  it("the timed formats run on a clock; a superset, EMOM and For time have rounds", () => {
+    expect(GROUP_FORMATS.filter(isTimedFormat)).toEqual(["amrap", "emom", "for_time"]);
+    expect(GROUP_FORMATS.filter(formatHasRounds)).toEqual(["circuit", "emom", "for_time"]);
+  });
+
+  it("every format uses what it needs, and only the six settings exist", () => {
+    for (const format of GROUP_FORMATS) {
+      const { uses, requires } = GROUP_FORMAT_SETTINGS[format];
+      expect(requires.every((key) => uses.includes(key)), format).toBe(true);
+      expect(uses.every((key) => GROUP_SETTING_KEYS.includes(key)), format).toBe(true);
+    }
+    expect(GROUP_FORMAT_SETTINGS.amrap).toEqual({ uses: ["timeCapSeconds", "notes"], requires: ["timeCapSeconds"] });
+    expect(GROUP_FORMAT_SETTINGS.emom).toEqual({
+      uses: ["rounds", "intervalSeconds", "notes"],
+      requires: ["rounds", "intervalSeconds"],
+    });
+    expect(GROUP_FORMAT_SETTINGS.for_time.requires).toEqual(["rounds"]);
+    expect(GROUP_FORMAT_SETTINGS.for_time.uses).not.toContain("intervalSeconds");
+  });
+
+  it("clears every setting a format doesn't use", () => {
+    const everything: GroupSettings = { ...CIRCUIT, format: "amrap" };
+    expect(clearUnusedGroupSettings(everything)).toEqual({
+      ...STRAIGHT_SETS,
+      format: "amrap",
+      timeCapSeconds: 600,
+      notes: "A",
+    });
+    expect(clearUnusedGroupSettings({ ...CIRCUIT, format: "emom" })).toEqual({
+      ...STRAIGHT_SETS,
+      format: "emom",
+      rounds: 3,
+      intervalSeconds: 60,
+      notes: "A",
+    });
+    expect(clearUnusedGroupSettings(CIRCUIT)).toEqual({ ...CIRCUIT, timeCapSeconds: null, intervalSeconds: null });
+    expect(clearUnusedGroupSettings({ ...CIRCUIT, format: "straight_sets" })).toEqual({
+      ...STRAIGHT_SETS,
+      restBetweenExercisesSeconds: 15,
+      notes: "A",
+    });
+  });
+
+  it("an exercise has one row per round where rounds are a setting, one in an AMRAP, its own in straight sets", () => {
+    expect(rowsPerExercise("circuit", 3)).toBe(3);
+    expect(rowsPerExercise("emom", 8)).toBe(8);
+    expect(rowsPerExercise("for_time", 3)).toBe(3);
+    expect(rowsPerExercise("amrap", 5)).toBe(AMRAP_ROWS_PER_EXERCISE);
+    expect(rowsPerExercise("straight_sets", null)).toBeNull();
+    expect(DEFAULT_AMRAP_TIME_CAP_SECONDS).toBe(600);
+    expect(DEFAULT_EMOM_INTERVAL_SECONDS).toBe(60);
+  });
+
+  describe("groupRuleIssue", () => {
+    const ex = (sets: number) => ({ sets });
+
+    it("accepts a plain exercise, and refuses one carrying a setting", () => {
+      expect(groupRuleIssue({ format: "straight_sets", exercises: [ex(3)] })).toBeNull();
+      expect(groupRuleIssue({ format: "straight_sets", notes: "x", exercises: [ex(3)] })).toBe(
+        "A single exercise can't carry group settings",
+      );
+      expect(groupRuleIssue({ format: "circuit", rounds: 3, exercises: [ex(3)] })).toBe("A superset needs two exercises");
+    });
+
+    it("refuses a setting the format doesn't use, in the format's words", () => {
+      expect(groupRuleIssue({ format: "straight_sets", rounds: 3, exercises: [ex(3), ex(3)] })).toBe(GROUP_RULE_WORDS.straight_sets.unused);
+      expect(groupRuleIssue({ format: "circuit", rounds: 3, timeCapSeconds: 600, exercises: [ex(3), ex(3)] })).toBe(GROUP_RULE_WORDS.circuit.unused);
+      expect(groupRuleIssue({ format: "amrap", timeCapSeconds: 600, rounds: 3, exercises: [ex(1)] })).toBe(GROUP_RULE_WORDS.amrap.unused);
+      expect(groupRuleIssue({ format: "emom", rounds: 3, intervalSeconds: 60, restBetweenExercisesSeconds: 0, exercises: [ex(3)] })).toBe(GROUP_RULE_WORDS.emom.unused);
+      expect(groupRuleIssue({ format: "for_time", rounds: 3, intervalSeconds: 60, exercises: [ex(3)] })).toBe(GROUP_RULE_WORDS.for_time.unused);
+    });
+
+    it("refuses a group missing what its format needs", () => {
+      expect(groupRuleIssue({ format: "circuit", exercises: [ex(3), ex(3)] })).toBe(GROUP_RULE_WORDS.circuit.missing);
+      expect(groupRuleIssue({ format: "amrap", exercises: [ex(1)] })).toBe(GROUP_RULE_WORDS.amrap.missing);
+      expect(groupRuleIssue({ format: "emom", rounds: 3, exercises: [ex(3)] })).toBe(GROUP_RULE_WORDS.emom.missing);
+      expect(groupRuleIssue({ format: "for_time", timeCapSeconds: 600, exercises: [ex(3)] })).toBe(GROUP_RULE_WORDS.for_time.missing);
+    });
+
+    it("refuses the wrong rows: one per round where rounds are a setting, one in an AMRAP", () => {
+      expect(groupRuleIssue({ format: "circuit", rounds: 3, exercises: [ex(3), ex(4)] })).toBe(GROUP_RULE_WORDS.circuit.rows);
+      expect(groupRuleIssue({ format: "emom", rounds: 3, intervalSeconds: 60, exercises: [ex(2)] })).toBe(GROUP_RULE_WORDS.emom.rows);
+      expect(groupRuleIssue({ format: "for_time", rounds: 3, exercises: [ex(3), ex(2)] })).toBe(GROUP_RULE_WORDS.for_time.rows);
+      expect(groupRuleIssue({ format: "amrap", timeCapSeconds: 600, exercises: [ex(2)] })).toBe(GROUP_RULE_WORDS.amrap.rows);
+      // Set specs count, warm-ups included.
+      expect(groupRuleIssue({ format: "amrap", timeCapSeconds: 600, exercises: [{ sets: 3, setSpecs: [{}] }] })).toBeNull();
+    });
+
+    it("accepts every format with what it uses", () => {
+      expect(groupRuleIssue({ format: "straight_sets", restBetweenExercisesSeconds: 60, notes: "x", exercises: [ex(3), ex(5)] })).toBeNull();
+      expect(groupRuleIssue({ ...CIRCUIT, timeCapSeconds: null, intervalSeconds: null, exercises: [ex(3), ex(3)] })).toBeNull();
+      expect(groupRuleIssue({ format: "amrap", timeCapSeconds: 720, notes: "x", exercises: [ex(1), ex(1), ex(1)] })).toBeNull();
+      expect(groupRuleIssue({ format: "emom", rounds: 6, intervalSeconds: 60, exercises: [ex(6), ex(6)] })).toBeNull();
+      expect(groupRuleIssue({ format: "for_time", rounds: 3, timeCapSeconds: 720, restBetweenExercisesSeconds: 0, restBetweenRoundsSeconds: 60, exercises: [ex(3), ex(3)] })).toBeNull();
+    });
   });
 });

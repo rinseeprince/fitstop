@@ -115,6 +115,25 @@ function setLogsQuery(
 }
 
 /** A prescription as logged: working sets of reps, a kilogram load range and an RPE. */
+// session_log_group_scores read (.select(...).in(...)): the timed groups'
+// scores on the logs (migration 186).
+function groupScoresQuery(
+  data: Array<{
+    session_log_id: string;
+    group_id: string | null;
+    prescribed_group_snapshot: Record<string, unknown>;
+    rounds: number | null;
+    reps: number | null;
+    finish_seconds: number | null;
+  }> | null,
+  error: { message: string } | null = null,
+) {
+  const q: Record<string, unknown> = {};
+  q.select = vi.fn(() => q);
+  q.in = vi.fn(() => Promise.resolve({ data, error }));
+  return q;
+}
+
 function strengthSnapshot(name: string, sets: number) {
   return {
     name,
@@ -343,6 +362,11 @@ describe("check-in-context-service", () => {
   // logged exercise, in the coach's units
   // =========================================================================
   describe("getExerciseSummariesForPeriod", () => {
+    // The third read, the group scores, is empty unless a test says otherwise.
+    beforeEach(() => {
+      mockFrom.mockImplementation(() => groupScoresQuery([]) as never);
+    });
+
     it("returns an empty Map for empty input without querying", async () => {
       const result = await getExerciseSummariesForPeriod([], "metric");
       expect(result.size).toBe(0);
@@ -545,6 +569,111 @@ describe("check-in-context-service", () => {
       expect(lines[0]).toBe("Exercise 0 — 1 set, not in the plan: Reps 5");
       expect(lines[7]).toBe("Exercise 7 — 1 set, not in the plan: Reps 5");
       expect(lines[8]).toBe("…and 3 more");
+    });
+
+    it("gives a timed group its own line — its heading and its score, or not scored — above its exercises, read per round", async () => {
+      const amrap = { id: "g-amrap", order_index: 1, format: "amrap", rounds: null, time_cap_seconds: 720 };
+      const emom = { id: "g-emom", order_index: 2, format: "emom", rounds: 6, interval_seconds: 60 };
+      const forTime = { id: "g-ft", order_index: 3, format: "for_time", rounds: 3, time_cap_seconds: 720 };
+      mockFrom
+        .mockReturnValueOnce(
+          exerciseLogsQuery([
+            { id: "ex-1", session_log_id: "log-1", training_exercise_id: "te-1", performed_name: null, prescribed_exercise_snapshot: strengthSnapshot("Back Squat", 1) },
+            {
+              id: "ex-2",
+              session_log_id: "log-1",
+              training_exercise_id: "te-2",
+              performed_name: null,
+              prescribed_exercise_snapshot: {
+                name: "Kettlebell Swing",
+                order_index: 0,
+                group: amrap,
+                prescribed_fields: ["set_type", "reps"],
+                set_specs: [{ set_number: 1, set_type: "working", reps_min: 10, reps_max: 10 }],
+              },
+            },
+            {
+              id: "ex-3",
+              session_log_id: "log-1",
+              training_exercise_id: "te-3",
+              performed_name: null,
+              prescribed_exercise_snapshot: {
+                name: "Burpee",
+                order_index: 0,
+                group: emom,
+                prescribed_fields: ["set_type", "reps"],
+                set_specs: [1, 2, 3, 4, 5, 6].map((n) => ({ set_number: n, set_type: "working", reps_min: 5, reps_max: 5 })),
+              },
+            },
+          ]) as never,
+        )
+        .mockReturnValueOnce(
+          setLogsQuery([
+            setRow("ex-1", 1, { reps: 5, weight: 102.5 }),
+            setRow("ex-2", 1, { reps: 10 }),
+            ...[1, 2, 3, 4, 5, 6].map((n) => setRow("ex-3", n, { reps: 5 })),
+          ]) as never,
+        )
+        .mockReturnValueOnce(
+          groupScoresQuery([
+            { session_log_id: "log-1", group_id: "g-amrap", prescribed_group_snapshot: amrap, rounds: 7, reps: 12, finish_seconds: null },
+            // A capped For time none of whose exercises were ticked: known from its score alone.
+            { session_log_id: "log-1", group_id: "g-ft", prescribed_group_snapshot: forTime, rounds: 2, reps: 15, finish_seconds: null },
+          ]) as never,
+        );
+
+      const result = await getExerciseSummariesForPeriod(["log-1"], "metric");
+
+      expect(result.get("log-1")).toEqual([
+        "Back Squat — 1 of 1 working set: Load (kg) 102.5 (target 100–105 kg); Reps 5 (target 5); RPE not recorded (target 8)",
+        "AMRAP · 12m — 7 rounds + 12 reps",
+        "Kettlebell Swing — per round: Reps 10 (target 10)",
+        "EMOM · 6 rounds · every 1m",
+        "Burpee — 6 of 6 working sets: Reps 5, 5, 5, 5, 5, 5 (target 5)",
+        "For time · 3 rounds · 12m cap — Capped · 2 rounds + 15 reps",
+      ]);
+    });
+
+    it("reads an unscored AMRAP as not scored, and a group score whose group is gone by its snapshot", async () => {
+      const amrap = { id: "g-amrap", order_index: 0, format: "amrap", rounds: null, time_cap_seconds: 600 };
+      mockFrom
+        .mockReturnValueOnce(
+          exerciseLogsQuery([
+            {
+              id: "ex-1",
+              session_log_id: "log-1",
+              training_exercise_id: "te-1",
+              performed_name: null,
+              prescribed_exercise_snapshot: { name: "Push Up", order_index: 0, group: amrap, prescribed_fields: ["set_type", "reps"], set_specs: [{ set_number: 1, set_type: "working", reps_min: 10, reps_max: 10 }] },
+            },
+          ]) as never,
+        )
+        .mockReturnValueOnce(setLogsQuery([setRow("ex-1", 1, { reps: 10 })]) as never)
+        .mockReturnValueOnce(
+          groupScoresQuery([
+            { session_log_id: "log-2", group_id: null, prescribed_group_snapshot: { id: "g-ft", order_index: 0, format: "for_time", rounds: 3, time_cap_seconds: null }, rounds: null, reps: null, finish_seconds: 512.5 },
+          ]) as never,
+        );
+
+      const result = await getExerciseSummariesForPeriod(["log-1", "log-2"], "metric");
+
+      expect(result.get("log-1")).toEqual(["AMRAP · 10m — not scored", "Push Up — per round: Reps 10 (target 10)"]);
+      expect(result.get("log-2")).toEqual(["For time · 3 rounds — Finished in 8:32.5"]);
+    });
+
+    it("returns an empty Map (non-blocking) when the group scores read errors", async () => {
+      mockFrom
+        .mockReturnValueOnce(
+          exerciseLogsQuery([
+            { id: "ex-1", session_log_id: "log-1", performed_name: "Bench", prescribed_exercise_snapshot: null },
+          ]) as never,
+        )
+        .mockReturnValueOnce(setLogsQuery([setRow("ex-1", 1, { reps: 5 })]) as never)
+        .mockReturnValueOnce(groupScoresQuery(null, { message: "boom" }) as never);
+
+      const result = await getExerciseSummariesForPeriod(["log-1"], "metric");
+
+      expect(result.size).toBe(0);
     });
 
     it("returns an empty Map (non-blocking) when the exercise_logs read errors", async () => {

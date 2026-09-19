@@ -29,9 +29,9 @@ import { formatTargetRange } from "@/utils/target-range";
 import { presetOf } from "@/utils/column-presets";
 import { PRESCRIBED_FIELD_LABELS, type PrescribedField } from "@/utils/prescribed-fields";
 import { countSessionExercises, sessionExercises } from "@/utils/exercise-groups";
-import { groupHeading, groupHeadingText } from "@/utils/exercise-group-display";
+import { groupHeading, groupHeadingText, readsAsGroup } from "@/utils/exercise-group-display";
 import {
-  isSupersetOrCircuit,
+  rowsAreRounds,
   type ExerciseDestination,
 } from "@/components/clients/training/program-builder/program-builder-groups";
 import type { ExerciseGroupDraft } from "@/components/clients/training/program-builder/program-builder-types";
@@ -380,9 +380,10 @@ export function sessionExerciseLines(
   const lines: string[] = [];
   let position = 0;
   for (const group of session.groups) {
-    const linked = group.exercises.length > 1;
+    // A linked group, or a timed group of any size, prints its heading.
+    const linked = readsAsGroup(group);
     if (linked) lines.push(`${indent}${groupLine(group)}`);
-    const inRounds = isSupersetOrCircuit(group);
+    const inRounds = rowsAreRounds(group);
     for (const ex of group.exercises) {
       position += 1;
       const pad = linked ? `${indent}  ` : indent;

@@ -785,7 +785,7 @@ describe("group scores", () => {
     });
   });
 
-  it("a score alone records work, as full — its rows are out of the count until commit 15", () => {
+  it("a scored AMRAP alone is full — its rows are optional detail outside the count", () => {
     const form = { ...values([row({ completed: false })]), groupScores: [entry({ rounds: "7", reps: "12" })] };
     // The one exercise sits in the AMRAP: nothing to count.
     const outcome = resolveLogOutcome(form.exercises, [null], form.groupScores);
@@ -794,6 +794,7 @@ describe("group scores", () => {
       prescribedWorkingSets: 0,
       scoringGroups: 1,
       scoredGroups: 1,
+      cappedGroups: 0,
       quality: "full",
     });
     const payload = saved(buildLogPayload(form, "metric", NOTHING_DIRTY, [null]));
@@ -801,6 +802,37 @@ describe("group scores", () => {
       completionQuality: "full",
       exercises: [],
       groupScores: [{ groupId: GROUP_AMRAP, rounds: 7, reps: 12 }],
+    });
+  });
+
+  it("a scoring group left unscored, or a For time capped, makes the workout partial beside full sets", () => {
+    // Every set ticked, the AMRAP unscored: partial — it is done by its score.
+    const unscored = { ...values([ticked({ reps: "5" }), ticked({ reps: "5" })]), groupScores: [entry({})] };
+    expect(resolveLogOutcome(unscored.exercises, working(2), unscored.groupScores)).toMatchObject({
+      completedWorkingSets: 2,
+      prescribedWorkingSets: 2,
+      scoringGroups: 1,
+      scoredGroups: 0,
+      cappedGroups: 0,
+      quality: "partial",
+    });
+    // A capped For time is scored and still partial; the count names it.
+    const capped = {
+      ...values([ticked({ reps: "5" })]),
+      groupScores: [entry({ groupId: GROUP_FT, format: "for_time", capped: true, rounds: "2", reps: "15" })],
+    };
+    expect(resolveLogOutcome(capped.exercises, working(1), capped.groupScores)).toMatchObject({
+      scoringGroups: 1,
+      scoredGroups: 1,
+      cappedGroups: 1,
+      quality: "partial",
+    });
+    // Finished, it is full.
+    const finished = { ...capped, groupScores: [entry({ groupId: GROUP_FT, format: "for_time", finishTime: "8:32" })] };
+    expect(resolveLogOutcome(finished.exercises, working(1), finished.groupScores)).toMatchObject({
+      scoredGroups: 1,
+      cappedGroups: 0,
+      quality: "full",
     });
   });
 

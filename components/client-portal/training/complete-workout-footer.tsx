@@ -81,8 +81,9 @@ export function CompleteWorkoutFooter({
   };
 
   const label = outcome.quality === null ? null : OUTCOME_LABEL[outcome.quality];
-  // What will be recorded, part by part: the timed groups scored, then the
-  // working sets logged — each only where the workout has any.
+  // What will be recorded, part by part: the timed groups scored, any For time
+  // capped (scored, and still partial), then the working sets logged — each
+  // only where the workout has any.
   const recorded = [
     ...(outcome.scoringGroups > 0
       ? [
@@ -90,6 +91,9 @@ export function CompleteWorkoutFooter({
             outcome.scoringGroups === 1 ? "group" : "groups"
           } scored`,
         ]
+      : []),
+    ...(outcome.cappedGroups > 0
+      ? [`${outcome.cappedGroups} ${outcome.cappedGroups === 1 ? "group" : "groups"} capped`]
       : []),
     ...(outcome.prescribedWorkingSets > 0
       ? [`${outcome.completedWorkingSets} of ${outcome.prescribedWorkingSets} working sets logged`]

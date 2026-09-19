@@ -404,7 +404,7 @@ type ClientTrainingExercise = {
 
 > **RN contract — every exercise sits in a group.** A session is an ordered list of groups and a group an ordered list of exercises (migration 178). A lone exercise is a `straight_sets` group of one with every setting null — exactly the exercise it always was. Render a session's exercises group by group, each group's exercises in turn; that is the order the coach wrote. A group's format and settings are the coach's prescription for how its exercises are done together.
 
-> **RN contract — how a group reads.** A `straight_sets` group of one is a plain exercise: no heading, its own rests. A group of two or more, and a timed group of any size, is known by its format's name and never by a letter — `circuit` is **Superset** for two exercises and **Circuit** for three or more, `straight_sets` **Straight sets**, `amrap` **AMRAP**, `emom` **EMOM**, `for_time` **For time** — under one heading with its `rounds` (every format but straight sets), its rests (between exercises, then between rounds for every format but straight sets; `0` reads "no rest", `null` isn't mentioned) and its `notes`. In every format but straight sets a group loops through its exercises, so **each exercise's rows are its rounds**: row n of its flattened `setSpecs` is round n, with that round's own targets — 21-15-9 is three rows asking 21, 15 and 9. A superset or circuit (`circuit` with two or more exercises) always carries `rounds`, and every exercise in it has exactly that many sets — its `setSpecs` entries (a drop set's drops belong to their round), else `sets` — so the heading's rounds and each exercise's rows agree; the coach's builder keeps it so and the save endpoints refuse anything else. A group of one carries no settings.
+> **RN contract — how a group reads.** A `straight_sets` group of one is a plain exercise: no heading, its own rests. A group of two or more, and a timed group of any size, is known by its format's name and never by a letter — `circuit` is **Superset** for two exercises and **Circuit** for three or more, `straight_sets` **Straight sets**, `amrap` **AMRAP**, `emom` **EMOM**, `for_time` **For time** — under one heading with its `rounds` (every format but straight sets), its rests (between exercises, then between rounds for every format but straight sets; `0` reads "no rest", `null` isn't mentioned) and its `notes`. In every format but straight sets a group loops through its exercises, so **each exercise's rows are its rounds**: row n of its flattened `setSpecs` is round n, with that round's own targets — 21-15-9 is three rows asking 21, 15 and 9. A superset or circuit (`circuit` with two or more exercises), an `emom` and a `for_time` always carry `rounds`, and every exercise in them has exactly that many sets — its `setSpecs` entries (a drop set's drops belong to their round), else `sets` — so the heading's rounds and each exercise's rows agree; an `amrap` carries no `rounds`, and every exercise in it has ONE set, the work of a round, repeated until `timeCapSeconds`. The coach's builder keeps all of this so and the save endpoints refuse anything else; the settings each format carries are `GROUP_FORMAT_SETTINGS` (`utils/exercise-groups.ts`): an `amrap` its cap and notes, an `emom` its interval, rounds and notes, a `for_time` rounds, an optional cap, both rests and notes. A `straight_sets` group of one carries no settings; a timed group of one carries its own.
 
 > **RN contract — the rest after a row.** A lone exercise rests as its `setSpecs` say. In a group whose rows are rounds: after a row of any exercise but the last, the group's `restBetweenExercisesSeconds`; after a row of the last exercise, its `restBetweenRoundsSeconds`; after the last exercise's final row, nothing. An exercise's own per-set rest isn't used there. In a linked straight-sets group: the exercise's own rests between its sets, then `restBetweenExercisesSeconds` after its last set unless it is the last exercise. Never between the rows of one drop set, and a rest of `0` is no rest. The web client's rule is `restAfterGroupedRow` (`utils/exercise-group-display.ts`).
 
@@ -604,10 +604,16 @@ type LogTrainingEventInput = {
 > it is `400` with its sentence, a group outside the performed session `404`. A
 > score alone records the workout ("Tick at least one set" does not apply — a
 > scored group is logged, §4.7 amendment 1). Entering a score ticks no rows; a
-> timed group's rows still take sets like any round-based group's. **Until
-> commit 15 decides Full versus Partial for timed groups, an AMRAP's or a For
-> time's rows are left out of the working-set count, so a scored one never makes
-> the workout `partial` on its own; an EMOM's rows count like a circuit's.**
+> timed group's rows still take sets like any round-based group's. **A group
+> that takes a score is done by its score** (`utils/completion-quality.ts`): an
+> `amrap` is done once its score is entered; a `for_time` is done in full when a
+> finish time is entered, and a capped one — rounds and reps — makes the workout
+> `partial`, because the prescribed work was not all done; an `amrap` or
+> `for_time` left unscored makes the workout `partial` whatever its rows say. Its
+> rows are optional detail outside the working-set count. An `emom`'s rows count
+> like a circuit's, so an EMOM stopped early is `partial`. The server judges the
+> scores the log holds after the save: a payload that leaves `groupScores` out
+> keeps counting the stored ones.
 > Reopening a logged workout: `groupScores[]` carries every score under the
 > keys above — put each back in its group's boxes, and resend it unless the
 > client changed it; a finish time is read and typed as a duration ("8:32",

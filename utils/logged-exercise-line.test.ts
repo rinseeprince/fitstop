@@ -264,3 +264,43 @@ describe("describeLoggedExercise", () => {
     expect(line.startsWith("Squat — 1 set, not in the plan")).toBe(true);
   });
 });
+
+// An exercise in a group done by its score — an AMRAP or a For time — reads
+// its rows as the work of a round, never as a count of sets done: the group's
+// own line carries the score.
+describe("an exercise in an AMRAP or For time", () => {
+  const swing = {
+    name: "Kettlebell Swing",
+    order_index: 0,
+    group: { id: "g-amrap", order_index: 0, format: "amrap", rounds: null, time_cap_seconds: 720 },
+    prescribed_fields: ["set_type", "reps", "load"],
+    set_specs: [spec({ set_number: 1, reps_min: 10, reps_max: 10, load_type: "absolute", load_min: 24, load_max: 24 })],
+  };
+
+  it("reads per round, with the values recorded, and never a set count", () => {
+    expect(
+      describeLoggedExercise({ performedName: null, snapshot: swing, sets: [set(1, { reps: 10, weight: 24 })], viewer: "metric" }),
+    ).toBe("Kettlebell Swing — per round: Load (kg) 24 (target 24 kg); Reps 10 (target 10)");
+    // The client added rounds: each row is one; a row past the one prescribed carries no target of its own.
+    expect(
+      describeLoggedExercise({
+        performedName: null,
+        snapshot: swing,
+        sets: [set(1, { reps: 10 }), set(2, { reps: 10 }), set(3, { reps: 8 })],
+        viewer: "metric",
+      }),
+    ).toBe(
+      "Kettlebell Swing — per round: Load (kg) not recorded (target 24 kg, —, —); Reps 10, 10, 8 (target 10, —, —)",
+    );
+    expect(
+      describeLoggedExercise({ performedName: null, snapshot: swing, sets: [set(1)], viewer: "metric" }),
+    ).toBe("Kettlebell Swing — per round: Load (kg) not recorded (target 24 kg); Reps not recorded (target 10)");
+  });
+
+  it("an EMOM's exercise keeps the set count, as a circuit's does", () => {
+    const burpee = { ...swing, name: "Burpee", group: { ...swing.group, format: "emom", rounds: 3, interval_seconds: 60 }, prescribed_fields: ["set_type", "reps"], set_specs: [1, 2, 3].map((n) => spec({ set_number: n, reps_min: 5, reps_max: 5 })) };
+    expect(
+      describeLoggedExercise({ performedName: null, snapshot: burpee, sets: [set(1, { reps: 5 }), set(2, { reps: 5 })], viewer: "metric" }),
+    ).toBe("Burpee — 2 of 3 working sets: Reps 5, 5 (target 5)");
+  });
+});

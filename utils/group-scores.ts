@@ -13,12 +13,7 @@ import { SET_LOG_MEASURES } from "./set-log-measures";
 // - An EMOM takes no score: it logs its rows like any round-based group
 //   (owner, 2026-09-19). Straight sets and a superset or circuit never score.
 
-/** The formats whose groups run on a clock: a timer, and for two of them a score. */
-export function isTimedFormat(format: GroupFormat): boolean {
-  return format === "amrap" || format === "emom" || format === "for_time";
-}
-
-/** The formats that take a score. */
+/** The formats that take a score (the clock formats are `isTimedFormat`, utils/exercise-groups.ts). */
 export function takesScore(format: GroupFormat): format is "amrap" | "for_time" {
   return format === "amrap" || format === "for_time";
 }

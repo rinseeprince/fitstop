@@ -192,12 +192,12 @@ describe("useLockedMutators", () => {
       expect(call).not.toHaveBeenCalled();
     }
 
-    m.linkExercises("sess10", ["a", "b"]);
+    m.linkExercises("sess10", ["a", "b"], "amrap");
     m.unlinkGroup("sess10", "g");
     m.moveExercise("sess10", "a", { kind: "group", groupUid: "g", index: 1 });
     m.moveGroup("sess10", "g", 2);
     m.updateGroup("sess10", "g", { notes: null });
-    expect(calls.linkExercises).toHaveBeenCalledWith("sess10", ["a", "b"]);
+    expect(calls.linkExercises).toHaveBeenCalledWith("sess10", ["a", "b"], "amrap");
     expect(calls.unlinkGroup).toHaveBeenCalledWith("sess10", "g");
     expect(calls.moveExercise).toHaveBeenCalledWith("sess10", "a", { kind: "group", groupUid: "g", index: 1 });
     expect(calls.moveGroup).toHaveBeenCalledWith("sess10", "g", 2);

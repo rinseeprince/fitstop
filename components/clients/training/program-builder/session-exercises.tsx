@@ -17,10 +17,10 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { sessionExercises } from "@/utils/exercise-groups";
-import { exerciseGroupPlace, groupName } from "@/utils/exercise-group-display";
+import { exerciseGroupPlace, groupName, readsAsGroup } from "@/utils/exercise-group-display";
 import type { ExerciseDraft, SessionDraft } from "./program-builder-types";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
-import type { ExerciseDestination, GroupSettingsPatch } from "./program-builder-groups";
+import type { ExerciseDestination, GroupSettingsPatch, LinkFormat } from "./program-builder-groups";
 import { defaultExerciseDraftFromCatalog } from "./program-builder-model";
 import { AddExercisePopover } from "./add-exercise-popover";
 import { ExerciseCard } from "./exercise-card";
@@ -39,14 +39,16 @@ import {
 import { LABEL_CLASS, TEXT_MUTED } from "./builder-tokens";
 
 // The session editor's Exercises rail and list. A lone exercise is its card; a
-// superset, circuit or linked straight sets is a heading over its cards on one
-// rail. Exercise numbers count straight through the session. The host keys
-// this by session, so opening another session starts it afresh: nothing open,
-// nothing picked, no drag.
+// superset, circuit or linked straight sets, and a timed group of any size
+// (AMRAP, EMOM, For time), is a heading over its cards on one rail. Exercise
+// numbers count straight through the session. The host keys this by session,
+// so opening another session starts it afresh: nothing open, nothing picked, no
+// drag.
 //
 // Three local states, each owned here alone and each changed by one handler:
 // - the open card (one at a time);
-// - picking exercises to link, from the rail's Link button;
+// - picking exercises to link, from the rail's Link button — into a superset
+//   or circuit (two or more), or an AMRAP, EMOM or For time (one or more);
 // - a drag: what is dragged and where it would land. A copy follows the
 //   pointer above the page while the card or group stays in its place, dimmed,
 //   so nothing in the scrolling list moves or grows; the landing place is drawn
@@ -60,7 +62,7 @@ export type SessionExercisesProps = {
   onRemoveExercise: (sessionUid: string, exerciseUid: string) => void;
   onEditExercise: (sessionUid: string, exerciseUid: string, patch: Partial<ExerciseDraft>) => void;
   onSpecEdit: (sessionUid: string, exercise: ExerciseDraft, edit: SetSpecEdit) => void;
-  onLinkExercises: (sessionUid: string, exerciseUids: string[]) => void;
+  onLinkExercises: (sessionUid: string, exerciseUids: string[], format: LinkFormat) => void;
   onUnlinkGroup: (sessionUid: string, groupUid: string) => void;
   onMoveExercise: (sessionUid: string, exerciseUid: string, to: ExerciseDestination) => void;
   onMoveGroup: (sessionUid: string, groupUid: string, index: number) => void;
@@ -84,6 +86,18 @@ const sameDrop = (a: Drop | null, b: Drop | null) =>
         sameDestination(a.destination, b.destination))));
 
 const RAIL_TEXT_ACTION = cn(LABEL_CLASS, "text-[11px] transition-colors");
+const MAKE_ACTION = cn(
+  RAIL_TEXT_ACTION,
+  "font-semibold text-[#0d9488] hover:text-[#0b7f75] disabled:cursor-not-allowed disabled:text-[#d5e0dd]",
+);
+
+// The timed formats Link makes, each from one exercise or more; a superset or
+// circuit (two or more) is the first action and named by the count.
+const TIMED_MAKES: ReadonlyArray<{ format: LinkFormat; label: string }> = [
+  { format: "amrap", label: groupName("amrap", 1) },
+  { format: "emom", label: groupName("emom", 1) },
+  { format: "for_time", label: groupName("for_time", 1) },
+];
 
 export function SessionExercises({
   session,
@@ -175,6 +189,12 @@ export function SessionExercises({
   };
 
   const linkName = groupName("circuit", Math.max(2, livePicked.length)).toLowerCase();
+  // One click makes the group and ends the picking: the draft edit and the
+  // local state land in one handler, so nothing renders between them.
+  const make = (format: LinkFormat) => {
+    onLinkExercises(session.uid, livePicked, format);
+    setPicked(null);
+  };
   const rail = picking ? (
     <div className="flex items-center gap-3">
       <button
@@ -187,25 +207,30 @@ export function SessionExercises({
       <button
         type="button"
         disabled={livePicked.length < 2}
-        className={cn(
-          RAIL_TEXT_ACTION,
-          "font-semibold text-[#0d9488] hover:text-[#0b7f75] disabled:cursor-not-allowed disabled:text-[#d5e0dd]",
-        )}
-        onClick={() => {
-          onLinkExercises(session.uid, livePicked);
-          setPicked(null);
-        }}
+        className={MAKE_ACTION}
+        onClick={() => make("circuit")}
       >
         Make {linkName}
       </button>
+      {TIMED_MAKES.map(({ format, label }) => (
+        <button
+          key={format}
+          type="button"
+          disabled={livePicked.length < 1}
+          className={MAKE_ACTION}
+          onClick={() => make(format)}
+        >
+          Make {label}
+        </button>
+      ))}
     </div>
   ) : editable ? (
     <div className="flex items-center gap-3">
       <button
         type="button"
         aria-label="Link exercises"
-        title="Link exercises into a superset or circuit"
-        disabled={exercises.length < 2}
+        title="Link exercises into a superset, circuit, AMRAP, EMOM or For time"
+        disabled={exercises.length < 1}
         className={cn(
           "rounded p-1 transition-colors hover:text-[#0d9488] disabled:cursor-not-allowed disabled:opacity-50",
           TEXT_MUTED,
@@ -284,7 +309,7 @@ export function SessionExercises({
           onDragCancel={() => setDrop(null)}
         >
           {session.groups.map((group, index) => {
-            if (group.exercises.length === 1) {
+            if (!readsAsGroup(group)) {
               return card(
                 group.exercises[0],
                 false,

@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   fitExerciseSets,
   groupColumnsPreset,
-  isSupersetOrCircuit,
+  hasGroupRounds,
   linkExercises,
   moveExercise,
   moveGroup,
   normalizeGroups,
   progressGroupRounds,
+  rowsAreRounds,
   unlinkGroup,
   updateGroup,
   type GroupEditResult,
@@ -68,13 +69,35 @@ const ok = (result: GroupEditResult): SessionDraft => {
 const shape = (s: SessionDraft) => s.groups.map((g) => g.exercises.map((e) => e.uid));
 const order = (s: SessionDraft) => sessionExercises(s).map((e) => e.uid);
 
-describe("isSupersetOrCircuit", () => {
-  it("is a looped format with two or more exercises", () => {
-    expect(isSupersetOrCircuit(circuit("c", [exercise("a"), exercise("b")]))).toBe(true);
-    expect(isSupersetOrCircuit(circuit("c", [exercise("a")]))).toBe(false);
-    expect(
-      isSupersetOrCircuit({ ...circuit("c", [exercise("a"), exercise("b")]), format: "straight_sets" }),
-    ).toBe(false);
+const timed = (
+  uid: string,
+  format: "amrap" | "emom" | "for_time",
+  exercises: ExerciseDraft[],
+  overrides: Partial<ExerciseGroupDraft> = {},
+): ExerciseGroupDraft => ({
+  uid,
+  ...STRAIGHT_SETS,
+  format,
+  ...(format === "amrap" ? { timeCapSeconds: 720 } : { rounds: 3 }),
+  ...(format === "emom" ? { intervalSeconds: 60 } : {}),
+  exercises,
+  ...overrides,
+});
+
+describe("rowsAreRounds and hasGroupRounds", () => {
+  it("rows are rounds in a superset or circuit and in a timed group of any size; a superset, EMOM or For time has rounds, an AMRAP doesn't", () => {
+    const superset = circuit("c", [exercise("a"), exercise("b")]);
+    expect(rowsAreRounds(superset)).toBe(true);
+    expect(hasGroupRounds(superset)).toBe(true);
+    // A circuit of one is a plain exercise; linked straight sets loop nothing.
+    expect(rowsAreRounds(circuit("c", [exercise("a")]))).toBe(false);
+    expect(rowsAreRounds({ ...superset, format: "straight_sets" })).toBe(false);
+    expect(hasGroupRounds({ ...superset, format: "straight_sets" })).toBe(false);
+    const amrap = timed("t", "amrap", [exercise("a")]);
+    expect(rowsAreRounds(amrap)).toBe(true);
+    expect(hasGroupRounds(amrap)).toBe(false);
+    expect(hasGroupRounds(timed("t", "emom", [exercise("a")]))).toBe(true);
+    expect(hasGroupRounds(timed("t", "for_time", [exercise("a"), exercise("b")]))).toBe(true);
   });
 });
 
@@ -110,6 +133,37 @@ describe("normalizeGroups", () => {
       restBetweenRoundsSeconds: 90,
       timeCapSeconds: null,
       intervalSeconds: null,
+    });
+  });
+
+  it("keeps a timed group of one, with only the settings its format uses", () => {
+    const [amrap, emom, forTime] = normalizeGroups([
+      timed("a", "amrap", [exercise("a")], { rounds: 3, intervalSeconds: 60, restBetweenExercisesSeconds: 30, notes: "Go" }),
+      timed("e", "emom", [exercise("b")], { timeCapSeconds: 600, restBetweenExercisesSeconds: 30, restBetweenRoundsSeconds: 60 }),
+      timed("f", "for_time", [exercise("c")], { intervalSeconds: 60, timeCapSeconds: 720, restBetweenRoundsSeconds: 60 }),
+    ]);
+    expect(amrap).toMatchObject({
+      format: "amrap",
+      timeCapSeconds: 720,
+      rounds: null,
+      intervalSeconds: null,
+      restBetweenExercisesSeconds: null,
+      notes: "Go",
+    });
+    expect(emom).toMatchObject({
+      format: "emom",
+      rounds: 3,
+      intervalSeconds: 60,
+      timeCapSeconds: null,
+      restBetweenExercisesSeconds: null,
+      restBetweenRoundsSeconds: null,
+    });
+    expect(forTime).toMatchObject({
+      format: "for_time",
+      rounds: 3,
+      timeCapSeconds: 720,
+      intervalSeconds: null,
+      restBetweenRoundsSeconds: 60,
     });
   });
 });
@@ -193,10 +247,40 @@ describe("linkExercises", () => {
     expect(linked.groups.map((g) => g.uid)).toEqual(["grp-x", "grp-new"]);
   });
 
-  it("refuses fewer than two exercises and one that no longer exists", () => {
+  it("refuses fewer than two exercises for a superset, and one that no longer exists", () => {
     const s = session([lone("a"), lone("b")]);
     expect(linkExercises(s, ["a"], "g").ok).toBe(false);
     expect(linkExercises(s, ["a", "gone"], "g").ok).toBe(false);
+    expect(linkExercises(s, [], "g", "amrap").ok).toBe(false);
+  });
+
+  it("makes an AMRAP from one exercise or more, each fitted to one row, with a 10-minute cap", () => {
+    const s = session([lone("a", { sets: 3 }), lone("b", { sets: 4 }), lone("c")]);
+    const one = ok(linkExercises(s, ["a"], "grp-new", "amrap"));
+    expect(shape(one)).toEqual([["a"], ["b"], ["c"]]);
+    expect(one.groups[0]).toMatchObject({
+      uid: "grp-new",
+      format: "amrap",
+      timeCapSeconds: 600,
+      rounds: null,
+      intervalSeconds: null,
+      restBetweenExercisesSeconds: null,
+      restBetweenRoundsSeconds: null,
+    });
+    expect(one.groups[0].exercises.map(setSpecCount)).toEqual([1]);
+
+    const two = ok(linkExercises(s, ["a", "b"], "grp-new", "amrap"));
+    expect(shape(two)).toEqual([["a", "b"], ["c"]]);
+    expect(two.groups[0].exercises.map(setSpecCount)).toEqual([1, 1]);
+  });
+
+  it("makes an EMOM at every minute and a For time with no cap, each with the most sets as rounds", () => {
+    const s = session([lone("a", { sets: 3 }), lone("b", { sets: 5 })]);
+    const emom = ok(linkExercises(s, ["a"], "grp-new", "emom"));
+    expect(emom.groups[0]).toMatchObject({ format: "emom", rounds: 3, intervalSeconds: 60, timeCapSeconds: null });
+    const forTime = ok(linkExercises(s, ["a", "b"], "grp-new", "for_time"));
+    expect(forTime.groups[0]).toMatchObject({ format: "for_time", rounds: 5, timeCapSeconds: null, intervalSeconds: null });
+    expect(forTime.groups[0].exercises.map(setSpecCount)).toEqual([5, 5]);
   });
 });
 
@@ -219,6 +303,13 @@ describe("unlinkGroup", () => {
     const s = session([lone("a")]);
     expect(ok(unlinkGroup(s, "grp-a", ["g"]))).toBe(s);
     expect(unlinkGroup(s, "gone", []).ok).toBe(false);
+  });
+
+  it("returns a timed group of one to a plain exercise, in place", () => {
+    const s = session([lone("x"), timed("grp-t", "amrap", [exercise("a", { sets: 1 })])]);
+    const unlinked = ok(unlinkGroup(s, "grp-t", ["g"]));
+    expect(shape(unlinked)).toEqual([["x"], ["a"]]);
+    expect(unlinked.groups[1]).toEqual({ uid: "grp-t", ...STRAIGHT_SETS, exercises: [exercise("a", { sets: 1 })] });
   });
 });
 
@@ -296,6 +387,21 @@ describe("moveExercise", () => {
     ]);
     const moved = ok(moveExercise(s, "c", { kind: "group", groupUid: "grp-2", index: 0 }, "g"));
     expect(shape(moved)).toEqual([["a", "b"], ["c", "d", "e"]]);
+  });
+
+  it("joins a timed group of one: fitted to one row in an AMRAP, to the rounds of a For time", () => {
+    const s = session([
+      timed("grp-a", "amrap", [exercise("a", { sets: 1 })]),
+      timed("grp-f", "for_time", [exercise("f", { sets: 3 })]),
+      lone("x", { sets: 4 }),
+      lone("y", { sets: 5 }),
+    ]);
+    const amrap = ok(moveExercise(s, "x", { kind: "group", groupUid: "grp-a", index: 1 }, "g"));
+    expect(shape(amrap)).toEqual([["a", "x"], ["f"], ["y"]]);
+    expect(amrap.groups[0].exercises.map(setSpecCount)).toEqual([1, 1]);
+    const forTime = ok(moveExercise(s, "y", { kind: "group", groupUid: "grp-f", index: 0 }, "g"));
+    expect(shape(forTime)).toEqual([["a"], ["y", "f"], ["x"]]);
+    expect(forTime.groups[1].exercises.map(setSpecCount)).toEqual([3, 3]);
   });
 
   it("refuses a target that isn't a linked group, and a fit that would leave only warm-ups", () => {
@@ -390,6 +496,73 @@ describe("updateGroup", () => {
     expect(ok(updateGroup(s, "grp-c", {}))).toBe(s);
   });
 
+  it("switches to a timed format, keeping the settings it uses and fitting every exercise's rows", () => {
+    const amrap = ok(updateGroup(superset(), "grp-c", { format: "amrap" }));
+    expect(amrap.groups[0]).toMatchObject({
+      format: "amrap",
+      timeCapSeconds: 600,
+      rounds: null,
+      intervalSeconds: null,
+      restBetweenExercisesSeconds: null,
+      restBetweenRoundsSeconds: null,
+      notes: "Back to back",
+    });
+    expect(amrap.groups[0].exercises.map(setSpecCount)).toEqual([1, 1]);
+    // The first round's targets are what the one row keeps.
+    expect(expandSetSpecs(amrap.groups[0].exercises[0]).map((s) => s.reps_min)).toEqual([21]);
+
+    const emom = ok(updateGroup(superset(), "grp-c", { format: "emom", intervalSeconds: 90 }));
+    expect(emom.groups[0]).toMatchObject({
+      format: "emom",
+      rounds: 3,
+      intervalSeconds: 90,
+      timeCapSeconds: null,
+      restBetweenExercisesSeconds: null,
+      restBetweenRoundsSeconds: null,
+    });
+    expect(ok(updateGroup(superset(), "grp-c", { format: "emom" })).groups[0].intervalSeconds).toBe(60);
+
+    const forTime = ok(updateGroup(superset(), "grp-c", { format: "for_time", timeCapSeconds: 720 }));
+    expect(forTime.groups[0]).toMatchObject({
+      format: "for_time",
+      rounds: 3,
+      timeCapSeconds: 720,
+      intervalSeconds: null,
+      restBetweenExercisesSeconds: 30,
+      restBetweenRoundsSeconds: 90,
+    });
+    // A For time's cap is optional; an AMRAP's is what it is.
+    expect(ok(updateGroup(forTime, "grp-c", { timeCapSeconds: null })).groups[0].timeCapSeconds).toBeNull();
+    expect(ok(updateGroup(amrap, "grp-c", { timeCapSeconds: null })).groups[0].timeCapSeconds).toBe(600);
+
+    // Back to a superset from a For time keeps the rounds; from an AMRAP it
+    // takes the most sets, one.
+    expect(ok(updateGroup(forTime, "grp-c", { format: "circuit" })).groups[0].rounds).toBe(3);
+    expect(ok(updateGroup(amrap, "grp-c", { format: "circuit" })).groups[0].rounds).toBe(1);
+  });
+
+  it("edits a timed group of one, and returns it to a plain exercise on straight sets", () => {
+    const s = session([timed("grp-t", "emom", [exercise("a", { sets: 6 })], { rounds: 6 })]);
+    const changed = ok(updateGroup(s, "grp-t", { rounds: 8, intervalSeconds: 120, notes: "Every two minutes" }));
+    expect(changed.groups[0]).toMatchObject({ rounds: 8, intervalSeconds: 120, notes: "Every two minutes" });
+    expect(changed.groups[0].exercises.map(setSpecCount)).toEqual([8]);
+    expect(updateGroup(s, "grp-t", { format: "circuit" }).ok).toBe(false);
+    const plain = ok(updateGroup(s, "grp-t", { format: "straight_sets" }));
+    expect(plain.groups[0]).toEqual({ uid: "grp-t", ...STRAIGHT_SETS, exercises: [exercise("a", { sets: 6 })] });
+  });
+
+  it("refuses a setting a timed format doesn't use, and a clock outside its bounds", () => {
+    const amrap = session([timed("grp-a", "amrap", [exercise("a", { sets: 1 })])]);
+    expect(updateGroup(amrap, "grp-a", { rounds: 3 })).toEqual({ ok: false, reason: "An AMRAP has no rounds, interval or rests" });
+    expect(updateGroup(amrap, "grp-a", { restBetweenExercisesSeconds: 30 }).ok).toBe(false);
+    expect(updateGroup(amrap, "grp-a", { timeCapSeconds: 14_401 }).ok).toBe(false);
+    const emom = session([timed("grp-e", "emom", [exercise("a")])]);
+    expect(updateGroup(emom, "grp-e", { timeCapSeconds: 600 })).toEqual({ ok: false, reason: "An EMOM has no time cap or rests" });
+    expect(updateGroup(emom, "grp-e", { intervalSeconds: 3_601 }).ok).toBe(false);
+    const forTime = session([timed("grp-f", "for_time", [exercise("a")])]);
+    expect(updateGroup(forTime, "grp-f", { intervalSeconds: 60 })).toEqual({ ok: false, reason: "A For time has no interval" });
+  });
+
   it("refuses what doesn't apply or can't hold", () => {
     const s = superset();
     expect(updateGroup(s, "grp-c", { format: "straight_sets", rounds: 3 }).ok).toBe(false);
@@ -426,6 +599,15 @@ describe("progressGroupRounds", () => {
     const next = progressGroupRounds(group([exercise("a", { sets: 19 }), exercise("b", { sets: 19 })], 19), 5);
     expect(next?.rounds).toBe(20);
     expect(progressGroupRounds(group([exercise("a", { sets: 20 }), exercise("b", { sets: 20 })], 20), 1)).toBeNull();
+  });
+
+  it("adds rounds to an EMOM and a For time, and never changes an AMRAP's one row", () => {
+    const emom = progressGroupRounds(timed("e", "emom", [exercise("a", { sets: 3 })]), 2);
+    expect(emom?.rounds).toBe(5);
+    expect(emom?.exercises.map(setSpecCount)).toEqual([5]);
+    const forTime = progressGroupRounds(timed("f", "for_time", [exercise("a", { sets: 3 }), exercise("b", { sets: 3 })]), -1);
+    expect(forTime?.rounds).toBe(2);
+    expect(progressGroupRounds(timed("a", "amrap", [exercise("a", { sets: 1 })]), 1)).toBeNull();
   });
 
   it("changes nothing for a zero amount, a lone exercise or linked straight sets", () => {

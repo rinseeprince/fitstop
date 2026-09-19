@@ -2,6 +2,7 @@ import { sanitizeForAIPrompt } from "./ai-prompt-sanitizer";
 import { snapshotToSpecs } from "./exercise-set-specs";
 import { formatRestDuration } from "./exercise-group-display";
 import { snapshotGroup } from "./exercise-groups";
+import { takesScore } from "./group-scores";
 import {
   buildLoggedSetRows,
   loggedColumns,
@@ -21,11 +22,15 @@ import type { UnitSystem } from "./unit-conversions";
 // logged-workout table's (`loggedColumns`, utils/measure-readout.ts,
 // utils/target-gap.ts), in the COACH's units, so the review and the table
 // cannot describe one set two ways. Warm-ups are left out — recorded, never
-// scored — and a value nobody recorded reads "not recorded", never a zero.
+// scored — and a value nobody recorded reads "not recorded", never a zero. An
+// exercise in an AMRAP or For time — a group done by its score — reads its
+// rows as the work of a round ("per round"), never as a count of sets done;
+// the group's own line carries the score (services/check-in-context-service.ts).
 //
 //   Barbell Back Squat — 3 of 3 working sets: Load (kg) 102.5, 102.5, 107.5
 //   (target 100–105 kg; 1 of 3 above target); Reps 5, 5, 4 (target 5; 1 of 3
 //   below target); RPE 8, 9, 10 (target 8; 2 of 3 above target)
+//   Kettlebell Swing — per round: Reps 10 (target 10); Load (kg) 24 (target 24 kg)
 
 const DASH = "—";
 
@@ -72,15 +77,27 @@ function measureClause(measure: Measure): string | null {
   return target ? `${measure.label} ${values} ${target}` : `${measure.label} ${values}`;
 }
 
+/** The snapshot's group's format (`snapshotGroup`; only the format is read, so the fallback id is moot). */
+function groupFormatOf(snapshot: Record<string, unknown> | null) {
+  return snapshot == null ? "straight_sets" : snapshotGroup(snapshot, "").settings.format;
+}
+
 /**
  * Whether the snapshot's group loops round by round, so its rests are the
  * group's rather than the exercise's own. A snapshot records its group's format
- * (`snapshotGroup`; only the format is read, so the fallback id is moot) but not
- * its size: a superset or circuit is the only looping format a coach can build
- * today, and a group of one is stored as straight sets.
+ * but not its size, and a group of one is stored as straight sets unless it is
+ * timed, so every format but straight sets loops.
  */
 function loopsRounds(snapshot: Record<string, unknown> | null): boolean {
-  return snapshot != null && snapshotGroup(snapshot, "").settings.format !== "straight_sets";
+  return groupFormatOf(snapshot) !== "straight_sets";
+}
+
+/**
+ * Whether the exercise sits in a group done by its score — an AMRAP or a For
+ * time — so its rows are the work of a round and not a count of sets done.
+ */
+function scoredByGroup(snapshot: Record<string, unknown> | null): boolean {
+  return takesScore(groupFormatOf(snapshot));
 }
 
 /**
@@ -116,8 +133,11 @@ export function describeLoggedExercise({
   if (done.length === 0) return `${head} — warm-up sets only`;
 
   const prescribed = prescribedRows.filter((row) => row.setType !== "warmup").length;
-  const count =
-    prescribed === 0
+  // In an AMRAP or For time the group's score says how much was done; the
+  // exercise's rows are the work of a round, so they are read as that.
+  const count = scoredByGroup(snapshot)
+    ? "per round"
+    : prescribed === 0
       ? `${plural(done.length, "set")}, not in the plan`
       : done.length > prescribed
         ? `${done.length} working sets (${prescribed} prescribed)`

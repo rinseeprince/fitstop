@@ -416,8 +416,7 @@ describe("logTrainingEvent", () => {
         finish_seconds: null,
       },
     ]);
-    // A scored AMRAP never makes the workout partial on its own: nothing else
-    // was prescribed, so the client's own word stands.
+    // A scored AMRAP alone is a full workout: the score is what it asked for.
     expect(q.upsertQ.insert.mock.calls[0][0].completion_quality).toBe("full");
     expect(q.linkQ.update.mock.calls[0][0].status).toBe("completed");
   });
@@ -554,6 +553,103 @@ describe("logTrainingEvent", () => {
       },
     });
     expect(q2.upsertQ.insert.mock.calls[0][0].completion_quality).toBe("partial");
+  });
+
+  it("[2i] an AMRAP left unscored makes the workout partial, whatever its rows say", async () => {
+    // The lone exercise's three sets all done, the AMRAP unscored: partial —
+    // the AMRAP is done by its score, not its rows.
+    const q = scoreRouter({ prescription: [AMRAP_PRESCRIPTION, LONE_PRESCRIPTION] });
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "full",
+        exercises: [
+          {
+            trainingExerciseId: EXERCISE_A,
+            exerciseName: "Bench Press",
+            sets: [{ setNumber: 1 }, { setNumber: 2 }, { setNumber: 3 }],
+            weightUnit: "kg",
+          },
+        ],
+        groupScores: [],
+      },
+    });
+    expect(q.upsertQ.insert.mock.calls[0][0].completion_quality).toBe("partial");
+  });
+
+  it("[2j] a For time is full when finished and partial when capped", async () => {
+    const FOR_TIME_PRESCRIPTION = {
+      ...EXERCISE_A_PRESCRIPTION,
+      id: "ex-ft",
+      name: "Dumbbell Thruster",
+      sets: 3,
+      exercise_group: { ...FOR_TIME_GROUP, id: GROUP_B },
+    };
+    const q = scoreRouter({ prescription: [FOR_TIME_PRESCRIPTION] });
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "partial",
+        exercises: [],
+        groupScores: [{ groupId: GROUP_B, finishSeconds: 512 }],
+      },
+    });
+    expect(q.upsertQ.insert.mock.calls[0][0].completion_quality).toBe("full");
+
+    // Capped — rounds and reps — the prescribed work was not all done.
+    vi.clearAllMocks();
+    const q2 = scoreRouter({ prescription: [FOR_TIME_PRESCRIPTION] });
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "full",
+        exercises: [],
+        groupScores: [{ groupId: GROUP_B, rounds: 2, reps: 15 }],
+      },
+    });
+    expect(q2.upsertQ.insert.mock.calls[0][0].completion_quality).toBe("partial");
+  });
+
+  it("[2k] with the scores left alone, the verdict counts the scores the log already holds", async () => {
+    // The React Native app may send the sets without the scores list: the
+    // AMRAP's stored score still counts, read once from the log.
+    const q = scoreRouter({
+      prescription: [AMRAP_PRESCRIPTION, LONE_PRESCRIPTION],
+      existingLogId: SESSION_LOG_ID,
+      existingScores: [
+        {
+          id: "score-1",
+          session_log_id: SESSION_LOG_ID,
+          group_id: GROUP_A,
+          prescribed_group_snapshot: { ...AMRAP_GROUP, id: GROUP_A },
+          rounds: 7,
+          reps: 12,
+          finish_seconds: null,
+          created_at: "2026-05-01T10:00:00Z",
+        },
+      ],
+    });
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "partial",
+        exercises: [
+          {
+            trainingExerciseId: EXERCISE_A,
+            exerciseName: "Bench Press",
+            sets: [{ setNumber: 1 }, { setNumber: 2 }, { setNumber: 3 }],
+            weightUnit: "kg",
+          },
+        ],
+      },
+    });
+    expect(q.upsertQ.update.mock.calls[0][0].completion_quality).toBe("full");
+    // The scores were read, never rewritten.
+    expect(q.deleteScoresQ.delete).not.toHaveBeenCalled();
   });
 
   it("[2h] an absent groupScores key leaves the log's scores alone", async () => {

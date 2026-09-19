@@ -10,10 +10,9 @@ import {
   GROUP_SCORE_ROUNDS_MAX,
   groupScoreIssue,
   groupScoreValue,
-  isTimedFormat,
   takesScore,
 } from "./group-scores";
-import { GROUP_FORMATS } from "./exercise-groups";
+import { GROUP_FORMATS, isTimedFormat } from "./exercise-groups";
 
 // The migration is the other half of the rule: its CHECKs must say what this
 // module says, so a bound changed in one place fails here.

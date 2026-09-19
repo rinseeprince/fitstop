@@ -659,9 +659,20 @@ describe('Training Validation Schemas', () => {
       restBetweenRoundsSeconds: 90,
       notes: 'A',
     }
-    // A timed group with every setting set: the group rules leave AMRAP, EMOM
-    // and For time to commits 14-15, so it bounds each setting on its own.
-    const EMOM = { ...CIRCUIT, format: 'emom', timeCapSeconds: 600, intervalSeconds: 60 }
+    // The timed groups, each with every setting its format uses
+    // (GROUP_FORMAT_SETTINGS, utils/exercise-groups.ts).
+    const AMRAP = { format: 'amrap', timeCapSeconds: 720, notes: 'Keep moving' }
+    const EMOM = { format: 'emom', rounds: 3, intervalSeconds: 60, notes: 'Every minute' }
+    const FOR_TIME = {
+      format: 'for_time',
+      rounds: 3,
+      timeCapSeconds: 720,
+      restBetweenExercisesSeconds: 0,
+      restBetweenRoundsSeconds: 60,
+      notes: 'Fast',
+    }
+    // One row: the work of one round, all an AMRAP's exercise has.
+    const once = <E extends { sets: number }>(exercise: E) => ({ ...exercise, sets: 1 })
     // Each exercise names its isWarmup (the PUT item defaults it), so a
     // parsed group is exactly the group sent.
     const squat = { name: 'Squat', sets: 3, isWarmup: false, prescribedFields: ['set_type', 'reps', 'load', 'rpe', 'rest'] }
@@ -733,21 +744,36 @@ describe('Training Validation Schemas', () => {
         expect(parseGroups([{ ...noFormat, exercises: [squat, row] }])).toBeNull()
       })
 
-      // Migration 178's CHECKs: the edge itself is accepted, one past it refused.
-      it.each<[string, number, number]>([
-        ['rounds', 1, 100],
-        ['timeCapSeconds', 1, 14_400],
-        ['intervalSeconds', 1, 3_600],
-        ['restBetweenExercisesSeconds', 0, 3_600],
-        ['restBetweenRoundsSeconds', 0, 3_600],
-      ])('bounds %s to [%i, %i] at both edges', (setting, min, max) => {
-        const withSetting = (value: number) =>
-          parseGroups([{ ...EMOM, [setting]: value, exercises: [squat, row] }])
+      // Migration 178's CHECKs: the edge itself is accepted, one past it
+      // refused — each setting on a format that uses it.
+      it.each<[string, number, number, Record<string, unknown>]>([
+        ['timeCapSeconds', 1, 14_400, { ...AMRAP, exercises: [once(squat), once(row)] }],
+        ['intervalSeconds', 1, 3_600, { ...EMOM, exercises: [squat, row] }],
+        ['restBetweenExercisesSeconds', 0, 3_600, { ...CIRCUIT, exercises: [squat, row] }],
+        ['restBetweenRoundsSeconds', 0, 3_600, { ...CIRCUIT, exercises: [squat, row] }],
+      ])('bounds %s to [%i, %i] at both edges', (setting, min, max, group) => {
+        const withSetting = (value: number) => parseGroups([{ ...group, [setting]: value }])
 
         expect(withSetting(min)).not.toBeNull()
         expect(withSetting(min - 1)).toBeNull()
         expect(withSetting(max)).not.toBeNull()
         expect(withSetting(max + 1)).toBeNull()
+      })
+
+      it('bounds rounds at 1, and past 30 no exercise can have a row per round', () => {
+        const rows = (count: number) => ({
+          ...squat,
+          setSpecs: Array.from({ length: count }, (_, i) => ({ set_number: i + 1, set_type: 'working' })),
+        })
+        const withRounds = (rounds: number, count: number) =>
+          parseGroups([{ ...CIRCUIT, rounds, exercises: [rows(count), rows(count)] }])
+
+        expect(withRounds(1, 1)).not.toBeNull()
+        expect(withRounds(0, 1)).toBeNull()
+        expect(withRounds(30, 30)).not.toBeNull()
+        // The CHECK allows 100, but every exercise has at most 30 rows.
+        expect(withRounds(31, 30)).toBeNull()
+        expect(withRounds(101, 30)).toBeNull()
       })
 
       it("caps a group's notes at 1000 characters", () => {
@@ -807,10 +833,42 @@ describe('Training Validation Schemas', () => {
         expect(parseGroups([{ ...CIRCUIT, intervalSeconds: 60, exercises: [squat, row] }])).toBeNull()
       })
 
-      it('leaves AMRAP, EMOM and For time to their own commits', () => {
-        for (const format of ['amrap', 'emom', 'for_time']) {
-          expect(parseGroups([{ ...EMOM, format, exercises: [squat, bench] }]), format).not.toBeNull()
-        }
+      it('accepts each timed format with the settings it uses, from one exercise', () => {
+        expect(parseGroups([{ ...AMRAP, exercises: [once(squat)] }])).not.toBeNull()
+        expect(parseGroups([{ ...AMRAP, exercises: [once(squat), once(row)] }])).not.toBeNull()
+        expect(parseGroups([{ ...EMOM, exercises: [squat] }])).not.toBeNull()
+        expect(parseGroups([{ ...FOR_TIME, exercises: [squat, row] }])).not.toBeNull()
+        // A superset still needs two exercises.
+        expect(parseGroups([{ ...CIRCUIT, exercises: [squat] }])).toBeNull()
+      })
+
+      it('refuses a timed group missing what its format needs', () => {
+        const { timeCapSeconds: _cap, ...amrapNoCap } = AMRAP
+        expect(parseGroups([{ ...amrapNoCap, exercises: [once(squat)] }])).toBeNull()
+        const { intervalSeconds: _interval, ...emomNoInterval } = EMOM
+        expect(parseGroups([{ ...emomNoInterval, exercises: [squat] }])).toBeNull()
+        const { rounds: _emomRounds, ...emomNoRounds } = EMOM
+        expect(parseGroups([{ ...emomNoRounds, exercises: [squat] }])).toBeNull()
+        const { rounds: _ftRounds, ...forTimeNoRounds } = FOR_TIME
+        expect(parseGroups([{ ...forTimeNoRounds, exercises: [squat, row] }])).toBeNull()
+        // A For time's cap and rests are optional.
+        const { timeCapSeconds: _ftCap, restBetweenRoundsSeconds: _r, ...forTimeBare } = FOR_TIME
+        expect(parseGroups([{ ...forTimeBare, exercises: [squat, row] }])).not.toBeNull()
+      })
+
+      it("refuses a setting a timed format doesn't use", () => {
+        expect(parseGroups([{ ...AMRAP, rounds: 3, exercises: [once(squat)] }])).toBeNull()
+        expect(parseGroups([{ ...AMRAP, intervalSeconds: 60, exercises: [once(squat)] }])).toBeNull()
+        expect(parseGroups([{ ...AMRAP, restBetweenExercisesSeconds: 30, exercises: [once(squat)] }])).toBeNull()
+        expect(parseGroups([{ ...EMOM, timeCapSeconds: 600, exercises: [squat] }])).toBeNull()
+        expect(parseGroups([{ ...EMOM, restBetweenRoundsSeconds: 60, exercises: [squat] }])).toBeNull()
+        expect(parseGroups([{ ...FOR_TIME, intervalSeconds: 60, exercises: [squat, row] }])).toBeNull()
+      })
+
+      it('refuses a timed group whose exercises have the wrong rows: one in an AMRAP, one per round in an EMOM or For time', () => {
+        expect(parseGroups([{ ...AMRAP, exercises: [squat] }])).toBeNull()
+        expect(parseGroups([{ ...EMOM, exercises: [bench] }])).toBeNull()
+        expect(parseGroups([{ ...FOR_TIME, exercises: [squat, bench] }])).toBeNull()
       })
     })
 

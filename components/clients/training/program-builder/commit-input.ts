@@ -1,9 +1,11 @@
 import { LOAD_KG_MAX } from "@/lib/constants";
 import { isTempo } from "@/utils/exercise-set-specs";
 import {
+  formatDuration,
   formatLoadEntry,
   kgToLbs,
   lbsToKg,
+  parseDuration,
   type EntryKind,
   type UnitSystem,
 } from "@/utils/unit-conversions";
@@ -44,6 +46,44 @@ export const commitNum = (
   }
   e.target.value = result == null ? "" : String(result);
   return result;
+};
+
+type DurationCommit = { changed: false } | { changed: true; seconds: number | null };
+
+/**
+ * Commit a clock box — a group's time cap or interval — typed in the duration
+ * grammar ("12", "1:30", "0:40", "90s"; a bare number is minutes) and stored as
+ * whole seconds, behind the seeded-string guard: a blur that changed nothing
+ * writes nothing, a string that isn't a duration is reverted, and the value is
+ * clamped into its bounds. An emptied box clears the value where `allowEmpty`
+ * says the format can do without it, and is reverted where it can't.
+ */
+export const commitDuration = (
+  e: React.FocusEvent<HTMLInputElement>,
+  storedSeconds: number | null | undefined,
+  opts: { min: number; max: number; allowEmpty: boolean },
+): DurationCommit => {
+  const seeded = storedSeconds == null ? "" : formatDuration(storedSeconds);
+  const typed = e.target.value.trim();
+  if (typed === seeded) {
+    e.target.value = seeded;
+    return { changed: false };
+  }
+  if (typed === "") {
+    if (!opts.allowEmpty) {
+      e.target.value = seeded;
+      return { changed: false };
+    }
+    return { changed: true, seconds: null };
+  }
+  const parsed = parseDuration(typed);
+  if (parsed === null) {
+    e.target.value = seeded;
+    return { changed: false };
+  }
+  const seconds = Math.min(opts.max, Math.max(opts.min, Math.round(parsed)));
+  e.target.value = formatDuration(seconds);
+  return { changed: true, seconds };
 };
 
 type RangeCommit =

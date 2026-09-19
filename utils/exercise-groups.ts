@@ -5,6 +5,8 @@
 // straight sets is exactly a lone exercise. Pure and client-safe: the builder,
 // the services and the client read the same shape through this module.
 
+import { setSpecCount } from "./exercise-set-specs";
+
 /**
  * The formats a group can take. Migration 178's CHECK mirrors this list, so
  * the two change together. `circuit` is "superset/circuit": a loop through the
@@ -30,6 +32,24 @@ export const GROUP_INTERVAL_SECONDS_MAX = 3_600;
 export const GROUP_REST_SECONDS_MAX = 3_600;
 export const GROUP_NOTES_MAX = 1_000;
 
+/** The formats that run on a clock: AMRAP, EMOM and For time (`utils/group-scores.ts` says which score). */
+export function isTimedFormat(format: GroupFormat): boolean {
+  return format === "amrap" || format === "emom" || format === "for_time";
+}
+
+/** The formats whose rounds are a setting each exercise's rows follow, one row per round. */
+export function formatHasRounds(format: GroupFormat): boolean {
+  return format === "circuit" || format === "emom" || format === "for_time";
+}
+
+/** In an AMRAP every exercise has one row: the work of one round, repeated until the cap. */
+export const AMRAP_ROWS_PER_EXERCISE = 1;
+
+/** What a new AMRAP starts with; the coach changes it in the group's settings. */
+export const DEFAULT_AMRAP_TIME_CAP_SECONDS = 600;
+/** What a new EMOM starts with: every minute. */
+export const DEFAULT_EMOM_INTERVAL_SECONDS = 60;
+
 /** A group's settings: the same on a library group, a client group, a draft and the wire. */
 export type GroupSettings = {
   format: GroupFormat;
@@ -40,6 +60,129 @@ export type GroupSettings = {
   restBetweenRoundsSeconds: number | null;
   notes: string | null;
 };
+
+/** A group's settings other than its format. */
+export type GroupSetting = Exclude<keyof GroupSettings, "format">;
+
+export const GROUP_SETTING_KEYS: readonly GroupSetting[] = [
+  "rounds",
+  "timeCapSeconds",
+  "intervalSeconds",
+  "restBetweenExercisesSeconds",
+  "restBetweenRoundsSeconds",
+  "notes",
+];
+
+/**
+ * The settings each format uses, and which of them it needs. The one table: the
+ * builder clears what a format doesn't use (`clearUnusedGroupSettings`), the
+ * write schemas refuse it (`groupRuleIssue`), and the settings popover shows a
+ * format's rows from it. An EMOM's interval is its clock and what is left of it
+ * is rest, so it has no rests and no cap; an AMRAP runs to its cap with no
+ * rounds and no rests; a For time may carry a cap and rests.
+ */
+export const GROUP_FORMAT_SETTINGS: Record<
+  GroupFormat,
+  { uses: readonly GroupSetting[]; requires: readonly GroupSetting[] }
+> = {
+  straight_sets: { uses: ["restBetweenExercisesSeconds", "notes"], requires: [] },
+  circuit: {
+    uses: ["rounds", "restBetweenExercisesSeconds", "restBetweenRoundsSeconds", "notes"],
+    requires: ["rounds"],
+  },
+  amrap: { uses: ["timeCapSeconds", "notes"], requires: ["timeCapSeconds"] },
+  emom: { uses: ["rounds", "intervalSeconds", "notes"], requires: ["rounds", "intervalSeconds"] },
+  for_time: {
+    uses: ["rounds", "timeCapSeconds", "restBetweenExercisesSeconds", "restBetweenRoundsSeconds", "notes"],
+    requires: ["rounds"],
+  },
+};
+
+/** `group` with every setting its format doesn't use set to null. */
+export function clearUnusedGroupSettings<T extends GroupSettings>(group: T): T {
+  const uses = GROUP_FORMAT_SETTINGS[group.format].uses;
+  return {
+    ...group,
+    rounds: uses.includes("rounds") ? group.rounds : null,
+    timeCapSeconds: uses.includes("timeCapSeconds") ? group.timeCapSeconds : null,
+    intervalSeconds: uses.includes("intervalSeconds") ? group.intervalSeconds : null,
+    restBetweenExercisesSeconds: uses.includes("restBetweenExercisesSeconds")
+      ? group.restBetweenExercisesSeconds
+      : null,
+    restBetweenRoundsSeconds: uses.includes("restBetweenRoundsSeconds")
+      ? group.restBetweenRoundsSeconds
+      : null,
+    notes: uses.includes("notes") ? group.notes : null,
+  };
+}
+
+/**
+ * How many rows each exercise in a group of `format` has, or null where the
+ * format leaves it to the exercise: one per round where rounds are a setting,
+ * one in an AMRAP, free in straight sets.
+ */
+export function rowsPerExercise(format: GroupFormat, rounds: number | null): number | null {
+  if (format === "amrap") return AMRAP_ROWS_PER_EXERCISE;
+  return formatHasRounds(format) ? rounds : null;
+}
+
+/** The sentences a group that breaks a format's rules is refused with, by format. */
+export const GROUP_RULE_WORDS: Record<GroupFormat, { unused: string; missing: string; rows: string }> = {
+  straight_sets: { unused: "Straight sets have no rounds", missing: "", rows: "" },
+  circuit: {
+    unused: "A superset or circuit has no time cap or interval",
+    missing: "A superset or circuit needs its rounds",
+    rows: "Every exercise in a superset or circuit needs one set per round",
+  },
+  amrap: {
+    unused: "An AMRAP has no rounds, interval or rests",
+    missing: "An AMRAP needs its time cap",
+    rows: "Every exercise in an AMRAP has one row, the work of one round",
+  },
+  emom: {
+    unused: "An EMOM has no time cap or rests",
+    missing: "An EMOM needs its interval and rounds",
+    rows: "Every exercise in an EMOM needs one row per round",
+  },
+  for_time: {
+    unused: "A For time has no interval",
+    missing: "A For time needs its rounds",
+    rows: "Every exercise in a For time needs one row per round",
+  },
+};
+
+/** A group as the rules read it: its format, its settings and its exercises' set counts. */
+export type GroupRuleInput = Partial<Omit<GroupSettings, "format">> & {
+  format: GroupFormat;
+  exercises: ReadonlyArray<{ sets: number; setSpecs?: readonly unknown[] | null }>;
+};
+
+/**
+ * Why `group` breaks the rules every group keeps, or null when it keeps them:
+ * a straight-sets group of one is a plain exercise with nothing set; a superset
+ * needs two exercises; a group stores no setting its format doesn't use and
+ * carries the ones it needs; and every exercise has the rows its format asks
+ * for (`rowsPerExercise`). The builder holds these after every edit
+ * (program-builder-groups.ts); the write schemas refuse anything else.
+ */
+export function groupRuleIssue(group: GroupRuleInput): string | null {
+  const set = (key: GroupSetting) => group[key] != null;
+  if (group.exercises.length === 1) {
+    if (group.format === "straight_sets") {
+      return GROUP_SETTING_KEYS.some(set) ? "A single exercise can't carry group settings" : null;
+    }
+    if (group.format === "circuit") return "A superset needs two exercises";
+  }
+  const { uses, requires } = GROUP_FORMAT_SETTINGS[group.format];
+  const words = GROUP_RULE_WORDS[group.format];
+  if (GROUP_SETTING_KEYS.some((key) => set(key) && !uses.includes(key))) return words.unused;
+  if (requires.some((key) => !set(key))) return words.missing;
+  const rows = rowsPerExercise(group.format, group.rounds ?? null);
+  if (rows != null && !group.exercises.every((exercise) => setSpecCount(exercise) === rows)) {
+    return words.rows;
+  }
+  return null;
+}
 
 /** The settings of a lone exercise: straight sets, nothing else set. */
 export const STRAIGHT_SETS: Readonly<GroupSettings> = Object.freeze({

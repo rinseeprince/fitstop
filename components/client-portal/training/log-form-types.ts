@@ -330,9 +330,10 @@ function scoreFormExercises(
 type LogOutcome = {
   completedWorkingSets: number;
   prescribedWorkingSets: number;
-  /** The groups that take a score, and how many hold one. */
+  /** The groups that take a score, how many hold one, and how many For times were capped. */
   scoringGroups: number;
   scoredGroups: number;
+  cappedGroups: number;
   /** What this form would be recorded as, or null when it records nothing. */
   quality: LoggedQuality | null;
 };
@@ -340,10 +341,13 @@ type LogOutcome = {
 /**
  * What this form will be recorded as, and the count that explains it.
  *
- * ONE function, because the sentence above the button ("9 of 12 working sets
- * logged. Will be recorded as partial.") is a promise about the value
- * buildLogPayload puts on the wire. Two derivations could disagree, and the
- * client would be the one telling the lie.
+ * ONE function, because the sentence above the button ("2 of 2 groups scored ·
+ * 1 group capped · 9 of 12 working sets logged. Will be recorded as partial.")
+ * is a promise about the value buildLogPayload puts on the wire. Two
+ * derivations could disagree, and the client would be the one telling the lie.
+ * A timed group that takes a score is judged by its score (`ScoredGroup`,
+ * utils/completion-quality.ts): an AMRAP is done once scored, a For time once
+ * finished, and a capped or unscored one makes the workout partial.
  *
  * `null` means the form records nothing — no set ticked, no group scored —
  * and the save is refused, on this screen and on the server, by the one rule
@@ -351,10 +355,9 @@ type LogOutcome = {
  * one who saved by mistake clears the log.
  *
  * The `full` fallback covers a session with nothing scorable prescribed — no
- * exercises at all, only warm-ups, or only timed groups whose rows are left
- * out of the count until commit 15 — where `summariseCompletion` returns null
- * and the server defers to this value: a client who ticked or scored anything
- * there did everything there was to do.
+ * exercises at all, or only warm-ups — where `summariseCompletion` returns
+ * null and the server defers to this value: a client who ticked anything there
+ * did everything there was to do.
  */
 export function resolveLogOutcome(
   exercises: ExerciseFormValues[],
@@ -363,15 +366,20 @@ export function resolveLogOutcome(
 ): LogOutcome {
   const summary = summariseCompletion(
     scoreFormExercises(exercises, prescribedRows),
+    groupScores.map((score) => ({
+      format: score.format,
+      scored: scoreEntered(score),
+      capped: score.format === "for_time" && score.capped,
+    })),
   );
   const ticked = exercises.some((ex) => ex.sets.some((set) => set.completed));
-  const scoredGroups = groupScores.filter(scoreEntered).length;
   return {
     completedWorkingSets: summary.completedWorkingSets,
     prescribedWorkingSets: summary.prescribedWorkingSets,
-    scoringGroups: groupScores.length,
-    scoredGroups,
-    quality: ticked || scoredGroups > 0 ? (summary.quality ?? "full") : null,
+    scoringGroups: summary.scoringGroups,
+    scoredGroups: summary.scoredGroups,
+    cappedGroups: summary.cappedGroups,
+    quality: ticked || summary.scoredGroups > 0 ? (summary.quality ?? "full") : null,
   };
 }
 

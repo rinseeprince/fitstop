@@ -12,7 +12,7 @@ import type { Exercise } from "@/types/training";
 import type { ExerciseDraft, WeekDraft } from "./program-builder-types";
 import { formatLoad, type UnitSystem } from "@/utils/unit-conversions";
 import { formatTargetReadout } from "@/utils/target-range";
-import { isSupersetOrCircuit } from "./program-builder-groups";
+import { rowsAreRounds } from "./program-builder-groups";
 
 // Pure view-model for the duplicate-week progression preview: pairs the
 // source week with its progressed clone POSITIONALLY (progressWeek never
@@ -229,7 +229,7 @@ export function buildPreviewRows(
       // progressWeek keeps every session, group and exercise in place, so the
       // two sessions pair up group by group, exercise by exercise.
       const rows = session.groups.flatMap((group, g) => {
-        const inRounds = isSupersetOrCircuit(group);
+        const inRounds = rowsAreRounds(group);
         return group.exercises.map((before, e): ProgressionPreviewRow => {
           const after = progressedSession.groups[g]?.exercises[e];
           const changed = after != null && changedExerciseUids.has(after.uid);

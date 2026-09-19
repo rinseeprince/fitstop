@@ -13,7 +13,8 @@ import {
 import { DropLine, type DropLineEdge } from "./drop-line";
 import { PAST_LOCKED } from "./program-builder-lock-model";
 import { roundsRepsShort, setsRepsShort } from "./exercise-summary";
-import { isSupersetOrCircuit } from "./program-builder-groups";
+import { rowsAreRounds } from "./program-builder-groups";
+import { groupHeading, groupHeadingText, readsAsGroup } from "@/utils/exercise-group-display";
 import {
   FOCUS_RING,
   MONO,
@@ -24,7 +25,7 @@ import {
   THUMB_CLASS,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
-import { countSessionExercises } from "@/utils/exercise-groups";
+import { countSessionExercises, isTimedFormat, type GroupFormat } from "@/utils/exercise-groups";
 
 // One session's card in a day cell. A day holding several sessions stacks one
 // card per session; each card drags its own session (grip-only, so plain
@@ -60,23 +61,37 @@ type DaySessionCardProps = {
 
 const SHOWN_EXERCISES = 3;
 
-type ShownLine = { exercise: ExerciseDraft; ordinal: number; roundsAreRows: boolean };
+type ShownLine = {
+  exercise: ExerciseDraft;
+  ordinal: number;
+  roundsAreRows: boolean;
+  format: GroupFormat;
+};
+type ShownRun = { key: string; linked: boolean; heading: string | null; lines: ShownLine[] };
 
-// The session's first exercises, in runs by group: a linked group's run is
-// joined by the rail the session editor draws, and an exercise in a superset
-// or circuit reads its rounds ("3×8-10", "21-15-9").
-function shownRuns(session: SessionDraft): Array<{ key: string; linked: boolean; lines: ShownLine[] }> {
-  const runs: Array<{ key: string; linked: boolean; lines: ShownLine[] }> = [];
+// The session's first exercises, in runs by group: a group that reads as a
+// group has its run on the rail the session editor draws — under its heading
+// when it is timed ("AMRAP · 12m", "EMOM · 6 rounds · every 1m") — and an
+// exercise whose rows are rounds reads its rounds ("3×8-10", "21-15-9"; an
+// AMRAP's the reps of its one round).
+function shownRuns(session: SessionDraft): ShownRun[] {
+  const runs: ShownRun[] = [];
   let ordinal = 0;
   for (const group of session.groups) {
     if (ordinal >= SHOWN_EXERCISES) break;
     const lines = group.exercises.slice(0, SHOWN_EXERCISES - ordinal).map((exercise, i) => ({
       exercise,
       ordinal: ordinal + i + 1,
-      roundsAreRows: isSupersetOrCircuit(group),
+      roundsAreRows: rowsAreRounds(group),
+      format: group.format,
     }));
     ordinal += lines.length;
-    runs.push({ key: group.uid, linked: group.exercises.length > 1, lines });
+    runs.push({
+      key: group.uid,
+      linked: readsAsGroup(group),
+      heading: isTimedFormat(group.format) ? groupHeadingText(groupHeading(group)).title : null,
+      lines,
+    });
   }
   return runs;
 }
@@ -252,7 +267,7 @@ export function DaySessionCard({
           {exerciseCount > 0 && (
             <div className="mt-1.5 min-w-0 flex-1 space-y-[3px] overflow-hidden">
               {shownRuns(session).map((run) => {
-                const lines = run.lines.map(({ exercise, ordinal, roundsAreRows }) => (
+                const lines = run.lines.map(({ exercise, ordinal, roundsAreRows, format }) => (
                   <div key={exercise.uid} className="flex items-baseline gap-1.5">
                     <span className={cn(MONO, "w-2 shrink-0 text-[9.5px] text-[#c2d0cc]")}>
                       {ordinal}
@@ -261,7 +276,7 @@ export function DaySessionCard({
                       {exercise.name}
                     </span>
                     <span className={cn(MONO_META_CLASS, "shrink-0 text-[10px]")}>
-                      {roundsAreRows ? roundsRepsShort(exercise) : setsRepsShort(exercise)}
+                      {roundsAreRows ? roundsRepsShort(exercise, format) : setsRepsShort(exercise)}
                     </span>
                   </div>
                 ));
@@ -271,6 +286,15 @@ export function DaySessionCard({
                     data-testid="day-cell-group-rail"
                     className="space-y-[3px] border-l-2 border-[rgba(13,148,136,0.15)] pl-1.5"
                   >
+                    {/* A timed group's clock is what it is, so its heading leads its rail. */}
+                    {run.heading && (
+                      <div
+                        data-testid="day-cell-group-heading"
+                        className={cn(MONO_META_CLASS, "truncate text-[10px]")}
+                      >
+                        {run.heading}
+                      </div>
+                    )}
                     {lines}
                   </div>
                 ) : (

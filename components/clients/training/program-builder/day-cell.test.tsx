@@ -165,6 +165,48 @@ describe("DayCell — session state", () => {
     expect(screen.getByText("+1 more")).toBeInTheDocument();
   });
 
+  it("a timed group's rail leads with its heading; an AMRAP exercise reads the reps of its one round", () => {
+    const ex = (uid: string, name: string, overrides: Partial<ExerciseDraft> = {}) =>
+      ({ uid, name, sets: 3, repsMin: 10, repsMax: 10, setSpecs: null, ...overrides }) as ExerciseDraft;
+    renderCell({
+      slot: makeSlot({
+        isRest: false,
+        sessions: [
+          makeSession({
+            groups: [
+              {
+                uid: "grp-amrap",
+                ...STRAIGHT_SETS,
+                format: "amrap",
+                timeCapSeconds: 720,
+                exercises: [ex("ex-1", "Kettlebell Swing", { sets: 1 }), ex("ex-2", "Push Up", { sets: 1, repsMin: 15, repsMax: 15 })],
+              },
+              {
+                uid: "grp-emom",
+                ...STRAIGHT_SETS,
+                format: "emom",
+                rounds: 6,
+                intervalSeconds: 60,
+                exercises: [ex("ex-3", "Burpee", { sets: 6, repsMin: 5, repsMax: 5 })],
+              },
+            ],
+          }),
+        ],
+      }),
+    });
+    const rails = screen.getAllByTestId("day-cell-group-rail");
+    expect(rails).toHaveLength(2);
+    expect(screen.getAllByTestId("day-cell-group-heading").map((heading) => heading.textContent)).toEqual([
+      "AMRAP · 12m",
+      "EMOM · 6 rounds · every 1m",
+    ]);
+    // The one row's reps, not "1×10".
+    expect(within(rails[0]).getByText("10")).toBeInTheDocument();
+    expect(within(rails[0]).getByText("15")).toBeInTheDocument();
+    expect(rails[0]).not.toHaveTextContent("1×");
+    expect(within(rails[1]).getByText("6×5")).toBeInTheDocument();
+  });
+
   it("inherits the program default surplus when the session has no override", () => {
     renderCell({
       slot: makeSlot({

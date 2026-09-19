@@ -18,7 +18,7 @@ import {
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
 import {
-  isSupersetOrCircuit,
+  hasGroupRounds,
   normalizeGroups,
   progressGroupRounds,
 } from "./program-builder-groups";
@@ -172,7 +172,7 @@ function progressSession(
 ): SessionDraft {
   let sessionChanged = false;
   const groups = session.groups.map((group) => {
-    if (rule.kind === "sets" && isSupersetOrCircuit(group)) {
+    if (rule.kind === "sets" && hasGroupRounds(group)) {
       if (!group.exercises.some(inScope)) return group;
       const next = progressGroupRounds(group, rule.amount);
       if (!next) return group;

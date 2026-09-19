@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { useEffect, useState } from "react";
 import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -30,6 +30,14 @@ vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
+// The settings popover's Format is a Radix Select, which reaches for pointer
+// capture and scrollIntoView; jsdom has neither.
+beforeAll(() => {
+  if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
+  if (!Element.prototype.releasePointerCapture) Element.prototype.releasePointerCapture = () => {};
+  if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+});
 
 const exercise = (uid: string, name: string, sets = 3): ExerciseDraft => ({
   uid,
@@ -171,9 +179,41 @@ describe("Session editor — groups", () => {
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
 
-  it("can't link with fewer than two exercises", () => {
-    render(<Host groups={[lone(SQUAT)]} />);
+  it("links one exercise as a timed group — an AMRAP of one, under its heading with a 10-minute cap — and nothing with none", () => {
+    render(<Host groups={[lone(SQUAT), lone(CRUNCH)]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Link exercises" }));
+    // The timed formats take one pick; a superset still needs two.
+    for (const name of ["Make AMRAP", "Make EMOM", "Make For time"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
+    fireEvent.click(screen.getByRole("checkbox", { name: "Back Squat" }));
+    expect(screen.getByRole("button", { name: "Make superset" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Make AMRAP" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Make AMRAP" }));
+
+    const group = screen.getByRole("region", { name: "AMRAP · 10m" });
+    expect(within(group).getByText("Back Squat")).toBeInTheDocument();
+    // Its one row is the work of a round.
+    expect(within(group).getByText("10 reps")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(ordinals()).toEqual(["1", "2"]);
+    expect(screen.getByRole("button", { name: "AMRAP settings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unlink amrap" })).toBeInTheDocument();
+
+    cleanup();
+    render(<Host groups={[]} />);
     expect(screen.getByRole("button", { name: "Link exercises" })).toBeDisabled();
+  });
+
+  it("an EMOM of one takes the rounds of its sets at every minute, and Unlink makes it plain again", () => {
+    render(<Host groups={[lone(SQUAT)]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Link exercises" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Back Squat" }));
+    fireEvent.click(screen.getByRole("button", { name: "Make EMOM" }));
+    expect(screen.getByRole("region", { name: "EMOM · 3 rounds · every 1m" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Unlink emom" }));
+    expect(screen.queryByRole("region")).toBeNull();
+    expect(screen.getByText("3×10")).toBeInTheDocument();
   });
 
   it("unlinks a superset into plain exercises in the same place", () => {
@@ -215,12 +255,66 @@ describe("Session editor — groups", () => {
     expect(screen.getByLabelText("Set 4 reps")).toBeInTheDocument();
     expect(screen.queryByLabelText("Set 5 reps")).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Straight sets" }));
+    await user.click(screen.getByRole("combobox", { name: "Format" }));
+    await user.click(screen.getByRole("option", { name: "Straight sets" }));
     const straight = screen.getByRole("region", { name: "Straight sets" });
     expect(straight).not.toHaveTextContent("between rounds");
     expect(screen.queryByRole("spinbutton", { name: "Rounds" })).toBeNull();
     // Straight sets: the rows are sets again.
     expect(screen.getByText("#")).toBeInTheDocument();
+  });
+
+  it("switching the format to AMRAP swaps the settings to its cap, fits every row and reads the cap as typed", async () => {
+    const user = userEvent.setup();
+    render(<Host groups={[superset()]} />);
+    await user.click(screen.getByRole("button", { name: "Superset settings" }));
+    await user.click(screen.getByRole("combobox", { name: "Format" }));
+    await user.click(screen.getByRole("option", { name: "AMRAP" }));
+
+    // One edit: the heading, the rows and the popover's fields change together.
+    expect(screen.getByRole("region", { name: "AMRAP · 10m" })).toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: "Rounds" })).toBeNull();
+    expect(screen.queryByRole("spinbutton", { name: "Rest between exercises in seconds" })).toBeNull();
+    const cap = screen.getByRole("textbox", { name: "Time cap in minutes and seconds" });
+    expect(cap).toHaveValue("10:00");
+
+    // Typed as minutes, read back as m:ss, and the heading follows.
+    fireEvent.change(cap, { target: { value: "12" } });
+    fireEvent.blur(cap);
+    expect(screen.getByRole("region", { name: "AMRAP · 12m" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Time cap in minutes and seconds" })).toHaveValue("12:00");
+    // An AMRAP's cap is what it is: an emptied box is put back.
+    const capAgain = screen.getByRole("textbox", { name: "Time cap in minutes and seconds" });
+    fireEvent.change(capAgain, { target: { value: "" } });
+    fireEvent.blur(capAgain);
+    expect(screen.getByRole("textbox", { name: "Time cap in minutes and seconds" })).toHaveValue("12:00");
+    // A typo is reverted, without a refusal.
+    fireEvent.change(capAgain, { target: { value: "soon" } });
+    fireEvent.blur(capAgain);
+    expect(screen.getByRole("textbox", { name: "Time cap in minutes and seconds" })).toHaveValue("12:00");
+
+    // Every exercise has one row, the work of a round.
+    fireEvent.click(screen.getAllByRole("button", { name: "Expand sets" })[0]);
+    expect(screen.getByText("Round")).toBeInTheDocument();
+    expect(screen.getByLabelText("Set 1 reps")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Set 2 reps")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add set/ })).toBeNull();
+  });
+
+  it("switching to EMOM offers its interval and rounds, typed as m:ss", async () => {
+    const user = userEvent.setup();
+    render(<Host groups={[superset()]} />);
+    await user.click(screen.getByRole("button", { name: "Superset settings" }));
+    await user.click(screen.getByRole("combobox", { name: "Format" }));
+    await user.click(screen.getByRole("option", { name: "EMOM" }));
+    expect(screen.getByRole("region", { name: "EMOM · 3 rounds · every 1m" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Rounds" })).toHaveValue(3);
+    expect(screen.queryByRole("spinbutton", { name: /Rest between/ })).toBeNull();
+    const interval = screen.getByRole("textbox", { name: "Interval in minutes and seconds" });
+    expect(interval).toHaveValue("1:00");
+    fireEvent.change(interval, { target: { value: "1:30" } });
+    fireEvent.blur(interval);
+    expect(screen.getByRole("region", { name: "EMOM · 3 rounds · every 1m 30s" })).toBeInTheDocument();
   });
 
   it("a blank rounds entry puts back the rounds the draft holds, without a refusal", () => {

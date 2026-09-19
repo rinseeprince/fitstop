@@ -682,14 +682,15 @@ const SQUAT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ROW_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const BENCH_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
-// A timed group with every setting set, so a dropped setting shows. (An EMOM:
-// a superset or circuit stores no time cap or interval, and the write schemas
-// refuse one that does.)
+// A timed group with every setting its format uses set, so a dropped setting
+// shows. (A For time stores rounds, a cap, both rests and notes — the most any one
+// format stores; the write schemas refuse a setting a format doesn't use, so no
+// group carries all seven. Its rounds are its exercises' rows.)
 const EVERY_SETTING: GroupSettings = {
-  format: "emom",
+  format: "for_time",
   rounds: 3,
   timeCapSeconds: 900,
-  intervalSeconds: 60,
+  intervalSeconds: null,
   restBetweenExercisesSeconds: 15,
   restBetweenRoundsSeconds: 90,
   notes: "A",

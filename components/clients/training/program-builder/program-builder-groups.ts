@@ -7,11 +7,25 @@ import {
 } from "@/utils/exercise-set-specs";
 import { isWorkingSpec } from "@/utils/progression-rules";
 import {
+  DEFAULT_AMRAP_TIME_CAP_SECONDS,
+  DEFAULT_EMOM_INTERVAL_SECONDS,
+  GROUP_FORMAT_SETTINGS,
+  GROUP_INTERVAL_SECONDS_MAX,
   GROUP_NOTES_MAX,
   GROUP_REST_SECONDS_MAX,
+  GROUP_RULE_WORDS,
+  GROUP_SETTING_KEYS,
+  GROUP_TIME_CAP_SECONDS_MAX,
   STRAIGHT_SETS,
+  clearUnusedGroupSettings,
+  formatHasRounds,
+  isTimedFormat,
+  rowsPerExercise,
   sessionExercises,
+  type GroupFormat,
+  type GroupSettings,
 } from "@/utils/exercise-groups";
+import { readsAsGroup } from "@/utils/exercise-group-display";
 import { presetColumns, presetOf, type ColumnsPreset } from "@/utils/column-presets";
 import { resolvePrescribedFields, type PrescribedField } from "@/utils/prescribed-fields";
 import type {
@@ -20,18 +34,23 @@ import type {
   SessionDraft,
 } from "./program-builder-types";
 
-// Supersets, circuits and linked straight sets in the builder
-// (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section 4.2). Pure and React-free:
-// the builder's mutators and the assistant's ops (program-builder-ops.ts, run
-// by the server executors and replayed by the client) make every group edit
-// through these functions, so a hand edit and an assistant edit cannot differ.
+// Groups in the builder — supersets, circuits, linked straight sets, AMRAPs,
+// EMOMs and For times (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md sections 4.2
+// and 4.5). Pure and React-free: the builder's mutators and the assistant's ops
+// (program-builder-ops.ts, run by the server executors and replayed by the
+// client) make every group edit through these functions, so a hand edit and an
+// assistant edit cannot differ.
 //
-// Three rules hold after every edit (normalizeGroups, and the write schemas in
-// lib/validations/training.ts refuse anything else):
-// - a group of one is a plain exercise: straight sets with nothing set;
-// - in a superset or circuit every exercise has one set per round, so each
-//   round keeps its own targets and the client logs a round as a row;
-// - a group stores no setting its format doesn't use.
+// Four rules hold after every edit (normalizeGroups, and the write schemas in
+// lib/validations/training.ts refuse anything else through `groupRuleIssue`):
+// - a straight-sets group of one is a plain exercise with nothing set; a timed
+//   group of one keeps its format and settings, because its clock and its
+//   score must stay in view;
+// - where rounds are a setting — a superset or circuit, an EMOM, a For time —
+//   every exercise has one row per round, so each round keeps its own targets
+//   and the client logs a round as a row;
+// - in an AMRAP every exercise has one row, the work of one round;
+// - a group stores no setting its format doesn't use (GROUP_FORMAT_SETTINGS).
 //
 // Nothing here mints a uid: callers pass the uids new groups take, so the
 // server's working copy and the client's replay stay identical.
@@ -39,6 +58,9 @@ import type {
 export type GroupEditResult =
   | { ok: true; session: SessionDraft }
   | { ok: false; reason: string };
+
+/** The formats Link makes: a superset or circuit, or one of the three timed formats. */
+export type LinkFormat = Exclude<GroupFormat, "straight_sets">;
 
 /**
  * Where a moved exercise lands, counted in the session as it stands before the
@@ -50,26 +72,45 @@ export type ExerciseDestination =
   | { kind: "session"; index: number };
 
 /**
- * The settings a coach edits on a linked group. `columnsPreset` applies a
- * column preset to every exercise in the group (utils/column-presets.ts) —
- * "a preset applies to one exercise or a whole group" — in the same edit as
- * any setting, so a format switch and the preset land in one commit.
+ * The settings a coach edits on a group. `columnsPreset` applies a column
+ * preset to every exercise in the group (utils/column-presets.ts) — "a preset
+ * applies to one exercise or a whole group" — in the same edit as any setting,
+ * so a format switch and the preset land in one commit.
  */
 export type GroupSettingsPatch = {
-  format?: "straight_sets" | "circuit";
+  format?: GroupFormat;
   rounds?: number;
+  timeCapSeconds?: number | null;
+  intervalSeconds?: number | null;
   restBetweenExercisesSeconds?: number | null;
   restBetweenRoundsSeconds?: number | null;
   notes?: string | null;
   columnsPreset?: ColumnsPreset;
 };
 
-/** The columns the selector doesn't offer where an exercise sits: Rest in a superset or circuit. */
-export function hiddenColumnsIn(group: {
-  format: string;
-  exercises: ReadonlyArray<unknown>;
-}): readonly PrescribedField[] {
-  return isSupersetOrCircuit(group) ? ["rest"] : [];
+type GroupShape = { format: GroupFormat; exercises: ReadonlyArray<unknown> };
+
+/**
+ * Rows are rounds: a group that reads as a group (`readsAsGroup`) in any format
+ * but straight sets — a superset or circuit, or a timed group of any size.
+ */
+export function rowsAreRounds(group: GroupShape): boolean {
+  return readsAsGroup(group) && group.format !== "straight_sets";
+}
+
+/** The group's rounds are a setting its exercises' rows follow: a superset or circuit, an EMOM, a For time. */
+export function hasGroupRounds(group: GroupShape): boolean {
+  return rowsAreRounds(group) && formatHasRounds(group.format);
+}
+
+/** The rows every exercise in `group` has, or null where its format leaves them free. */
+function rowsIn(group: GroupShape & { rounds: number | null }): number | null {
+  return rowsAreRounds(group) ? rowsPerExercise(group.format, group.rounds) : null;
+}
+
+/** The columns the selector doesn't offer where an exercise sits: Rest where its rows are rounds. */
+export function hiddenColumnsIn(group: GroupShape): readonly PrescribedField[] {
+  return rowsAreRounds(group) ? ["rest"] : [];
 }
 
 /**
@@ -101,14 +142,6 @@ function applyColumnsPreset(
   return same ? exercise : { ...exercise, prescribedFields: next };
 }
 
-/** A superset (two exercises) or circuit (three or more): its exercises' sets are its rounds. */
-export function isSupersetOrCircuit(group: {
-  format: string;
-  exercises: ReadonlyArray<unknown>;
-}): boolean {
-  return group.format === "circuit" && group.exercises.length > 1;
-}
-
 const clampIndex = (index: number, length: number) =>
   Math.max(0, Math.min(length, Math.trunc(index)));
 
@@ -123,30 +156,19 @@ function loneGroup(uid: string, exercise: ExerciseDraft): ExerciseGroupDraft {
   return { uid, ...STRAIGHT_SETS, exercises: [exercise] };
 }
 
-// A group keeps only the settings its format uses. AMRAP, EMOM and For time
-// arrive with commits 14-15 and are left as they are.
+// A group keeps only the settings its format uses, and a group of one is a
+// plain exercise unless it is timed.
 function normalizeGroupSettings(group: ExerciseGroupDraft): ExerciseGroupDraft {
-  if (group.exercises.length === 1) return { ...group, ...STRAIGHT_SETS };
-  switch (group.format) {
-    case "straight_sets":
-      return {
-        ...group,
-        rounds: null,
-        timeCapSeconds: null,
-        intervalSeconds: null,
-        restBetweenRoundsSeconds: null,
-      };
-    case "circuit":
-      return { ...group, timeCapSeconds: null, intervalSeconds: null };
-    default:
-      return group;
+  if (group.exercises.length === 1 && !isTimedFormat(group.format)) {
+    return { ...group, ...STRAIGHT_SETS };
   }
+  return clearUnusedGroupSettings(group);
 }
 
 /**
- * A session's groups under the three rules: a group left with no exercises
- * goes, a group of one is a plain exercise, and no group stores a setting its
- * format doesn't use.
+ * A session's groups under the rules: a group left with no exercises goes, a
+ * group of one is a plain exercise unless it is timed, and no group stores a
+ * setting its format doesn't use.
  */
 export function normalizeGroups(groups: ExerciseGroupDraft[]): ExerciseGroupDraft[] {
   return groups.filter((group) => group.exercises.length > 0).map(normalizeGroupSettings);
@@ -198,26 +220,47 @@ function fitAll(
 
 const mostSets = (exercises: ExerciseDraft[]) => Math.max(...exercises.map(setSpecCount));
 
+/** The settings a group made by Link starts with: its format, its rounds, and a clock for the formats that need one. */
+function newGroupSettings(format: LinkFormat, rounds: number): Partial<GroupSettings> {
+  switch (format) {
+    case "circuit":
+      return { format, rounds };
+    case "amrap":
+      return { format, timeCapSeconds: DEFAULT_AMRAP_TIME_CAP_SECONDS };
+    case "emom":
+      return { format, rounds, intervalSeconds: DEFAULT_EMOM_INTERVAL_SECONDS };
+    case "for_time":
+      return { format, rounds };
+  }
+}
+
 /**
- * Link exercises into one new superset or circuit, where the first of them
- * was, in session order. It takes as many rounds as the exercise with the most
- * sets has, and an exercise with fewer gets copies of its last set. An exercise
- * taken from another group leaves it.
+ * Link exercises into one new group of `format`, where the first of them was,
+ * in session order. A superset or circuit needs two; a timed group takes one
+ * or more. Where rounds are a setting the group takes as many as the exercise
+ * with the most sets has, and an exercise with fewer gets copies of its last
+ * set; an AMRAP fits every exercise to one row. A new AMRAP starts with a
+ * 10-minute cap and a new EMOM at every minute. An exercise taken from another
+ * group leaves it.
  */
 export function linkExercises(
   session: SessionDraft,
   exerciseUids: readonly string[],
   groupUid: string,
+  format: LinkFormat = "circuit",
 ): GroupEditResult {
   const picked = new Set(exerciseUids);
   const linked = sessionExercises(session).filter((exercise) => picked.has(exercise.uid));
   if (linked.length !== picked.size) {
     return { ok: false, reason: "That exercise no longer exists" };
   }
-  if (linked.length < 2) return { ok: false, reason: "Pick at least two exercises to link" };
+  if (format === "circuit" && linked.length < 2) {
+    return { ok: false, reason: "Pick at least two exercises to link" };
+  }
+  if (linked.length < 1) return { ok: false, reason: "Pick an exercise to link" };
 
-  const rounds = mostSets(linked);
-  const fitted = fitAll(linked, rounds);
+  const rows = rowsPerExercise(format, mostSets(linked)) ?? mostSets(linked);
+  const fitted = fitAll(linked, rows);
   if (!fitted.ok) return fitted;
 
   const first = linked[0].uid;
@@ -232,8 +275,7 @@ export function linkExercises(
   groups.splice(at + (keepsEarlierExercises ? 1 : 0), 0, {
     uid: groupUid,
     ...STRAIGHT_SETS,
-    format: "circuit",
-    rounds,
+    ...newGroupSettings(format, rows),
     exercises: fitted.exercises,
   });
   return withGroups(session, groups);
@@ -241,7 +283,8 @@ export function linkExercises(
 
 /**
  * Every exercise of a linked group becomes a plain exercise in the same place,
- * keeping its sets; `groupUids` names their groups, one per exercise.
+ * keeping its sets; `groupUids` names their groups, one per exercise. A timed
+ * group of one becomes a plain exercise in place.
  */
 export function unlinkGroup(
   session: SessionDraft,
@@ -251,7 +294,12 @@ export function unlinkGroup(
   const at = session.groups.findIndex((group) => group.uid === groupUid);
   if (at < 0) return { ok: false, reason: "That group no longer exists" };
   const group = session.groups[at];
-  if (group.exercises.length < 2) return { ok: true, session };
+  if (group.exercises.length < 2) {
+    if (!isTimedFormat(group.format)) return { ok: true, session };
+    const groups = [...session.groups];
+    groups[at] = { ...group, ...STRAIGHT_SETS };
+    return withGroups(session, groups);
+  }
   if (groupUids.length < group.exercises.length) {
     throw new Error("unlinkGroup needs one group uid per exercise");
   }
@@ -261,10 +309,11 @@ export function unlinkGroup(
 }
 
 /**
- * Move an exercise. Into a linked group it joins that group, and in a superset
- * or circuit it takes the group's rounds; to a place among the session's groups
- * it stands alone — in a group of its own named `groupUid`, or its own group
- * when it already stood alone. The same session when it lands where it is.
+ * Move an exercise. Into a group that reads as a group it joins it and takes
+ * the rows its format asks for — the rounds of a superset, circuit, EMOM or For
+ * time, one row in an AMRAP; to a place among the session's groups it stands
+ * alone — in a group of its own named `groupUid`, or its own group when it
+ * already stood alone. The same session when it lands where it is.
  */
 export function moveExercise(
   session: SessionDraft,
@@ -283,7 +332,7 @@ export function moveExercise(
   if (to.kind === "group") {
     const target = session.groups.find((group) => group.uid === to.groupUid);
     if (!target) return { ok: false, reason: "That group no longer exists" };
-    if (target.exercises.length < 2) {
+    if (!readsAsGroup(target)) {
       return { ok: false, reason: "That exercise isn't linked to anything — link them instead" };
     }
     const at = clampIndex(to.index, target.exercises.length);
@@ -295,8 +344,9 @@ export function moveExercise(
       return withGroups(session, groups);
     }
     let joining = exercise;
-    if (isSupersetOrCircuit(target) && target.rounds != null) {
-      const fitted = fitExerciseSets(exercise, target.rounds);
+    const rows = rowsIn(target);
+    if (rows != null) {
+      const fitted = fitExerciseSets(exercise, rows);
       if (!fitted.ok) return fitted;
       joining = fitted.exercise;
     }
@@ -340,14 +390,18 @@ export function moveGroup(session: SessionDraft, groupUid: string, index: number
   return withGroups(session, moveItem(session.groups, from, to));
 }
 
-const inRange = (value: number, max: number) =>
-  Number.isInteger(value) && value >= 0 && value <= max;
+const inRange = (value: number, min: number, max: number) =>
+  Number.isInteger(value) && value >= min && value <= max;
 
 /**
- * Change a linked group's settings. A superset or circuit fits every exercise
- * to its rounds (becoming one, it takes the rounds of the exercise with the
- * most sets unless the patch says otherwise); straight sets store no rounds
- * and no rest between rounds. The same session when nothing changes.
+ * Change a group's settings. The format decides which settings the patch may
+ * set (GROUP_FORMAT_SETTINGS; anything else is refused with the format's
+ * sentence) and the rows every exercise is fitted to: the rounds of a superset,
+ * circuit, EMOM or For time — becoming one, a group takes the rounds it had or
+ * those of the exercise with the most sets unless the patch says otherwise —
+ * one row in an AMRAP, and straight sets keep every set. A new AMRAP's cap is
+ * 10 minutes and a new EMOM's interval a minute until the coach says otherwise.
+ * The same session when nothing changes.
  */
 export function updateGroup(
   session: SessionDraft,
@@ -357,53 +411,80 @@ export function updateGroup(
   const at = session.groups.findIndex((group) => group.uid === groupUid);
   if (at < 0) return { ok: false, reason: "That group no longer exists" };
   const group = session.groups[at];
-  if (group.exercises.length < 2) {
+  if (!readsAsGroup(group)) {
     return { ok: false, reason: "A single exercise has no group settings" };
   }
   const format = patch.format ?? group.format;
-  if (format !== "straight_sets" && format !== "circuit") {
-    return { ok: false, reason: "Only supersets, circuits and straight sets can be changed here" };
+  if (format === "circuit" && group.exercises.length < 2) {
+    return { ok: false, reason: "A superset needs two exercises" };
   }
-  const rest = (value: number | null | undefined, fallback: number | null) =>
-    value === undefined ? fallback : value;
-  const restBetweenExercisesSeconds = rest(
-    patch.restBetweenExercisesSeconds,
-    group.restBetweenExercisesSeconds,
-  );
-  const restBetweenRoundsSeconds = rest(patch.restBetweenRoundsSeconds, group.restBetweenRoundsSeconds);
-  const notes = patch.notes === undefined ? group.notes : patch.notes;
+  const { uses } = GROUP_FORMAT_SETTINGS[format];
+  if (GROUP_SETTING_KEYS.some((key) => patch[key] != null && !uses.includes(key))) {
+    return { ok: false, reason: GROUP_RULE_WORDS[format].unused };
+  }
+
+  const keep = <T>(patched: T | undefined, current: T): T =>
+    patched === undefined ? current : patched;
+  const rounds = uses.includes("rounds")
+    ? patch.rounds ??
+      (hasGroupRounds(group) && group.rounds != null ? group.rounds : mostSets(group.exercises))
+    : null;
+  const timeCapSeconds = uses.includes("timeCapSeconds")
+    ? keep(patch.timeCapSeconds, group.timeCapSeconds) ??
+      (format === "amrap" ? DEFAULT_AMRAP_TIME_CAP_SECONDS : null)
+    : null;
+  const intervalSeconds = uses.includes("intervalSeconds")
+    ? keep(patch.intervalSeconds, group.intervalSeconds) ?? DEFAULT_EMOM_INTERVAL_SECONDS
+    : null;
+  const restBetweenExercisesSeconds = uses.includes("restBetweenExercisesSeconds")
+    ? keep(patch.restBetweenExercisesSeconds, group.restBetweenExercisesSeconds)
+    : null;
+  const restBetweenRoundsSeconds = uses.includes("restBetweenRoundsSeconds")
+    ? keep(patch.restBetweenRoundsSeconds, group.restBetweenRoundsSeconds)
+    : null;
+  const notes = keep(patch.notes, group.notes);
+
   if (
-    (restBetweenExercisesSeconds != null && !inRange(restBetweenExercisesSeconds, GROUP_REST_SECONDS_MAX)) ||
-    (restBetweenRoundsSeconds != null && !inRange(restBetweenRoundsSeconds, GROUP_REST_SECONDS_MAX))
+    (restBetweenExercisesSeconds != null &&
+      !inRange(restBetweenExercisesSeconds, 0, GROUP_REST_SECONDS_MAX)) ||
+    (restBetweenRoundsSeconds != null && !inRange(restBetweenRoundsSeconds, 0, GROUP_REST_SECONDS_MAX))
   ) {
     return { ok: false, reason: `Rests must be between 0 and ${GROUP_REST_SECONDS_MAX} seconds` };
+  }
+  if (timeCapSeconds != null && !inRange(timeCapSeconds, 1, GROUP_TIME_CAP_SECONDS_MAX)) {
+    return {
+      ok: false,
+      reason: `A time cap must be between 1 second and ${GROUP_TIME_CAP_SECONDS_MAX / 3600} hours`,
+    };
+  }
+  if (intervalSeconds != null && !inRange(intervalSeconds, 1, GROUP_INTERVAL_SECONDS_MAX)) {
+    return {
+      ok: false,
+      reason: `An interval must be between 1 second and ${GROUP_INTERVAL_SECONDS_MAX / 60} minutes`,
+    };
   }
   if (notes != null && notes.length > GROUP_NOTES_MAX) {
     return { ok: false, reason: `Notes can be at most ${GROUP_NOTES_MAX} characters` };
   }
 
-  let next: ExerciseGroupDraft;
-  if (format === "straight_sets") {
-    if (patch.rounds != null || patch.restBetweenRoundsSeconds != null) {
-      return { ok: false, reason: "Straight sets have no rounds" };
-    }
-    next = { ...group, format, restBetweenExercisesSeconds, notes, rounds: null, restBetweenRoundsSeconds: null };
-  } else {
-    const rounds =
-      patch.rounds ??
-      (group.format === "circuit" && group.rounds != null ? group.rounds : mostSets(group.exercises));
-    const fitted = fitAll(group.exercises, rounds);
+  let exercises = group.exercises;
+  const rows = rowsPerExercise(format, rounds);
+  if (rows != null) {
+    const fitted = fitAll(group.exercises, rows);
     if (!fitted.ok) return fitted;
-    next = {
-      ...group,
-      format,
-      rounds,
-      restBetweenExercisesSeconds,
-      restBetweenRoundsSeconds,
-      notes,
-      exercises: fitted.exercises,
-    };
+    exercises = fitted.exercises;
   }
+  let next: ExerciseGroupDraft = {
+    ...group,
+    format,
+    rounds,
+    timeCapSeconds,
+    intervalSeconds,
+    restBetweenExercisesSeconds,
+    restBetweenRoundsSeconds,
+    notes,
+    exercises,
+  };
   if (patch.columnsPreset) {
     // Judged against the group as it will be, so a preset applied together
     // with a switch to a superset keeps each exercise's Rest choice.
@@ -419,6 +500,8 @@ export function updateGroup(
   const unchanged =
     next.format === group.format &&
     next.rounds === group.rounds &&
+    next.timeCapSeconds === group.timeCapSeconds &&
+    next.intervalSeconds === group.intervalSeconds &&
     next.restBetweenExercisesSeconds === group.restBetweenExercisesSeconds &&
     next.restBetweenRoundsSeconds === group.restBetweenRoundsSeconds &&
     next.notes === group.notes &&
@@ -430,19 +513,20 @@ export function updateGroup(
 }
 
 /**
- * A superset or circuit with `amount` rounds added or removed, or null when
- * that changes nothing — duplicate-with-progression's Sets rule on a group, so
- * its exercises stay one set per round. A round added copies every exercise's
- * last set and stops where any exercise would pass 30 sets or 20 working sets;
- * rounds come off the end, and a group keeps one round and a working set on
- * every exercise.
+ * A group whose rounds are a setting — a superset or circuit, an EMOM, a For
+ * time — with `amount` rounds added or removed, or null when that changes
+ * nothing: duplicate-with-progression's Sets rule on a group, so its exercises
+ * stay one row per round. A round added copies every exercise's last set and
+ * stops where any exercise would pass 30 sets or 20 working sets; rounds come
+ * off the end, and a group keeps one round and a working set on every
+ * exercise. An AMRAP's rows never change.
  */
 export function progressGroupRounds(
   group: ExerciseGroupDraft,
   amount: number,
 ): ExerciseGroupDraft | null {
   const n = Math.trunc(amount);
-  if (!Number.isFinite(n) || n === 0 || !isSupersetOrCircuit(group)) return null;
+  if (!Number.isFinite(n) || n === 0 || !hasGroupRounds(group)) return null;
   const specsOf = group.exercises.map((exercise) => expandSetSpecs(exercise));
   const rounds = group.rounds ?? Math.max(...specsOf.map((specs) => specs.length));
 

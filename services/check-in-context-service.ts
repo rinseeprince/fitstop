@@ -13,7 +13,14 @@ import type {
   CheckInTrainingEventDetail,
   DayOfWeek,
 } from "@/types/check-in";
-import { sessionExercises, snapshotGroup } from "@/utils/exercise-groups";
+import {
+  isTimedFormat,
+  sessionExercises,
+  snapshotGroup,
+  type GroupSettings,
+} from "@/utils/exercise-groups";
+import { formatGroupScore, groupHeading, groupHeadingText } from "@/utils/exercise-group-display";
+import { groupScoreValue, takesScore, type GroupScoreValue } from "@/utils/group-scores";
 import { describeLoggedExercise } from "@/utils/logged-exercise-line";
 import type { LoggedSetInput } from "@/utils/logged-set-rows";
 import { actualsFromSetLogRow } from "@/utils/set-log-measures";
@@ -241,6 +248,23 @@ function sessionPlace(ex: ExerciseLogLine): [group: number, exercise: number] {
   return [place.orderIndex, place.exerciseOrderIndex];
 }
 
+/** A timed group of a logged session: its place, its settings as logged, and its score where it takes one. */
+type TimedGroupLine = { orderIndex: number; settings: GroupSettings; score: GroupScoreValue | null };
+
+/**
+ * A timed group's line for the check-in AI: its heading as every screen reads
+ * it ("AMRAP · 12m", "For time · 3 rounds · 12m cap", "EMOM · 6 rounds · every
+ * 1m") with its rests, then — where the format scores — its score in the one
+ * grammar (`formatGroupScore`), or "not scored".
+ */
+function describeTimedGroup(group: TimedGroupLine): string {
+  const { title, rests } = groupHeadingText(groupHeading({ ...group.settings, exercises: [] }));
+  const head = rests ? `${title} (${rests})` : title;
+  if (!takesScore(group.settings.format)) return head;
+  const score = group.score ? formatGroupScore(group.settings.format, group.score) : "not scored";
+  return `${head} — ${score}`;
+}
+
 /**
  * Per-session exercise lines for the check-in AI prompt.
  *
@@ -303,26 +327,92 @@ export async function getExerciseSummariesForPeriod(
       setsByExLog.set(row.exercise_log_id, list);
     }
 
-    // Build per-session lines, in the session's order.
-    const linesBySession = new Map<string, string[]>();
+    // The timed groups' scores on these logs (migration 186). A timed group
+    // gets a line of its own above its exercises' lines — its heading and,
+    // where it scores, its score or "not scored" — so a scored AMRAP whose
+    // exercises the client never ticked still reaches the review.
+    // supabaseAdmin: client portal reading own group scores (RLS exception 3)
+    const { data: scoreRows, error: scoreErr } = await supabaseAdmin
+      .from("session_log_group_scores")
+      .select("session_log_id, group_id, prescribed_group_snapshot, rounds, reps, finish_seconds")
+      .in("session_log_id", sessionLogIds);
+    if (scoreErr) {
+      console.error("Error fetching group scores for check-in summary:", scoreErr.message);
+      return result;
+    }
+
+    // Every timed group of these logs, by session and group id — known from
+    // its exercises' snapshots and from its score row (a scored group none of
+    // whose exercises were ticked is known only there).
+    const timedGroups = new Map<string, Map<string, TimedGroupLine>>();
+    const noteGroup = (sessionLogId: string, groupId: string, line: TimedGroupLine) => {
+      const groups = timedGroups.get(sessionLogId) ?? new Map<string, TimedGroupLine>();
+      const known = groups.get(groupId);
+      groups.set(groupId, known ? { ...known, score: line.score ?? known.score } : line);
+      timedGroups.set(sessionLogId, groups);
+    };
+    for (const ex of exLogs) {
+      const snapshot = ex.prescribed_exercise_snapshot;
+      if (ex.training_exercise_id == null || snapshot == null || typeof snapshot !== "object") continue;
+      const place = snapshotGroup(snapshot as Record<string, unknown>, ex.training_exercise_id);
+      if (!isTimedFormat(place.settings.format)) continue;
+      noteGroup(ex.session_log_id, place.id, {
+        orderIndex: place.orderIndex,
+        settings: place.settings,
+        score: null,
+      });
+    }
+    for (const row of scoreRows ?? []) {
+      const snapshot = row.prescribed_group_snapshot;
+      if (snapshot == null || typeof snapshot !== "object" || Array.isArray(snapshot)) continue;
+      // The score row's snapshot is the group's own; `snapshotGroup` reads one
+      // under `group`, and reads straight sets where it can't trust it.
+      const group = snapshotGroup({ group: snapshot }, "");
+      if (!isTimedFormat(group.settings.format)) continue;
+      noteGroup(row.session_log_id, row.group_id ?? group.id, {
+        orderIndex: group.orderIndex,
+        settings: group.settings,
+        score: groupScoreValue({ rounds: row.rounds, reps: row.reps, finishSeconds: row.finish_seconds }),
+      });
+    }
+
+    // Build per-session lines: each exercise's line at its place in the session
+    // (its group's place, then its own), and a timed group's line just before
+    // its exercises'.
+    type Placed = { group: number; exercise: number; line: string };
+    const placedBySession = new Map<string, Placed[]>();
+    const place = (sessionLogId: string, placed: Placed) => {
+      const list = placedBySession.get(sessionLogId) ?? [];
+      list.push(placed);
+      placedBySession.set(sessionLogId, list);
+    };
     for (const ex of exLogs) {
       const sets = setsByExLog.get(ex.id) ?? [];
       if (sets.length === 0) continue; // an exercise with no set was not done
 
-      const line = describeLoggedExercise({
-        performedName: ex.performed_name,
-        snapshot: (ex.prescribed_exercise_snapshot as Record<string, unknown> | null) ?? null,
-        sets,
-        viewer,
+      const [group, exercise] = sessionPlace(ex);
+      place(ex.session_log_id, {
+        group,
+        exercise,
+        line: describeLoggedExercise({
+          performedName: ex.performed_name,
+          snapshot: (ex.prescribed_exercise_snapshot as Record<string, unknown> | null) ?? null,
+          sets,
+          viewer,
+        }),
       });
-
-      const list = linesBySession.get(ex.session_log_id) ?? [];
-      list.push(line);
-      linesBySession.set(ex.session_log_id, list);
+    }
+    for (const [sessionLogId, groups] of timedGroups) {
+      for (const group of groups.values()) {
+        place(sessionLogId, { group: group.orderIndex, exercise: -1, line: describeTimedGroup(group) });
+      }
     }
 
     // Apply the per-session input-size cap.
-    for (const [sessionLogId, lines] of linesBySession) {
+    for (const [sessionLogId, placed] of placedBySession) {
+      const lines = placed
+        .sort((a, b) => a.group - b.group || a.exercise - b.exercise)
+        .map((entry) => entry.line);
       if (lines.length > MAX_EXERCISE_LINES_PER_SESSION) {
         const kept = lines.slice(0, MAX_EXERCISE_LINES_PER_SESSION);
         kept.push(`…and ${lines.length - MAX_EXERCISE_LINES_PER_SESSION} more`);

@@ -1253,7 +1253,7 @@ describe("group tools", () => {
         exercisePosition: 3,
         groupExercisePosition: 4,
       } as never),
-    ).toMatch(/isn't in a superset, circuit or straight-sets group/);
+    ).toMatch(/isn't in a group/);
 
     const out = await tool(groups, "add_to_group").run({
       week: 1,
@@ -1371,6 +1371,71 @@ describe("group tools", () => {
       } as never),
     ).toMatch(/is at position 3, not 4/);
     expectReplayMatches(coachDraft, ws);
+  });
+
+  it("link_exercises makes a timed group from one exercise or more, with its clock, and the client replays it", async () => {
+    const { coachDraft, ws, groups } = groupWs();
+    const out = await tool(groups, "link_exercises").run({
+      week: 1,
+      day: 1,
+      exercisePositions: [2],
+      format: "amrap",
+      timeCapSeconds: 720,
+    } as never);
+    expect(out).toBe("Linked them: AMRAP · 12m (position 2).");
+    expect(shapeOf(ws.draft)).toEqual([["Back Squat"], ["Bench Press"], ["Leg Curl"], ["Calf Raise"]]);
+    // A timed group of one: its exercise has one set, the work of a round.
+    expect(dayOne(ws.draft).groups[1]).toMatchObject({ format: "amrap", timeCapSeconds: 720, rounds: null });
+    expect(dayOne(ws.draft).groups[1].exercises.map(setSpecCount)).toEqual([1]);
+    expect(expectReplayMatches(coachDraft, ws).map((op) => op.type)).toEqual(["link_exercises", "update_group"]);
+
+    // An EMOM at every minute unless told otherwise, every exercise on its rounds.
+    expect(
+      await tool(groups, "link_exercises").run({
+        week: 1,
+        day: 1,
+        exercisePositions: [3, 4],
+        format: "emom",
+        rounds: 8,
+      } as never),
+    ).toBe("Linked them: EMOM · 8 rounds · every 1m (positions 3-4).");
+    expect(dayOne(ws.draft).groups[2].exercises.map(setSpecCount)).toEqual([8, 8]);
+    expectReplayMatches(coachDraft, ws);
+  });
+
+  it("update_group switches a group to a timed format and sets its clock; a setting the format doesn't use is refused", async () => {
+    const { coachDraft, ws, groups } = groupWs();
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [1, 2] } as never);
+    expect(
+      await tool(groups, "update_group").run({
+        week: 1,
+        day: 1,
+        exercisePosition: 1,
+        format: "for_time",
+        timeCapSeconds: 600,
+      } as never),
+    ).toBe("Updated: For time · 3 rounds · 10m cap (positions 1-2).");
+    expect(
+      await tool(groups, "update_group").run({ week: 1, day: 1, exercisePosition: 1, intervalSeconds: 60 } as never),
+    ).toMatch(/A For time has no interval/);
+    // A timed group of one takes settings and comes out of its format as a plain exercise.
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [4], format: "amrap" } as never);
+    expect(
+      await tool(groups, "update_group").run({ week: 1, day: 1, exercisePosition: 4, timeCapSeconds: 900 } as never),
+    ).toBe("Updated: AMRAP · 15m (position 4).");
+    expect(
+      await tool(groups, "unlink_exercises").run({ week: 1, day: 1, exercisePositions: [4] } as never),
+    ).toBe("Took Calf Raise out of their group.");
+    expect(groupSettingsOf(dayOne(ws.draft).groups[2])).toEqual(STRAIGHT_SETS);
+    expectReplayMatches(coachDraft, ws);
+  });
+
+  it("the program state prints a timed group of one under its heading", async () => {
+    const { ws, groups } = groupWs();
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [4], format: "amrap" } as never);
+    const text = programContext(ws.draft).text;
+    expect(text).toContain("    AMRAP · 10m");
+    expect(text).toMatch(/ {6}4\. Calf Raise — 1 rounds?/);
   });
 
   it("the program state shows a group's heading above its indented exercises, in rounds", async () => {

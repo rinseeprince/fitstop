@@ -1,6 +1,11 @@
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
 import { buildPrescribedRows } from "@/utils/set-spec-rows";
-import { formatRoundReps, formatRoundRepsShort } from "@/utils/exercise-group-display";
+import type { GroupFormat } from "@/utils/exercise-groups";
+import {
+  formatRoundReps,
+  formatRoundRepsOnce,
+  formatRoundRepsShort,
+} from "@/utils/exercise-group-display";
 import type { ExerciseDraft } from "./program-builder-types";
 
 // Shared prescription summary for the builder. It prefers the maintained
@@ -29,19 +34,20 @@ export function setsRepsShort(e: ExerciseDraft): string {
   return reps ? `${e.sets}×${reps}` : `${e.sets} sets`;
 }
 
-// The session editor card's summary, and its drag copy's: sets×reps, or in a
-// superset or circuit the reps round by round as the client reads them,
-// "21-15-9 reps" — empty when a round asks no rep count, so nothing half-true
-// is on screen.
+// The session editor card's summary, and its drag copy's: sets×reps, or where
+// the exercise's rows are a group's rounds the reps round by round as the
+// client reads them, "21-15-9 reps" — empty when a round asks no rep count, so
+// nothing half-true is on screen.
 export function exerciseCardSummary(e: ExerciseDraft, roundsAreRows: boolean): string {
   return roundsAreRows
     ? (formatRoundReps(buildPrescribedRows(expandSetSpecs(e))) ?? "")
     : setsRepsShort(e);
 }
 
-// A week-grid line for an exercise in a superset or circuit, whose sets are the
-// group's rounds: "3×8-10", or "21-15-9" when the rounds differ. Empty when a
-// round asks no rep count.
-export function roundsRepsShort(e: ExerciseDraft): string {
-  return formatRoundRepsShort(buildPrescribedRows(expandSetSpecs(e))) ?? "";
+// A week-grid line for an exercise whose rows are its group's rounds: "3×8-10",
+// or "21-15-9" when the rounds differ; in an AMRAP, whose one row is the work of
+// a round, that round's reps alone, "10". Empty when a round asks no rep count.
+export function roundsRepsShort(e: ExerciseDraft, format: GroupFormat): string {
+  const rows = buildPrescribedRows(expandSetSpecs(e));
+  return (format === "amrap" ? formatRoundRepsOnce(rows) : formatRoundRepsShort(rows)) ?? "";
 }

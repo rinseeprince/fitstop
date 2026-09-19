@@ -42,14 +42,25 @@ const CIRCUIT: GroupSettings = {
   notes: "A",
 };
 
-// Every setting a group carries, each one set.
+// Every setting a group stores, on the format that uses the most of them (a
+// For time: rounds, cap, both rests, notes); the interval rides on an EMOM
+// beside it, since no one format uses all seven.
 const EVERY_SETTING: GroupSettings = {
-  format: "emom",
+  format: "for_time",
   rounds: 10,
   timeCapSeconds: 600,
-  intervalSeconds: 60,
+  intervalSeconds: null,
   restBetweenExercisesSeconds: 15,
   restBetweenRoundsSeconds: 120,
+  notes: "As fast as you can",
+};
+const EMOM_SETTING: GroupSettings = {
+  format: "emom",
+  rounds: 10,
+  timeCapSeconds: null,
+  intervalSeconds: 60,
+  restBetweenExercisesSeconds: null,
+  restBetweenRoundsSeconds: null,
   notes: "On the minute",
 };
 
@@ -729,7 +740,7 @@ describe("exercise ops on a session holding a circuit", () => {
       { set_number: 2, set_type: "working" as const },
     ] }]) {
       const refused = applyDraftOp(draft, { type: "update_exercise", sessionUid, exerciseUid: row.uid, patch }, LIB);
-      expect(refused.skipped).toMatch(/superset or circuit/);
+      expect(refused.skipped).toMatch(/group's rounds/);
       expect(refused.draft).toBe(draft);
     }
     // Keeping the count applies, and a lone exercise changes its sets freely.
@@ -846,6 +857,7 @@ describe("place_session and insert_week carry every group setting", () => {
           ...EVERY_SETTING,
           exercises: [makeExercise({ name: "Burpee" }), makeExercise({ name: "Thruster" })],
         },
+        { uid: newUid("grp"), ...EMOM_SETTING, exercises: [makeExercise({ name: "Row" })] },
         lone(makeExercise({ name: "Plank" })),
       ],
     });
@@ -870,10 +882,12 @@ describe("place_session and insert_week carry every group setting", () => {
     const placedGroups = result.draft.weeks[0].days[2].sessions[0].groups;
     expect(placedGroups).toEqual(session.groups);
     expect(groupSettingsOf(placedGroups[0])).toEqual(EVERY_SETTING);
+    expect(groupSettingsOf(placedGroups[1])).toEqual(EMOM_SETTING);
 
     const insertedGroups = result.draft.weeks[1].days[0].sessions[0].groups;
     expect(insertedGroups).toEqual(week.days[0].sessions[0].groups);
     expect(groupSettingsOf(insertedGroups[0])).toEqual(EVERY_SETTING);
+    expect(groupSettingsOf(insertedGroups[1])).toEqual(EMOM_SETTING);
   });
 });
 

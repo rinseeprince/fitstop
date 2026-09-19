@@ -291,9 +291,9 @@ function TrainingLogForm({
   // The flattened prescription per form position. Only the prescribed prefix has
   // one — an orphan log or an appended unplanned exercise sits past the end and
   // reads as undefined, which scores neither half of the outcome. An exercise
-  // in an AMRAP or For time reads null for the same reason: until commit 15
-  // decides Full versus Partial for timed groups, its rows are left out of the
-  // working-set count and its group's score is what records it.
+  // in an AMRAP or For time reads null too: its group is done by its score
+  // (utils/completion-quality.ts), so its rows are optional detail outside the
+  // working-set count.
   const prescribedRowsByIndex = useMemo<PrescribedRowsByIndex>(() => {
     const rows: (PrescribedRow[] | null)[] = [];
     let index = 0;

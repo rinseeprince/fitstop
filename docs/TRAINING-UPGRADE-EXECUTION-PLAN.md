@@ -1118,7 +1118,7 @@ present replaces what the log holds, an empty one included, and an absent list l
 for `exercises` and the new `groupScores` alike. The score is a row on the log
 (`session_log_group_scores`, migration 186).*
 
-### Commit 15 — Timed groups in the builder, and their completion
+### Commit 15 — Timed groups in the builder, and their completion — SHIPPED 2026-09-19
 
 ```text
 Implement commit 15 of 22 — Timed groups in the builder, and their completion — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
@@ -1137,6 +1137,15 @@ WHEN THIS COMMIT IS DONE
 
 RULES: §4.2, §4.5 and §4.7 — closed except the items marked (confirm). Include a frame test for the settings (§2).
 ```
+
+*Settled with the owner on 2026-09-19: a capped For time is Partial (the prescribed work was not all
+done) and an EMOM stopped early is Partial (its rows count like a circuit's); an AMRAP or For time
+left unscored makes the workout Partial whatever its rows say. In an AMRAP every exercise has one
+row, the work of one round; an EMOM has no alternating setting (odd and even minutes go in the notes),
+no rests and no cap; a For time may carry a cap and rests. Link makes a timed group from one exercise
+or more; a new AMRAP starts with a 10-minute cap and a new EMOM at every minute. The settings each
+format uses are one table, `GROUP_FORMAT_SETTINGS` (`utils/exercise-groups.ts`), and the format is a
+dropdown in the settings popover, since the segmented control cannot hold five names.*
 
 ### Commit 16 — Progress charts by exercise type
 

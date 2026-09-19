@@ -8,7 +8,7 @@ import {
 } from "@/components/clients/training/program-builder/program-builder-model";
 import {
   hiddenColumnsIn,
-  isSupersetOrCircuit,
+  rowsAreRounds,
 } from "@/components/clients/training/program-builder/program-builder-groups";
 import type { SessionDraft } from "@/components/clients/training/program-builder/program-builder-types";
 import { countSessionExercises } from "@/utils/exercise-groups";
@@ -172,7 +172,7 @@ type ColumnsInput = { columns?: string[]; columnsPreset?: ColumnsPreset };
 /**
  * The column list an input asks for, in the builder's order: a preset's
  * (keeping the exercise's stored choice for a column hidden where it sits —
- * Rest in a superset or circuit), or the exact list named; null when the
+ * Rest where its rows are a group's rounds), or the exact list named; null when the
  * input names neither.
  */
 function columnsFields(
@@ -215,14 +215,18 @@ function unwritableTargets(exercise: ExerciseDraft): SetSpecMeasure[] {
 }
 
 /**
- * The refusal for a change to how many sets an exercise has when its sets are
- * a superset's or circuit's rounds; null when it isn't in one or keeps them.
+ * The refusal for a change to how many sets an exercise has when its rows are
+ * its group's rounds — or its one row in an AMRAP; null when it isn't in such a
+ * group or keeps them.
  */
 function roundsRefusal(session: SessionDraft, exercise: ExerciseDraft, sets: number): string | null {
   const group = exerciseGroupAt(session, exercise.uid)?.group;
-  if (!group || !isSupersetOrCircuit(group)) return null;
+  if (!group || !rowsAreRounds(group)) return null;
   const rounds = setSpecCount(exercise);
   if (sets === rounds) return null;
+  if (group.format === "amrap") {
+    return `"${exercise.name}" is in an AMRAP: it has one set, the work of one round, so send 1 set.`;
+  }
   const name = groupName(group.format, group.exercises.length).toLowerCase();
   return `"${exercise.name}" is in a ${rounds}-round ${name}: it has exactly one set per round, so send ${rounds} sets, or change the rounds with update_group.`;
 }
@@ -470,7 +474,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
   const setExerciseSets = betaTool({
     name: "set_exercise_sets",
     description:
-      "Replace an exercise's full per-set list (set-by-set programming: warm-ups, working sets, AMRAP/drop/failure finishers, per-set reps/loads/RPE). At least one non-warmup set; max 30 sets, 20 working. Each load and RPE is one value or a range: loadKg (absolute) or loadPercent1rm, with loadKgMax / loadPercent1rmMax for the high end; rpe with rpeMax for the high end. In a superset or circuit each set is one round: send exactly the group's rounds. Refuses an exercise carrying targets this tool can't write (RIR, distance, duration, pace and the other endurance measures) rather than dropping them.",
+      "Replace an exercise's full per-set list (set-by-set programming: warm-ups, working sets, AMRAP/drop/failure finishers, per-set reps/loads/RPE). At least one non-warmup set; max 30 sets, 20 working. Each load and RPE is one value or a range: loadKg (absolute) or loadPercent1rm, with loadKgMax / loadPercent1rmMax for the high end; rpe with rpeMax for the high end. In a superset, circuit, EMOM or For time each set is one round: send exactly the group's rounds; in an AMRAP send one set, the work of a round. Refuses an exercise carrying targets this tool can't write (RIR, distance, duration, pace and the other endurance measures) rather than dropping them.",
     inputSchema: {
       type: "object",
       properties: {

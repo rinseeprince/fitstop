@@ -101,6 +101,7 @@ import { snapshotToSpecs } from "@/utils/exercise-set-specs";
 import {
   deriveCompletionQuality,
   type ScoredExercise,
+  type ScoredGroup,
 } from "@/utils/completion-quality";
 
 // =============================================================================
@@ -510,6 +511,10 @@ async function writeSessionLog(params: {
   const sessionPrescribedRows = new Map<string, PrescribedRow[]>();
   // The performed session's live groups, by id, for the scores.
   const sessionLiveGroups = new Map<string, GroupSnapshot>();
+  // The groups done by their score — an AMRAP or a For time — by id with their
+  // format: the verdict's other denominator, beside the exercises' rows
+  // (section 4.5; utils/completion-quality.ts).
+  const scoringGroups = new Map<string, "amrap" | "for_time">();
   if (isDetailedMode || hasScores) {
     const distinctExerciseIds = [
       ...new Set(
@@ -533,12 +538,15 @@ async function writeSessionLog(params: {
     }
     for (const { group, exercises } of sessionGroups) {
       sessionLiveGroups.set(group.id, group);
-      // Until commit 15 decides Full versus Partial for timed groups, an AMRAP
-      // or For time group's rows are left out of the working-set count: its
-      // score is what records it, and it never makes the workout Partial on
-      // its own (owner, 2026-09-19). An EMOM's rows count as a circuit's do.
+      // An AMRAP or For time is done by its score (owner, 2026-09-19): its
+      // rows are optional detail, left out of the working-set count, and the
+      // group itself joins the verdict below. An EMOM's rows count as a
+      // circuit's do.
       const format = groupSnapshotFormat(group);
-      if (format !== null && takesScore(format)) continue;
+      if (format !== null && takesScore(format)) {
+        scoringGroups.set(group.id, format);
+        continue;
+      }
       for (const row of exercises) {
         sessionPrescribedRows.set(
           row.id,
@@ -548,7 +556,21 @@ async function writeSessionLog(params: {
     }
   }
 
-  // 4b. completion_quality is SERVER-DERIVED whenever the payload carries
+  // 4b. The scores, judged before anything is written: each names a group of
+  // the performed session (client-scoped, so a foreign id is not there) or one
+  // already scored on this log, and takes only the shape its format allows.
+  // A refusal reaches the route as a 404 (foreign) or a 400 (its sentence),
+  // and the log is untouched.
+  let scoreRows: Awaited<ReturnType<typeof resolveScoreRows>> = [];
+  if (hasScores) {
+    scoreRows = await resolveScoreRows({
+      scores: payload.groupScores ?? [],
+      liveGroups: sessionLiveGroups,
+      existingLogId,
+    });
+  }
+
+  // 4c. completion_quality is SERVER-DERIVED whenever the payload carries
   // exercises: the sets the client sent are the claim, and any client-supplied
   // value is ignored. A payload with NO exercises — the quick log, and any
   // future RN quick path — still uses the client's explicit value, because
@@ -586,28 +608,57 @@ async function writeSessionLog(params: {
       // The same rule for an exercise the session no longer holds: its
       // snapshot names the group it sat in.
       const format = groupSnapshotFormat(snapshot.group);
-      if (format !== null && takesScore(format)) continue;
+      if (format !== null && takesScore(format)) {
+        scoringGroups.set(snapshot.group.id, format);
+        continue;
+      }
       scored.push({
         prescribedRows: buildPrescribedRows(snapshotToSpecs(snapshot)),
         completedSetNumbers: setNumbers,
       });
     }
 
-    derivedQuality = deriveCompletionQuality(scored) ?? payload.completionQuality;
-  }
-
-  // 4c. The scores, judged before anything is written: each names a group of
-  // the performed session (client-scoped, so a foreign id is not there) or one
-  // already scored on this log, and takes only the shape its format allows.
-  // A refusal reaches the route as a 404 (foreign) or a 400 (its sentence),
-  // and the log is untouched.
-  let scoreRows: Awaited<ReturnType<typeof resolveScoreRows>> = [];
-  if (hasScores) {
-    scoreRows = await resolveScoreRows({
-      scores: payload.groupScores ?? [],
-      liveGroups: sessionLiveGroups,
-      existingLogId,
+    // The scores the log holds after this save: the payload's when it carries
+    // the list, else the rows already on the log — read only when a scoring
+    // group is in play. A scored group the session no longer holds is still a
+    // group of this workout, named by its score row's snapshot.
+    const scoresAfter: Array<{
+      groupId: string | null;
+      snapshot: Record<string, unknown>;
+      finishSeconds: number | null;
+    }> = hasScores
+      ? scoreRows.map((row) => ({
+          groupId: row.group_id ?? null,
+          snapshot: row.prescribed_group_snapshot as Record<string, unknown>,
+          finishSeconds: row.finish_seconds ?? null,
+        }))
+      : existingLogId !== null && scoringGroups.size > 0
+        ? (await loadGroupScores(existingLogId)).map((score) => ({
+            groupId: score.groupId,
+            snapshot: score.prescribedGroupSnapshot,
+            finishSeconds: score.finishSeconds,
+          }))
+        : [];
+    const scoreByGroup = new Map<string, (typeof scoresAfter)[number]>();
+    for (const score of scoresAfter) {
+      if (score.groupId === null) continue;
+      scoreByGroup.set(score.groupId, score);
+      if (scoringGroups.has(score.groupId)) continue;
+      const format = groupSnapshotFormat(score.snapshot);
+      if (format !== null && takesScore(format)) scoringGroups.set(score.groupId, format);
+    }
+    const scoredGroups: ScoredGroup[] = [...scoringGroups].map(([groupId, format]) => {
+      const score = scoreByGroup.get(groupId);
+      return {
+        format,
+        scored: score !== undefined,
+        // Rounds and reps on a For time: the cap ran out.
+        capped: score !== undefined && score.finishSeconds === null,
+      };
     });
+
+    derivedQuality =
+      deriveCompletionQuality(scored, scoredGroups) ?? payload.completionQuality;
   }
 
   // 5. Write session_logs (event-keyed, Session 5.2). training_session_id holds

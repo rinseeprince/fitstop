@@ -37,6 +37,7 @@ import {
   type ExerciseDestination,
   type GroupEditResult,
   type GroupSettingsPatch,
+  type LinkFormat,
 } from "./program-builder-groups";
 import {
   applyDraftOps,
@@ -436,8 +437,8 @@ export function useProgramBuilderState() {
   );
 
   const linkExercises = useCallback(
-    (sessionUid: string, exerciseUids: string[]) =>
-      editGroups(sessionUid, (s) => linkSessionExercises(s, exerciseUids, newUid("grp"))),
+    (sessionUid: string, exerciseUids: string[], format?: LinkFormat) =>
+      editGroups(sessionUid, (s) => linkSessionExercises(s, exerciseUids, newUid("grp"), format)),
     [editGroups],
   );
 

@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveCompletionQuality,
+  isGroupComplete,
   summariseCompletion,
   type ScoredExercise,
+  type ScoredGroup,
 } from "./completion-quality";
 import { buildPrescribedRows } from "./set-spec-rows";
 import type { SetSpec } from "./exercise-set-specs";
@@ -170,6 +172,9 @@ describe("summariseCompletion", () => {
     ).toEqual({
       completedWorkingSets: 3,
       prescribedWorkingSets: 6,
+      scoringGroups: 0,
+      scoredGroups: 0,
+      cappedGroups: 0,
       quality: "partial",
     });
   });
@@ -184,6 +189,9 @@ describe("summariseCompletion", () => {
     ).toEqual({
       completedWorkingSets: 2,
       prescribedWorkingSets: 2,
+      scoringGroups: 0,
+      scoredGroups: 0,
+      cappedGroups: 0,
       quality: "full",
     });
   });
@@ -210,6 +218,9 @@ describe("summariseCompletion", () => {
     ).toEqual({
       completedWorkingSets: 3,
       prescribedWorkingSets: 3,
+      scoringGroups: 0,
+      scoredGroups: 0,
+      cappedGroups: 0,
       quality: "full",
     });
   });
@@ -220,7 +231,54 @@ describe("summariseCompletion", () => {
     ).toEqual({
       completedWorkingSets: 0,
       prescribedWorkingSets: 0,
+      scoringGroups: 0,
+      scoredGroups: 0,
+      cappedGroups: 0,
       quality: null,
     });
+  });
+});
+
+// A timed group that takes a score is done by its score (section 4.5; owner,
+// 2026-09-19): an AMRAP once scored, a For time once finished; a capped or
+// unscored one is partial. Its exercises' rows are not among the exercises.
+describe("scored groups", () => {
+  const amrap = (scored: boolean): ScoredGroup => ({ format: "amrap", scored, capped: scored });
+  const forTime = (over: Partial<ScoredGroup>): ScoredGroup => ({ format: "for_time", scored: true, capped: false, ...over });
+
+  it("an AMRAP is complete once scored; a For time when finished, not when capped or unscored", () => {
+    expect(isGroupComplete(amrap(true))).toBe(true);
+    expect(isGroupComplete(amrap(false))).toBe(false);
+    expect(isGroupComplete(forTime({}))).toBe(true);
+    expect(isGroupComplete(forTime({ capped: true }))).toBe(false);
+    expect(isGroupComplete(forTime({ scored: false }))).toBe(false);
+  });
+
+  it("joins the verdict: an unscored group or a capped For time makes a full set of exercises partial", () => {
+    const done = [{ prescribedRows: WORKING_3, completedSetNumbers: [1, 2, 3] }];
+    expect(deriveCompletionQuality(done, [amrap(true)])).toBe("full");
+    expect(deriveCompletionQuality(done, [amrap(false)])).toBe("partial");
+    expect(deriveCompletionQuality(done, [forTime({})])).toBe("full");
+    expect(deriveCompletionQuality(done, [forTime({ capped: true })])).toBe("partial");
+    // A group alone is scorable: scored is full, unscored partial.
+    expect(deriveCompletionQuality([], [amrap(true)])).toBe("full");
+    expect(deriveCompletionQuality([], [forTime({ capped: true })])).toBe("partial");
+    expect(deriveCompletionQuality([], [])).toBeNull();
+  });
+
+  it("counts the groups for the outcome line: scoring, scored and capped", () => {
+    const summary = summariseCompletion(
+      [{ prescribedRows: WORKING_3, completedSetNumbers: [1, 2] }],
+      [amrap(true), forTime({ capped: true }), forTime({ scored: false })],
+    );
+    expect(summary).toEqual({
+      completedWorkingSets: 2,
+      prescribedWorkingSets: 3,
+      scoringGroups: 3,
+      scoredGroups: 2,
+      cappedGroups: 1,
+      quality: "partial",
+    });
+    expect(summariseCompletion([], []).scoringGroups).toBe(0);
   });
 });
