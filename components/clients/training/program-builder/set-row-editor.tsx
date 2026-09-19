@@ -167,7 +167,13 @@ export function SetRowEditor({
           // aligned with every other row (the same shape the load value uses
           // when no load type is chosen). The client still records the reps
           // they achieved; only the PRESCRIPTION is closed here.
+          //
+          // Keyed, as the working box is: they are two boxes — this one
+          // controlled and empty, that one uncontrolled with a default it
+          // commits on blur — and in one unkeyed slot React would keep one DOM
+          // input and flip it between modes on every type switch.
           <Input
+            key="reps-closed"
             disabled
             readOnly
             value=""
@@ -182,6 +188,7 @@ export function SetRowEditor({
           // input and formats on display, and a half-open legacy range still
           // round-trips.
           <Input
+            key="reps-open"
             disabled={disabled}
             maxLength={9}
             defaultValue={formatRepsRange({
