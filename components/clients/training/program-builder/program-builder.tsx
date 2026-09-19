@@ -2,7 +2,7 @@
 
 import type { WindowCap } from "@/services/program-event-walk";
 import { addDaysToDateString, formatDateOnlyShort } from "@/lib/date-helpers";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { leaveCoachPage } from "@/lib/coach-history";
@@ -36,6 +36,7 @@ import { useProgramDnd } from "./use-program-dnd";
 import { useSaveDayAsWorkout } from "./use-save-day-as-workout";
 import { useProgramDraft } from "./program-draft-provider";
 import { AssistantDock } from "./assistant/assistant-dock";
+import { AssistantProvider } from "./assistant/assistant-provider";
 import { useClientApply } from "./use-client-apply";
 import { ProgramTopBar } from "./program-top-bar";
 import { ProgramGrid } from "./program-grid";
@@ -151,17 +152,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   // re-renders a closing sheet from live state (CONVENTIONS §7 → "No frame
   // disagrees"), so the sheet slides out still showing its session.
   const sessionSheet = useDialogSubject<string>();
-  // Owned here, not in the dock: the session-editor sheet's footer button opens
-  // the same panel, and the dock's fixed launcher hides while that sheet is up.
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  // The session sheet's content mounts a render after the sheet opens (Radix
-  // portals on a layout effect). The assistant dock re-registers its layer on
-  // THAT, so an open panel always ends up above the sheet (assistant-dock.tsx).
-  const [sessionSheetMounted, setSessionSheetMounted] = useState(false);
-  const onSessionSheetContent = useCallback(
-    (element: HTMLDivElement | null) => setSessionSheetMounted(element != null),
-    [],
-  );
   // The uid only — the week resolves live at render, so a vanished uid or a
   // mode flip closes the progression dialog by unmounting it.
   const [progressionWeekUid, setProgressionWeekUid] = useState<string | null>(null);
@@ -558,36 +548,45 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           )}
       </DndContext>
 
-      <SessionEditorSheet
-        open={sessionSheetOpen}
-        contentRef={onSessionSheetContent}
-        session={editingSession}
-        // A session on a locked day opens read-only — the guarded mutators
-        // would refuse its edits anyway.
-        mode={
-          editingSession &&
-          dayRules &&
-          isSessionLocked(draft, dayRules.locked, editingSession.uid)
-            ? "view"
-            : mode
-        }
-        identityEditable={!isClientDraft}
-        defaultSurplusPercentage={draft.defaultSurplusPercentage}
-        onClose={sessionSheet.close}
-        onUpdateSession={updateSession}
-        onAddExercise={addExercise}
-        onRemoveExercise={removeExercise}
-        onEditExercise={updateExercise}
-        onLinkExercises={linkExercises}
-        onUnlinkGroup={unlinkGroup}
-        onMoveExercise={moveExercise}
-        onMoveGroup={moveGroup}
-        onUpdateGroup={updateGroup}
-        onSpecEdit={editSetSpec}
-        onSaveAsWorkout={(uid) => void saveDayAsWorkout(uid)}
-        isSavingWorkout={isSavingWorkout}
-        onOpenAssistant={() => setAssistantOpen(true)}
-      />
+      {/* The assistant's state lives above both of the panel's hosts — the
+          session sheet and the corner dock — so the panel keeps its
+          conversation when a session opens or closes, and the sheet's open
+          flag is the one thing both hosts read (assistant-provider.tsx). */}
+      <AssistantProvider>
+        <SessionEditorSheet
+          open={sessionSheetOpen}
+          session={editingSession}
+          // A session on a locked day opens read-only — the guarded mutators
+          // would refuse its edits anyway.
+          mode={
+            editingSession &&
+            dayRules &&
+            isSessionLocked(draft, dayRules.locked, editingSession.uid)
+              ? "view"
+              : mode
+          }
+          identityEditable={!isClientDraft}
+          defaultSurplusPercentage={draft.defaultSurplusPercentage}
+          onClose={sessionSheet.close}
+          onUpdateSession={updateSession}
+          onAddExercise={addExercise}
+          onRemoveExercise={removeExercise}
+          onEditExercise={updateExercise}
+          onLinkExercises={linkExercises}
+          onUnlinkGroup={unlinkGroup}
+          onMoveExercise={moveExercise}
+          onMoveGroup={moveGroup}
+          onUpdateGroup={updateGroup}
+          onSpecEdit={editSetSpec}
+          onSaveAsWorkout={(uid) => void saveDayAsWorkout(uid)}
+          isSavingWorkout={isSavingWorkout}
+        />
+        {/* The corner chip hides while the sheet is up — it sat on top of the
+            sheet's own footer, whose Assistant button is the way in — and the
+            sheet hosts the open panel inside its content
+            (session-editor-sheet.tsx). */}
+        <AssistantDock sessionSheetOpen={sessionSheetOpen} />
+      </AssistantProvider>
 
       {/* Conditional mount: an always-mounted dialog would fetch the exercise
           catalog on every builder render and leak closed-state preview
@@ -693,21 +692,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         />
       )}
 
-      {/* Client-draft apply flow (Phase 5): a reapply confirmation → the shared
-          ApplyToClientDialog. The library template is never touched — Apply
-          materializes the edited copy onto the client's calendar. The confirm
-          precedes the dialog (start date/repeat are chosen inside it), so its
-          copy stays date-agnostic. */}
-      <AssistantDock
-        open={assistantOpen}
-        onOpenChange={setAssistantOpen}
-        // The fixed corner chip lands on top of the session sheet's own footer;
-        // while that sheet is up, its Assistant button is the way in — and the
-        // open panel re-registers as a layer above the sheet (see the dock).
-        sessionSheetOpen={sessionSheetOpen}
-        sessionSheetMounted={sessionSheetMounted}
-      />
-
       {/* The plan editor's save: confirm → PUT; a 409 (the calendar changed
           since the editor opened) opens the refusal with the draft intact. */}
       {isPlacedPlan && (
@@ -726,6 +710,11 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         </>
       )}
 
+      {/* Client-draft apply flow (Phase 5): a reapply confirmation → the shared
+          ApplyToClientDialog. The library template is never touched — Apply
+          materializes the edited copy onto the client's calendar. The confirm
+          precedes the dialog (start date/repeat are chosen inside it), so its
+          copy stays date-agnostic. */}
       {isClientDraft && plan && (
         <>
           <ConfirmDialog

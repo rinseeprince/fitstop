@@ -1,7 +1,7 @@
-import { useCallback, useState } from "react";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import type { SessionDraft } from "../program-builder-types";
 
 const mockSetMode = vi.fn();
 const mockChat = {
@@ -31,16 +31,32 @@ vi.mock("../program-draft-provider", () => ({
 vi.mock("./use-assistant-chat", () => ({
   useAssistantChat: () => mockChat,
 }));
+// The session sheet's body: the picker fetches the catalog on mount, and
+// units-context imports auth-context, which constructs the browser Supabase
+// client at module load and throws without env vars.
+vi.mock("../exercise-picker", () => ({
+  ExercisePicker: () => <div data-testid="exercise-picker" />,
+}));
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
 
 import { AssistantDock } from "./assistant-dock";
+import { AssistantProvider } from "./assistant-provider";
 import { AssistantMessages } from "./assistant-messages";
+import { SessionEditorSheet } from "../session-editor-sheet";
 
-// The dock's open state is owned by ProgramBuilder now (so the session-editor
-// footer can open it); this host stands in for that owner.
-function DockHost() {
-  const [open, setOpen] = useState(false);
-  return <AssistantDock open={open} onOpenChange={setOpen} />;
+// The corner host alone, under the state's owner, with no session open.
+function Dock() {
+  return (
+    <AssistantProvider>
+      <AssistantDock sessionSheetOpen={false} />
+    </AssistantProvider>
+  );
 }
+
+const openPanel = () =>
+  fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
 
 describe("AssistantDock", () => {
   beforeEach(() => {
@@ -51,25 +67,24 @@ describe("AssistantDock", () => {
   });
 
   it("renders a collapsed launcher and expands into the panel", () => {
-    render(<DockHost />);
-    const launcher = screen.getByRole("button", { name: /open the program assistant/i });
-    fireEvent.click(launcher);
+    render(<Dock />);
+    openPanel();
     expect(screen.getByText("Program assistant")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/describe the change/i)).toBeInTheDocument();
   });
 
   it("gates input behind edit mode with a switch affordance", () => {
     mockContext.mode = "view";
-    render(<DockHost />);
-    fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
+    render(<Dock />);
+    openPanel();
     expect(screen.queryByPlaceholderText(/describe the change/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /switch to edit/i }));
     expect(mockSetMode).toHaveBeenCalledWith("edit");
   });
 
   it("sends on Enter and clears the input; Escape collapses without sending", () => {
-    render(<DockHost />);
-    fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
+    render(<Dock />);
+    openPanel();
     const input = screen.getByPlaceholderText(/describe the change/i);
 
     fireEvent.change(input, { target: { value: "add a leg day" } });
@@ -78,6 +93,21 @@ describe("AssistantDock", () => {
 
     fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByText("Program assistant")).not.toBeInTheDocument();
+    expect(mockChat.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape anywhere in the panel collapses it, and the chevron does too", () => {
+    render(<Dock />);
+    openPanel();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Program assistant" }), {
+      key: "Escape",
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    openPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse assistant" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open the program assistant/i })).toBeInTheDocument();
   });
 });
 
@@ -140,8 +170,8 @@ describe("suggestion chips", () => {
   });
 
   it("sends immediately when a starter is picked", () => {
-    render(<DockHost />);
-    fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
+    render(<Dock />);
+    openPanel();
 
     fireEvent.click(screen.getByRole("button", { name: "Add 2 more weeks" }));
 
@@ -157,10 +187,8 @@ describe("suggestion chips", () => {
       mockContext.mode = state.mode;
       mockContext.isSaving = state.isSaving;
       mockChat.busy = state.busy;
-      const { unmount } = render(<DockHost />);
-      fireEvent.click(
-        screen.getByRole("button", { name: /open the program assistant/i }),
-      );
+      const { unmount } = render(<Dock />);
+      openPanel();
       expect(
         screen.queryByRole("button", { name: "Add 2 more weeks" }),
       ).not.toBeInTheDocument();
@@ -173,8 +201,8 @@ describe("suggestion chips", () => {
   it("hides the starters once a conversation exists", () => {
     mockContext.mode = "edit";
     mockChat.messages = [{ id: "1", role: "user", text: "hi" }];
-    render(<DockHost />);
-    fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
+    render(<Dock />);
+    openPanel();
     expect(
       screen.queryByRole("button", { name: "Add 2 more weeks" }),
     ).not.toBeInTheDocument();
@@ -182,94 +210,134 @@ describe("suggestion chips", () => {
   });
 });
 
-// The open panel is a Radix layer of its own, so it stays usable over the
-// modal session sheet; it re-registers when that sheet opens so it sits
-// above it, and Escape collapses it through the layer.
-describe("the panel as its own layer", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockContext.mode = "edit";
-    mockChat.busy = false;
-    mockChat.pending = null;
-  });
+// The session sheet is a MODAL Radix layer: it writes pointer-events none onto
+// the body and auto onto its own content, traps focus inside that content,
+// aria-hides everything outside it and locks scrolling outside it. The panel
+// must be usable over it whichever opened first, so while the sheet is open
+// the sheet hosts the panel inside its content and the corner renders nothing.
+// This is ProgramBuilder's wiring: one provider above both hosts, both reading
+// the sheet's open flag.
+describe("the panel inside the session sheet", () => {
+  const session: SessionDraft = {
+    uid: "sess-1",
+    name: "Push Day",
+    focus: null,
+    estimatedDurationMinutes: null,
+    calorieSurplusPercentage: null,
+    notes: null,
+    sessionType: "training",
+    groups: [],
+  };
+  const noop = () => undefined;
+  const sheetProps = {
+    session,
+    mode: "edit" as const,
+    defaultSurplusPercentage: null,
+    onUpdateSession: noop,
+    onAddExercise: noop,
+    onRemoveExercise: noop,
+    onEditExercise: noop,
+    onLinkExercises: noop,
+    onUnlinkGroup: noop,
+    onMoveExercise: noop,
+    onMoveGroup: noop,
+    onUpdateGroup: noop,
+    onSpecEdit: noop,
+    onSaveAsWorkout: noop,
+    isSavingWorkout: false,
+  };
 
-  it("is a dialog that re-registers when the session sheet's content mounts, and hides the launcher meanwhile", () => {
-    const { rerender } = render(<AssistantDock open onOpenChange={vi.fn()} sessionSheetOpen={false} />);
-    const before = screen.getByRole("dialog");
-    expect(before).toHaveTextContent("Program assistant");
-
-    rerender(<AssistantDock open onOpenChange={vi.fn()} sessionSheetOpen sessionSheetMounted />);
-    const after = screen.getByRole("dialog");
-    expect(after).not.toBe(before);
-    expect(after).toHaveTextContent("Program assistant");
-
-    rerender(<AssistantDock open={false} onOpenChange={vi.fn()} sessionSheetOpen />);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /open the program assistant/i })).not.toBeInTheDocument();
-  });
-
-  it("Escape anywhere in the panel collapses it through the layer, once", () => {
-    const onOpenChange = vi.fn();
-    render(<AssistantDock open onOpenChange={onOpenChange} />);
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-    expect(onOpenChange).toHaveBeenCalledTimes(1);
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-});
-
-// Radix turns pointer events off outside the top-most modal layer and marks
-// every layer's content inline: "auto" above the sheet, "none" below it. The
-// panel must read "auto" whichever opened first — the sheet's content mounts a
-// render after the sheet opens, which is what the mount signal is for.
-describe("the panel over a modal session sheet", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockContext.mode = "edit";
-    mockChat.busy = false;
-    mockChat.pending = null;
-  });
-
-  function Both({ dockFirst }: { dockFirst: boolean }) {
-    const [sheetOpen, setSheetOpen] = useState(!dockFirst);
-    const [dockOpen, setDockOpen] = useState(dockFirst);
-    const [mounted, setMounted] = useState(false);
-    const contentRef = useCallback((element: HTMLDivElement | null) => setMounted(element != null), []);
+  function Builder({ sessionOpen = false }: { sessionOpen?: boolean }) {
+    const [sheetOpen, setSheetOpen] = useState(sessionOpen);
     return (
-      <>
+      <AssistantProvider>
         <button type="button" onClick={() => setSheetOpen(true)}>
-          Open sheet
+          Open session
         </button>
-        <button type="button" onClick={() => setDockOpen(true)}>
-          Open dock
-        </button>
-        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetContent ref={contentRef}>
-            <SheetTitle>A session</SheetTitle>
-          </SheetContent>
-        </Sheet>
-        <AssistantDock
-          open={dockOpen}
-          onOpenChange={setDockOpen}
-          sessionSheetOpen={sheetOpen}
-          sessionSheetMounted={mounted}
+        <SessionEditorSheet
+          {...sheetProps}
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
         />
-      </>
+        <AssistantDock sessionSheetOpen={sheetOpen} />
+      </AssistantProvider>
     );
   }
-  // Radix marks everything outside a modal sheet aria-hidden, the panel
-  // included, so the role query must look past that.
-  const panel = () => screen.getByRole("dialog", { name: "Program assistant", hidden: true });
 
-  it("keeps its pointer events when the sheet opens over an already open panel", () => {
-    render(<Both dockFirst />);
-    fireEvent.click(screen.getByText("Open sheet"));
-    expect(screen.getByRole("dialog", { name: "A session" })).toBeInTheDocument();
-    expect(panel().style.pointerEvents).toBe("auto");
+  // Without `hidden: true`: an aria-hidden panel is not found.
+  const panel = () => screen.getByRole("dialog", { name: "Program assistant" });
+  const sheet = () => screen.getByRole("dialog", { name: "Push Day" });
+  const launcher = () => screen.queryByRole("button", { name: /open the program assistant/i });
+  // What pointer-events resolves to: Radix writes it inline on the body and on
+  // each layer's content, and everything else inherits its nearest ancestor's.
+  const pointerEvents = (element: HTMLElement): string => {
+    for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+      if (node.style.pointerEvents) return node.style.pointerEvents;
+    }
+    return "auto";
+  };
+  const proveHosted = () => {
+    expect(document.body.style.pointerEvents).toBe("none");
+    const hosted = panel();
+    expect(sheet().contains(hosted)).toBe(true);
+    expect(pointerEvents(hosted)).toBe("auto");
+    // One panel on the page — none left in the corner under the sheet.
+    expect(
+      screen.getAllByRole("dialog", { name: "Program assistant", hidden: true }),
+    ).toHaveLength(1);
+    expect(launcher()).toBeNull();
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockContext.mode = "edit";
+    mockChat.busy = false;
+    mockChat.pending = null;
   });
 
-  it("keeps its pointer events when opened over the sheet", () => {
-    render(<Both dockFirst={false} />);
-    fireEvent.click(screen.getByText("Open dock"));
-    expect(panel().style.pointerEvents).toBe("auto");
+  it("is hosted by the sheet, with pointer events and not aria-hidden, when the sheet opens over an already open panel", () => {
+    render(<Builder />);
+    openPanel();
+    expect(panel()).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Open session"));
+    proveHosted();
+  });
+
+  it("is hosted by the sheet, with pointer events and not aria-hidden, when opened from the sheet's footer", () => {
+    render(<Builder sessionOpen />);
+    expect(launcher()).toBeNull();
+
+    fireEvent.click(within(sheet()).getByRole("button", { name: "Assistant" }));
+    proveHosted();
+  });
+
+  it("Escape inside the panel collapses it and the sheet stays; Escape anywhere else in the sheet closes the sheet", () => {
+    render(<Builder sessionOpen />);
+    fireEvent.click(within(sheet()).getByRole("button", { name: "Assistant" }));
+
+    fireEvent.keyDown(screen.getByPlaceholderText(/describe the change/i), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Program assistant" })).toBeNull();
+    expect(sheet()).toBeInTheDocument();
+
+    fireEvent.keyDown(within(sheet()).getByRole("button", { name: "Done" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Push Day" })).toBeNull();
+    expect(launcher()).toBeInTheDocument();
+  });
+
+  it("the open panel and the command being typed survive a session opening and closing", () => {
+    render(<Builder />);
+    openPanel();
+    fireEvent.change(screen.getByPlaceholderText(/describe the change/i), {
+      target: { value: "add a leg d" },
+    });
+
+    fireEvent.click(screen.getByText("Open session"));
+    expect(within(sheet()).getByPlaceholderText(/describe the change/i)).toHaveValue("add a leg d");
+
+    fireEvent.click(within(sheet()).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog", { name: "Push Day" })).toBeNull();
+    expect(panel()).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/describe the change/i)).toHaveValue("add a leg d");
   });
 });

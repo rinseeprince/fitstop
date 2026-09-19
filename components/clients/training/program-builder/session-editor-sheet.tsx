@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { BookmarkPlus, Loader2, Sparkles } from "lucide-react";
 import {
   Sheet,
@@ -11,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import type { SessionDraft } from "./program-builder-types";
 import { SessionEditorBody, type SessionEditorBodyProps } from "./session-editor-body";
 import { SessionHero } from "./session-hero";
+import { useAssistant } from "./assistant/assistant-provider";
+import { AssistantPanel } from "./assistant/assistant-panel";
 import { countSessionExercises } from "@/utils/exercise-groups";
 
 // Click-to-edit chrome for one of a day cell's sessions: the editor body in a
@@ -24,6 +27,15 @@ import { countSessionExercises } from "@/utils/exercise-groups";
 // mounted with chrome="hero" and renders neither. The body sits on #f4f7f6 with
 // borderless cards — a deliberate deviation from the white-bodied sheet recipe,
 // because spacing-not-borders outranks it here.
+//
+// While it is open the sheet hosts the program assistant's panel: the sheet is
+// a modal layer, so a panel anywhere else on the page would be given no pointer
+// events, bounced out of by the focus trap, hidden from screen readers and
+// locked out of wheel scrolling. As a child of the sheet's own content it is
+// inside every one of those rules by construction (assistant-panel.tsx; the
+// state is the provider's, so the conversation is the one the corner dock
+// showed). Escape belongs to whatever it was pressed in: inside the panel it
+// collapses the panel, anywhere else it closes the sheet.
 type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session" | "chrome"> & {
   // Its own prop, never derived from `session`: a closing sheet keeps
   // rendering the session it showed (CONVENTIONS §7 → "No frame disagrees").
@@ -32,13 +44,6 @@ type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session" | "chrome"
   onClose: () => void;
   onSaveAsWorkout: (sessionUid: string) => void;
   isSavingWorkout: boolean;
-  // Opens the program assistant. Optional because only the builder mounts one;
-  // without it the footer's left slot is simply empty.
-  onOpenAssistant?: () => void;
-  // The sheet's content element, reported when it mounts and unmounts — a
-  // render AFTER the sheet opens, since Radix portals on a layout effect. The
-  // assistant dock re-registers its own layer on it (see assistant-dock.tsx).
-  contentRef?: (element: HTMLDivElement | null) => void;
 };
 
 export function SessionEditorSheet({
@@ -49,11 +54,11 @@ export function SessionEditorSheet({
   // Destructured out here — these must never reach the {...bodyProps} spread.
   onSaveAsWorkout,
   isSavingWorkout,
-  onOpenAssistant,
-  contentRef,
   ...bodyProps
 }: SessionEditorSheetProps) {
   const editable = mode === "edit";
+  const assistant = useAssistant();
+  const panelRef = useRef<HTMLDivElement>(null);
 
   return (
     <Sheet
@@ -63,10 +68,18 @@ export function SessionEditorSheet({
       }}
     >
       <SheetContent
-        ref={contentRef}
         side="right"
         hideClose
         className="flex w-full flex-col gap-0 bg-[#f4f7f6] p-0 sm:w-[780px] sm:max-w-full"
+        // Radix brings every Escape on the page to the top layer — this sheet.
+        // One pressed inside the hosted panel is the panel's to answer (its own
+        // key handler collapses it), so the sheet declines it and stays;
+        // anywhere else in the sheet, the sheet closes as before.
+        onEscapeKeyDown={(event) => {
+          if (event.target instanceof Node && panelRef.current?.contains(event.target)) {
+            event.preventDefault();
+          }
+        }}
       >
         {session && (
           <>
@@ -105,16 +118,14 @@ export function SessionEditorSheet({
               />
             </div>
 
-            {/* White footer on the grey body. The Assistant used to float over
-                this corner as a fixed launcher; it lives here now so there is
+            {/* White footer on the grey body. The assistant's corner chip is
+                hidden while this sheet is up, so this button is the way in —
                 one row of actions rather than two overlapping sets. */}
             <div className="flex items-center gap-2 border-t border-[rgba(13,148,136,0.08)] bg-white px-5 py-3">
-              {onOpenAssistant && (
-                <Button variant="outline" onClick={onOpenAssistant}>
-                  <Sparkles className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
-                  Assistant
-                </Button>
-              )}
+              <Button variant="outline" onClick={() => assistant.setOpen(true)}>
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
+                Assistant
+              </Button>
               <div className="flex-1" />
               <Button
                 variant="outline"
@@ -136,6 +147,19 @@ export function SessionEditorSheet({
               </Button>
             </div>
           </>
+        )}
+
+        {/* The hosted panel, last in the content so the tab order reaches it
+            after Done. The content is flush with the viewport's right and
+            bottom edges, so bottom-5 right-5 here is the corner the dock uses
+            over the grid: the panel lands where it was, over the footer's right
+            end. It is part of the content, so it arrives with the sheet —
+            during the sheet's slide-in it travels with it — and on `open`, not
+            `session`: a closing sheet keeps its session for its slide-out but
+            hands the panel back to the corner dock in the same commit, so there
+            is one panel on every frame and it never moves on a close. */}
+        {open && assistant.open && (
+          <AssistantPanel ref={panelRef} className="absolute bottom-5 right-5" />
         )}
       </SheetContent>
     </Sheet>

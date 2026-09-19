@@ -15,6 +15,12 @@ vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
 }));
 
+// The sheet hosts the program assistant's panel while it is open and its
+// footer opens it; here the panel is collapsed and nothing opens it.
+vi.mock("./assistant/assistant-provider", () => ({
+  useAssistant: () => ({ open: false, setOpen: () => undefined }),
+}));
+
 const session: SessionDraft = {
   uid: "sess-1",
   name: "Push Day",

@@ -51,28 +51,3 @@ describe('SheetContent and the toaster', () => {
   })
 })
 
-// The program assistant's panel floats over the modal session sheet as a
-// layer of its own; a press in it must not read as an outside click either
-// (lib/outside-interaction.ts). The markup is the dock's attribute, not the dock.
-describe('SheetContent and the assistant panel', () => {
-  it('stays open when the assistant panel over it is pressed', async () => {
-    const onOpenChange = vi.fn()
-    render(
-      <>
-        <div data-assistant-dock="">
-          <button type="button">Collapse assistant</button>
-        </div>
-        <Sheet open onOpenChange={onOpenChange}>
-          <SheetContent>
-            <SheetTitle>A sheet</SheetTitle>
-          </SheetContent>
-        </Sheet>
-      </>,
-    )
-    await armed()
-
-    fireEvent.pointerDown(screen.getByText('Collapse assistant'))
-
-    expect(onOpenChange).not.toHaveBeenCalled()
-  })
-})
