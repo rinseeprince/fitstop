@@ -181,6 +181,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
       defaultExerciseDraftFromCatalog({
         name: exercise.name,
         exerciseId: exercise.id,
+        exerciseType: exercise.exerciseType,
       }),
     );
   };

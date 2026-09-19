@@ -49,6 +49,8 @@ import {
   getExerciseCatalogDelta,
   updateCatalogExercise,
   deleteCatalogExercise,
+  createExercise,
+  getExercisesForCoach,
 } from "./exercise-catalog-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -410,5 +412,61 @@ describe("exercise-catalog-service", () => {
       expect(suggestExerciseCandidates(rows as never, "xyz")).toEqual([]);
       expect(mockFrom).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("exercise types (migration 185)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const stored = (over: Record<string, unknown>) => ({
+    id: "e1",
+    coach_id: null,
+    name: "Rowing Machine",
+    aliases: [],
+    muscle_group: "full_body",
+    equipment: "machine",
+    category: "cardio",
+    exercise_type: "erg",
+    created_at: "",
+    updated_at: "",
+    ...over,
+  });
+
+  it("maps the stored type, and reads anything else as Strength rather than trusting the column", async () => {
+    const q = createMockQuery({
+      data: [stored({}), stored({ id: "e2", coach_id: "coach-1", name: "Odd", exercise_type: "bogus" })],
+      error: null,
+    });
+    mockFrom.mockReturnValue(q as any);
+
+    const result = await getExercisesForCoach("coach-1");
+
+    expect(result.map((e) => e.exerciseType)).toEqual(["erg", "strength"]);
+  });
+
+  it("creates a coach exercise as Strength unless told otherwise", async () => {
+    const q = createMockQuery({ data: stored({ coach_id: "coach-1", exercise_type: "strength" }), error: null });
+    mockFrom.mockReturnValue(q as any);
+
+    const made = await createExercise("coach-1", { name: "Sled Sprint" });
+    expect(q.insert).toHaveBeenCalledWith(expect.objectContaining({ coach_id: "coach-1", exercise_type: "strength" }));
+    expect(made.exerciseType).toBe("strength");
+
+    await createExercise("coach-1", { name: "Sled Sprint", exerciseType: "carry_sled" });
+    expect(q.insert).toHaveBeenLastCalledWith(expect.objectContaining({ exercise_type: "carry_sled" }));
+  });
+
+  it("updates a coach exercise's type, and leaves it alone when the edit doesn't name one", async () => {
+    const q = createMockQuery({ data: stored({ coach_id: "coach-1" }), error: null });
+    mockFrom.mockReturnValue(q as any);
+
+    const updated = await updateCatalogExercise("e1", "coach-1", { exerciseType: "erg" });
+    expect(q.update).toHaveBeenCalledWith({ exercise_type: "erg" });
+    expect(updated.exerciseType).toBe("erg");
+
+    await updateCatalogExercise("e1", "coach-1", { name: "Rower" });
+    expect(q.update).toHaveBeenLastCalledWith({ name: "Rower" });
   });
 });

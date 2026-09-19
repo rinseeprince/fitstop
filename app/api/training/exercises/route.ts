@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { createCatalogExerciseSchema } from "@/lib/validations/training";
 import {
   getExercisesForCoach,
   createExercise,
@@ -33,7 +34,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create a coach-specific exercise
+// POST - Create a coach-specific exercise. Its type decides the column preset
+// the exercise starts on when it is added to a session (Strength unless the
+// form says otherwise).
 export async function POST(request: NextRequest) {
   const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
@@ -48,21 +51,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-
-    if (!body.name || typeof body.name !== "string" || !body.name.trim()) {
+    const parsed = createCatalogExerciseSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Exercise name is required" },
+        { success: false, error: parsed.error.issues[0]?.message || "Invalid input" },
         { status: 400 }
       );
     }
 
-    const exercise = await createExercise(coachId, {
-      name: body.name.trim(),
-      muscleGroup: body.muscleGroup,
-      equipment: body.equipment,
-      category: body.category,
-      aliases: body.aliases,
-    });
+    const exercise = await createExercise(coachId, parsed.data);
 
     return NextResponse.json({ success: true, exercise }, { status: 201 });
   } catch (error) {

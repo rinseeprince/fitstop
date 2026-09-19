@@ -37,6 +37,7 @@ function catalogEntry(over: Partial<Exercise>): Exercise {
     muscleGroup: null,
     equipment: null,
     category: null,
+    exerciseType: "strength",
     aliases: [],
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",

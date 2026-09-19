@@ -36,7 +36,7 @@ describe("the seven presets", () => {
     });
   });
 
-  it("Strength IS the columns a new exercise starts on", () => {
+  it("Strength IS the columns a free-text exercise starts on", () => {
     expect(COLUMN_PRESET_FIELDS.strength).toBe(DEFAULT_PRESCRIBED_FIELDS);
   });
 

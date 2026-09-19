@@ -70,13 +70,14 @@ function mockClientRowError() {
   return query;
 }
 
-// Lean delta rows — 5 columns, the sparse fieldset the service selects (not SELECT *).
+// Lean delta rows — 6 columns, the sparse fieldset the service selects (not SELECT *).
 const MOCK_DELTA = [
   {
     id: "ex-1",
     name: "Bench Press",
     muscle_group: "chest",
     equipment: "barbell",
+    exercise_type: "strength",
     updated_at: "2026-05-01T00:00:00+00:00",
   },
   {
@@ -84,6 +85,7 @@ const MOCK_DELTA = [
     name: "Bent-over Row",
     muscle_group: "back",
     equipment: "barbell",
+    exercise_type: "strength",
     updated_at: "2026-05-02T00:00:00+00:00",
   },
 ];
@@ -107,9 +109,10 @@ describe("GET /api/client/exercises/catalog", () => {
     expect(data).toEqual({ success: true, exercises: MOCK_DELTA });
     expect(getExerciseCatalogDelta).toHaveBeenCalledWith(COACH_ID, undefined);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    // Sparse fieldset: rows carry only the 5 sync columns, no SELECT * extras.
+    // Sparse fieldset: rows carry only the 6 sync columns, no SELECT * extras.
     expect(Object.keys(data.exercises[0]).sort()).toEqual([
       "equipment",
+      "exercise_type",
       "id",
       "muscle_group",
       "name",

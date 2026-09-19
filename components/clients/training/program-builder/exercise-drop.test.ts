@@ -111,7 +111,7 @@ describe("destinationFor", () => {
 });
 
 describe("dropChangesSession", () => {
-  const ex = (uid: string) => ({ ...defaultExerciseDraftFromCatalog({ name: uid, exerciseId: null }), uid });
+  const ex = (uid: string) => ({ ...defaultExerciseDraftFromCatalog({ name: uid, exerciseId: null, exerciseType: null }), uid });
   const lone = (uid: string): ExerciseGroupDraft => ({ uid: `grp-${uid}`, ...STRAIGHT_SETS, exercises: [ex(uid)] });
   const session: SessionDraft = {
     uid: "sess",

@@ -13,12 +13,27 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { toast } from "sonner"
 import type { Exercise } from "@/types/training"
+import {
+  DEFAULT_EXERCISE_TYPE,
+  EXERCISE_TYPE_LABELS,
+  EXERCISE_TYPES,
+  toExerciseType,
+  type ExerciseType,
+} from "@/utils/exercise-types"
 
-// One dialog for both create (exercise undefined — first UI caller of the
-// existing POST /api/training/exercises) and edit (coach-owned rows only;
-// PATCH). Fields mirror the catalog columns; category is a free string.
+// One dialog for both create (exercise undefined — POST /api/training/exercises)
+// and edit (coach-owned rows only; PATCH). Fields mirror the catalog columns:
+// the type is one of the six (it decides the column preset the exercise starts
+// on in a session), category is a free string.
 //
 // The host keys it by the opening (`useDialogSubject`'s openKey), so each open
 // mounts it fresh on its exercise and a close leaves the closing card — its
@@ -37,6 +52,9 @@ export function ExerciseFormDialog({
 }) {
   const isEdit = exercise != null
   const [name, setName] = useState(exercise?.name ?? "")
+  const [exerciseType, setExerciseType] = useState<ExerciseType>(
+    exercise?.exerciseType ?? DEFAULT_EXERCISE_TYPE,
+  )
   const [muscleGroup, setMuscleGroup] = useState(exercise?.muscleGroup ?? "")
   const [equipment, setEquipment] = useState(exercise?.equipment ?? "")
   const [category, setCategory] = useState(exercise?.category ?? "")
@@ -49,6 +67,7 @@ export function ExerciseFormDialog({
     try {
       const body = {
         name: trimmed,
+        exerciseType,
         muscleGroup: muscleGroup.trim() || null,
         equipment: equipment.trim() || null,
         category: category.trim() || null,
@@ -100,11 +119,29 @@ export function ExerciseFormDialog({
           <DialogDescription>
             {isEdit
               ? "Changes apply everywhere this exercise is referenced."
-              : "A custom exercise for your catalog — taggable so it filters properly."}
+              : "A custom exercise for your catalog. Its type decides the columns it starts on when you add it to a session."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-1">
           {field("exercise-name", "Name", name, setName, "e.g. Barbell Back Squat")}
+          <div className="space-y-1.5">
+            <Label htmlFor="exercise-type">Type</Label>
+            <Select
+              value={exerciseType}
+              onValueChange={(value) => setExerciseType(toExerciseType(value))}
+            >
+              <SelectTrigger id="exercise-type" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {EXERCISE_TYPES.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {EXERCISE_TYPE_LABELS[type]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           {field("exercise-muscle", "Muscle group", muscleGroup, setMuscleGroup, "e.g. legs")}
           {field("exercise-equipment", "Equipment", equipment, setEquipment, "e.g. barbell")}
           {field("exercise-category", "Category", category, setCategory, "e.g. compound")}

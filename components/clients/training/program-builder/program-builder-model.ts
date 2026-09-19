@@ -1,4 +1,5 @@
-import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
+import { presetColumnsForType } from "@/utils/column-presets";
+import type { ExerciseType } from "@/utils/exercise-types";
 import {
   progressExercise,
   type ProgressionRule,
@@ -419,26 +420,39 @@ export function patchChanges<T extends object>(obj: T, patch: Partial<T>): boole
 // =============================================================================
 
 /**
+ * What a catalog pick hands the builder: the name, the catalog row's id (null
+ * for free text, which the server resolves or creates on save) and the row's
+ * type (null for free text — "with no type, on Strength", §4.4).
+ */
+export type CatalogPick = {
+  name: string;
+  exerciseId: string | null;
+  exerciseType: ExerciseType | null;
+};
+
+/**
  * The ONE default shape a catalog pick becomes when added to a session — a
- * compact-only exercise (3 working sets, 8–12 reps). Shared by the in-editor
- * ExercisePicker and the S4.5 drag-an-exercise-onto-a-session gesture so both
- * entry points produce byte-identical drafts. `exerciseId` may be null (free
- * text); the server resolves/creates the catalog row on save.
+ * compact-only exercise of 3 working sets on its type's column preset, 8–12
+ * reps where those columns ask for reps. Shared by the in-editor
+ * ExercisePicker, the drag-an-exercise-onto-a-session gesture and the
+ * assistant's add_exercise, so every entry point produces the same draft.
  */
 export function defaultExerciseDraftFromCatalog({
   name,
   exerciseId,
-}: {
-  name: string;
-  exerciseId: string | null;
-}): Omit<ExerciseDraft, "uid"> {
+  exerciseType,
+}: CatalogPick): Omit<ExerciseDraft, "uid"> {
+  const prescribedFields = presetColumnsForType(exerciseType);
+  // An exercise whose columns don't ask for reps (a run, a hold) doesn't start
+  // with a rep range hidden behind them; its sets are still its intervals.
+  const asksReps = prescribedFields.includes("reps");
   return {
     exerciseId,
     name,
     setSpecs: null,
     sets: 3,
-    repsMin: 8,
-    repsMax: 12,
+    repsMin: asksReps ? 8 : null,
+    repsMax: asksReps ? 12 : null,
     repsTarget: null,
     rpeTarget: null,
     percentage1rm: null,
@@ -447,8 +461,6 @@ export function defaultExerciseDraftFromCatalog({
     isWarmup: false,
     notes: null,
     videoUrl: null,
-    // A new exercise starts on the Strength preset — today's five columns
-    // (commit 13 starts it on its type's preset).
-    prescribedFields: [...DEFAULT_PRESCRIBED_FIELDS],
+    prescribedFields,
   };
 }

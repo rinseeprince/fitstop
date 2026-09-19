@@ -13,6 +13,7 @@ import { filterExercisesByQuery } from "@/lib/exercise-search";
 import { ExerciseFormDialog } from "@/components/programs/exercise-form-dialog";
 import { RowActions } from "@/components/programs/shared/row-actions";
 import type { Exercise } from "@/types/training";
+import { EXERCISE_TYPE_LABELS } from "@/utils/exercise-types";
 import type { LibraryExerciseDragData } from "./use-program-dnd";
 import {
   FOCUS_RING,
@@ -48,7 +49,9 @@ function LibraryExerciseCard({
     disabled: !editable,
   });
   const isCustom = exercise.coachId != null;
-  const meta = [exercise.muscleGroup, exercise.equipment]
+  // The type reads last, after the free-text tags: it is what decides the
+  // columns the exercise starts on when it is added to a session.
+  const meta = [exercise.muscleGroup, exercise.equipment, EXERCISE_TYPE_LABELS[exercise.exerciseType]]
     .filter(Boolean)
     .join(" · ");
 

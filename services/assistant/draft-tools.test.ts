@@ -69,6 +69,7 @@ function row(overrides: Partial<ExerciseRow> & Pick<ExerciseRow, "id" | "name">)
     muscle_group: null,
     equipment: null,
     category: null,
+    exercise_type: "strength",
     aliases: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
@@ -76,10 +77,13 @@ function row(overrides: Partial<ExerciseRow> & Pick<ExerciseRow, "id" | "name">)
   } as ExerciseRow;
 }
 
+const RUN_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
 const CATALOG: ExerciseRow[] = [
   row({ id: SQUAT_ID, name: "Back Squat", category: "Compound", aliases: ["squat"] }),
   row({ id: CURL_ID, name: "Leg Curl", category: "isolation" }),
   row({ id: BENCH_ID, name: "Bench Press", category: "compound", aliases: ["bp"] }),
+  row({ id: RUN_ID, name: "Running", muscle_group: "full_body", category: "cardio", exercise_type: "endurance", aliases: ["run"] }),
 ];
 
 const workingSet = (load: number): SetSpec => ({
@@ -448,13 +452,16 @@ describe("set programming tools", () => {
     expect(working.every((s) => s.rest_seconds === 180)).toBe(true);
   });
 
-  it("add_exercise starts a new exercise on today's five columns and refuses an RPE of 0", async () => {
+  it("add_exercise starts a Strength exercise on the strength columns, unnamed, and refuses an RPE of 0", async () => {
     const ws = makeWs();
     const add = tool(buildExerciseTools(ws), "add_exercise");
-    await add.run({ week: 1, day: 1, name: "Bench Press" } as never);
+    const out = await add.run({ week: 1, day: 1, name: "Bench Press" } as never);
+    expect(out).not.toMatch(/Columns:/);
     const op = ws.ops[0];
     if (op.type !== "add_exercise") throw new Error("expected add_exercise");
     expect(op.group.exercises[0].prescribedFields).toEqual(["set_type", "reps", "load", "rpe", "rest"]);
+    expect(op.group.exercises[0].repsMin).toBe(8);
+    expect(op.group.exercises[0].repsMax).toBe(12);
     // The tool schema bounds rpeTarget at 1 (SET_SPEC_MEASURES.rpe.floor).
     const schema = (add as unknown as { input_schema: { properties: { rpeTarget: { minimum: number } } } }).input_schema;
     expect(schema.properties.rpeTarget.minimum).toBe(1);
@@ -1738,5 +1745,43 @@ describe("measurement columns and presets (commit 12)", () => {
     const replayed = applyDraftOps(coachDraft, received, { target: "library" });
     expect(replayed.skipped).toEqual([]);
     expect(replayed.draft).toEqual(ws.draft);
+  });
+});
+
+describe("exercise types (commit 13)", () => {
+  const ENDURANCE = ["set_type", "distance", "duration", "pace", "heart_rate_zone", "rest"];
+  const STRENGTH = ["set_type", "reps", "load", "rpe", "rest"];
+
+  it("add_exercise starts a catalog exercise on its type's preset and names the columns; a preset the coach names wins", async () => {
+    const ws = makeWs();
+    const add = tool(buildExerciseTools(ws), "add_exercise");
+    const out = await add.run({ week: 1, day: 1, name: "Running" } as never);
+    expect(out).toMatch(/Columns: Set type, Distance, Duration, Pace, HR zone, Rest\./);
+    const op = ws.ops[0];
+    if (op.type !== "add_exercise") throw new Error("expected add_exercise");
+    const added = op.group.exercises[0];
+    expect(added.exerciseId).toBe(RUN_ID);
+    expect(added.prescribedFields).toEqual(ENDURANCE);
+    expect(added.repsMin).toBeNull();
+    expect(added.repsMax).toBeNull();
+    expect(added.sets).toBe(3);
+    expect(draftOpSchema.safeParse(JSON.parse(JSON.stringify(op))).success).toBe(true);
+
+    // The alias resolves to the same row; the coach's preset replaces the type's.
+    const named = await add.run({ week: 1, day: 1, name: "run", columnsPreset: "strength" } as never);
+    expect(named).toMatch(/Columns: Set type, Reps, Load, RPE, Rest\./);
+    const op2 = ws.ops[1];
+    if (op2.type !== "add_exercise") throw new Error("expected add_exercise");
+    expect(op2.group.exercises[0].exerciseId).toBe(RUN_ID);
+    expect(op2.group.exercises[0].prescribedFields).toEqual(STRENGTH);
+    expect(op2.group.exercises[0].repsMin).toBe(8);
+    expect(op2.group.exercises[0].repsMax).toBe(12);
+  });
+
+  it("search_exercises names each exercise's type", async () => {
+    const ws = makeWs();
+    const search = tool(buildReadTools(ws), "search_exercises");
+    expect(await search.run({ query: "running" } as never)).toBe("- Running — full_body — type endurance");
+    expect(await search.run({ query: "bench" } as never)).toBe("- Bench Press — type strength — compound");
   });
 });

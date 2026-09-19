@@ -71,6 +71,7 @@ describe("PATCH /api/training/exercises/[exerciseId]", () => {
       muscleGroup: "legs",
       equipment: null,
       category: null,
+      exerciseType: "strength",
       aliases: [],
       createdAt: "2026-06-01T00:00:00Z",
       updatedAt: "2026-07-01T00:00:00Z",
@@ -84,6 +85,28 @@ describe("PATCH /api/training/exercises/[exerciseId]", () => {
       name: "Walking Lunge",
       muscleGroup: "legs",
     });
+  });
+
+  it("passes the exercise's type through, and refuses one that isn't a type", async () => {
+    mockUpdate.mockResolvedValue({
+      id: "ex-1",
+      coachId: "coach-1",
+      name: "Walking Lunge",
+      muscleGroup: "legs",
+      equipment: null,
+      category: null,
+      exerciseType: "carry_sled",
+      aliases: [],
+      createdAt: "2026-06-01T00:00:00Z",
+      updatedAt: "2026-07-01T00:00:00Z",
+    });
+    const res = await PATCH(patchRequest({ exerciseType: "carry_sled" }), params);
+    expect(res.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalledWith("ex-1", "coach-1", { exerciseType: "carry_sled" });
+
+    const refused = await PATCH(patchRequest({ exerciseType: "cardio" }), params);
+    expect(refused.status).toBe(400);
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
   });
 
   it("maps Exercise not found (global rows) to 404", async () => {

@@ -1836,6 +1836,7 @@ export type Database = {
           coach_id: string | null
           created_at: string
           equipment: string | null
+          exercise_type: string
           id: string
           muscle_group: string | null
           name: string
@@ -1847,6 +1848,7 @@ export type Database = {
           coach_id?: string | null
           created_at?: string
           equipment?: string | null
+          exercise_type?: string
           id?: string
           muscle_group?: string | null
           name: string
@@ -1858,6 +1860,7 @@ export type Database = {
           coach_id?: string | null
           created_at?: string
           equipment?: string | null
+          exercise_type?: string
           id?: string
           muscle_group?: string | null
           name?: string

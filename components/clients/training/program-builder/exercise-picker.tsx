@@ -6,16 +6,20 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { MIN_SEARCH_CHARS, useExerciseSearch } from "@/hooks/use-exercise-search";
 import { useRecentExercises } from "@/hooks/use-recent-exercises";
+import type { ExerciseType } from "@/utils/exercise-types";
 import { FOCUS_RING, LABEL_CLASS, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY } from "./builder-tokens";
+import type { CatalogPick } from "./program-builder-model";
 
 // Single-EXERCISE catalog picker (saved-session insertion is Phase 3).
 // Instant search over the SWR-cached catalog (name + aliases) — every match
-// renders inside a scrollable list, nothing is dropped. Free-text fallback
-// adds by name with exerciseId null; the server resolves / creates the
-// catalog row on save (resolveExercises). While the query is empty, a
-// focused picker offers the coach's recently used exercises instead.
+// renders inside a scrollable list, nothing is dropped. A pick carries the
+// row's type, which decides the columns the exercise starts on. Free-text
+// fallback adds by name with exerciseId and exerciseType null; the server
+// resolves / creates the catalog row on save (resolveExercises). While the
+// query is empty, a focused picker offers the coach's recently used
+// exercises instead.
 type ExercisePickerProps = {
-  onPick: (pick: { name: string; exerciseId: string | null }) => void;
+  onPick: (pick: CatalogPick) => void;
 };
 
 const ROW_CLASS =
@@ -28,8 +32,8 @@ export function ExercisePicker({ onPick }: ExercisePickerProps) {
   const { results, isLoading } = useExerciseSearch(query);
   const { recent } = useRecentExercises();
 
-  const pick = (name: string, exerciseId: string | null) => {
-    onPick({ name, exerciseId });
+  const pick = (name: string, exerciseId: string | null, exerciseType: ExerciseType | null) => {
+    onPick({ name, exerciseId, exerciseType });
     setQuery("");
     // Re-focus the input: picking unmounts the clicked row, and a focused
     // element removed from the DOM fires no blur — `focused` would strand
@@ -80,7 +84,7 @@ export function ExercisePicker({ onPick }: ExercisePickerProps) {
                 type="button"
                 className={ROW_CLASS}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pick(exercise.name, exercise.id)}
+                onClick={() => pick(exercise.name, exercise.id, exercise.exerciseType)}
               >
                 <span className={cn("min-w-0 flex-1 truncate text-xs", TEXT_PRIMARY)}>
                   {exercise.name}
@@ -104,7 +108,7 @@ export function ExercisePicker({ onPick }: ExercisePickerProps) {
                 TEXT_SECONDARY,
               )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(trimmed, null)}
+              onClick={() => pick(trimmed, null, null)}
             >
               <Plus className="h-3 w-3" strokeWidth={1.5} />
               Use &ldquo;{trimmed}&rdquo;
@@ -132,7 +136,7 @@ export function ExercisePicker({ onPick }: ExercisePickerProps) {
               // Keep the input focused through the click (Safari never focuses
               // buttons on mousedown, so relatedTarget alone can't cover this).
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(exercise.name, exercise.exerciseId)}
+              onClick={() => pick(exercise.name, exercise.exerciseId, exercise.exerciseType)}
             >
               <span className={cn("min-w-0 flex-1 truncate text-xs", TEXT_PRIMARY)}>
                 {exercise.name}

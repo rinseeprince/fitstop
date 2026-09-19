@@ -68,6 +68,7 @@ vi.mock("@/hooks/use-exercise-catalog", () => ({
         muscleGroup: "chest",
         equipment: "barbell",
         category: "compound",
+        exerciseType: "strength",
         aliases: [],
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",

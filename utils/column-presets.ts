@@ -1,4 +1,10 @@
 import {
+  DEFAULT_EXERCISE_TYPE,
+  EXERCISE_TYPE_LABELS,
+  EXERCISE_TYPES,
+  type ExerciseType,
+} from "./exercise-types";
+import {
   DEFAULT_PRESCRIBED_FIELDS,
   PRESCRIBED_FIELD_LABELS,
   PRESCRIBED_FIELDS,
@@ -13,34 +19,22 @@ import {
 // and the group edit (program-builder-groups.ts) all read this one table, so a
 // preset means the same columns whoever applies it.
 
-export const COLUMN_PRESETS = [
-  "strength",
-  "bodyweight",
-  "endurance",
-  "erg",
-  "carry_sled",
-  "holds",
-  "circuit",
-] as const;
+/** One preset per exercise type (utils/exercise-types.ts), plus Circuit. */
+export const COLUMN_PRESETS = [...EXERCISE_TYPES, "circuit"] as const;
 
 export type ColumnsPreset = (typeof COLUMN_PRESETS)[number];
 
 export const COLUMN_PRESET_LABELS: Record<ColumnsPreset, string> = {
-  strength: "Strength",
-  bodyweight: "Bodyweight",
-  endurance: "Endurance",
-  erg: "Erg",
-  carry_sled: "Carry & sled",
-  holds: "Holds",
+  ...EXERCISE_TYPE_LABELS,
   circuit: "Circuit",
 };
 
 /**
- * Each preset's exact columns (put to the owner in commit 12). Strength IS the
- * columns every new exercise starts on until commit 13 starts it on its
- * type's preset. Circuit carries no Rest, because a superset's or circuit's
- * rests are the group's, and no Set type, because a circuit's rows are its
- * rounds.
+ * Each preset's exact columns (confirmed by the owner, 2026-09-19). Strength's
+ * are `DEFAULT_PRESCRIBED_FIELDS`, the columns a free-text exercise starts
+ * on; a catalog exercise starts on its type's (`presetColumnsForType`).
+ * Circuit carries no Rest, because a superset's or circuit's rests are the
+ * group's, and no Set type, because a circuit's rows are its rounds.
  */
 export const COLUMN_PRESET_FIELDS: Record<ColumnsPreset, readonly PrescribedField[]> = {
   strength: DEFAULT_PRESCRIBED_FIELDS,
@@ -51,6 +45,15 @@ export const COLUMN_PRESET_FIELDS: Record<ColumnsPreset, readonly PrescribedFiel
   holds: ["set_type", "rpe", "duration", "rest"],
   circuit: ["reps", "load"],
 };
+
+/**
+ * The columns a new exercise starts on: its catalog type's preset, or
+ * Strength's for a free-text name that matches no catalog row (§4.4: "with no
+ * type, on Strength"). A fresh array, never the shared preset.
+ */
+export function presetColumnsForType(type: ExerciseType | null | undefined): PrescribedField[] {
+  return [...COLUMN_PRESET_FIELDS[type ?? DEFAULT_EXERCISE_TYPE]];
+}
 
 const PRESET_SET: ReadonlySet<string> = new Set(COLUMN_PRESETS);
 

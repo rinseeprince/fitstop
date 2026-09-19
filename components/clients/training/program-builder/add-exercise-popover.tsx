@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { ExercisePicker } from "./exercise-picker";
+import type { CatalogPick } from "./program-builder-model";
 import { MONO_LABEL_CLASS, TEXT_MUTED, TEXT_PRIMARY } from "./builder-tokens";
 
 // The catalog picker, hung off the Exercises rail's "+" instead of sitting
@@ -19,7 +20,7 @@ import { MONO_LABEL_CLASS, TEXT_MUTED, TEXT_PRIMARY } from "./builder-tokens";
 // popover, and the input re-focuses, so a coach can type-enter-type-enter their
 // way through a session exactly as before.
 type AddExercisePopoverProps = {
-  onPick: (pick: { name: string; exerciseId: string | null }) => void;
+  onPick: (pick: CatalogPick) => void;
 };
 
 export function AddExercisePopover({ onPick }: AddExercisePopoverProps) {

@@ -18,7 +18,7 @@ import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 import { expandSetSpecs, setSpecCount, type SetSpec } from "@/utils/exercise-set-specs";
 
 const exercise = (uid: string, overrides: Partial<ExerciseDraft> = {}): ExerciseDraft => ({
-  ...defaultExerciseDraftFromCatalog({ name: uid, exerciseId: null }),
+  ...defaultExerciseDraftFromCatalog({ name: uid, exerciseId: null, exerciseType: null }),
   uid,
   ...overrides,
 });

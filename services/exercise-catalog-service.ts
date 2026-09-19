@@ -1,6 +1,11 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { Exercise } from "@/types/training";
 import type { ExerciseRow } from "@/lib/database-helpers";
+import {
+  DEFAULT_EXERCISE_TYPE,
+  toExerciseType,
+  type ExerciseType,
+} from "@/utils/exercise-types";
 
 // --- Abbreviation map ---
 
@@ -26,6 +31,7 @@ function mapExerciseCatalogRow(row: ExerciseRow): Exercise {
     muscleGroup: row.muscle_group,
     equipment: row.equipment,
     category: row.category,
+    exerciseType: toExerciseType(row.exercise_type),
     aliases: row.aliases ?? [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -301,13 +307,15 @@ export async function getExercisesForCoach(
 // --- Catalog delta-sync (Session 3.9) ---
 
 // Lean, sparse fieldset for the native client's incremental catalog sync —
-// only the columns the client renderer needs (NOT SELECT *). updated_at is the
-// delta cursor.
+// only the columns the client needs (NOT SELECT *): the tags it renders and
+// the exercise's type, the column preset an exercise of it starts on.
+// updated_at is the delta cursor.
 export type ExerciseCatalogDeltaRow = {
   id: string;
   name: string;
   muscle_group: string | null;
   equipment: string | null;
+  exercise_type: string;
   updated_at: string;
 };
 
@@ -353,7 +361,7 @@ export async function getExerciseCatalogDelta(
   for (;;) {
     let query = supabaseAdmin
       .from("exercises")
-      .select("id, name, muscle_group, equipment, updated_at")
+      .select("id, name, muscle_group, equipment, exercise_type, updated_at")
       .or(`coach_id.eq.${coachId},coach_id.is.null`)
       .order("updated_at", { ascending: true })
       .order("id", { ascending: true })
@@ -389,6 +397,8 @@ export type RecentExercise = {
   exerciseId: string;
   name: string;
   muscleGroup: string | null;
+  // A re-pick starts on the type's preset, as a search pick does.
+  exerciseType: ExerciseType;
 };
 
 /**
@@ -409,7 +419,7 @@ export async function getRecentExercisesForCoach(
   const { data, error } = await supabaseAdmin
     .from("coach_saved_exercises")
     .select(
-      "exercise_id, created_at, exercises(name, muscle_group), coach_saved_sessions!inner(coach_id)"
+      "exercise_id, created_at, exercises(name, muscle_group, exercise_type), coach_saved_sessions!inner(coach_id)"
     )
     .eq("coach_saved_sessions.coach_id", coachId)
     .not("exercise_id", "is", null)
@@ -438,6 +448,7 @@ export async function getRecentExercisesForCoach(
       exerciseId: row.exercise_id,
       name: exercise.name,
       muscleGroup: exercise.muscle_group,
+      exerciseType: toExerciseType(exercise.exercise_type),
     });
     if (recent.length >= limit) break;
   }
@@ -454,6 +465,7 @@ export async function updateCatalogExercise(
   coachId: string,
   updates: {
     name?: string;
+    exerciseType?: ExerciseType;
     muscleGroup?: string | null;
     equipment?: string | null;
     category?: string | null;
@@ -464,6 +476,7 @@ export async function updateCatalogExercise(
     .from("exercises")
     .update({
       ...(updates.name !== undefined && { name: updates.name.trim() }),
+      ...(updates.exerciseType !== undefined && { exercise_type: updates.exerciseType }),
       ...(updates.muscleGroup !== undefined && { muscle_group: updates.muscleGroup }),
       ...(updates.equipment !== undefined && { equipment: updates.equipment }),
       ...(updates.category !== undefined && { category: updates.category }),
@@ -502,15 +515,18 @@ export async function deleteCatalogExercise(
 }
 
 /**
- * Creates a coach-specific exercise.
+ * Creates a coach-specific exercise. It starts as Strength unless the form
+ * says otherwise (§4.4); a free-text name the builder can't match is created
+ * by resolveExercises above and takes the column's default, the same type.
  */
 export async function createExercise(
   coachId: string,
   data: {
     name: string;
-    muscleGroup?: string;
-    equipment?: string;
-    category?: string;
+    exerciseType?: ExerciseType;
+    muscleGroup?: string | null;
+    equipment?: string | null;
+    category?: string | null;
     aliases?: string[];
   }
 ): Promise<Exercise> {
@@ -522,6 +538,7 @@ export async function createExercise(
       muscle_group: data.muscleGroup ?? null,
       equipment: data.equipment ?? null,
       category: data.category ?? null,
+      exercise_type: data.exerciseType ?? DEFAULT_EXERCISE_TYPE,
       aliases: data.aliases ?? [],
     })
     .select()

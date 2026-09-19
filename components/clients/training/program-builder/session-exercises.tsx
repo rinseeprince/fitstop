@@ -217,9 +217,7 @@ export function SessionExercises({
         <Link2 className="h-3.5 w-3.5" strokeWidth={1.5} />
       </button>
       <AddExercisePopover
-        onPick={({ name, exerciseId }) =>
-          onAddExercise(session.uid, defaultExerciseDraftFromCatalog({ name, exerciseId }))
-        }
+        onPick={(pick) => onAddExercise(session.uid, defaultExerciseDraftFromCatalog(pick))}
       />
     </div>
   ) : undefined;

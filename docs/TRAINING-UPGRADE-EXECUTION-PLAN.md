@@ -1052,7 +1052,7 @@ reps, load — no Rest, because a superset's or circuit's rests are the group's,
 its rows are rounds. A preset sets an exercise's columns to exactly its own; Rest inside a superset or
 circuit keeps the exercise's stored choice. The table is `COLUMN_PRESET_FIELDS` (`utils/column-presets.ts`).
 
-### Commit 13 — Exercise types
+### Commit 13 — Exercise types — SHIPPED 2026-09-19
 
 ```text
 Implement commit 13 of 22 — Exercise types — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
@@ -1073,6 +1073,17 @@ RULES: §4.4 — closed.
 
 NOT IN THIS COMMIT: charts (commit 16).
 ```
+
+*The classification, confirmed by the owner (2026-09-19): every global compound and isolation
+exercise is Strength except the carries, sleds and holds picked out by name; of the cardio
+exercises the rower, ski and bike machines are Erg, the runs, drills, climbers, elliptical and
+outdoor work are Endurance, and Double Under and Jumping Jack are Bodyweight (counted in reps; Jump
+Rope is timed, so Endurance); of the plyometrics the jumps are Bodyweight and the med ball throws
+and weighted jumps are Strength (a load is part of the prescription). The name lists are migration
+185 and the Type column of `scripts/data/exercises.csv`, held equal by `utils/exercise-types.test.ts`.
+The Exercises tab shows the type on each card, with no filter; the client catalog reads carry it.
+PROD's catalog was empty when this shipped: the migration adds the column and Burpee Broad Jump
+there, and the seed script writes the types when the catalog is seeded.*
 
 ### Commit 14 — Timed groups: scores and client logging
 

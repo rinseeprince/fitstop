@@ -20,8 +20,8 @@ import {
   presetColumns,
   type ColumnsPreset,
 } from "@/utils/column-presets";
+import { toExerciseType } from "@/utils/exercise-types";
 import {
-  DEFAULT_PRESCRIBED_FIELDS,
   isPrescribedField,
   PRESCRIBED_FIELDS,
   resolvePrescribedFields,
@@ -231,7 +231,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
   const addExercise = betaTool({
     name: "add_exercise",
     description:
-      "Add an exercise from the coach's catalog to a session. The name MUST resolve to a real catalog exercise — on a miss you get repair candidates; pick one or use search_exercises. Defaults to 3 working sets of 8-12 on the strength columns; override with the optional prescription fields, and set its measurement columns with columns or columnsPreset (a run: columnsPreset endurance).",
+      "Add an exercise from the coach's catalog to a session. The name MUST resolve to a real catalog exercise — on a miss you get repair candidates; pick one or use search_exercises. Defaults to 3 working sets on the columns of the exercise's catalog type (its preset: a run starts on endurance, a rower on erg, a carry on carry_sled, a plank on holds), with 8-12 reps where those columns ask for reps; override with the optional prescription fields, or set its measurement columns with columns or columnsPreset.",
     inputSchema: {
       type: "object",
       properties: {
@@ -269,14 +269,21 @@ export function buildExerciseTools(ws: DraftWorkspace) {
             : "No close catalog matches — use search_exercises or ask the coach to add it to their library first.";
         return `"${input.name}" is not in the exercise catalog, so it can't be added. ${hint}`;
       }
-      const columns = columnsFields(input, resolvePrescribedFields(DEFAULT_PRESCRIBED_FIELDS), []);
+      // The exercise starts on its catalog type's preset, as a pick in the
+      // builder does; columns or a preset the coach names replace it.
+      const base = defaultExerciseDraftFromCatalog({
+        name: row.name,
+        exerciseId: row.id,
+        exerciseType: toExerciseType(row.exercise_type),
+      });
+      const columns = columnsFields(input, resolvePrescribedFields(base.prescribedFields), []);
       if (columns && "error" in columns) return columns.error;
-      const prescribedFields = columns ?? [...DEFAULT_PRESCRIBED_FIELDS];
+      const prescribedFields = columns ?? base.prescribedFields;
       // An exercise whose columns don't ask for reps (a run) doesn't start
       // with a rep range hidden behind them; its sets are still its intervals.
       const asksReps = prescribedFields.includes("reps");
       const exercise: ExerciseDraft = {
-        ...defaultExerciseDraftFromCatalog({ name: row.name, exerciseId: row.id }),
+        ...base,
         uid: newUid("ex"),
         sets: input.sets ?? 3,
         repsMin: input.repsMin ?? (asksReps ? 8 : null),
@@ -301,7 +308,12 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         label: `W${input.week} D${input.day}: added ${row.name} (${scheme})`,
       });
       if (err) return err;
-      const columnsNote = columns ? ` Columns: ${describeColumns(prescribedFields)}.` : "";
+      // Named whenever they aren't the strength ones — the coach asked for
+      // them, or the exercise's type put it there.
+      const columnsNote =
+        columns || !sameColumns(prescribedFields, COLUMN_PRESET_FIELDS.strength)
+          ? ` Columns: ${describeColumns(prescribedFields)}.`
+          : "";
       if (input.position != null) {
         // Clamp to the session's real length, and work the place out on the
         // working copy as it now stands: the op carries the place itself, never

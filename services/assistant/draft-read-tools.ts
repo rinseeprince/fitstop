@@ -1,5 +1,6 @@
 import { betaTool } from "@anthropic-ai/sdk/helpers/beta/json-schema";
 import { normalizeExerciseName } from "@/services/exercise-catalog-service";
+import { toExerciseType } from "@/utils/exercise-types";
 import type { DraftWorkspace } from "./draft-workspace";
 import {
   programSkeleton,
@@ -86,7 +87,7 @@ export function buildReadTools(ws: DraftWorkspace) {
   const searchExercises = betaTool({
     name: "search_exercises",
     description:
-      "Search the coach's exercise catalog (their custom exercises + the global library). Every exercise you ADD must come from this catalog — if add_exercise can't resolve a name, search here and pick a real entry.",
+      "Search the coach's exercise catalog (their custom exercises + the global library). Every exercise you ADD must come from this catalog — if add_exercise can't resolve a name, search here and pick a real entry. Each result names the exercise's type (strength, bodyweight, endurance, erg, carry_sled or holds): the column preset it starts on when added.",
     inputSchema: {
       type: "object",
       properties: {
@@ -118,6 +119,8 @@ export function buildReadTools(ws: DraftWorkspace) {
         .map(({ row }) => {
           const bits = [row.name];
           if (row.muscle_group) bits.push(row.muscle_group);
+          // The type decides the columns the exercise starts on.
+          bits.push(`type ${toExerciseType(row.exercise_type)}`);
           if ((row.category ?? "").trim().toLowerCase() === "compound") bits.push("compound");
           return `- ${bits.join(" — ")}`;
         })

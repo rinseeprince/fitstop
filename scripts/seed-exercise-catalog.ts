@@ -3,10 +3,14 @@
  * Run: npx tsx scripts/seed-exercise-catalog.ts
  *
  * Reads from scripts/data/exercises.csv (exported from Google Sheets).
- * Expected CSV columns: Name, Muscle Group, Equipment, Category, Aliases
+ * Expected CSV columns: Name, Muscle Group, Equipment, Category, Aliases, Type
  * Aliases should be comma-separated within the cell (e.g., "BB Bench, Flat Bench Press").
+ * Type is one of the exercise types (utils/exercise-types.ts: strength,
+ * bodyweight, endurance, erg, carry_sled, holds) — the column preset a new
+ * exercise starts on; a row with any other value fails the whole seed.
  *
- * Idempotent - safe to re-run. Skips duplicates.
+ * Idempotent - safe to re-run. Skips duplicates: an existing row keeps its
+ * type, which migration 185 classifies on a live catalog.
  */
 import { config } from "dotenv";
 import { resolve } from "path";
@@ -20,6 +24,7 @@ const supabaseAdmin = createClient(
 );
 import * as fs from "fs";
 import * as path from "path";
+import { isExerciseType, type ExerciseType } from "@/utils/exercise-types";
 
 type SeedExercise = {
   name: string;
@@ -27,6 +32,7 @@ type SeedExercise = {
   equipment: string;
   category: string;
   aliases: string[];
+  exerciseType: ExerciseType;
 };
 
 function parseCSV(csvContent: string): SeedExercise[] {
@@ -42,9 +48,13 @@ function parseCSV(csvContent: string): SeedExercise[] {
   const equipIdx = header.indexOf("equipment");
   const catIdx = header.indexOf("category");
   const aliasIdx = header.indexOf("aliases");
+  const typeIdx = header.indexOf("type");
 
   if (nameIdx === -1) {
     throw new Error('CSV must have a "Name" column');
+  }
+  if (typeIdx === -1) {
+    throw new Error('CSV must have a "Type" column');
   }
 
   const exercises: SeedExercise[] = [];
@@ -59,12 +69,18 @@ function parseCSV(csvContent: string): SeedExercise[] {
       ? aliasRaw.split(",").map((a) => a.trim()).filter(Boolean)
       : [];
 
+    const exerciseType = cols[typeIdx]?.trim();
+    if (!isExerciseType(exerciseType)) {
+      throw new Error(`Row ${i + 1} ("${name}") has an unknown type "${exerciseType ?? ""}"`);
+    }
+
     exercises.push({
       name,
       muscleGroup: muscleIdx >= 0 ? cols[muscleIdx]?.trim() || "" : "",
       equipment: equipIdx >= 0 ? cols[equipIdx]?.trim() || "" : "",
       category: catIdx >= 0 ? cols[catIdx]?.trim() || "" : "",
       aliases,
+      exerciseType,
     });
   }
 
@@ -107,6 +123,11 @@ async function seedExercises() {
     console.log("Reading from exercises.json...");
     const raw = fs.readFileSync(jsonPath, "utf-8");
     exercises = JSON.parse(raw);
+    for (const e of exercises) {
+      if (!isExerciseType(e.exerciseType)) {
+        throw new Error(`"${e.name}" has an unknown type "${String(e.exerciseType)}"`);
+      }
+    }
   } else {
     console.error("No seed data found.");
     console.error("Place exercises.csv or exercises.json in scripts/data/");
@@ -134,6 +155,7 @@ async function seedExercises() {
             equipment: e.equipment || null,
             category: e.category || null,
             aliases: e.aliases || [],
+            exercise_type: e.exerciseType,
           },
           { ignoreDuplicates: true }
         );

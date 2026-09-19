@@ -25,6 +25,7 @@ const exercises: Exercise[] = [
     muscleGroup: "biceps",
     equipment: "dumbbell",
     category: null,
+    exerciseType: "strength",
     aliases: [],
     createdAt: "2026-01-02T00:00:00Z",
     updatedAt: "2026-01-02T00:00:00Z",
@@ -36,6 +37,7 @@ const exercises: Exercise[] = [
     muscleGroup: "chest",
     equipment: "dumbbell",
     category: null,
+    exerciseType: "holds",
     aliases: [],
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -132,6 +134,12 @@ describe("LibraryExerciseList", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it("each card names its type after its tags", () => {
+    renderList();
+    expect(screen.getByText("biceps · dumbbell · Strength")).toBeInTheDocument();
+    expect(screen.getByText("chest · dumbbell · Holds")).toBeInTheDocument();
   });
 
   it("the form keeps its exercise through the close, and New exercise replaces it as it opens", () => {

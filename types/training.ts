@@ -1,6 +1,7 @@
 
 import type { SetSpec, SetType } from "@/utils/exercise-set-specs";
 import type { PrescribedField } from "@/utils/prescribed-fields";
+import type { ExerciseType } from "@/utils/exercise-types";
 import type { LoggedActuals } from "@/utils/set-log-measures";
 import type { GroupSettings } from "@/utils/exercise-groups";
 
@@ -55,6 +56,10 @@ export type Exercise = {
   muscleGroup: string | null;
   equipment: string | null;
   category: string | null;
+  // The exercise's type (migration 185): decides the column preset a new
+  // exercise starts on. A fact about the catalog row, never copied onto a
+  // prescription.
+  exerciseType: ExerciseType;
   aliases: string[];
   createdAt: string;
   updatedAt: string;

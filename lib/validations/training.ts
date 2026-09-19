@@ -25,6 +25,7 @@ import {
   type SetSpecMeasure,
 } from "@/utils/exercise-set-specs";
 import { PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
+import { DEFAULT_EXERCISE_TYPE, EXERCISE_TYPES } from "@/utils/exercise-types";
 import {
   LOGGED_MEASURES,
   SET_LOG_MEASURES,
@@ -480,10 +481,26 @@ export const createStandaloneSessionSchema = standaloneSessionBodySchema.extend(
 // as create, no dedupe flag — the coach edited the name deliberately.
 export const overwriteStandaloneSessionSchema = standaloneSessionBodySchema;
 
+// A catalog exercise's type (migration 185): one of the six, the column
+// preset a new exercise starts on.
+const exerciseTypeSchema = z.enum(EXERCISE_TYPES);
+
+// Catalog exercise create — a coach-made exercise starts as Strength unless
+// the form says otherwise. Category stays free text.
+export const createCatalogExerciseSchema = z.object({
+  name: z.string().trim().min(1, "Exercise name is required").max(200),
+  exerciseType: exerciseTypeSchema.default(DEFAULT_EXERCISE_TYPE),
+  muscleGroup: z.string().max(100).nullish(),
+  equipment: z.string().max(100).nullish(),
+  category: z.string().max(100).nullish(),
+  aliases: z.array(z.string().min(1).max(200)).max(20).optional(),
+});
+
 // Catalog exercise edit — coach-owned rows only (the route/service enforce
 // ownership; global rows 404 by construction).
 export const updateCatalogExerciseSchema = z.object({
   name: z.string().min(1).max(200).optional(),
+  exerciseType: exerciseTypeSchema.optional(),
   muscleGroup: z.string().max(100).nullish(),
   equipment: z.string().max(100).nullish(),
   category: z.string().max(100).nullish(),
