@@ -21,16 +21,38 @@ import {
   TEXT_PRIMARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { ExerciseChartCard, LegendItem } from "./exercise-chart-card";
-import { computeInsight } from "./exercise-insight";
-import { formatLoad } from "@/utils/unit-conversions";
+import { computeInsight, usesStrengthAnalytics } from "./exercise-insight";
+import {
+  formatDistance,
+  formatDuration,
+  formatLoad,
+  formatPace,
+  formatSplit,
+  type UnitSystem,
+} from "@/utils/unit-conversions";
+import {
+  formatMarkerNumber,
+  markerSeriesValue,
+  markerUnit,
+} from "@/utils/exercise-marker-format";
+import {
+  markerLens,
+  type ProgressMarker,
+  type ProgressMarkerSpec,
+} from "@/utils/exercise-progress-markers";
+import type { ExerciseType } from "@/utils/exercise-types";
 import { useUnits } from "@/contexts/units-context";
 import type { ExerciseProgressionPoint } from "@/types/training";
 
-type TrendMetric = "weight" | "e1rm" | "volume" | "rpe" | "compliance";
+// The trend chart of one marker (utils/exercise-progress-markers.ts): the
+// marker says what it plots, how its numbers read, which way is better and
+// whether the best point in the window is starred; the exercise's type gives
+// it its words where the type leads with it.
 
 type ExerciseTrendChartProps = {
   data: ExerciseProgressionPoint[] | undefined;
-  metric: TrendMetric;
+  metric: ProgressMarker;
+  exerciseType: ExerciseType;
   isLoading: boolean;
   /**
    * Whether to render the trend-commentary insight footer. Defaults to true
@@ -41,34 +63,27 @@ type ExerciseTrendChartProps = {
 };
 
 // Teal-shifted system hues (docs/newdesignsystem.md) — one metric renders at a
-// time, so the hue carries identity across visits, not simultaneous contrast.
-const METRIC_COLORS: Record<TrendMetric, string> = {
+// time, so the hue carries identity across visits, not simultaneous contrast:
+// deep teal for a type's leading marker, cyan for a derived one, honey for a
+// total, rose for RPE.
+const METRIC_COLORS: Record<ProgressMarker, string> = {
   weight: "#0a5c55",
   e1rm: "#2d8fb5",
   volume: "#c8923a",
   rpe: "#c06060",
   compliance: "#0d9488",
+  reps: "#0a5c55",
+  pace: "#0a5c55",
+  distance: "#c8923a",
+  split: "#0a5c55",
+  power: "#2d8fb5",
+  time: "#0a5c55",
+  hold: "#0a5c55",
 };
 // PRs are goal-hits: the goal amber, not the series hue.
 const PR_STAR_COLOR = "#d97706";
 const GRID_LINE = "rgba(13, 148, 136, 0.06)";
 const PRESCRIBED_FILL = "rgba(13, 148, 136, 0.2)";
-
-const CHART_TITLES: Record<TrendMetric, { title: string; subtitle: string }> = {
-  weight: { title: "Top set weight over time", subtitle: "Heaviest weight lifted per session" },
-  e1rm: { title: "Estimated 1RM over time", subtitle: "Epley formula from top sets" },
-  volume: { title: "Session volume", subtitle: "Total reps x weight per session" },
-  rpe: { title: "RPE over time", subtitle: "Top set RPE per session" },
-  compliance: { title: "Prescribed vs completed sets", subtitle: "Per-session compliance" },
-};
-
-const DATA_KEYS: Record<TrendMetric, string> = {
-  weight: "topSetWeight",
-  e1rm: "estimatedOneRepMax",
-  volume: "totalVolume",
-  rpe: "topSetRpe",
-  compliance: "actualSets",
-};
 
 const TICK_STYLE = { fontSize: 10, fill: "#93b0b4", fontFamily: "var(--font-mono-display)" };
 const X_TICK_STYLE = { fontSize: 10, fill: "#93b0b4", fontFamily: "var(--font-mono-display)" };
@@ -90,81 +105,129 @@ function formatDateShort(iso: string) {
   return format(new Date(iso), "MMM d");
 }
 
+const isClock = (spec: ProgressMarkerSpec) =>
+  spec.readout === "pace" || spec.readout === "split" || spec.readout === "duration";
+
+/**
+ * A point as plotted: the three loads in the viewer's unit (the load lenses
+ * and their tooltips read them), the plotted key in its own display unit, and
+ * `source`, the canonical point every other tooltip line reads.
+ */
+type PlottedPoint = ExerciseProgressionPoint & { source: ExerciseProgressionPoint };
+
 // ---------------------------------------------------------------------------
 // Custom tooltips
 // ---------------------------------------------------------------------------
 
-function MetricTooltip({ active, payload, metric, unit }: Record<string, unknown>) {
+function MetricTooltip({ active, payload, spec, viewer }: Record<string, unknown>) {
   if (!active || !Array.isArray(payload) || payload.length === 0) return null;
-  const p = payload[0]?.payload as ExerciseProgressionPoint | undefined;
-  if (!p) return null;
-  const m = metric as TrendMetric;
-  // Values arrive already converted (see filteredData); this only labels them.
-  const u = unit as string;
+  const plotted = payload[0]?.payload as PlottedPoint | undefined;
+  if (!plotted) return null;
+  const s = spec as ProgressMarkerSpec;
+  const v = viewer as UnitSystem;
+  const p = plotted.source;
+  // Loads arrive already converted (see plottedData); this only labels them.
+  const u = formatLoad(0, v).unit;
+  const with_ = (parts: (string | null)[]) => parts.filter((part): part is string => !!part).join(" · ");
+
+  let line: string | null = null;
+  let sub: string | null = null;
+  switch (s.key) {
+    case "weight":
+      line = with_([
+        `${plotted.topSetWeight}${u}${p.topSetReps != null ? ` x ${p.topSetReps}` : ""}`,
+        p.topSetDistanceMeters != null ? formatDistance(p.topSetDistanceMeters, v) : null,
+        p.topSetDurationSeconds != null ? formatDuration(p.topSetDurationSeconds) : null,
+      ]);
+      break;
+    case "e1rm":
+      line = `e1RM: ${plotted.estimatedOneRepMax?.toFixed(1)}${u}`;
+      sub =
+        plotted.topSetWeight != null && p.topSetReps != null
+          ? `${plotted.topSetWeight}${u} x ${p.topSetReps}`
+          : null;
+      break;
+    case "volume":
+      line = `${plotted.totalVolume?.toLocaleString()}${u}`;
+      break;
+    case "rpe":
+      line = `RPE ${p.topSetRpe}`;
+      break;
+    case "compliance":
+      line =
+        p.prescribedSets != null
+          ? `${p.actualSets} / ${p.prescribedSets} sets`
+          : `${p.actualSets} sets`;
+      break;
+    case "reps":
+      line = `${p.bestSetReps} reps`;
+      break;
+    case "pace":
+      line = with_([
+        p.bestPaceSecondsPerKm != null ? formatPace(p.bestPaceSecondsPerKm, v) : null,
+        p.bestPaceDistanceMeters != null ? formatDistance(p.bestPaceDistanceMeters, v) : null,
+      ]);
+      break;
+    case "distance":
+      line = p.totalDistanceMeters != null ? formatDistance(p.totalDistanceMeters, v) : null;
+      break;
+    case "split":
+      line = with_([
+        p.bestSplitSecondsPer500m != null ? formatSplit(p.bestSplitSecondsPer500m) : null,
+        p.bestSplitDistanceMeters != null ? formatDistance(p.bestSplitDistanceMeters, v) : null,
+      ]);
+      break;
+    case "power":
+      line = `${p.bestPower} W`;
+      break;
+    case "time":
+      line = with_([
+        p.bestTimeSeconds != null ? formatDuration(p.bestTimeSeconds) : null,
+        p.bestTimeDistanceMeters != null ? formatDistance(p.bestTimeDistanceMeters, v) : null,
+        p.bestTimeWeight != null ? `${formatLoad(p.bestTimeWeight, v).value}${u}` : null,
+      ]);
+      break;
+    case "hold":
+      line = p.longestHoldSeconds != null ? formatDuration(p.longestHoldSeconds) : null;
+      break;
+  }
 
   return (
     <div style={TOOLTIP_STYLE.contentStyle} className="px-3 py-2">
       <p className={cn(MONO, "text-[11px] text-[#93b0b4]")}>{formatDateShort(p.date)}</p>
-      {m === "weight" && (
-        <p className={TOOLTIP_VALUE_CLASS}>
-          {p.topSetWeight}{u} x {p.topSetReps ?? "?"}
-        </p>
-      )}
-      {m === "e1rm" && (
-        <>
-          <p className={TOOLTIP_VALUE_CLASS}>
-            e1RM: {p.estimatedOneRepMax?.toFixed(1)}{u}
-          </p>
-          {p.topSetWeight != null && p.topSetReps != null && (
-            <p className="text-[11px] text-[#93b0b4]">
-              from <span className={MONO}>{p.topSetWeight}{u} x {p.topSetReps}</span>
-            </p>
-          )}
-        </>
-      )}
-      {m === "volume" && (
-        <p className={TOOLTIP_VALUE_CLASS}>
-          {p.totalVolume?.toLocaleString()}{u}
-        </p>
-      )}
-      {m === "rpe" && (
-        <p className={TOOLTIP_VALUE_CLASS}>
-          RPE {p.topSetRpe}
-        </p>
-      )}
-      {m === "compliance" && (
-        <p className={TOOLTIP_VALUE_CLASS}>
-          {p.prescribedSets != null
-            ? `${p.actualSets} / ${p.prescribedSets} sets`
-            : `${p.actualSets} sets`}
+      {line && <p className={TOOLTIP_VALUE_CLASS}>{line}</p>}
+      {sub && (
+        <p className="text-[11px] text-[#93b0b4]">
+          from <span className={MONO}>{sub}</span>
         </p>
       )}
     </div>
   );
 }
 
-// Custom dot: PR marker for weight metric
-const WEIGHT_COLOR = METRIC_COLORS.weight;
-
-function PrDot(props: Record<string, unknown>) {
-  const { cx, cy, payload, data } = props as {
+// Custom dot: the best point in the window, by the marker's own direction
+function BestDot(props: Record<string, unknown>) {
+  const { cx, cy, payload, data, spec, color } = props as {
     cx: number;
     cy: number;
-    payload: ExerciseProgressionPoint;
-    data: ExerciseProgressionPoint[];
+    payload: PlottedPoint;
+    data: PlottedPoint[];
+    spec: ProgressMarkerSpec;
+    color: string;
   };
   if (!payload || !data) return null;
 
-  const maxWeight = Math.max(
-    ...data.filter((p) => p.topSetWeight != null).map((p) => p.topSetWeight!),
-  );
-  const isPr = payload.topSetWeight === maxWeight;
+  const values = data
+    .map((p) => p[spec.value])
+    .filter((value): value is number => value != null);
+  const bestValue = spec.better === "lower" ? Math.min(...values) : Math.max(...values);
+  const isBest = payload[spec.value] === bestValue;
 
-  if (isPr) {
+  if (isBest) {
     return (
       <g>
-        <circle cx={cx} cy={cy} r={9} fill={`${WEIGHT_COLOR}2e`} />
-        <circle cx={cx} cy={cy} r={5} fill={WEIGHT_COLOR} />
+        <circle cx={cx} cy={cy} r={9} fill={`${color}2e`} />
+        <circle cx={cx} cy={cy} r={5} fill={color} />
         <circle cx={cx} cy={cy} r={2} fill="#fff" />
         <text
           x={cx}
@@ -180,7 +243,7 @@ function PrDot(props: Record<string, unknown>) {
   }
 
   return (
-    <circle cx={cx} cy={cy} r={3.5} fill="#fff" stroke={WEIGHT_COLOR} strokeWidth={2} />
+    <circle cx={cx} cy={cy} r={3.5} fill="#fff" stroke={color} strokeWidth={2} />
   );
 }
 
@@ -191,59 +254,65 @@ function PrDot(props: Record<string, unknown>) {
 export function ExerciseTrendChart({
   data,
   metric,
+  exerciseType,
   isLoading,
   showInsight = true,
 }: ExerciseTrendChartProps) {
   const { preference } = useUnits();
+  const spec = markerLens(exerciseType, metric);
   const gradientId = `exercise-trend-${metric}`;
 
-  // Stored loads are canonical kilograms, so the SERIES is converted here — not
-  // just the axis label. Labelling a kg series "lbs" would be worse than the
-  // unlabelled chart this replaces. Read-only render, so formatLoad (which snaps
-  // an imperial conversion to a loadable 5 lb increment) is the right helper.
-  const loadUnit = formatLoad(0, preference).unit;
-  const filteredData = useMemo(() => {
+  // Stored values are canonical (kilograms, metres, seconds per km), so the
+  // SERIES is converted here — not just the axis label. Labelling a kg series
+  // "lbs" would be worse than an unlabelled chart. Read-only render, so
+  // formatLoad (which snaps an imperial conversion to a loadable increment) is
+  // the right helper for a load.
+  const plottedData = useMemo((): PlottedPoint[] => {
     if (!data) return [];
-    const toViewer = (kg: number | null | undefined) =>
+    const toLoad = (kg: number | null) =>
       kg == null ? kg : formatLoad(kg, preference).value;
-    const converted = data.map((p) => ({
-      ...p,
-      topSetWeight: toViewer(p.topSetWeight),
-      estimatedOneRepMax: toViewer(p.estimatedOneRepMax),
-      totalVolume: toViewer(p.totalVolume),
-    }));
-    if (metric === "rpe") return converted.filter((p) => p.topSetRpe != null);
-    if (metric === "weight") return converted.filter((p) => p.topSetWeight != null);
-    if (metric === "e1rm") return converted.filter((p) => p.estimatedOneRepMax != null);
-    if (metric === "volume") return converted.filter((p) => p.totalVolume != null);
-    return converted;
-  }, [data, metric, preference]);
+    const converted = data.map((p): PlottedPoint => {
+      const out: PlottedPoint = {
+        ...p,
+        topSetWeight: toLoad(p.topSetWeight),
+        estimatedOneRepMax: toLoad(p.estimatedOneRepMax),
+        totalVolume: toLoad(p.totalVolume),
+        source: p,
+      };
+      const raw = p[spec.value];
+      if (spec.readout !== "load" && raw != null) {
+        (out as Record<typeof spec.value, number | null>)[spec.value] = markerSeriesValue(
+          spec.readout,
+          raw,
+          preference,
+        );
+      }
+      return out;
+    });
+    if (metric === "compliance") return converted;
+    return converted.filter((p) => p[spec.value] != null);
+  }, [data, metric, spec, preference]);
 
   const complianceSummary = useMemo(() => {
     if (metric !== "compliance") return null;
-    const withPrescription = filteredData.filter((p) => p.prescribedSets != null);
+    const withPrescription = plottedData.filter((p) => p.prescribedSets != null);
     if (withPrescription.length === 0) return null;
     const hit = withPrescription.filter(
       (p) => p.actualSets >= (p.prescribedSets ?? 0),
     ).length;
     return `Hit prescribed sets in ${hit}/${withPrescription.length} sessions`;
-  }, [metric, filteredData]);
+  }, [metric, plottedData]);
 
   const insight = useMemo(
-    () => (showInsight && data ? computeInsight(metric, data, preference) : null),
-    [metric, data, showInsight, preference],
+    () =>
+      showInsight && data && usesStrengthAnalytics(exerciseType, metric)
+        ? computeInsight(metric, data, preference)
+        : null,
+    [metric, exerciseType, data, showInsight, preference],
   );
 
   if (isLoading) {
     return <Skeleton className="h-[380px] w-full rounded-[6px]" />;
-  }
-
-  if (metric === "rpe" && data && data.length > 0 && filteredData.length === 0) {
-    return (
-      <p className="text-center text-[13px] text-[#93b0b4] py-12">
-        No RPE data recorded for this exercise.
-      </p>
-    );
   }
 
   if (metric === "compliance" && data && data.every((p) => p.prescribedSets == null)) {
@@ -254,7 +323,15 @@ export function ExerciseTrendChart({
     );
   }
 
-  if (filteredData.length < 2) {
+  if (metric !== "compliance" && data && data.length > 0 && plottedData.length === 0) {
+    return (
+      <p className="text-center text-[13px] text-[#93b0b4] py-12">
+        No {spec.noun} recorded for this exercise.
+      </p>
+    );
+  }
+
+  if (plottedData.length < 2) {
     return (
       <p className="text-center text-[13px] text-[#93b0b4] py-12">
         Not enough data yet. Log at least 2 sessions to see trends.
@@ -262,14 +339,14 @@ export function ExerciseTrendChart({
     );
   }
 
-  const titles = CHART_TITLES[metric];
-  const dataKey = DATA_KEYS[metric];
+  const dataKey = spec.value;
   const color = METRIC_COLORS[metric];
 
   // Sparse x-axis: show every 3rd or 4th tick
-  const xInterval = filteredData.length <= 8 ? 0 : Math.max(1, Math.floor(filteredData.length / 5));
+  const xInterval = plottedData.length <= 8 ? 0 : Math.max(1, Math.floor(plottedData.length / 5));
 
-  // Build legend for weight (dot + star) and compliance (prescribed + actual)
+  // Legend: the weight lens keeps its Top set + PR pair; any other starred
+  // marker names itself and its best; compliance names its two bars.
   const legend =
     metric === "weight" ? (
       <>
@@ -281,27 +358,38 @@ export function ExerciseTrendChart({
         <LegendItem color={PRESCRIBED_FILL} label="Prescribed" />
         <LegendItem color={color} label="Completed" />
       </>
+    ) : spec.star ? (
+      <>
+        <LegendItem color={color} label={spec.label} />
+        <LegendItem color={PR_STAR_COLOR} label={spec.bestLabel} icon="star" />
+      </>
     ) : null;
 
   // The unit rides on the subtitle rather than the Y axis: the axis is 40-50px
-  // wide and appending "kg" to every tick overflows it. Load-bearing metrics
-  // only — RPE and compliance are unitless.
-  const isLoadMetric =
-    metric === "weight" || metric === "e1rm" || metric === "volume";
+  // wide and appending "kg" to every tick overflows it. Reps, RPE and sets
+  // carry no unit — their titles say what they count.
+  const unit = markerUnit(spec.readout, preference);
+  const subtitleUnit =
+    spec.readout === "reps" || spec.readout === "rpe" || spec.readout === "sets" ? "" : unit;
   const subtitle =
     metric === "compliance" && complianceSummary
       ? complianceSummary
-      : isLoadMetric
-        ? `${titles.subtitle} · ${loadUnit}`
-        : titles.subtitle;
+      : subtitleUnit
+        ? `${spec.subtitle} · ${subtitleUnit}`
+        : spec.subtitle;
 
-  // Volume and compliance use BarChart
-  if (metric === "volume") {
+  const tickFormatter = isClock(spec)
+    ? (value: number) => formatMarkerNumber(spec.readout, value)
+    : undefined;
+  const tooltip = <MetricTooltip spec={spec} viewer={preference} />;
+
+  // Totals per session are bars
+  if (spec.shape === "bar") {
     return (
-      <ExerciseChartCard title={titles.title} subtitle={subtitle} insight={insight}>
+      <ExerciseChartCard title={spec.title} subtitle={subtitle} insight={insight}>
         <div className="h-[260px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={filteredData} margin={{ top: 10, right: 5, bottom: 0, left: 20 }}>
+            <BarChart data={plottedData} margin={{ top: 10, right: 5, bottom: 0, left: 20 }}>
               <CartesianGrid horizontal vertical={false} stroke={GRID_LINE} />
               <XAxis
                 dataKey="date"
@@ -318,7 +406,7 @@ export function ExerciseTrendChart({
                 width={50}
                 orientation="right"
               />
-              <Tooltip content={<MetricTooltip metric={metric} unit={loadUnit} />} cursor={false} />
+              <Tooltip content={tooltip} cursor={false} />
               <Bar dataKey={dataKey} fill={color} radius={[3, 3, 0, 0]} maxBarSize={24} />
             </BarChart>
           </ResponsiveContainer>
@@ -329,10 +417,10 @@ export function ExerciseTrendChart({
 
   if (metric === "compliance") {
     return (
-      <ExerciseChartCard title={titles.title} subtitle={subtitle} legend={legend} insight={insight}>
+      <ExerciseChartCard title={spec.title} subtitle={subtitle} legend={legend} insight={insight}>
         <div className="h-[260px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={filteredData} margin={{ top: 10, right: 5, bottom: 0, left: 20 }}>
+            <BarChart data={plottedData} margin={{ top: 10, right: 5, bottom: 0, left: 20 }}>
               <CartesianGrid horizontal vertical={false} stroke={GRID_LINE} />
               <XAxis
                 dataKey="date"
@@ -343,7 +431,7 @@ export function ExerciseTrendChart({
                 interval={xInterval}
               />
               <YAxis tick={TICK_STYLE} tickLine={false} axisLine={false} width={40} orientation="right" />
-              <Tooltip content={<MetricTooltip metric={metric} unit={loadUnit} />} cursor={false} />
+              <Tooltip content={tooltip} cursor={false} />
               <Legend content={() => null} />
               <Bar dataKey="prescribedSets" fill={PRESCRIBED_FILL} radius={[3, 3, 0, 0]} maxBarSize={20} name="Prescribed" />
               <Bar dataKey="actualSets" fill={color} radius={[3, 3, 0, 0]} maxBarSize={20} name="Completed" />
@@ -354,14 +442,12 @@ export function ExerciseTrendChart({
     );
   }
 
-  // AreaChart for weight, e1rm, rpe
-  const showPrDots = metric === "weight";
-
+  // AreaChart for everything else
   return (
-    <ExerciseChartCard title={titles.title} subtitle={subtitle} legend={legend} insight={insight}>
+    <ExerciseChartCard title={spec.title} subtitle={subtitle} legend={legend} insight={insight}>
       <div className="h-[260px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={filteredData} margin={{ top: 10, right: 5, bottom: 0, left: 20 }}>
+          <AreaChart data={plottedData} margin={{ top: 10, right: 5, bottom: 0, left: 20 }}>
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={color} stopOpacity={0.08} />
@@ -384,8 +470,9 @@ export function ExerciseTrendChart({
               width={50}
               orientation="right"
               domain={metric === "rpe" ? [0, 10] : ["auto", "auto"]}
+              tickFormatter={tickFormatter}
             />
-            <Tooltip content={<MetricTooltip metric={metric} unit={loadUnit} />} cursor={false} />
+            <Tooltip content={tooltip} cursor={false} />
             <Area
               type="monotone"
               dataKey={dataKey}
@@ -395,9 +482,15 @@ export function ExerciseTrendChart({
               strokeLinejoin="round"
               fill={`url(#${gradientId})`}
               dot={
-                showPrDots
+                spec.star
                   ? (props: Record<string, unknown>) => (
-                      <PrDot key={String(props.index)} {...props} data={filteredData} />
+                      <BestDot
+                        key={String(props.index)}
+                        {...props}
+                        data={plottedData}
+                        spec={spec}
+                        color={color}
+                      />
                     )
                   : { r: 3.5, fill: "#fff", stroke: color, strokeWidth: 2 }
               }

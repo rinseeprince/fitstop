@@ -1,6 +1,14 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getExercisePRs } from "./exercise-analytics-service";
+import {
+  hasLoad,
+  isBodyweightSet,
+  isHold,
+  isTimedDistance,
+  type MarkerSet,
+} from "@/utils/exercise-session-markers";
 import type { ActivityItem } from "@/types/coach-brief";
+import type { ExercisePR } from "@/types/training";
 
 /**
  * Item-level "since your last visit" activity feed for the coach Overview
@@ -24,11 +32,26 @@ export type MetricEntryFeedRow = {
   created_at: string;
 };
 
-type NewExerciseBest = {
+/**
+ * What a new session might have beaten, one candidate per kind — and per
+ * distance for a time or a carry — read off the logged columns the way the
+ * chart markers are (utils/exercise-session-markers.ts): a load is a weight
+ * above zero — a lift's when logged with no distance, a carry's over one —
+ * reps with no load are a bodyweight set, a time with a distance a timed
+ * distance, a time with no distance a hold. `at` is the feed anchor of the
+ * session that set it.
+ */
+export type PrCandidate =
+  | { kind: "load"; weight: number; at: string }
+  | { kind: "reps"; reps: number; at: string }
+  | { kind: "time"; distanceMeters: number; durationSeconds: number; at: string }
+  | { kind: "carry"; distanceMeters: number; weight: number; at: string }
+  | { kind: "hold"; durationSeconds: number; at: string };
+
+type NewExerciseBests = {
   exerciseId: string | null;
   exerciseName: string;
-  newMax: number;
-  at: string;
+  candidates: PrCandidate[];
 };
 
 type NewExerciseRow = {
@@ -37,7 +60,13 @@ type NewExerciseRow = {
   performed_name: string | null;
   prescribed_exercise_snapshot: unknown;
   training_exercises: { exercise_id: string | null } | null;
-  set_logs: { weight: number | null; set_type: string }[];
+  set_logs: {
+    weight: number | null;
+    reps: number | null;
+    distance_meters: number | null;
+    duration_seconds: number | null;
+    set_type: string;
+  }[];
 };
 
 function snapshotName(snapshot: unknown): string | null {
@@ -86,16 +115,42 @@ export function buildMeasurementItems(
   });
 }
 
+/** A candidate's key inside one exercise: its kind, and its distance where one applies. */
+function candidateKey(candidate: PrCandidate): string {
+  return candidate.kind === "time" || candidate.kind === "carry"
+    ? `${candidate.kind}:${candidate.distanceMeters}`
+    : candidate.kind;
+}
+
+/** Whether `next` beats `current` — strictly, so the first session to reach a value keeps it. */
+function beats(next: PrCandidate, current: PrCandidate): boolean {
+  switch (next.kind) {
+    case "load":
+      return current.kind === "load" && next.weight > current.weight;
+    case "reps":
+      return current.kind === "reps" && next.reps > current.reps;
+    case "time":
+      return current.kind === "time" && next.durationSeconds < current.durationSeconds;
+    case "carry":
+      return current.kind === "carry" && next.weight > current.weight;
+    case "hold":
+      return current.kind === "hold" && next.durationSeconds > current.durationSeconds;
+  }
+}
+
 /**
- * Best new non-warmup weight per exercise across the new sessions. Identity
- * mirrors the get_exercise_prs union: catalog id (direct or via the prescribed
- * training_exercise) first, else performed name.
+ * The best new non-warmup value per exercise and kind across the new sessions.
+ * Identity mirrors the get_exercise_prs union: catalog id (direct or via the
+ * prescribed training_exercise) first, else performed name.
  */
 export function collectNewExerciseBests(
   exercises: NewExerciseRow[],
   sessionCreatedAtById: Map<string, string>
-): NewExerciseBest[] {
-  const bests = new Map<string, NewExerciseBest>();
+): NewExerciseBests[] {
+  const byExercise = new Map<
+    string,
+    { exerciseId: string | null; exerciseName: string; byKey: Map<string, PrCandidate> }
+  >();
   for (const row of exercises) {
     const exerciseId = row.exercise_id ?? row.training_exercises?.exercise_id ?? null;
     const exerciseName =
@@ -105,52 +160,143 @@ export function collectNewExerciseBests(
     const at = sessionCreatedAtById.get(row.session_log_id);
     if (!at) continue;
 
-    let rowMax: number | null = null;
-    for (const set of row.set_logs) {
-      if (set.set_type === "warmup" || set.weight == null || set.weight <= 0) continue;
-      if (rowMax === null || set.weight > rowMax) rowMax = set.weight;
+    let entry = byExercise.get(key);
+    if (!entry) {
+      entry = { exerciseId, exerciseName: exerciseName ?? "Unknown exercise", byKey: new Map() };
+      byExercise.set(key, entry);
     }
-    if (rowMax === null) continue;
+    const offer = (candidate: PrCandidate) => {
+      const k = candidateKey(candidate);
+      const current = entry.byKey.get(k);
+      if (!current || beats(candidate, current)) entry.byKey.set(k, candidate);
+    };
 
-    const existing = bests.get(key);
-    if (!existing || rowMax > existing.newMax) {
-      bests.set(key, {
-        exerciseId,
-        exerciseName: exerciseName ?? "Unknown exercise",
-        newMax: rowMax,
-        at,
-      });
+    for (const logged of row.set_logs) {
+      if (logged.set_type === "warmup") continue;
+      const set: MarkerSet = {
+        setType: logged.set_type,
+        reps: logged.reps,
+        weight: logged.weight,
+        rpe: null,
+        distanceMeters: logged.distance_meters,
+        durationSeconds: logged.duration_seconds,
+        paceSecondsPerKm: null,
+        splitSecondsPer500m: null,
+        power: null,
+      };
+      // A load logged with no distance is a lift's; over a distance it is a carry
+      if (hasLoad(set)) {
+        if (set.distanceMeters == null) {
+          offer({ kind: "load", weight: set.weight as number, at });
+        } else {
+          offer({ kind: "carry", distanceMeters: set.distanceMeters, weight: set.weight as number, at });
+        }
+      }
+      if (isBodyweightSet(set)) offer({ kind: "reps", reps: set.reps as number, at });
+      if (isTimedDistance(set)) {
+        offer({
+          kind: "time",
+          distanceMeters: set.distanceMeters as number,
+          durationSeconds: set.durationSeconds as number,
+          at,
+        });
+      }
+      if (isHold(set)) offer({ kind: "hold", durationSeconds: set.durationSeconds as number, at });
     }
   }
-  return [...bests.values()];
+  return [...byExercise.values()]
+    .filter((entry) => entry.byKey.size > 0)
+    .map(({ exerciseId, exerciseName, byKey }) => ({
+      exerciseId,
+      exerciseName,
+      candidates: [...byKey.values()],
+    }));
 }
 
 /**
- * Best weight among PR rows that are NOT attributable to the new sessions.
- *
- * Excluding by attribution DATE (not by comparing against the anchor
- * timestamp) is load-bearing: `session_logs.completed_at` is the prescribed
- * day, written as a bare date → midnight, while the anchor is a real clock
- * time. Comparing the two suppressed every PR logged later on a day whose
- * midnight preceded the anchor — i.e. the everyday "mark seen in the morning,
- * client trains that evening" case.
- *
- * Residual edge: if a PRE-existing session is attributed to the same calendar
- * date as one of the new sessions — a day holding several sessions, the first
- * logged before the coach last looked — its row is excluded too, so
- * previousBest can be understated on that date. The RPC keeps the earliest date
- * per rep bucket, so a weight first hit on an older date still survives.
+ * The PR items one exercise's new sessions earn, judged against its bests as
+ * they stood before them (get_exercise_prs with the new sessions' days
+ * excluded). A value with no prior best of its kind — or none at its distance —
+ * is a first, not a PR: a first-ever exercise emits nothing.
  */
-export function priorBestExcludingDates(
-  rows: { weight: number; date: string }[],
-  excludedDates: ReadonlySet<string>
-): number | null {
-  let best: number | null = null;
-  for (const row of rows) {
-    if (excludedDates.has(row.date.slice(0, 10))) continue;
-    if (best === null || row.weight > best) best = row.weight;
+export function prItemsFor(
+  exerciseName: string,
+  candidates: readonly PrCandidate[],
+  priorBests: readonly ExercisePR[]
+): ActivityItem[] {
+  let priorLoad: number | null = null;
+  let priorReps: number | null = null;
+  let priorHold: number | null = null;
+  const priorTime = new Map<number, number>();
+  const priorCarry = new Map<number, number>();
+  for (const best of priorBests) {
+    switch (best.kind) {
+      case "rep_max":
+        if (priorLoad === null || best.weight > priorLoad) priorLoad = best.weight;
+        break;
+      case "best_reps":
+        priorReps = best.reps;
+        break;
+      case "best_time":
+        priorTime.set(best.distanceMeters, best.durationSeconds);
+        break;
+      case "heaviest_carry":
+        priorCarry.set(best.distanceMeters, best.weight);
+        break;
+      case "longest_hold":
+        priorHold = best.durationSeconds;
+        break;
+    }
   }
-  return best;
+
+  const items: ActivityItem[] = [];
+  for (const candidate of candidates) {
+    const base = { type: "pr" as const, at: candidate.at, exerciseName };
+    switch (candidate.kind) {
+      case "load":
+        if (priorLoad !== null && candidate.weight > priorLoad) {
+          items.push({ ...base, kind: "load", weight: candidate.weight, previousBest: priorLoad });
+        }
+        break;
+      case "reps":
+        if (priorReps !== null && candidate.reps > priorReps) {
+          items.push({ ...base, kind: "reps", reps: candidate.reps, previousBest: priorReps });
+        }
+        break;
+      case "time": {
+        const prior = priorTime.get(candidate.distanceMeters);
+        if (prior !== undefined && candidate.durationSeconds < prior) {
+          items.push({
+            ...base,
+            kind: "time",
+            distanceMeters: candidate.distanceMeters,
+            durationSeconds: candidate.durationSeconds,
+            previousBest: prior,
+          });
+        }
+        break;
+      }
+      case "carry": {
+        const prior = priorCarry.get(candidate.distanceMeters);
+        if (prior !== undefined && candidate.weight > prior) {
+          items.push({
+            ...base,
+            kind: "carry",
+            distanceMeters: candidate.distanceMeters,
+            weight: candidate.weight,
+            previousBest: prior,
+          });
+        }
+        break;
+      }
+      case "hold":
+        if (priorHold !== null && candidate.durationSeconds > priorHold) {
+          items.push({ ...base, kind: "hold", durationSeconds: candidate.durationSeconds, previousBest: priorHold });
+        }
+        break;
+    }
+  }
+  return items;
 }
 
 async function fetchCheckInItems(clientId: string, since: string): Promise<ActivityItem[]> {
@@ -294,7 +440,7 @@ async function fetchSessionActivity(
   since: string
 ): Promise<{
   items: ActivityItem[];
-  bests: NewExerciseBest[];
+  bests: NewExerciseBests[];
   attributionDates: Set<string>;
   prSkipped: boolean;
 }> {
@@ -333,7 +479,7 @@ async function fetchSessionActivity(
     supabaseAdmin
       .from("exercise_logs")
       .select(
-        "session_log_id, exercise_id, performed_name, prescribed_exercise_snapshot, training_exercises(exercise_id), set_logs(weight, set_type)"
+        "session_log_id, exercise_id, performed_name, prescribed_exercise_snapshot, training_exercises(exercise_id), set_logs(weight, reps, distance_meters, duration_seconds, set_type)"
       )
       .in("session_log_id", sessions.map((s) => s.id)),
   ]);
@@ -383,43 +529,44 @@ async function fetchSessionActivity(
 }
 
 /**
- * PRs per locked decision 5: heaviest non-warmup weight ever. A new log emits a
- * PR only when its top weight beats the prior all-time best; first-ever
- * exercises emit nothing. Prior best comes from the get_exercise_prs RPC (the
- * canonical identity union + warm-up exclusion) with the new sessions' own
- * attribution dates excluded — see priorBestExcludingDates for why the exclusion
- * is by date rather than against the anchor timestamp.
+ * PRs: a new log emits one for each best of its exercise it beat — the
+ * heaviest load ever (locked decision 5), the most reps in
+ * a bodyweight set, the fastest time at a distance, the heaviest carry at a
+ * distance, the longest hold — judged by prItemsFor against get_exercise_prs
+ * (the canonical identity union and warm-up exclusion) with the new sessions'
+ * own attribution dates excluded in SQL. Excluding by attribution DATE rather
+ * than against the anchor timestamp is load-bearing: `session_logs.completed_at`
+ * is the prescribed day, written as a bare date at midnight, while the anchor
+ * is a real clock time, and comparing the two suppressed every PR logged later
+ * on a day whose midnight preceded the anchor — the everyday "mark seen in the
+ * morning, client trains that evening" case. Residual edge: a PRE-existing
+ * session attributed to the same calendar date as a new one (a day holding
+ * several sessions, the first logged before the coach last looked) is excluded
+ * too, so a previous best can be understated on that date.
  */
 async function detectPrItems(
   clientId: string,
-  bests: NewExerciseBest[],
+  bests: NewExerciseBests[],
   attributionDates: ReadonlySet<string>
 ): Promise<ActivityItem[]> {
   if (!bests.length) return [];
+  const excludeDates = [...attributionDates];
 
   const results = await Promise.all(
-    bests.map(async (best): Promise<ActivityItem | null> => {
+    bests.map(async (best): Promise<ActivityItem[]> => {
       try {
-        const rows = await getExercisePRs(
-          clientId,
-          best.exerciseId ? { exerciseId: best.exerciseId } : { exerciseName: best.exerciseName }
-        );
-        const previousBest = priorBestExcludingDates(rows, attributionDates);
-        if (previousBest === null || best.newMax <= previousBest) return null;
-        return {
-          type: "pr",
-          at: best.at,
-          exerciseName: best.exerciseName,
-          weight: best.newMax,
-          previousBest,
-        };
+        const rows = await getExercisePRs(clientId, {
+          ...(best.exerciseId ? { exerciseId: best.exerciseId } : { exerciseName: best.exerciseName }),
+          excludeDates,
+        });
+        return prItemsFor(best.exerciseName, best.candidates, rows);
       } catch (error) {
-        console.error(`Failed to compute PR for ${best.exerciseName}:`, error);
-        return null;
+        console.error(`Failed to compute PRs for ${best.exerciseName}:`, error);
+        return [];
       }
     })
   );
-  return results.filter((item): item is ActivityItem => item !== null);
+  return results.flat();
 }
 
 /** The merged since-last-visit feed. Caller passes a non-null anchor. */

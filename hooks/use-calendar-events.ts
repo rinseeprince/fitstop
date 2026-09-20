@@ -32,7 +32,8 @@ function trainingEventsKeyPrefix(clientId: string) {
  * editor needed a hard refresh. A narrow prefix silently excludes every reader
  * added after it.
  */
-function trainingAreaKeyPrefix(clientId: string) {
+/** The coach's training area: every read under it, the calendar and the exercise history alike, is invalidated together. */
+export function trainingAreaKeyPrefix(clientId: string) {
   return `/api/clients/${clientId}/training`;
 }
 

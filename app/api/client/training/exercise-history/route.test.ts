@@ -50,7 +50,7 @@ describe("GET /api/client/training/exercise-history", () => {
   });
 
   it("returns 200 with the exercise list scoped to the authed client", async () => {
-    const list = [{ exerciseId: "e1", name: "Bench Press", logCount: 5, lastLoggedDate: "2026-05-01" }];
+    const list = [{ exerciseId: "e1", name: "Bench Press", logCount: 5, lastLoggedDate: "2026-05-01", exerciseType: "strength" }];
     vi.mocked(getClientExerciseList).mockResolvedValue(list as never);
 
     const response = await GET(makeRequest("metric=list"));

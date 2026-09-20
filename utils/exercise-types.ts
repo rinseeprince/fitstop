@@ -5,9 +5,9 @@
 // log — those reference the catalog by `exercise_id`, and the columns a coach
 // chose already sit on the prescription (`prescribed_fields`). A type decides
 // the column preset a new exercise starts on (utils/column-presets.ts: one
-// preset per type, plus Circuit) and, from commit 16, the chart its progress
-// is drawn as. The keys ARE the preset keys, so a type's preset is a lookup,
-// never a mapping. The CHECK in migration 185 mirrors this list, and
+// preset per type, plus Circuit) and the markers its progress chart leads with
+// (utils/exercise-progress-markers.ts: one lead list per type). The keys ARE
+// the preset keys, so a type's preset is a lookup, never a mapping. The CHECK in migration 185 mirrors this list, and
 // exercise-types.test.ts fails if the two differ.
 
 export const EXERCISE_TYPES = [

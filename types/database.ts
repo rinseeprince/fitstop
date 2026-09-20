@@ -3214,6 +3214,7 @@ export type Database = {
         }
         Returns: {
           exercise_id: string
+          exercise_type: string
           last_logged_date: string
           log_count: number
           name: string
@@ -3236,26 +3237,44 @@ export type Database = {
           p_start_date?: string
         }
         Returns: {
+          cadence: number
+          calories: number
           completed_at: string
+          distance_meters: number
+          duration_seconds: number
           exercise_log_id: string
+          ftp_percent: number
+          heart_rate: number
+          heart_rate_zone: number
+          pace_seconds_per_km: number
+          power: number
           prescribed_exercise_snapshot: Json
           reps: number
+          resistance: number
+          rest_seconds: number
+          rir: number
           rpe: number
           session_log_id: string
           set_id: string
           set_number: number
           set_type: string
+          split_seconds_per_500m: number
+          stroke_rate: number
           weight: number
         }[]
       }
       get_exercise_prs: {
         Args: {
           p_client_id: string
+          p_exclude_dates?: string[]
           p_exercise_id?: string
           p_exercise_name?: string
         }
         Returns: {
           date: string
+          distance_meters: number
+          duration_seconds: number
+          kind: string
           reps: number
           weight: number
         }[]

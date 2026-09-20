@@ -22,24 +22,12 @@ import {
   MONO,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { ExerciseListItem } from "@/types/training";
+import type { ProgressMarker } from "@/utils/exercise-progress-markers";
 
-export type ExerciseMetric =
-  | "weight"
-  | "e1rm"
-  | "volume"
-  | "rpe"
-  | "compliance"
-  | "prs";
+/** A lens: one of the chart markers the exercise offers, or its PRs. */
+export type ExerciseMetric = ProgressMarker | "prs";
 
-// Sentence case preserves the e1RM/PRs casing (control options are sans).
-const METRIC_OPTIONS: { value: ExerciseMetric; label: string }[] = [
-  { value: "weight", label: "Weight" },
-  { value: "e1rm", label: "e1RM" },
-  { value: "volume", label: "Volume" },
-  { value: "rpe", label: "RPE" },
-  { value: "compliance", label: "Compliance" },
-  { value: "prs", label: "PRs" },
-];
+export type ExerciseMetricOption = { value: ExerciseMetric; label: string };
 
 type ExerciseSearchSelectProps = {
   exercises: ExerciseListItem[] | undefined;
@@ -47,6 +35,8 @@ type ExerciseSearchSelectProps = {
   selectedExerciseId: string | null;
   selectedExerciseName: string | null;
   onSelect: (exercise: ExerciseListItem) => void;
+  /** The lenses the selected exercise offers, in order; sentence case preserves the e1RM/PRs casing (control options are sans). */
+  options: ExerciseMetricOption[];
   metric: ExerciseMetric;
   onMetricChange: (metric: ExerciseMetric) => void;
 };
@@ -60,6 +50,7 @@ export function ExerciseSearchSelect({
   selectedExerciseId,
   selectedExerciseName,
   onSelect,
+  options,
   metric,
   onMetricChange,
 }: ExerciseSearchSelectProps) {
@@ -152,7 +143,7 @@ export function ExerciseSearchSelect({
       {/* Metric lens row — the hero's "underneath" slot (the Metrics hero's
           stat-band position). Active = the icon strip's on-dark active recipe. */}
       <div className="mt-3 flex items-center gap-1 border-t border-[rgba(255,255,255,0.06)] pt-3">
-        {METRIC_OPTIONS.map((m) => (
+        {options.map((m) => (
           <button
             key={m.value}
             type="button"

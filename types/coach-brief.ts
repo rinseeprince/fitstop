@@ -26,6 +26,21 @@ export type BlockEnding = {
 } | null;
 
 /**
+ * A new personal record, by what it beat (services/client-activity-feed-service.ts
+ * detects them against get_exercise_prs' bests): the heaviest load ever lifted,
+ * the most reps in a set logged with no load, the fastest time over a distance,
+ * the heaviest load carried over a distance, the longest hold. `previousBest`
+ * is in the record's own measure — kilograms, reps, seconds, kilograms,
+ * seconds — canonical, converted at the render boundary.
+ */
+export type PrActivity =
+  | { kind: "load"; weight: number; previousBest: number }
+  | { kind: "reps"; reps: number; previousBest: number }
+  | { kind: "time"; distanceMeters: number; durationSeconds: number; previousBest: number }
+  | { kind: "carry"; distanceMeters: number; weight: number; previousBest: number }
+  | { kind: "hold"; durationSeconds: number; previousBest: number };
+
+/**
  * One item in the since-last-visit activity feed (newest first, capped).
  * `at` is the feed timeline anchor: when the row became visible to the coach
  * (created_at), not the day it is attributed to.
@@ -41,7 +56,7 @@ export type ActivityItem =
       value: number;
       previousValue: number | null;
     }
-  | { type: "pr"; at: string; exerciseName: string; weight: number; previousBest: number }
+  | ({ type: "pr"; at: string; exerciseName: string } & PrActivity)
   | { type: "session_completed"; at: string; sessionName: string; exerciseCount: number };
 
 /**

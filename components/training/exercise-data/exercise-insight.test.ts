@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeKpis, computeInsight } from "./exercise-insight";
+import { computeKpis, computeInsight, usesStrengthAnalytics } from "./exercise-insight";
 import type { ExerciseProgressionPoint } from "@/types/training";
 
 // This module carried nine hardcoded "kg" labels, so every coach saw kilograms
@@ -16,6 +16,19 @@ function point(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseProgr
     estimatedOneRepMax: 112.5,
     totalVolume: 2000,
     topSetRpe: 8,
+    topSetDistanceMeters: null,
+    topSetDurationSeconds: null,
+    bestSetReps: null,
+    bestPaceSecondsPerKm: null,
+    bestPaceDistanceMeters: null,
+    totalDistanceMeters: null,
+    bestSplitSecondsPer500m: null,
+    bestSplitDistanceMeters: null,
+    bestPower: null,
+    bestTimeSeconds: null,
+    bestTimeDistanceMeters: null,
+    bestTimeWeight: null,
+    longestHoldSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: 5,
@@ -31,7 +44,7 @@ describe("computeKpis — weight", () => {
   ];
 
   it("labels a metric viewer's cards in kilograms", () => {
-    const kpis = computeKpis("weight", data, "metric");
+    const kpis = computeKpis("weight", "strength", data, "metric");
 
     expect(kpis[0]).toMatchObject({ label: "Top Set", value: "100", unit: "kg" });
     expect(kpis[1]).toMatchObject({ label: "Estimated 1RM", unit: "kg" });
@@ -39,7 +52,7 @@ describe("computeKpis — weight", () => {
   });
 
   it("converts and snaps for an imperial viewer", () => {
-    const kpis = computeKpis("weight", data, "imperial");
+    const kpis = computeKpis("weight", "strength", data, "imperial");
 
     // 100 kg is 220.46 lbs; a loadable readout is 220.
     expect(kpis[0]).toMatchObject({ label: "Top Set", value: "220", unit: "lbs" });
@@ -51,10 +64,10 @@ describe("computeKpis — weight", () => {
     // delta a coach can verify by subtracting the two displayed numbers is 22.5.
     // The true difference is 22.05, so the 2.5 lb increment lands within half a
     // pound of it; the old 5 lb increment reported 20.
-    const kpis = computeKpis("weight", data, "imperial");
+    const kpis = computeKpis("weight", "strength", data, "imperial");
     expect(kpis[0].meta).toBe("+22.5 over period");
 
-    expect(computeKpis("weight", data, "metric")[0].meta).toBe("+10 over period");
+    expect(computeKpis("weight", "strength", data, "metric")[0].meta).toBe("+10 over period");
   });
 });
 
@@ -65,27 +78,27 @@ describe("computeKpis — e1RM and volume", () => {
   ];
 
   it("labels e1RM in the viewer's unit", () => {
-    expect(computeKpis("e1rm", data, "metric")[0]).toMatchObject({
+    expect(computeKpis("e1rm", "strength", data, "metric")[0]).toMatchObject({
       label: "Current e1RM",
       value: "120",
       unit: "kg",
     });
-    expect(computeKpis("e1rm", data, "imperial")[0]).toMatchObject({
+    expect(computeKpis("e1rm", "strength", data, "imperial")[0]).toMatchObject({
       label: "Current e1RM",
       unit: "lbs",
     });
   });
 
   it("labels volume in the viewer's unit", () => {
-    const metric = computeKpis("volume", data, "metric");
+    const metric = computeKpis("volume", "strength", data, "metric");
     expect(metric[0]).toMatchObject({ label: "Total Volume", unit: "kg" });
 
-    const imperial = computeKpis("volume", data, "imperial");
+    const imperial = computeKpis("volume", "strength", data, "imperial");
     expect(imperial.every((k) => k.unit === "lbs")).toBe(true);
   });
 
   it("leaves unitless metrics alone", () => {
-    expect(computeKpis("rpe", data, "imperial").every((k) => k.unit !== "lbs")).toBe(true);
+    expect(computeKpis("rpe", "strength", data, "imperial").every((k) => k.unit !== "lbs")).toBe(true);
   });
 });
 
@@ -98,5 +111,44 @@ describe("computeInsight", () => {
   it("states a new PR in the viewer's unit", () => {
     expect(computeInsight("weight", data, "metric")).toContain("new PR of 100kg");
     expect(computeInsight("weight", data, "imperial")).toContain("new PR of 220lbs");
+  });
+});
+
+describe("usesStrengthAnalytics", () => {
+  it("keeps the worded cards for RPE and Compliance everywhere, and for the load lenses on Strength alone", () => {
+    expect(usesStrengthAnalytics("strength", "weight")).toBe(true);
+    expect(usesStrengthAnalytics("bodyweight", "weight")).toBe(false);
+    expect(usesStrengthAnalytics("endurance", "rpe")).toBe(true);
+    expect(usesStrengthAnalytics("holds", "compliance")).toBe(true);
+    expect(usesStrengthAnalytics("strength", "pace")).toBe(false);
+  });
+});
+
+describe("computeKpis — a marker's own three cards", () => {
+  const blank: Omit<ExerciseProgressionPoint, "date" | "sessionLogId"> = {
+    topSetWeight: null, topSetReps: null, topSetRpe: null, topSetDistanceMeters: null, topSetDurationSeconds: null,
+    estimatedOneRepMax: null, totalVolume: null, bestSetReps: null, bestPaceSecondsPerKm: null, bestPaceDistanceMeters: null,
+    totalDistanceMeters: null, bestSplitSecondsPer500m: null, bestSplitDistanceMeters: null, bestPower: null,
+    bestTimeSeconds: null, bestTimeDistanceMeters: null, bestTimeWeight: null, longestHoldSeconds: null,
+    prescribedSets: null, actualSets: 1, prescribedRepsMin: null, prescribedRepsMax: null,
+  };
+  const run = (date: string, pace: number): ExerciseProgressionPoint => ({ ...blank, date, sessionLogId: date, bestPaceSecondsPerKm: pace });
+
+  it("reads Latest, the best by the marker's word, and the change in the viewer's units", () => {
+    const data = [run("2026-09-01T00:00:00Z", 314), run("2026-09-08T00:00:00Z", 308), run("2026-09-15T00:00:00Z", 301)];
+    const kpis = computeKpis("pace", "endurance", data, "metric");
+    expect(kpis.map((k) => k.label)).toEqual(["Latest", "Fastest", "Change"]);
+    expect(kpis[0]).toMatchObject({ value: "5:01", unit: "/km" });
+    expect(kpis[1]).toMatchObject({ value: "5:01", unit: "/km" });
+    expect(kpis[2]).toMatchObject({ value: "-0:13", unit: "/km", trend: "down" });
+    expect(computeKpis("pace", "endurance", data, "imperial")[0]).toMatchObject({ value: "8:04", unit: "/mi" });
+  });
+
+  it("reads a load lens on another type through the same three cards, in the viewer's unit", () => {
+    const data = [{ ...blank, date: "2026-09-01T00:00:00Z", sessionLogId: "a", topSetWeight: 60, topSetReps: 3 }];
+    const kpis = computeKpis("weight", "carry_sled", data, "imperial");
+    expect(kpis.map((k) => k.label)).toEqual(["Latest", "Heaviest", "Change"]);
+    expect(kpis[0]).toMatchObject({ value: "132.5", unit: "lbs" });
+    expect(kpis[2]).toMatchObject({ value: "-" });
   });
 });

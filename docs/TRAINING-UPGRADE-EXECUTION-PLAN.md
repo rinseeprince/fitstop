@@ -1148,7 +1148,7 @@ or more; a new AMRAP starts with a 10-minute cap and a new EMOM at every minute.
 format uses are one table, `GROUP_FORMAT_SETTINGS` (`utils/exercise-groups.ts`), and the format is a
 dropdown in the settings popover, since the segmented control cannot hold five names.*
 
-### Commit 16 — Progress charts by exercise type
+### Commit 16 — Progress charts by exercise type — SHIPPED 2026-09-20
 
 ```text
 Implement commit 16 of 22 — Progress charts by exercise type — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
@@ -1166,6 +1166,13 @@ WHEN THIS COMMIT IS DONE
 
 RULES: §4.4 — closed.
 ```
+
+*Answered by the owner at the plan (2026-09-20):* endurance bests appear as PRs everywhere a PR
+appears — the coach's PRs lens, the client's Personal records and the Overview's "New personal
+record" feed item — and a best time is keyed by the exact logged distance. The markers, the bests and
+the column rules a chart follows are `utils/exercise-progress-markers.ts` and
+`utils/exercise-session-markers.ts` (migration 188; `docs/ARCHITECTURE.md` → "Exercise progress:
+charts and PRs").
 
 ### Commit 17 — Endurance progression
 

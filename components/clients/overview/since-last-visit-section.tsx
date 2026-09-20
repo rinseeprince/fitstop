@@ -20,6 +20,8 @@ import { formatMetricValue, formatRelativeShort, pluralize } from "./overview-fo
 import type { ActivityItem } from "@/types/coach-brief";
 import { useUnits } from "@/contexts/units-context";
 import {
+  formatDistance,
+  formatDuration,
   formatLength,
   formatLoad,
   formatWeight,
@@ -64,6 +66,70 @@ function toViewer(metricKey: string, value: number, viewer: UnitSystem): number 
   if (convert === "weight") return formatWeight(value, viewer).value;
   if (convert === "length") return formatLength(value, viewer).value;
   return value;
+}
+
+/**
+ * The record and what it beat, in the record's own measure. A load is a
+ * barbell load, so formatLoad — it snaps to something you can actually put on
+ * a bar; a distance and a time read the way the client's boxes read them.
+ */
+function PrDetail({
+  item,
+  viewer,
+}: {
+  item: Extract<ActivityItem, { type: "pr" }>;
+  viewer: UnitSystem;
+}) {
+  const load = (kg: number) => {
+    const shown = formatLoad(kg, viewer);
+    return `${shown.value} ${shown.unit}`;
+  };
+  switch (item.kind) {
+    case "load":
+      return (
+        <>
+          <Mono>{load(item.weight)}</Mono>
+          {", was "}
+          <Mono>{load(item.previousBest)}</Mono>
+        </>
+      );
+    case "reps":
+      return (
+        <>
+          <Mono>{item.reps} reps</Mono>
+          {", was "}
+          <Mono>{item.previousBest}</Mono>
+        </>
+      );
+    case "time":
+      return (
+        <>
+          <Mono>{formatDistance(item.distanceMeters, viewer)}</Mono>
+          {" in "}
+          <Mono>{formatDuration(item.durationSeconds)}</Mono>
+          {", was "}
+          <Mono>{formatDuration(item.previousBest)}</Mono>
+        </>
+      );
+    case "carry":
+      return (
+        <>
+          <Mono>{formatDistance(item.distanceMeters, viewer)}</Mono>
+          {" with "}
+          <Mono>{load(item.weight)}</Mono>
+          {", was "}
+          <Mono>{load(item.previousBest)}</Mono>
+        </>
+      );
+    case "hold":
+      return (
+        <>
+          <Mono>{formatDuration(item.durationSeconds)}</Mono>
+          {", was "}
+          <Mono>{formatDuration(item.previousBest)}</Mono>
+        </>
+      );
+  }
 }
 
 function Mono({ children }: { children: ReactNode }) {
@@ -117,16 +183,7 @@ function describe(
           <>
             {item.exerciseName}
             {" · "}
-            {/* A PR is a barbell load, so formatLoad — it snaps to something
-                you can actually put on a bar. */}
-            <Mono>
-              {formatLoad(item.weight, viewer).value} {formatLoad(item.weight, viewer).unit}
-            </Mono>
-            {", was "}
-            <Mono>
-              {formatLoad(item.previousBest, viewer).value}{" "}
-              {formatLoad(item.previousBest, viewer).unit}
-            </Mono>
+            <PrDetail item={item} viewer={viewer} />
           </>
         ),
       };

@@ -34,7 +34,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 function makeListItem(overrides: Partial<ExerciseListItem> = {}): ExerciseListItem {
-  return { exerciseId: "ex-1", name: "Bench Press", logCount: 12, lastLoggedDate: "2026-05-15", ...overrides };
+  return { exerciseId: "ex-1", name: "Bench Press", logCount: 12, lastLoggedDate: "2026-05-15", exerciseType: "strength", ...overrides };
 }
 function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseProgressionPoint {
   return {
@@ -42,9 +42,22 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
     sessionLogId: "sl-1",
     topSetWeight: 80,
     topSetReps: 8,
+    topSetRpe: 7,
+    topSetDistanceMeters: null,
+    topSetDurationSeconds: null,
     estimatedOneRepMax: 100,
     totalVolume: 2400,
-    topSetRpe: 7,
+    bestSetReps: null,
+    bestPaceSecondsPerKm: null,
+    bestPaceDistanceMeters: null,
+    totalDistanceMeters: null,
+    bestSplitSecondsPer500m: null,
+    bestSplitDistanceMeters: null,
+    bestPower: null,
+    bestTimeSeconds: null,
+    bestTimeDistanceMeters: null,
+    bestTimeWeight: null,
+    longestHoldSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: 8,
@@ -52,8 +65,8 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
     ...overrides,
   };
 }
-function makePR(overrides: Partial<ExercisePR> = {}): ExercisePR {
-  return { reps: 5, weight: 100, date: "2026-05-15T00:00:00Z", isRecent: false, ...overrides };
+function makePR(overrides: Partial<Extract<ExercisePR, { kind: "rep_max" }>> = {}): ExercisePR {
+  return { kind: "rep_max", reps: 5, weight: 100, date: "2026-05-15T00:00:00Z", isRecent: false, ...overrides };
 }
 
 function setupSWR(options: {
@@ -190,5 +203,48 @@ describe("PerformanceView", () => {
     setupSWR({ list: [makeListItem()], progression: [makePoint(), makePoint({ date: "2026-05-08" })], prs: [] });
     render(<PerformanceView />);
     expect(screen.getByText(/No personal records yet/i)).toBeInTheDocument();
+  });
+});
+
+describe("PerformanceView — lenses by type", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchParams.set("exerciseId", "ex-1");
+    mockSearchParams.set("exerciseName", "Running");
+  });
+
+  it("offers a run its pace and distance, never the coach's lenses, and its best times as PRs", () => {
+    setupSWR({
+      list: [makeListItem({ name: "Running", exerciseType: "endurance" })],
+      progression: [
+        makePoint({ topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, bestPaceSecondsPerKm: 314, totalDistanceMeters: 5000 }),
+        makePoint({ date: "2026-05-08", topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, bestPaceSecondsPerKm: 301, totalDistanceMeters: 5000 }),
+      ],
+      prs: [{ kind: "best_time", distanceMeters: 5000, durationSeconds: 1505, date: "2026-05-08T00:00:00Z", isRecent: true }],
+    });
+    render(<PerformanceView />);
+
+    expect(screen.getByRole("button", { name: "Pace" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Distance" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Compliance" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Weight" })).toBeNull();
+    expect(screen.getByText("Pace over time")).toBeInTheDocument();
+    expect(screen.getByText("5 km")).toBeInTheDocument();
+    expect(screen.getByText("25:05")).toBeInTheDocument();
+  });
+
+  it("shows no metric switcher when an exercise offers one lens", () => {
+    setupSWR({
+      list: [makeListItem({ name: "Plank", exerciseType: "holds" })],
+      progression: [
+        makePoint({ topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, longestHoldSeconds: 90 }),
+        makePoint({ date: "2026-05-08", topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, longestHoldSeconds: 120 }),
+      ],
+    });
+    render(<PerformanceView />);
+
+    expect(screen.queryByRole("group", { name: "Metric" })).toBeNull();
+    expect(screen.getByRole("group", { name: "Sessions" })).toBeInTheDocument();
+    expect(screen.getByText("Longest hold over time")).toBeInTheDocument();
   });
 });

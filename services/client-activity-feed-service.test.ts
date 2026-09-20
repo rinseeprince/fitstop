@@ -8,11 +8,13 @@ import {
   collectNewExerciseBests,
   mergeAndCapActivity,
   predecessorKey,
-  priorBestExcludingDates,
+  prItemsFor,
   ACTIVITY_FEED_CAP,
   type MetricEntryFeedRow,
+  type PrCandidate,
 } from "./client-activity-feed-service";
 import type { ActivityItem } from "@/types/coach-brief";
+import type { ExerciseBest, ExercisePR } from "@/types/training";
 
 const entry = (
   metricKey: string,
@@ -69,13 +71,30 @@ describe("buildMeasurementItems", () => {
   });
 });
 
+const logged = (
+  overrides: Partial<{
+    weight: number | null;
+    reps: number | null;
+    distance_meters: number | null;
+    duration_seconds: number | null;
+    set_type: string;
+  }> = {}
+) => ({
+  weight: null,
+  reps: null,
+  distance_meters: null,
+  duration_seconds: null,
+  set_type: "working",
+  ...overrides,
+});
+
 describe("collectNewExerciseBests", () => {
   const sessionAt = new Map([
     ["log-1", "2026-06-14T18:00:00Z"],
     ["log-2", "2026-06-16T18:00:00Z"],
   ]);
 
-  it("takes the heaviest non-warmup set, keyed on catalog id, across sessions", () => {
+  it("takes the heaviest non-warmup load, keyed on catalog id, across sessions", () => {
     const bests = collectNewExerciseBests(
       [
         {
@@ -85,8 +104,8 @@ describe("collectNewExerciseBests", () => {
           prescribed_exercise_snapshot: null,
           training_exercises: null,
           set_logs: [
-            { weight: 120, set_type: "warmup" },
-            { weight: 100, set_type: "working" },
+            logged({ weight: 120, reps: 5, set_type: "warmup" }),
+            logged({ weight: 100, reps: 5 }),
           ],
         },
         {
@@ -95,7 +114,7 @@ describe("collectNewExerciseBests", () => {
           performed_name: "Bench Press",
           prescribed_exercise_snapshot: null,
           training_exercises: { exercise_id: "ex-1" },
-          set_logs: [{ weight: 102.5, set_type: "failure" }],
+          set_logs: [logged({ weight: 102.5, reps: 3, set_type: "failure" })],
         },
       ],
       sessionAt
@@ -105,13 +124,12 @@ describe("collectNewExerciseBests", () => {
       {
         exerciseId: "ex-1",
         exerciseName: "Bench Press",
-        newMax: 102.5,
-        at: "2026-06-16T18:00:00Z",
+        candidates: [{ kind: "load", weight: 102.5, at: "2026-06-16T18:00:00Z" }],
       },
     ]);
   });
 
-  it("falls back to a name identity and skips exercises with no loggable sets", () => {
+  it("falls back to a name identity and skips exercises whose sets recorded nothing a best reads", () => {
     const bests = collectNewExerciseBests(
       [
         {
@@ -120,7 +138,7 @@ describe("collectNewExerciseBests", () => {
           performed_name: "Sled Push",
           prescribed_exercise_snapshot: null,
           training_exercises: null,
-          set_logs: [{ weight: 60, set_type: "working" }],
+          set_logs: [logged({ weight: 60 })],
         },
         {
           session_log_id: "log-1",
@@ -128,49 +146,142 @@ describe("collectNewExerciseBests", () => {
           performed_name: "Plank",
           prescribed_exercise_snapshot: null,
           training_exercises: null,
-          set_logs: [{ weight: null, set_type: "working" }],
+          set_logs: [logged({ weight: null })],
         },
       ],
       sessionAt
     );
 
     expect(bests).toEqual([
-      { exerciseId: null, exerciseName: "Sled Push", newMax: 60, at: "2026-06-14T18:00:00Z" },
+      {
+        exerciseId: null,
+        exerciseName: "Sled Push",
+        candidates: [{ kind: "load", weight: 60, at: "2026-06-14T18:00:00Z" }],
+      },
+    ]);
+  });
+
+  it("reads every kind off the logged columns: reps with no load, a time at a distance, a carry, a hold", () => {
+    const bests = collectNewExerciseBests(
+      [
+        {
+          session_log_id: "log-1",
+          exercise_id: "pull-up",
+          performed_name: "Pull Up",
+          prescribed_exercise_snapshot: null,
+          training_exercises: null,
+          set_logs: [logged({ reps: 12 }), logged({ reps: 15, weight: 0 }), logged({ reps: 6, weight: 10 })],
+        },
+        {
+          session_log_id: "log-1",
+          exercise_id: "row",
+          performed_name: "Rowing",
+          prescribed_exercise_snapshot: null,
+          training_exercises: null,
+          set_logs: [
+            logged({ distance_meters: 1000, duration_seconds: 230 }),
+            logged({ distance_meters: 1000, duration_seconds: 222.1 }),
+            logged({ distance_meters: 500, duration_seconds: 105 }),
+          ],
+        },
+        {
+          session_log_id: "log-2",
+          exercise_id: "carry",
+          performed_name: "Farmers Carry",
+          prescribed_exercise_snapshot: null,
+          training_exercises: null,
+          set_logs: [logged({ weight: 60, distance_meters: 40, duration_seconds: 38 }), logged({ weight: 64, distance_meters: 40, duration_seconds: 35 })],
+        },
+        {
+          session_log_id: "log-2",
+          exercise_id: "plank",
+          performed_name: "Plank",
+          prescribed_exercise_snapshot: null,
+          training_exercises: null,
+          set_logs: [logged({ duration_seconds: 90 }), logged({ duration_seconds: 120 })],
+        },
+      ],
+      sessionAt
+    );
+
+    expect(bests).toEqual([
+      {
+        exerciseId: "pull-up",
+        exerciseName: "Pull Up",
+        candidates: [
+          { kind: "reps", reps: 15, at: "2026-06-14T18:00:00Z" },
+          { kind: "load", weight: 10, at: "2026-06-14T18:00:00Z" },
+        ],
+      },
+      {
+        exerciseId: "row",
+        exerciseName: "Rowing",
+        candidates: [
+          { kind: "time", distanceMeters: 1000, durationSeconds: 222.1, at: "2026-06-14T18:00:00Z" },
+          { kind: "time", distanceMeters: 500, durationSeconds: 105, at: "2026-06-14T18:00:00Z" },
+        ],
+      },
+      {
+        exerciseId: "carry",
+        exerciseName: "Farmers Carry",
+        candidates: [
+          { kind: "carry", distanceMeters: 40, weight: 64, at: "2026-06-16T18:00:00Z" },
+          { kind: "time", distanceMeters: 40, durationSeconds: 35, at: "2026-06-16T18:00:00Z" },
+        ],
+      },
+      {
+        exerciseId: "plank",
+        exerciseName: "Plank",
+        candidates: [{ kind: "hold", durationSeconds: 120, at: "2026-06-16T18:00:00Z" }],
+      },
     ]);
   });
 });
 
-describe("priorBestExcludingDates", () => {
-  it("takes the max weight among rows not attributed to the new sessions", () => {
+describe("prItemsFor", () => {
+  const AT = "2026-06-16T18:00:00Z";
+  const pr = (best: ExerciseBest): ExercisePR => ({ ...best, date: "2026-06-01T00:00:00+00:00", isRecent: false });
+
+  it("announces a load that beats the heaviest weight of any rep count, and nothing on a first-ever exercise", () => {
+    const candidates: PrCandidate[] = [{ kind: "load", weight: 110, at: AT }];
     expect(
-      priorBestExcludingDates(
-        [
-          { weight: 100, date: "2026-06-01T00:00:00+00:00" },
-          { weight: 105, date: "2026-06-08T00:00:00+00:00" },
-          { weight: 110, date: "2026-06-12T00:00:00+00:00" },
-        ],
-        new Set(["2026-06-12"])
-      )
-    ).toBe(105);
+      prItemsFor("Bench Press", candidates, [pr({ kind: "rep_max", reps: 5, weight: 100 }), pr({ kind: "rep_max", reps: 3, weight: 105 })])
+    ).toEqual([{ type: "pr", at: AT, exerciseName: "Bench Press", kind: "load", weight: 110, previousBest: 105 }]);
+    expect(prItemsFor("Bench Press", [{ kind: "load", weight: 105, at: AT }], [pr({ kind: "rep_max", reps: 3, weight: 105 })])).toEqual([]);
+    expect(prItemsFor("Bench Press", candidates, [])).toEqual([]);
   });
 
-  it("returns null when every row belongs to the new sessions (first-ever exercise)", () => {
+  it("announces more reps in a bodyweight set and a longer hold", () => {
     expect(
-      priorBestExcludingDates(
-        [{ weight: 110, date: "2026-06-12T00:00:00+00:00" }],
-        new Set(["2026-06-12"])
-      )
-    ).toBeNull();
+      prItemsFor("Pull Up", [{ kind: "reps", reps: 15, at: AT }], [pr({ kind: "best_reps", reps: 12 })])
+    ).toEqual([{ type: "pr", at: AT, exerciseName: "Pull Up", kind: "reps", reps: 15, previousBest: 12 }]);
+    expect(
+      prItemsFor("Plank", [{ kind: "hold", durationSeconds: 120, at: AT }], [pr({ kind: "longest_hold", durationSeconds: 105 })])
+    ).toEqual([{ type: "pr", at: AT, exerciseName: "Plank", kind: "hold", durationSeconds: 120, previousBest: 105 }]);
+    expect(prItemsFor("Plank", [{ kind: "hold", durationSeconds: 100, at: AT }], [pr({ kind: "longest_hold", durationSeconds: 105 })])).toEqual([]);
   });
 
-  it("does not treat a same-day session logged after Mark seen as its own prior best", () => {
-    // The regression this replaced: completed_at is the prescribed day (midnight),
-    // so an evening PR on a morning-anchored day looked like pre-anchor history.
-    const rows = [
-      { weight: 105, date: "2026-07-20T00:00:00+00:00" },
-      { weight: 110, date: "2026-07-26T00:00:00+00:00" }, // the new session's own row
+  it("judges a time and a carry against the best at the same distance only", () => {
+    const prior = [
+      pr({ kind: "best_time", distanceMeters: 1000, durationSeconds: 230 }),
+      pr({ kind: "heaviest_carry", distanceMeters: 40, weight: 60 }),
     ];
-    expect(priorBestExcludingDates(rows, new Set(["2026-07-26"]))).toBe(105);
+    expect(
+      prItemsFor(
+        "Rowing",
+        [
+          { kind: "time", distanceMeters: 1000, durationSeconds: 222.1, at: AT },
+          { kind: "time", distanceMeters: 500, durationSeconds: 105, at: AT },
+        ],
+        prior
+      )
+    ).toEqual([
+      { type: "pr", at: AT, exerciseName: "Rowing", kind: "time", distanceMeters: 1000, durationSeconds: 222.1, previousBest: 230 },
+    ]);
+    expect(
+      prItemsFor("Farmers Carry", [{ kind: "carry", distanceMeters: 40, weight: 64, at: AT }], prior)
+    ).toEqual([{ type: "pr", at: AT, exerciseName: "Farmers Carry", kind: "carry", distanceMeters: 40, weight: 64, previousBest: 60 }]);
+    expect(prItemsFor("Rowing", [{ kind: "time", distanceMeters: 1000, durationSeconds: 235, at: AT }], prior)).toEqual([]);
   });
 });
 
@@ -178,7 +289,7 @@ describe("mergeAndCapActivity", () => {
   it("sorts newest-first across item types and caps the feed", () => {
     const items: ActivityItem[] = [
       { type: "check_in", at: "2026-06-10T08:00:00Z" },
-      { type: "pr", at: "2026-06-12T08:00:00Z", exerciseName: "Squat", weight: 140, previousBest: 135 },
+      { type: "pr", at: "2026-06-12T08:00:00Z", exerciseName: "Squat", kind: "load", weight: 140, previousBest: 135 },
       { type: "session_completed", at: "2026-06-11T08:00:00Z", sessionName: "Push", exerciseCount: 5 },
     ];
     const merged = mergeAndCapActivity(items, 2);

@@ -1,17 +1,30 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { calculateEpleyE1RM } from "@/utils/exercise-analytics-helpers";
 import { countWorkingSets } from "@/utils/exercise-set-specs";
+import { toExerciseType } from "@/utils/exercise-types";
+import { isBestKind } from "@/utils/exercise-progress-markers";
+import {
+  aggregateSessionMarkers,
+  type MarkerSet,
+} from "@/utils/exercise-session-markers";
 import type {
+  ExerciseBest,
   ExerciseListItem,
   ExerciseProgressionPoint,
   ExercisePR,
 } from "@/types/training";
 
 // ---------------------------------------------------------------------------
-// Public API — backed by SQL RPCs (migration 094). Identity-union + windowing
-// + group aggregates live in Postgres; per-set math stays in JS over the
-// bounded RPC result.
+// Public API — backed by SQL RPCs (migrations 094 to 188). Identity-union,
+// windowing and the bests live in Postgres; a session's chart markers are
+// computed in JS over the bounded RPC result by the one kernel
+// (utils/exercise-session-markers.ts), so every exercise type reads one shape.
 // ---------------------------------------------------------------------------
+
+/** A PR is "recent" for this long after the day it was set. */
+const PR_RECENT_DAYS = 28;
+
+const toNumber = (value: number | string | null | undefined): number | null =>
+  value == null ? null : Number(value);
 
 export async function getClientExerciseList(
   clientId: string,
@@ -33,6 +46,8 @@ export async function getClientExerciseList(
     name: row.name ?? "Unknown exercise",
     logCount: Number(row.log_count),
     lastLoggedDate: row.last_logged_date,
+    // The catalog row's type; a freehand name has no row and reads as Strength
+    exerciseType: toExerciseType(row.exercise_type),
   }));
 }
 
@@ -65,16 +80,10 @@ export async function getExerciseProgressionSeries(
     throw new Error(`Failed to fetch exercise progression: ${error.message}`);
   }
 
-  type SetRow = {
-    reps: number | null;
-    weight: number | null;
-    rpe: number | null;
-    setType: string;
-  };
   type SessionGroup = {
     completedAt: string;
     snapshot: Record<string, unknown> | null;
-    sets: SetRow[];
+    sets: MarkerSet[];
   };
 
   const groups = new Map<string, SessionGroup>();
@@ -91,13 +100,19 @@ export async function getExerciseProgressionSeries(
       };
       groups.set(row.session_log_id, group);
     }
+    // A zero-set exercise_log still emits one row (LEFT JOIN): no set to add
     if (row.set_id !== null && row.set_id !== undefined) {
       group.sets.push({
-        reps: row.reps,
-        weight: row.weight !== null ? Number(row.weight) : null,
-        rpe: row.rpe !== null ? Number(row.rpe) : null,
         // NOT NULL column (default 'working'); guarded for any legacy/null row.
         setType: row.set_type ?? "working",
+        reps: row.reps,
+        weight: toNumber(row.weight),
+        rpe: toNumber(row.rpe),
+        distanceMeters: toNumber(row.distance_meters),
+        durationSeconds: toNumber(row.duration_seconds),
+        paceSecondsPerKm: row.pace_seconds_per_km,
+        splitSecondsPer500m: toNumber(row.split_seconds_per_500m),
+        power: row.power,
       });
     }
   }
@@ -105,50 +120,6 @@ export async function getExerciseProgressionSeries(
   const points: ExerciseProgressionPoint[] = [];
 
   for (const [sessionLogId, group] of groups) {
-    // Warm-ups don't count toward any performance metric (top set, volume,
-    // e1RM) or compliance — only working/failure/drop sets do.
-    const workingSets = group.sets.filter((s) => s.setType !== "warmup");
-
-    // Top set: highest weight, tiebreak by highest reps
-    let topSetWeight: number | null = null;
-    let topSetReps: number | null = null;
-    let topSetRpe: number | null = null;
-    for (const s of workingSets) {
-      if (s.weight == null) continue;
-      if (
-        topSetWeight == null ||
-        s.weight > topSetWeight ||
-        (s.weight === topSetWeight && (s.reps ?? 0) > (topSetReps ?? 0))
-      ) {
-        topSetWeight = s.weight;
-        topSetReps = s.reps;
-        topSetRpe = s.rpe;
-      }
-    }
-
-    // Total volume: SUM(reps * weight) over working sets with both values.
-    // Failure sets use their logged reps; drop sets contribute each logged row.
-    let totalVolume: number | null = null;
-    for (const s of workingSets) {
-      if (s.reps != null && s.weight != null) {
-        totalVolume = (totalVolume ?? 0) + s.reps * s.weight;
-      }
-    }
-
-    // Best estimated 1RM across working sets
-    let estimatedOneRepMax: number | null = null;
-    for (const s of workingSets) {
-      if (s.reps != null && s.weight != null) {
-        const e1rm = calculateEpleyE1RM(s.weight, s.reps);
-        if (
-          e1rm != null &&
-          (estimatedOneRepMax == null || e1rm > estimatedOneRepMax)
-        ) {
-          estimatedOneRepMax = e1rm;
-        }
-      }
-    }
-
     const snapshot = group.snapshot;
     const snapshotSets =
       snapshot && typeof snapshot.sets === "number" ? snapshot.sets : null;
@@ -172,16 +143,8 @@ export async function getExerciseProgressionSeries(
     points.push({
       date: group.completedAt,
       sessionLogId,
-      topSetWeight,
-      topSetReps,
-      estimatedOneRepMax:
-        estimatedOneRepMax != null
-          ? Math.round(estimatedOneRepMax * 10) / 10
-          : null,
-      totalVolume,
-      topSetRpe,
+      ...aggregateSessionMarkers(group.sets),
       prescribedSets,
-      actualSets: workingSets.length,
       prescribedRepsMin,
       prescribedRepsMax,
     });
@@ -192,28 +155,79 @@ export async function getExerciseProgressionSeries(
   return points;
 }
 
+type ExercisePrOptions = {
+  exerciseId?: string;
+  exerciseName?: string;
+  /**
+   * Days (YYYY-MM-DD, the attribution day of a session log) whose sets are left
+   * out, so the bests come back as they stood before those sessions — what the
+   * Overview's PR feed compares a new session against.
+   */
+  excludeDates?: readonly string[];
+};
+
+/** A bests row read as its kind, or null for a row the kernel can't read (never written by the RPC). */
+function bestFromRow(row: {
+  kind: string | null;
+  reps: number | null;
+  weight: number | string | null;
+  distance_meters: number | string | null;
+  duration_seconds: number | string | null;
+}): ExerciseBest | null {
+  if (!isBestKind(row.kind)) return null;
+  const weight = toNumber(row.weight);
+  const distance = toNumber(row.distance_meters);
+  const duration = toNumber(row.duration_seconds);
+  switch (row.kind) {
+    case "rep_max":
+      return row.reps != null && weight != null
+        ? { kind: "rep_max", reps: row.reps, weight }
+        : null;
+    case "best_reps":
+      return row.reps != null ? { kind: "best_reps", reps: row.reps } : null;
+    case "best_time":
+      return distance != null && duration != null
+        ? { kind: "best_time", distanceMeters: distance, durationSeconds: duration }
+        : null;
+    case "heaviest_carry":
+      return distance != null && weight != null
+        ? { kind: "heaviest_carry", distanceMeters: distance, weight }
+        : null;
+    case "longest_hold":
+      return duration != null ? { kind: "longest_hold", durationSeconds: duration } : null;
+  }
+}
+
+/**
+ * An exercise's bests, all-time, every kind the logs carry (the view orders
+ * them by the exercise's type — utils/exercise-progress-markers.ts).
+ */
 export async function getExercisePRs(
   clientId: string,
-  opts: { exerciseId?: string; exerciseName?: string }
+  opts: ExercisePrOptions
 ): Promise<ExercisePR[]> {
   const { data, error } = await supabaseAdmin.rpc("get_exercise_prs", {
     p_client_id: clientId,
     p_exercise_id: opts.exerciseId,
     p_exercise_name: opts.exerciseName,
+    // Omitted (undefined) unless the caller excludes days: DEFAULT NULL in SQL
+    p_exclude_dates: opts.excludeDates?.length ? [...opts.excludeDates] : undefined,
   });
   if (error) {
     throw new Error(`Failed to fetch exercise PRs: ${error.message}`);
   }
 
-  const now = new Date();
-  const twentyEightDaysAgo = new Date(
-    now.getTime() - 28 * 24 * 60 * 60 * 1000
-  );
+  const recentSince = Date.now() - PR_RECENT_DAYS * 24 * 60 * 60 * 1000;
 
-  return (data ?? []).map((row) => ({
-    reps: row.reps,
-    weight: Number(row.weight),
-    date: row.date,
-    isRecent: new Date(row.date) >= twentyEightDaysAgo,
-  }));
+  const records: ExercisePR[] = [];
+  for (const row of data ?? []) {
+    const best = bestFromRow(row);
+    if (!best) continue;
+    records.push({
+      ...best,
+      date: row.date,
+      isRecent: new Date(row.date).getTime() >= recentSince,
+    });
+  }
+  return records;
 }

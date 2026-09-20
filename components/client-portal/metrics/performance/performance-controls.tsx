@@ -1,15 +1,11 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import type { ProgressMarker } from "@/utils/exercise-progress-markers";
 
-export type PerformanceMetric = "weight" | "e1rm" | "volume";
+export type PerformanceMetric = ProgressMarker;
 export type PerformanceSessionCount = 12 | 24 | "all";
-
-const METRICS: { value: PerformanceMetric; label: string }[] = [
-  { value: "weight", label: "Weight" },
-  { value: "e1rm", label: "e1RM" },
-  { value: "volume", label: "Volume" },
-];
+export type PerformanceMetricOption = { value: PerformanceMetric; label: string };
 
 const SESSION_COUNTS: { value: PerformanceSessionCount; label: string }[] = [
   { value: 12, label: "12" },
@@ -18,15 +14,19 @@ const SESSION_COUNTS: { value: PerformanceSessionCount; label: string }[] = [
 ];
 
 type PerformanceControlsProps = {
+  /** The lenses the exercise offers the client (never the coach's RPE and Compliance), in order. */
+  options: PerformanceMetricOption[];
   metric: PerformanceMetric;
   onMetricChange: (metric: PerformanceMetric) => void;
   sessionCount: PerformanceSessionCount;
   onSessionCountChange: (sessionCount: PerformanceSessionCount) => void;
 };
 
-// Two light-themed segmented controls: metric (Weight/e1RM/Volume) on the left,
-// session-count window (12/24/All) on the right. Client subset — no RPE/Compliance.
+// Two light-themed segmented controls: the exercise's lenses on the left (none
+// when it offers one — the chart's title says it), the session-count window
+// (12/24/All) on the right.
 export function PerformanceControls({
+  options,
   metric,
   onMetricChange,
   sessionCount,
@@ -34,12 +34,16 @@ export function PerformanceControls({
 }: PerformanceControlsProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <Segmented
-        ariaLabel="Metric"
-        options={METRICS}
-        value={metric}
-        onChange={onMetricChange}
-      />
+      {options.length > 1 ? (
+        <Segmented
+          ariaLabel="Metric"
+          options={options}
+          value={metric}
+          onChange={onMetricChange}
+        />
+      ) : (
+        <span />
+      )}
       <div className="flex items-center gap-2">
         <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#93b0b4]">
           Last

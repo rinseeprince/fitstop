@@ -496,9 +496,10 @@ async function assertList(failures: string[]) {
     failures.push(`list: expected 4 rows, got ${rows.length}`);
     return;
   }
-  expect(rows[0], "list[0]", { exercise_id: OHP_ID, log_count: 14 }, failures);
+  // The catalog row's type rides on the list (migration 188); the fixtures take the column's default
+  expect(rows[0], "list[0]", { exercise_id: OHP_ID, log_count: 14, exercise_type: "strength" }, failures);
   expect(rows[1], "list[1]", { exercise_id: BENCH_ID, log_count: 3 }, failures);
-  expect(rows[2], "list[2]", { exercise_id: null, log_count: 1, name: "Deadlift" }, failures);
+  expect(rows[2], "list[2]", { exercise_id: null, log_count: 1, name: "Deadlift", exercise_type: null }, failures);
   expect(rows[3], "list[3]", { exercise_id: SQUAT_ID, log_count: 1 }, failures);
 
   if (!rows[1].last_logged_date?.startsWith("2026-05-22")) {
@@ -516,14 +517,20 @@ async function assertPRs(failures: string[]) {
     failures.push(`prs: rpc error ${error.message}`);
     return;
   }
-  const rows = data ?? [];
+  // Every fixture set logs a weight and reps, so the bests are rep maxes alone
+  // (migration 188): no bodyweight set, timed distance, carry or hold.
+  const all = data ?? [];
+  const rows = all.filter((row) => row.kind === "rep_max");
+  if (all.length !== rows.length) {
+    failures.push(`prs: expected rep_max rows only, got kinds ${all.map((r) => r.kind).join(",")}`);
+  }
 
   if (rows.length !== 2) {
-    failures.push(`prs: expected 2 rows, got ${rows.length}`);
+    failures.push(`prs: expected 2 rep_max rows, got ${rows.length}`);
     return;
   }
-  expect(rows[0], "prs[0]", { reps: 5, weight: 110 }, failures);
-  expect(rows[1], "prs[1]", { reps: 8, weight: 80 }, failures);
+  expect(rows[0], "prs[0]", { kind: "rep_max", reps: 5, weight: 110 }, failures);
+  expect(rows[1], "prs[1]", { kind: "rep_max", reps: 8, weight: 80 }, failures);
 
   // The critical one: PR-date tiebreak is completed_at ASC (oldest-on-tie)
   // Session B (2026-05-08) and Session E (2026-05-22) both have 5@110.

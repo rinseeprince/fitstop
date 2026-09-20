@@ -53,6 +53,7 @@ import {
   type PrescribedRowsByIndex,
 } from "./log-form-types";
 import { asLiveGroups, sessionExercises } from "@/utils/exercise-groups";
+import { useInvalidateClientExerciseHistory } from "@/hooks/use-exercise-history";
 
 type EventDetailResponse = { success: boolean; data: TrainingEventDetail };
 type SessionDetailResponse = { success: boolean; data: { session: TrainingSession } };
@@ -268,6 +269,7 @@ function TrainingLogForm({
 }) {
   const { preference } = useUnits();
   const router = useRouter();
+  const invalidateExerciseHistory = useInvalidateClientExerciseHistory();
   // Open by default: the ticks ARE the log now, and a collapsed list plus one
   // primary button would leave a client who did the whole workout nothing to
   // tick and nothing to save. Still foldable for anyone who only wants to bank
@@ -432,6 +434,8 @@ function TrainingLogForm({
       // this page, rather than offering the save again.
       setLeaving(true);
       void globalMutate(`/api/client/day-summary?date=${loggedDate}`);
+      // The charts and the PRs are built from the logged sets
+      void invalidateExerciseHistory();
       router.push(
         loggedDate === getTodayDateString()
           ? "/client"
@@ -468,6 +472,8 @@ function TrainingLogForm({
       setClearOpen(false);
       setLeaving(true);
       void globalMutate(`/api/client/day-summary?date=${loggedDate}`);
+      // The charts and the PRs are built from the logged sets
+      void invalidateExerciseHistory();
       router.push(
         loggedDate === getTodayDateString()
           ? "/client"

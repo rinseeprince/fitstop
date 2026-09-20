@@ -8,6 +8,7 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import {
   ExerciseSearchSelect,
   type ExerciseMetric,
+  type ExerciseMetricOption,
 } from "./exercise-search-select";
 import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise-trend-chart";
 import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
@@ -16,6 +17,13 @@ import { computeKpis } from "@/components/training/exercise-data/exercise-insigh
 import { useUnits } from "@/contexts/units-context";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import { coachExerciseHistoryKey } from "@/hooks/use-exercise-history";
+import {
+  effectiveMarker,
+  markerLens,
+  offeredMarkers,
+} from "@/utils/exercise-progress-markers";
+import { DEFAULT_EXERCISE_TYPE } from "@/utils/exercise-types";
 import type {
   ExerciseListItem,
   ExerciseProgressionPoint,
@@ -50,31 +58,36 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
   const selectedExerciseId = searchParams.get("exerciseId");
   const selectedExerciseName = searchParams.get("exerciseName");
 
+  // The lens the coach picked; the lens shown derives from it and what the
+  // exercise offers, so a pick survives a switch to an exercise that offers
+  // it and falls back where it doesn't — no effect resets it.
   const [selectedMetric, setSelectedMetric] = useState<ExerciseMetric>("weight");
   const [sessionCount, setSessionCount] = useState<number | "all">(12);
 
   const { preference } = useUnits();
 
-  const exerciseParam = selectedExerciseId
-    ? `exerciseId=${selectedExerciseId}`
-    : selectedExerciseName
-      ? `exerciseName=${encodeURIComponent(selectedExerciseName)}`
-      : null;
+  // The pane's subject: an id from the catalog, else a freehand name
+  const subject = selectedExerciseId ?? selectedExerciseName;
 
   // SWR: exercise list
   const { data: listData, isLoading: listLoading } = useSWR<{
     success: boolean;
     data: ExerciseListItem[];
   }>(
-    `/api/clients/${clientId}/training/exercise-history?metric=list`,
+    coachExerciseHistoryKey(clientId, { metric: "list" }),
     swrFetcher,
     { ...SWR_CONFIG, onError: (err) => console.error("Failed to load exercise list:", err) },
   );
 
   // SWR: progression data (fetch for all non-PR metrics)
   const progressionUrl =
-    exerciseParam && selectedMetric !== "prs"
-      ? `/api/clients/${clientId}/training/exercise-history?metric=progression&${exerciseParam}${sessionCount !== "all" ? `&sessionCount=${sessionCount}` : ""}`
+    subject != null && selectedMetric !== "prs"
+      ? coachExerciseHistoryKey(clientId, {
+          metric: "progression",
+          exerciseId: selectedExerciseId,
+          exerciseName: selectedExerciseName,
+          sessionCount: sessionCount === "all" ? undefined : sessionCount,
+        })
       : null;
 
   const { data: progressionData, isLoading: progressionLoading } = useSWR<{
@@ -87,8 +100,12 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
 
   // SWR: PR data
   const prUrl =
-    exerciseParam && selectedMetric === "prs"
-      ? `/api/clients/${clientId}/training/exercise-history?metric=prs&${exerciseParam}`
+    subject != null && selectedMetric === "prs"
+      ? coachExerciseHistoryKey(clientId, {
+          metric: "prs",
+          exerciseId: selectedExerciseId,
+          exerciseName: selectedExerciseName,
+        })
       : null;
 
   const { data: prData, isLoading: prLoading } = useSWR<{
@@ -99,11 +116,36 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     onError: (err) => console.error("Failed to load PR data:", err),
   });
 
+  // The exercise's type, off the list it was picked from: it says which lenses
+  // lead; a freehand name that matches no row reads as Strength
+  const selectedFromList = listData?.data?.find(
+    (ex) =>
+      (selectedExerciseId && ex.exerciseId === selectedExerciseId) ||
+      (!selectedExerciseId &&
+        selectedExerciseName &&
+        ex.name.toLowerCase() === selectedExerciseName.toLowerCase()),
+  );
+  const exerciseType = selectedFromList?.exerciseType ?? DEFAULT_EXERCISE_TYPE;
+
+  // The lenses: the type's own at once, and whatever else the logs carry once
+  // the progression lands; then PRs
+  const points = progressionData?.data;
+  const offered = useMemo(
+    () => offeredMarkers(exerciseType, points ?? [], "coach"),
+    [exerciseType, points],
+  );
+  const metric: ExerciseMetric =
+    selectedMetric === "prs" ? "prs" : effectiveMarker(selectedMetric, offered);
+  const lensOptions: ExerciseMetricOption[] = [
+    ...offered.map((marker) => ({ value: marker, label: markerLens(exerciseType, marker).label })),
+    { value: "prs", label: "PRs" },
+  ];
+
   // KPIs
   const kpis = useMemo(() => {
-    if (selectedMetric === "prs" || !progressionData?.data) return [];
-    return computeKpis(selectedMetric, progressionData.data, preference);
-  }, [selectedMetric, progressionData, preference]);
+    if (metric === "prs" || !points) return [];
+    return computeKpis(metric, exerciseType, points, preference);
+  }, [metric, exerciseType, points, preference]);
 
   // A refinement of the pane, not a place: one replace and nothing else.
   const handleExerciseSelect = (exercise: ExerciseListItem) => {
@@ -114,7 +156,7 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     router.replace(`?${params.toString()}`, { scroll: false });
   };
 
-  const hasExercise = selectedExerciseId != null || selectedExerciseName != null;
+  const hasExercise = subject != null;
 
   return (
     // Block flow, not space-y: divider spec = 16px above the rail (hero slab
@@ -128,7 +170,8 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
           selectedExerciseId={selectedExerciseId}
           selectedExerciseName={selectedExerciseName}
           onSelect={handleExerciseSelect}
-          metric={selectedMetric}
+          options={lensOptions}
+          metric={metric}
           onMetricChange={setSelectedMetric}
         />
       </div>
@@ -145,9 +188,9 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
               the same slot the Data page's pager occupies. The metric lens
               lives in the hero, so the PRs lens leaves a bare rail. */}
           <SectionLabel
-            label={selectedMetric === "prs" ? "Personal records" : "Progression"}
+            label={metric === "prs" ? "Personal records" : "Progression"}
             actions={
-              selectedMetric !== "prs" ? (
+              metric !== "prs" ? (
                 <div className="flex items-center gap-1">
                   {SESSION_COUNTS.map((sc) => (
                     <button
@@ -173,19 +216,20 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
 
           {/* 3. KPI strip (hidden for PRs; skipped entirely when empty so the
               rail-to-chart gap stays at the divider spec's 12px) */}
-          {selectedMetric !== "prs" && (progressionLoading || kpis.length > 0) && (
+          {metric !== "prs" && (progressionLoading || kpis.length > 0) && (
             <div className="mb-4">
               <ExerciseKpiStrip kpis={kpis} isLoading={progressionLoading} />
             </div>
           )}
 
           {/* 4. Chart or PR view */}
-          {selectedMetric === "prs" ? (
-            <ExercisePrView data={prData?.data} isLoading={prLoading} />
+          {metric === "prs" ? (
+            <ExercisePrView data={prData?.data} exerciseType={exerciseType} isLoading={prLoading} />
           ) : (
             <ExerciseTrendChart
-              data={progressionData?.data}
-              metric={selectedMetric}
+              data={points}
+              metric={metric}
+              exerciseType={exerciseType}
               isLoading={progressionLoading}
             />
           )}

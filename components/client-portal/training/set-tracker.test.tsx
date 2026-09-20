@@ -81,6 +81,10 @@ vi.mock("next/navigation", () => ({
 // Required, not optional: this hook imports auth-context, which constructs the
 // browser Supabase client at module load and throws without env vars. The
 // tracker imports it for the profile SWR key alone.
+vi.mock("@/hooks/use-exercise-history", () => ({
+  useInvalidateClientExerciseHistory: () => vi.fn(),
+}));
+
 vi.mock("@/hooks/use-client-profile", () => ({
   CLIENT_PROFILE_KEY: "/api/client/me",
   useClientProfile: () => ({ client: null, error: null, isLoading: false, mutate: vi.fn() }),

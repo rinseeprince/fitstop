@@ -48,7 +48,7 @@ beforeEach(() => {
 describe("GET /api/clients/[id]/training/exercise-history", () => {
   it("returns 200 with metric=list", async () => {
     const mockData = [
-      { exerciseId: "ex-1", name: "Bench Press", logCount: 5, lastLoggedDate: "2026-04-01" },
+      { exerciseId: "ex-1", name: "Bench Press", logCount: 5, lastLoggedDate: "2026-04-01", exerciseType: "strength" as const },
     ];
     vi.mocked(getClientExerciseList).mockResolvedValue(mockData);
 
@@ -74,6 +74,19 @@ describe("GET /api/clients/[id]/training/exercise-history", () => {
         estimatedOneRepMax: 116.7,
         totalVolume: 1500,
         topSetRpe: 8,
+        topSetDistanceMeters: null,
+        topSetDurationSeconds: null,
+        bestSetReps: null,
+        bestPaceSecondsPerKm: null,
+        bestPaceDistanceMeters: null,
+        totalDistanceMeters: null,
+        bestSplitSecondsPer500m: null,
+        bestSplitDistanceMeters: null,
+        bestPower: null,
+        bestTimeSeconds: null,
+        bestTimeDistanceMeters: null,
+        bestTimeWeight: null,
+        longestHoldSeconds: null,
         prescribedSets: 3,
         actualSets: 3,
         prescribedRepsMin: 5,
@@ -102,7 +115,7 @@ describe("GET /api/clients/[id]/training/exercise-history", () => {
 
   it("returns 200 with metric=prs", async () => {
     const mockData = [
-      { reps: 5, weight: 120, date: "2026-04-01", isRecent: true },
+      { kind: "rep_max" as const, reps: 5, weight: 120, date: "2026-04-01", isRecent: true },
     ];
     vi.mocked(getExercisePRs).mockResolvedValue(mockData);
 

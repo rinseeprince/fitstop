@@ -1,5 +1,10 @@
 import type { ExerciseProgressionPoint } from "@/types/training";
+import type { ExerciseType } from "@/utils/exercise-types";
+import { markerLens, type ProgressMarker } from "@/utils/exercise-progress-markers";
 import { formatLoad, type UnitSystem } from "@/utils/unit-conversions";
+import { daysAgoText, markerKpis, type KpiCard } from "./exercise-marker-kpis";
+
+export type { KpiCard } from "./exercise-marker-kpis";
 
 // Every weight in ExerciseProgressionPoint is canonical kilograms. This module
 // is pure — no React — so the viewer's unit arrives as a parameter from the
@@ -10,30 +15,40 @@ import { formatLoad, type UnitSystem } from "@/utils/unit-conversions";
 // imperial conversion to a loadable 5 lb increment. Never use it to seed an
 // editable field — see set-row-editor.tsx.
 
-type TrendMetric = "weight" | "e1rm" | "volume" | "rpe" | "compliance";
+/** The five lenses Strength charts had before the other types had charts, with their worded cards and insight. */
+type StrengthMarker = "weight" | "e1rm" | "volume" | "rpe" | "compliance";
 
-// ---------------------------------------------------------------------------
-// KPI types
-// ---------------------------------------------------------------------------
-
-export type KpiCard = {
-  label: string;
-  value: string;
-  unit?: string;
-  meta?: string;
-  trend?: "up" | "down" | "flat";
-};
+/**
+ * Whether a lens reads through Strength's worded analytics: RPE and Compliance
+ * on every type (they name no unit), and the three load lenses on a Strength
+ * exercise. Every other lens — a type's own markers, and a load lens that
+ * followed the logs onto another type — reads the marker's own three cards.
+ */
+export function usesStrengthAnalytics(
+  type: ExerciseType,
+  metric: ProgressMarker,
+): metric is StrengthMarker {
+  return (
+    metric === "rpe" ||
+    metric === "compliance" ||
+    (type === "strength" && (metric === "weight" || metric === "e1rm" || metric === "volume"))
+  );
+}
 
 // ---------------------------------------------------------------------------
 // KPI computation
 // ---------------------------------------------------------------------------
 
 export function computeKpis(
-  metric: TrendMetric,
+  metric: ProgressMarker,
+  type: ExerciseType,
   data: ExerciseProgressionPoint[],
   viewer: UnitSystem,
 ): KpiCard[] {
   if (data.length === 0) return [];
+  if (!usesStrengthAnalytics(type, metric)) {
+    return markerKpis(markerLens(type, metric), data, viewer);
+  }
 
   switch (metric) {
     case "weight":
@@ -77,11 +92,6 @@ function weightKpis(
   const prSession = [...withWeight].reverse().find(
     (p) => p.topSetWeight === maxWeightKg,
   );
-  const prDaysAgo = prSession
-    ? Math.floor(
-        (Date.now() - new Date(prSession.date).getTime()) / 86400000,
-      )
-    : null;
 
   return [
     {
@@ -102,12 +112,7 @@ function weightKpis(
       label: "Last PR",
       value: String(maxWeight.value),
       unit: maxWeight.unit,
-      meta:
-        prDaysAgo != null
-          ? prDaysAgo === 0
-            ? "Today"
-            : `${prDaysAgo} day${prDaysAgo === 1 ? "" : "s"} ago`
-          : undefined,
+      meta: prSession ? daysAgoText(prSession.date) : undefined,
     },
   ];
 }
@@ -225,7 +230,7 @@ function complianceKpis(data: ExerciseProgressionPoint[]): KpiCard[] {
 // ---------------------------------------------------------------------------
 
 export function computeInsight(
-  metric: TrendMetric,
+  metric: StrengthMarker,
   data: ExerciseProgressionPoint[],
   viewer: UnitSystem,
 ): string | null {

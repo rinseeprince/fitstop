@@ -48,6 +48,7 @@ function makeListItem(overrides: Partial<ExerciseListItem> = {}): ExerciseListIt
     name: "Bench Press",
     logCount: 12,
     lastLoggedDate: "2026-03-15",
+    exerciseType: "strength",
     ...overrides,
   };
 }
@@ -58,9 +59,22 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
     sessionLogId: "sl-1",
     topSetWeight: 80,
     topSetReps: 8,
+    topSetRpe: 7,
+    topSetDistanceMeters: null,
+    topSetDurationSeconds: null,
     estimatedOneRepMax: 100,
     totalVolume: 2400,
-    topSetRpe: 7,
+    bestSetReps: null,
+    bestPaceSecondsPerKm: null,
+    bestPaceDistanceMeters: null,
+    totalDistanceMeters: null,
+    bestSplitSecondsPer500m: null,
+    bestSplitDistanceMeters: null,
+    bestPower: null,
+    bestTimeSeconds: null,
+    bestTimeDistanceMeters: null,
+    bestTimeWeight: null,
+    longestHoldSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: 8,
@@ -69,8 +83,9 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
   };
 }
 
-function makePR(overrides: Partial<ExercisePR> = {}): ExercisePR {
+function makePR(overrides: Partial<Extract<ExercisePR, { kind: "rep_max" }>> = {}): ExercisePR {
   return {
+    kind: "rep_max",
     reps: 5,
     weight: 100,
     date: "2026-03-15T00:00:00Z",
@@ -260,5 +275,51 @@ describe("ExerciseDataView", () => {
 
     expect(screen.getByText("Bench Press")).toBeInTheDocument();
     expect(screen.getByText("Weight")).toBeInTheDocument();
+  });
+});
+
+describe("ExerciseDataView — lenses by type", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchParams.set("exerciseId", "ex-1");
+    mockSearchParams.set("exerciseName", "Pull Up");
+  });
+
+  it("offers a Bodyweight exercise its own lenses, then PRs", () => {
+    setupSWR({
+      list: [makeListItem({ name: "Pull Up", exerciseType: "bodyweight" })],
+      progression: [
+        makePoint({ topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, topSetRpe: null, bestSetReps: 10 }),
+        makePoint({ date: "2026-03-08", topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, topSetRpe: null, bestSetReps: 12 }),
+      ],
+    });
+
+    render(<ExerciseDataView clientId="client-1" />);
+
+    const lenses = screen.getAllByRole("button", { pressed: false }).concat(screen.getAllByRole("button", { pressed: true }));
+    const labels = lenses.map((b) => b.textContent);
+    expect(labels).toContain("Best set reps");
+    expect(labels).toContain("Compliance");
+    expect(labels).toContain("PRs");
+    expect(labels).not.toContain("Weight");
+    expect(screen.getByRole("button", { name: "Best set reps" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Best set reps over time")).toBeInTheDocument();
+  });
+
+  it("follows what was logged: a weighted session offers the lift's lenses after the type's own", () => {
+    setupSWR({
+      list: [makeListItem({ name: "Pull Up", exerciseType: "bodyweight" })],
+      progression: [
+        makePoint({ topSetWeight: 10, topSetReps: 5, estimatedOneRepMax: 11.7, totalVolume: 50, topSetRpe: null, bestSetReps: null }),
+        makePoint({ date: "2026-03-08", topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, topSetRpe: null, bestSetReps: 12 }),
+      ],
+    });
+
+    render(<ExerciseDataView clientId="client-1" />);
+
+    for (const label of ["Best set reps", "Compliance", "Weight", "e1RM", "Volume", "PRs"]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("button", { name: "RPE" })).toBeNull();
   });
 });

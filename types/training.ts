@@ -491,8 +491,11 @@ export type TrainingEventDetail = {
 };
 
 // =============================================================================
-// Exercise analytics types (Session 1.8)
-// Used by exercise-analytics-service and exercise-history API route.
+// Exercise analytics types
+// Used by exercise-analytics-service and the two exercise-history routes. A
+// progression point carries every chart marker a session can have
+// (utils/exercise-progress-markers.ts names them; utils/exercise-session-markers.ts
+// computes them), so a chart of any exercise type reads one shape.
 // =============================================================================
 
 export type ExerciseListItem = {
@@ -500,25 +503,58 @@ export type ExerciseListItem = {
   name: string;
   logCount: number;
   lastLoggedDate: string;
+  /** The catalog row's type, Strength for a freehand name: it says which markers lead the chart. */
+  exerciseType: ExerciseType;
 };
 
 export type ExerciseProgressionPoint = {
   date: string;
   sessionLogId: string;
+  // A lift: the heaviest working set, and what else that set recorded
   topSetWeight: number | null;
   topSetReps: number | null;
+  topSetRpe: number | null;
+  topSetDistanceMeters: number | null;
+  topSetDurationSeconds: number | null;
   estimatedOneRepMax: number | null;
   totalVolume: number | null;
-  topSetRpe: number | null;
+  // A bodyweight set: the most reps in a set logged with no load
+  bestSetReps: number | null;
+  // Endurance and erg measures, each the session's best set and its distance
+  bestPaceSecondsPerKm: number | null;
+  bestPaceDistanceMeters: number | null;
+  totalDistanceMeters: number | null;
+  bestSplitSecondsPer500m: number | null;
+  bestSplitDistanceMeters: number | null;
+  bestPower: number | null;
+  // A timed distance: the fastest set that logged a distance and a time
+  bestTimeSeconds: number | null;
+  bestTimeDistanceMeters: number | null;
+  bestTimeWeight: number | null;
+  // A hold: the longest set that logged a time and no distance
+  longestHoldSeconds: number | null;
+  // Compliance: the prescription the session was logged against
   prescribedSets: number | null;
   actualSets: number;
   prescribedRepsMin: number | null;
   prescribedRepsMax: number | null;
 };
 
-export type ExercisePR = {
-  reps: number;
-  weight: number;
+/**
+ * An exercise's bests, one shape per kind (utils/exercise-progress-markers.ts
+ * BEST_KINDS): the heaviest weight per rep count, the most reps in a set logged
+ * with no load, the fastest time per distance, the heaviest load per distance,
+ * the longest set logged with no distance.
+ */
+export type ExerciseBest =
+  | { kind: "rep_max"; reps: number; weight: number }
+  | { kind: "best_reps"; reps: number }
+  | { kind: "best_time"; distanceMeters: number; durationSeconds: number }
+  | { kind: "heaviest_carry"; distanceMeters: number; weight: number }
+  | { kind: "longest_hold"; durationSeconds: number };
+
+export type ExercisePR = ExerciseBest & {
   date: string;
+  /** Set within the last 28 days. */
   isRecent: boolean;
 };

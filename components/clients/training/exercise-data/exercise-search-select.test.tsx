@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ExerciseSearchSelect } from "./exercise-search-select";
+import { ExerciseSearchSelect, type ExerciseMetricOption } from "./exercise-search-select";
 import type { ExerciseListItem } from "@/types/training";
 
 // cmdk uses ResizeObserver and scrollIntoView
@@ -21,9 +21,20 @@ function makeExercise(
     name: "Bench Press",
     logCount: 12,
     lastLoggedDate: "2026-03-15",
+    exerciseType: "strength",
     ...overrides,
   };
 }
+
+// The view hands the hero the lenses the exercise offers; a Strength lift's six
+const STRENGTH_LENSES: ExerciseMetricOption[] = [
+  { value: "weight", label: "Weight" },
+  { value: "e1rm", label: "e1RM" },
+  { value: "volume", label: "Volume" },
+  { value: "rpe", label: "RPE" },
+  { value: "compliance", label: "Compliance" },
+  { value: "prs", label: "PRs" },
+];
 
 const defaultProps = {
   exercises: undefined as ExerciseListItem[] | undefined,
@@ -31,6 +42,7 @@ const defaultProps = {
   selectedExerciseId: null,
   selectedExerciseName: null,
   onSelect: vi.fn(),
+  options: STRENGTH_LENSES,
   metric: "weight" as const,
   onMetricChange: vi.fn(),
 };
@@ -160,5 +172,24 @@ describe("ExerciseSearchSelect", () => {
     await user.click(screen.getByRole("button", { name: "Volume" }));
 
     expect(onMetricChange).toHaveBeenCalledWith("volume");
+  });
+});
+
+describe("ExerciseSearchSelect — the lenses are the view's", () => {
+  it("renders exactly the options it is given, in their order", () => {
+    render(
+      <ExerciseSearchSelect
+        {...defaultProps}
+        exercises={[makeExercise({ name: "Running", exerciseType: "endurance" })]}
+        options={[
+          { value: "pace", label: "Pace" },
+          { value: "distance", label: "Distance" },
+          { value: "prs", label: "PRs" },
+        ]}
+        metric="pace"
+      />,
+    );
+    const lenses = screen.getAllByRole("button", { name: /^(Pace|Distance|PRs|Weight)$/ });
+    expect(lenses.map((b) => b.textContent)).toEqual(["Pace", "Distance", "PRs"]);
   });
 });

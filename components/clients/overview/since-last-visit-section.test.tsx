@@ -52,6 +52,7 @@ describe("SinceLastVisitSection", () => {
         type: "pr",
         at: "2026-06-01T18:00:00Z",
         exerciseName: "Back Squat",
+        kind: "load",
         weight: 140,
         previousBest: 135,
       },
@@ -202,4 +203,35 @@ describe("SinceLastVisitSection", () => {
     await user.click(screen.getByRole("button", { name: /mark seen/i }));
     expect(onMarkSeen).toHaveBeenCalledTimes(1);
   });
+});
+
+describe("a personal record of every kind", () => {
+  const cases: { item: ActivityItem; text: string }[] = [
+    {
+      item: { type: "pr", at: "2026-06-01T18:00:00Z", exerciseName: "Pull Up", kind: "reps", reps: 15, previousBest: 12 },
+      text: "Pull Up · 15 reps, was 12",
+    },
+    {
+      item: { type: "pr", at: "2026-06-01T18:00:00Z", exerciseName: "Rowing", kind: "time", distanceMeters: 1000, durationSeconds: 222.1, previousBest: 230 },
+      text: "Rowing · 1 km in 3:42.1, was 3:50",
+    },
+    {
+      item: { type: "pr", at: "2026-06-01T18:00:00Z", exerciseName: "Farmers Carry", kind: "carry", distanceMeters: 40, weight: 64, previousBest: 60 },
+      text: "Farmers Carry · 40 m with 64 kg, was 60 kg",
+    },
+    {
+      item: { type: "pr", at: "2026-06-01T18:00:00Z", exerciseName: "Plank", kind: "hold", durationSeconds: 120, previousBest: 105 },
+      text: "Plank · 2:00, was 1:45",
+    },
+  ];
+
+  for (const { item, text } of cases) {
+    it(`reads "${text}"`, () => {
+      const { container } = render(
+        <SinceLastVisitSection lastViewedAt="2026-06-01T00:00:00Z" activity={[item]} {...NOOP} />
+      );
+      expect(screen.getByText("New personal record")).toBeInTheDocument();
+      expect(container.textContent).toContain(text);
+    });
+  }
 });
