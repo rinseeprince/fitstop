@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type Ref } from "react";
+import { useId, useLayoutEffect, useRef, type Ref } from "react";
 import { ChevronDown, RotateCcw, SendHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING, HEADER_EYEBROW_CLASS, TEXT_SECONDARY } from "../builder-tokens";
@@ -12,9 +12,9 @@ import { AssistantMessages } from "./assistant-messages";
 // Every piece of its state is the provider's (assistant-provider.tsx) — the
 // chat, whether it is open, the command being typed — so the panel shows the
 // same conversation wherever it is mounted, and it is mounted by whichever
-// surface is on top: the corner dock over the grid (assistant-dock.tsx), or
-// the session sheet while a session is open, as a child of the sheet's own
-// content (session-editor-sheet.tsx). Inside the sheet it is an ordinary
+// surface is on top: the corner dock over the grid (assistant-dock.tsx), or a
+// sheet over the builder that edits the program, as a child of the sheet's own
+// content (sheet-assistant-host.tsx). Inside the sheet it is an ordinary
 // descendant of the modal content, so Radix's pointer-events rule, focus trap,
 // aria-hidden and scroll lock include it by construction: no layer of its own,
 // nothing for the sheet to exempt.
@@ -30,6 +30,68 @@ import { AssistantMessages } from "./assistant-messages";
 // so an empty conversation opened as a sliver and squashed the composer. The
 // viewport cap keeps it usable on short screens. Focus is left where it was
 // when the panel opens.
+// The composer is one line tall — the send button's 30px: a 16px line, 6px of
+// padding above and below and a 1px border (border-box) — and grows a line at a
+// time with its text, up to COMPOSER_MAX_LINES, then scrolls inside.
+const COMPOSER_LINE_PX = 16;
+const COMPOSER_PADDING_Y_PX = 12;
+const COMPOSER_BORDER_Y_PX = 2;
+const COMPOSER_MAX_LINES = 6;
+const COMPOSER_MAX_PX =
+  COMPOSER_MAX_LINES * COMPOSER_LINE_PX + COMPOSER_PADDING_Y_PX + COMPOSER_BORDER_Y_PX;
+
+/**
+ * Fits the box to its text: shrunk to one row, measured, then set to what its
+ * text needs within the cap, and scrolling only past it. A DOM measurement, so
+ * it runs before paint on every change of the text and on mount — the box is
+ * never drawn at a height its text doesn't have, including when the panel moves
+ * between hosts with a half-typed command.
+ */
+function fitComposerToText(box: HTMLTextAreaElement | null) {
+  if (!box) return;
+  box.style.height = "auto";
+  const needed = box.scrollHeight + COMPOSER_BORDER_Y_PX;
+  box.style.height = `${Math.min(needed, COMPOSER_MAX_PX)}px`;
+  box.style.overflowY = needed > COMPOSER_MAX_PX ? "auto" : "hidden";
+}
+
+function ComposerBox({
+  value,
+  onChange,
+  onSubmit,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const boxRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => fitComposerToText(boxRef.current), [value]);
+  return (
+    <textarea
+      ref={boxRef}
+      rows={1}
+      value={value}
+      // Mirrors the route's zod cap so an over-long command is
+      // prevented, not rejected with a generic 400.
+      maxLength={2000}
+      placeholder="Describe the change…"
+      className={cn(
+        "flex-1 resize-none rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white px-2 py-1.5 text-[12px] leading-4 text-[#0c1a1e] placeholder:text-[#93b0b4]",
+        FOCUS_RING,
+      )}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        // nativeEvent.isComposing: Enter during IME composition
+        // commits the candidate word, it doesn't send the message.
+        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+          e.preventDefault();
+          onSubmit();
+        }
+      }}
+    />
+  );
+}
+
 type AssistantPanelProps = {
   ref?: Ref<HTMLDivElement>;
   // The host's placement of the panel; the panel's own classes are the card.
@@ -146,27 +208,7 @@ export function AssistantPanel({ ref, className }: AssistantPanelProps) {
         </div>
       ) : (
         <div className="flex items-end gap-2 border-t border-[rgba(13,148,136,0.08)] px-3 py-2.5">
-          <textarea
-            rows={2}
-            value={input}
-            // Mirrors the route's zod cap so an over-long command is
-            // prevented, not rejected with a generic 400.
-            maxLength={2000}
-            placeholder="Describe the change…"
-            className={cn(
-              "min-h-[38px] flex-1 resize-none rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white px-2 py-1.5 text-[12px] leading-snug text-[#0c1a1e] placeholder:text-[#93b0b4]",
-              FOCUS_RING,
-            )}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              // nativeEvent.isComposing: Enter during IME composition
-              // commits the candidate word, it doesn't send the message.
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-          />
+          <ComposerBox value={input} onChange={setInput} onSubmit={submit} />
           <button
             type="button"
             aria-label="Send"

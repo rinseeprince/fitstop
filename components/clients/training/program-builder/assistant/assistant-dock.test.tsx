@@ -73,6 +73,53 @@ describe("AssistantDock", () => {
     expect(screen.getByPlaceholderText(/describe the change/i)).toBeInTheDocument();
   });
 
+  describe("the composer grows with its text", () => {
+    // jsdom lays nothing out, so a box's scrollHeight is its text's: 16px a
+    // line plus the 12px of padding, as the browser measures it.
+    const measured = Object.getOwnPropertyDescriptor(Element.prototype, "scrollHeight");
+    beforeEach(() => {
+      Object.defineProperty(HTMLTextAreaElement.prototype, "scrollHeight", {
+        configurable: true,
+        get(this: HTMLTextAreaElement) {
+          return this.value.split("\n").length * 16 + 12;
+        },
+      });
+    });
+    afterEach(() => {
+      delete (HTMLTextAreaElement.prototype as { scrollHeight?: number }).scrollHeight;
+      if (measured) Object.defineProperty(Element.prototype, "scrollHeight", measured);
+    });
+
+    it("starts one line tall, the send button's 30px, grows a line at a time, and scrolls past six", () => {
+      render(<Dock />);
+      openPanel();
+      const box = screen.getByPlaceholderText(/describe the change/i);
+      expect(box).toHaveAttribute("rows", "1");
+      expect(box.style.height).toBe("30px");
+      expect(box.style.overflowY).toBe("hidden");
+
+      fireEvent.change(box, { target: { value: "one\ntwo\nthree" } });
+      expect(box.style.height).toBe("62px");
+      expect(box.style.overflowY).toBe("hidden");
+
+      fireEvent.change(box, { target: { value: "1\n2\n3\n4\n5\n6\n7\n8" } });
+      expect(box.style.height).toBe("110px");
+      expect(box.style.overflowY).toBe("auto");
+    });
+
+    it("goes back to one line when a send clears it", () => {
+      render(<Dock />);
+      openPanel();
+      const box = screen.getByPlaceholderText(/describe the change/i);
+      fireEvent.change(box, { target: { value: "add a leg day\nand a rest day" } });
+      expect(box.style.height).toBe("46px");
+      fireEvent.keyDown(box, { key: "Enter" });
+      expect(mockChat.send).toHaveBeenCalledWith("add a leg day\nand a rest day");
+      expect(box).toHaveValue("");
+      expect(box.style.height).toBe("30px");
+    });
+  });
+
   it("gates input behind edit mode with a switch affordance", () => {
     mockContext.mode = "view";
     render(<Dock />);
