@@ -27,9 +27,30 @@ export function DividerPager({
 }: DividerPagerProps) {
   if (total === 0) return null;
 
-  const pageCount = Math.ceil(total / pageSize);
   const shown = Math.max(0, Math.min(pageSize, total - page * pageSize));
 
+  return (
+    <div className="flex items-center gap-1">
+      <span className={cn("mr-1 whitespace-nowrap text-[11px]", MONO_META_CLASS)}>
+        Showing {shown} of {total} {noun}
+      </span>
+      <PagerArrows page={page} pageCount={Math.ceil(total / pageSize)} onPageChange={onPageChange} />
+    </div>
+  );
+}
+
+type PagerArrowsProps = {
+  page: number;
+  pageCount: number;
+  onPageChange: (page: number) => void;
+};
+
+// The pager's prev/next chevrons alone, for a rail that already says how many
+// rows there are — the Sessions table's, whose session window sits on the rail
+// above it (owner, 2026-09-21). Disabled, never hidden, at either end, so they
+// don't pop in as the rows cross one page; the caller renders them only once
+// there are rows, as DividerPager does.
+export function PagerArrows({ page, pageCount, onPageChange }: PagerArrowsProps) {
   const pagerButton = (dir: "prev" | "next", disabled: boolean) => (
     <button
       type="button"
@@ -53,9 +74,6 @@ export function DividerPager({
 
   return (
     <div className="flex items-center gap-1">
-      <span className={cn("mr-1 whitespace-nowrap text-[11px]", MONO_META_CLASS)}>
-        Showing {shown} of {total} {noun}
-      </span>
       {pagerButton("prev", page <= 0)}
       {pagerButton("next", page >= pageCount - 1)}
     </div>

@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SectionLabel } from "@/components/programs/shared/section-label";
-import { DividerPager } from "@/components/programs/shared/divider-pager";
+import { PagerArrows } from "@/components/programs/shared/divider-pager";
 import { RailDropdown } from "@/components/programs/shared/rail-dropdown";
 import { cn } from "@/lib/utils";
 import {
@@ -45,6 +45,9 @@ import { SessionsLoadError } from "./sessions-load-error";
 // progression points the chart reads, one row per session in the window, one
 // column per measure they carry (utils/exercise-session-columns.ts), and pages
 // them in memory: the chart already holds every session in the window.
+//
+// Its rail pages with the arrows alone: the session window on the rail above
+// already says how many sessions there are (owner, 2026-09-21).
 //
 // Its view — the columns ticked, the sort, the page — is local, never the
 // address. The host keys the table by the exercise, so another exercise starts
@@ -123,8 +126,8 @@ function SessionsPages({
   const sortOptions = sessionSortOptions(shown);
 
   // A refresh that shrank the window can't leave the page past its end
-  const lastPage = Math.max(0, Math.ceil(rows.length / HISTORY_PAGE_SIZE) - 1);
-  const shownPage = Math.min(page, lastPage);
+  const pageCount = Math.ceil(rows.length / HISTORY_PAGE_SIZE);
+  const shownPage = Math.min(page, Math.max(0, pageCount - 1));
   const pageRows = rows.slice(shownPage * HISTORY_PAGE_SIZE, (shownPage + 1) * HISTORY_PAGE_SIZE);
 
   // One click, one render: the sort and the first page land together
@@ -152,13 +155,9 @@ function SessionsPages({
         onChange={handleSort}
         pairs
       />
-      <DividerPager
-        page={shownPage}
-        total={rows.length}
-        pageSize={HISTORY_PAGE_SIZE}
-        noun="sessions"
-        onPageChange={setPage}
-      />
+      {rows.length > 0 && (
+        <PagerArrows page={shownPage} pageCount={pageCount} onPageChange={setPage} />
+      )}
     </div>
   );
 

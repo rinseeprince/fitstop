@@ -540,7 +540,8 @@ charts and PRs"). Point keys are `ExerciseProgressionPoint`'s.
 Beneath the chart, before Personal records, a table of the exercise's sessions in the same window
 (`utils/exercise-session-columns.ts` is the one table; `docs/ARCHITECTURE.md` → "Exercise progress:
 charts and PRs"). It reads the progression points the chart reads — no request of its own — and
-pages them on the device, ten a page ("Showing 10 of 24 sessions").
+pages them on the device, ten a page, with previous/next arrows and no count — the window picker
+above already says how many sessions there are.
 
 - **Rows:** one per point, newest first by default.
 - **Columns:** Date first, then each column below that some point in the window has a value for, in

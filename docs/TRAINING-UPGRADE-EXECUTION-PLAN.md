@@ -260,7 +260,9 @@ commit's plan.
     (the builder's column-selector recipe without presets, each column ticked on and off), the sort as
     the design system's rail dropdown — one pair per shown column: heaviest and lightest, most and
     fewest, fastest and slowest, longest and shortest, highest and lowest, newest and oldest; never
-    click-to-sort headers — and the history tables' pager. Switching the lens changes only what sits
+    click-to-sort headers — and the history tables' pager, its arrows alone: no "Showing X of Y",
+    since the session window above already says how many (owner, 2026-09-21, after 16a shipped).
+    Switching the lens changes only what sits
     above the table: its columns and its sort stay. Column visibility and the sort are the view's, not
     the address's, and reset when another exercise is picked.
   - *The window (16a).* The session window (8/12/24/All) governs the chart and the table together and

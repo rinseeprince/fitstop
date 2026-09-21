@@ -703,14 +703,15 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   Framework, each ticked on and off, the menu open across ticks), the sort as the rail dropdown
   (`RailDropdown`: Newest first, Oldest first, then a pair per shown column, its lead word first —
   Heaviest and Lightest load, Fastest and Slowest pace; never a header click) and the history tables'
-  pager, ten sessions a page. A session with no value in the sorted column goes last, newest first;
-  a sort whose column is ticked off or leaves the window shows as Newest first, and returns with the
-  column; while the sessions load the pick stands. On the client's view the rail is a heading like
-  Personal records with the sort and the pager and no Columns menu: every recorded column shows. The
-  view — the columns ticked, the sort, the page — is local, never the address: the host keys the table
-  by the exercise, so another pick starts it on every column, Newest first, page 1; the window keys
-  its page, so a new window starts on page 1 with its columns and sort kept; a lens switch touches
-  none of it.
+  pager's chevrons alone (`PagerArrows`), ten sessions a page, with no count — the session window on
+  the rail above already says how many (owner, 2026-09-21). A session with no value in the sorted
+  column goes last, newest first; a sort whose column is ticked off or leaves the window shows as
+  Newest first, and returns with the column; while the sessions load the pick stands. On the
+  client's view the rail is a heading like Personal records with the sort and the chevrons and no
+  Columns menu: every recorded column shows. The view — the columns ticked, the sort, the page — is
+  local, never the address: the host keys the table by the exercise, so another pick starts it on
+  every column, Newest first, page 1; the window keys its page, so a new window starts on page 1 with
+  its columns and sort kept; a lens switch touches none of it.
 - **PRs are the type's bests, every kind the logs carry.** `get_exercise_prs` returns typed rows
   (`ExercisePR`, `kind` ∈ `BEST_KINDS`): `rep_max` — the heaviest weight per rep count, as before;
   `best_reps` — the most reps in a set logged with no load; `best_time` — the fastest time per

@@ -80,13 +80,25 @@ describe("ExerciseSessionsTable", () => {
     ]);
   });
 
-  it("pages ten sessions at a time on the rail", async () => {
+  it("pages ten sessions at a time with the rail's arrows, and never counts them there", async () => {
     const user = userEvent.setup();
     renderTable();
-    expect(screen.getByText("Showing 10 of 12 sessions")).toBeInTheDocument();
+    // The session window on the rail above already says how many (owner, 2026-09-21)
+    expect(screen.queryByText(/Showing/)).toBeNull();
+    expect(bodyRows()).toHaveLength(10);
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Next page" }));
-    expect(screen.getByText("Showing 2 of 12 sessions")).toBeInTheDocument();
     expect(rowDates()).toEqual(["Aug 2, 2026", "Aug 1, 2026"]);
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+    expect(screen.queryByText(/Showing/)).toBeNull();
+  });
+
+  it("keeps the arrows, greyed, when every session fits on one page", () => {
+    renderTable({ points: benchSessions().slice(0, 8) });
+    expect(bodyRows()).toHaveLength(8);
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+    expect(screen.queryByText(/Showing/)).toBeNull();
   });
 
   it("sorts from the rail's dropdown, back to page 1, and names the sort on the trigger", async () => {
@@ -110,7 +122,8 @@ describe("ExerciseSessionsTable", () => {
 
     // One click: the trigger, the rows and the page land together
     expect(screen.getByRole("button", { name: /Heaviest load/ })).toBeInTheDocument();
-    expect(screen.getByText("Showing 10 of 12 sessions")).toBeInTheDocument();
+    expect(bodyRows()).toHaveLength(10);
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
     expect(bodyRows().slice(0, 3).map((row) => cellsOf(row)[1])).toEqual(["105", "102.5", "100"]);
   });
 
@@ -168,11 +181,12 @@ describe("ExerciseSessionsTable", () => {
     await user.click(screen.getByRole("menuitemcheckbox", { name: "Volume" }));
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Next page" }));
-    expect(screen.getByText("Showing 2 of 12 sessions")).toBeInTheDocument();
+    expect(bodyRows()).toHaveLength(2);
 
     const more = [...benchSessions(), session(20, [{ reps: 5, weight: 110 }])];
     rerender(<ExerciseSessionsTable {...props} points={more} windowKey="24" />);
-    expect(screen.getByText("Showing 10 of 13 sessions")).toBeInTheDocument();
+    expect(bodyRows()).toHaveLength(10);
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Oldest first/ })).toBeInTheDocument();
     expect(headings()).not.toContain("Volume (kg)");
     expect(rowDates()[0]).toBe("Aug 1, 2026");
@@ -187,7 +201,8 @@ describe("ExerciseSessionsTable", () => {
     rerender(<ExerciseSessionsTable {...props} points={undefined} windowKey="24" />);
     expect(screen.getByRole("button", { name: /Heaviest load/ })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "Date" })).toBeNull();
-    expect(screen.queryByText(/Showing/)).toBeNull();
+    // No arrows until there are rows to page
+    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
   });
 
   it("says a failed read failed, with Try again", async () => {
@@ -221,6 +236,7 @@ describe("ExerciseSessionsTable", () => {
     expect(screen.queryByRole("button", { name: "Columns for the sessions table" })).toBeNull();
     expect(headings()).toEqual(["Date", "Load (kg)", "Reps", "RPE", "RIR", "e1RM (kg)", "Volume (kg)", "Sets"]);
     expect(screen.getByRole("button", { name: /Newest first/ })).toBeInTheDocument();
-    expect(screen.getByText("Showing 10 of 12 sessions")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeEnabled();
+    expect(screen.queryByText(/Showing/)).toBeNull();
   });
 });

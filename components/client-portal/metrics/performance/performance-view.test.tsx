@@ -234,7 +234,9 @@ describe("PerformanceView", () => {
     expect(within(sessions).getByRole("heading", { name: "Sessions" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Columns for the sessions table" })).toBeNull();
     expect(within(sessions).getByRole("button", { name: /Newest first/ })).toBeInTheDocument();
-    expect(within(sessions).getByText("Showing 2 of 2 sessions")).toBeInTheDocument();
+    // The arrows alone: the window above already says how many
+    expect(within(sessions).queryByText(/Showing/)).toBeNull();
+    expect(within(sessions).getByRole("button", { name: "Next page" })).toBeDisabled();
   });
 
   it("shows the keep-logging PR empty state when there are no PRs", () => {
