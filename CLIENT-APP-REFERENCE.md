@@ -552,9 +552,9 @@ failed `prs` read leaves the rows without stars.
   when any set in the window carries a load); reps alone `12`; a load with a distance `60 × 40 m` (a
   carry); reps above 1 on a set with a distance or a time are repeats — `3 × 1 km`, `64 × 3 × 40 m`,
   `3 × 0:30` (a loaded set with reps stays `load × reps`, whatever time it logged); a distance done
-  once with no load `10 km in 52:00` — but a session whose only set it is reads the distance alone,
-  `5 km`, its time being the Time figure — and a run of such sets of one distance as one —
-  `6 × 800 m: 2:52 · 2:50 · 2:48` (or `2 × 400 m` with no times); a time alone `1:30`. It doesn't sort.
+  once with no load `5 km`, and a run of such sets of one distance as one — `6 × 800 m`; a time
+  alone `1:30`. The cell shows the shape only, never the times, which are the Time and Pace figures.
+  It doesn't sort.
 - **Then the figures of the exercise's type**, the first one the main figure:
 
 | `exerciseType` | Figures (point key) |

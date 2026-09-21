@@ -696,9 +696,9 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   newest first, the date, then **Sets** — the session's working sets in coach shorthand, in order
   (`formatSessionSets`: `100 × 8 · 102.5 × 8` for loaded reps with the load's unit in the heading,
   `12 · 11 · 10` for reps alone, `60 × 40 m` for a carry, reps on a distance or a time as repeats —
-  `3 × 1 km`, `64 × 3 × 40 m`, `3 × 0:30` — `5 km` for a session of one piece (its time is the Time
-  figure), `10 km in 52:00` for a piece among other sets and `6 × 800 m: 2:52 · 2:50 · 2:48` for a
-  run of pieces of one distance, `1:30 · 1:20` for holds) — then a fixed
+  `3 × 1 km`, `64 × 3 × 40 m`, `3 × 0:30` — `5 km` for a piece and `6 × 800 m` for a run of pieces
+  of one distance, `1:30 · 1:20` for holds; the shape only, never the times, which are the Time and
+  Pace figures (owner, 2026-09-21)) — then a fixed
   few **figures** by the exercise's type, the main one first (`EXERCISE_TYPE_FIGURES`,
   `utils/exercise-session-figures.ts`): Strength — e1RM, Top set (the heaviest set, load × reps),
   Volume, RPE; Bodyweight — Best set, Total reps, RPE; Endurance — Pace (the average), Distance, Time

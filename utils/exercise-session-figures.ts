@@ -186,13 +186,12 @@ const isSinglePiece = (set: ExerciseSessionSet): boolean =>
   set.distanceMeters != null && !hasLoad(set) && repeatsOf(set) == null;
 
 /**
- * The session's working sets in coach shorthand, in order: `100 × 8 · 102.5 ×
- * 8`, `12 · 11 · 10`, `60 × 40 m`, `1:30 · 1:20`. A set's reps on a distance or
- * a time are repeats — `3 × 1 km`, `64 × 3 × 40 m` (owner, 2026-09-21). A
- * session of one piece of distance reads its distance alone — `5 km`, its time
- * in the Time figure (owner, 2026-09-21); among other sets a piece done once
- * reads with its time — `10 km in 52:00` — and a run of such pieces of one
- * distance as one: `6 × 800 m: 2:52 · 2:50`. Empty when no set logged any of them.
+ * The session's working sets in coach shorthand, in order — their shape, never
+ * their times, which are the Time and Pace figures (owner, 2026-09-21):
+ * `100 × 8 · 102.5 × 8`, `12 · 11 · 10`, `60 × 40 m`, `3 × 1 km`, `64 × 3 ×
+ * 40 m`, `1:30 · 1:20` (a hold's length is its shape), and a run of pieces of
+ * one distance done once each as one: `6 × 800 m`. Empty when no set logged
+ * any of them.
  */
 export function formatSessionSets(logged: readonly ExerciseSessionSet[], viewer: UnitSystem): string {
   const sets = logged.filter(readsInShorthand);
@@ -213,18 +212,9 @@ export function formatSessionSets(logged: readonly ExerciseSessionSet[], viewer:
     ) {
       end += 1;
     }
-    const pieces = sets.slice(i, end);
+    const count = end - i;
     const distance = formatDistance(set.distanceMeters as number, viewer);
-    const times = pieces.flatMap((piece) =>
-      piece.durationSeconds == null ? [] : [formatDuration(piece.durationSeconds)],
-    );
-    if (pieces.length === 1) {
-      const alone = sets.length === 1;
-      parts.push(times.length > 0 && !alone ? `${distance} in ${times[0]}` : distance);
-    } else {
-      const repeated = `${pieces.length} × ${distance}`;
-      parts.push(times.length > 0 ? `${repeated}: ${times.join(" · ")}` : repeated);
-    }
+    parts.push(count === 1 ? distance : `${count} × ${distance}`);
     i = end;
   }
   return parts.join(" · ");

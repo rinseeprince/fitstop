@@ -149,12 +149,12 @@ describe("the sets in shorthand", () => {
     expect(formatSessionSets([set({ durationSeconds: 90 }), set({ durationSeconds: 80 })], "metric")).toBe("1:30 · 1:20");
   });
 
-  it("reads a session of one piece as its distance alone, a piece among others with its time, and repeats of one distance as one", () => {
+  it("reads the shape of the pieces, never their times: a piece as its distance, a run of one distance as one", () => {
     // The time of a one-piece session is its Time figure (owner, 2026-09-21)
     expect(formatSessionSets([set({ distanceMeters: 5000, durationSeconds: 1450 })], "metric")).toBe("5 km");
     expect(
       formatSessionSets([172, 170, 168].map((durationSeconds) => set({ distanceMeters: 800, durationSeconds })), "metric"),
-    ).toBe("3 × 800 m: 2:52 · 2:50 · 2:48");
+    ).toBe("3 × 800 m");
     expect(
       formatSessionSets(
         [
@@ -164,7 +164,7 @@ describe("the sets in shorthand", () => {
         ],
         "metric",
       ),
-    ).toBe("10 km in 52:00 · 2 × 100 m: 0:20 · 0:19");
+    ).toBe("10 km · 2 × 100 m");
     expect(formatSessionSets([set({ distanceMeters: 400 }), set({ distanceMeters: 400 })], "metric")).toBe("2 × 400 m");
   });
 
@@ -184,7 +184,7 @@ describe("the sets in shorthand", () => {
         [set({ reps: 1, distanceMeters: 800, durationSeconds: 170 }), set({ reps: 1, distanceMeters: 800, durationSeconds: 168 })],
         "metric",
       ),
-    ).toBe("2 × 800 m: 2:50 · 2:48");
+    ).toBe("2 × 800 m");
   });
 
   it("leaves out a set that logged none of load, reps, distance or time, and says nothing when none did", () => {
@@ -198,7 +198,7 @@ describe("the sets in shorthand", () => {
     expect(formatSessionSets([set({ distanceMeters: 1609.344, durationSeconds: 480 })], "imperial")).toBe("1 mi");
     expect(
       formatSessionSets([set({ distanceMeters: 1609.344, durationSeconds: 480 }), set({ distanceMeters: 400, durationSeconds: 75 })], "imperial"),
-    ).toBe("1 mi in 8:00 · 437 yd in 1:15");
+    ).toBe("1 mi · 437 yd");
   });
 
   it("names the load's unit in the heading only when the window's sets carry one", () => {

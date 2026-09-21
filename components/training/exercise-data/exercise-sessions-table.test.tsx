@@ -103,7 +103,7 @@ describe("ExerciseSessionsTable", () => {
     expect(cellsOf(bodyRows()[0])).toEqual(["Aug 1, 2026", "3.11 mi", "8:25 /mi", "3.11 mi", "26:10", "Z3"]);
   });
 
-  it("reads a run's session as a whole: repeats of one distance as one, the average pace over the total", () => {
+  it("reads a run's session as a whole: its shape, then the average pace over the total", () => {
     renderTable({
       exerciseType: "endurance",
       points: [
@@ -114,7 +114,7 @@ describe("ExerciseSessionsTable", () => {
     });
     expect(cellsOf(bodyRows()[0])).toEqual(["Aug 15, 2026", "5 km", "4:50 /km", "5 km", "24:10", "—"]);
     expect(cellsOf(bodyRows()[1])).toEqual([
-      "Aug 8, 2026", "3 × 800 m: 2:52 · 2:50 · 2:48", "3:33 /km", "2.4 km", "8:30", "—",
+      "Aug 8, 2026", "3 × 800 m", "3:33 /km", "2.4 km", "8:30", "—",
     ]);
   });
 
