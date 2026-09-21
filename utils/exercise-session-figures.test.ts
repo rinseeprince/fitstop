@@ -7,12 +7,9 @@ import {
   EXERCISE_TYPE_FIGURES,
   SESSION_FIGURE_SPECS,
   SESSION_FIGURES,
-  figureChange,
   formatSessionFigure,
   formatSessionSets,
-  mainFigure,
   nextSessionSort,
-  previousSessions,
   sessionFigureHeading,
   sessionSetsHeading,
   sessionSortLabel,
@@ -69,7 +66,6 @@ describe("each type's figures", () => {
       carry_sled: ["load", "distance", "time"],
       holds: ["longest_hold", "total_time", "rpe"],
     });
-    expect(EXERCISE_TYPES.map(mainFigure)).toEqual(["e1rm", "best_set", "pace", "split", "load", "longest_hold"]);
   });
 
   it("reads the key the chart plots wherever the chart plots the same figure, so a point and its row match", () => {
@@ -185,60 +181,6 @@ describe("the sets in shorthand", () => {
   it("names the load's unit in the heading only when the window's sets carry one", () => {
     expect(sessionSetsHeading([point({ sets: [set({ weight: 100, reps: 5 })] })], "metric")).toBe("Sets (kg)");
     expect(sessionSetsHeading([point({ sets: [set({ reps: 12 })] })], "imperial")).toBe("Sets");
-  });
-});
-
-describe("the change", () => {
-  const lift = (id: string, date: string, e1rm: number | null) =>
-    point({ sessionLogId: id, date, estimatedOneRepMax: e1rm });
-
-  it("comes from the latest earlier session with the main figure", () => {
-    const points = [
-      lift("a", "2026-08-01T00:00:00+00:00", 120),
-      lift("b", "2026-08-08T00:00:00+00:00", null),
-      lift("c", "2026-08-15T00:00:00+00:00", 125),
-    ];
-    const previous = previousSessions(points, "strength");
-    expect(previous.get("c")?.sessionLogId).toBe("a");
-    expect(previous.has("a")).toBe(false);
-    expect(previous.has("b")).toBe(false);
-  });
-
-  it("compares a run with the last run of the same distance, within half a percent", () => {
-    const run = (id: string, date: string, metres: number, pace: number) =>
-      point({ sessionLogId: id, date, totalDistanceMeters: metres, averagePaceSecondsPerKm: pace });
-    const points = [
-      run("5k", "2026-08-01T00:00:00+00:00", 5000, 300),
-      run("intervals", "2026-08-08T00:00:00+00:00", 4800, 214),
-      run("5k-again", "2026-08-15T00:00:00+00:00", 5020, 290),
-      run("10k", "2026-08-22T00:00:00+00:00", 10000, 310),
-    ];
-    const previous = previousSessions(points, "endurance");
-    expect(previous.get("5k-again")?.sessionLogId).toBe("5k");
-    expect(previous.has("10k")).toBe(false);
-    expect(previous.has("intervals")).toBe(false);
-  });
-
-  it("reads the difference of the numbers shown, teal-better by the figure's own direction", () => {
-    expect(figureChange("e1rm", lift("b", "", 129.8), lift("a", "", 126.7), "metric")).toEqual({ text: "+3.1", tone: "better" });
-    expect(figureChange("e1rm", lift("b", "", 120), lift("a", "", 126.7), "metric")).toEqual({ text: "-6.7", tone: "worse" });
-    const faster = figureChange(
-      "pace",
-      point({ averagePaceSecondsPerKm: 290 }),
-      point({ averagePaceSecondsPerKm: 300 }),
-      "metric",
-    );
-    expect(faster).toEqual({ text: "-0:10", tone: "better" });
-    expect(figureChange("longest_hold", point({ longestHoldSeconds: 90 }), point({ longestHoldSeconds: 90 }), "metric")).toEqual({
-      text: "0:00",
-      tone: "level",
-    });
-  });
-
-  it("shows nothing with no session before, no value, or on a figure that isn't the main one", () => {
-    expect(figureChange("e1rm", lift("a", "", 120), undefined, "metric")).toBeNull();
-    expect(figureChange("e1rm", lift("a", "", null), lift("b", "", 120), "metric")).toBeNull();
-    expect(figureChange("volume", point({ totalVolume: 2460 }), point({ totalVolume: 2200 }), "metric")).toBeNull();
   });
 });
 

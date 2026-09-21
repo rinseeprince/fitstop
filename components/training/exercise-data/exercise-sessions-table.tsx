@@ -29,18 +29,14 @@ import { recordLine, recordsHeldBy } from "@/utils/exercise-records";
 import {
   DEFAULT_SESSION_SORT,
   EXERCISE_TYPE_FIGURES,
-  figureChange,
   formatSessionDate,
   formatSessionFigure,
   formatSessionSets,
-  mainFigure,
   nextSessionSort,
-  previousSessions,
   sessionFigureHeading,
   sessionSetsHeading,
   sessionSortLabel,
   sortSessions,
-  type FigureChange,
   type SessionFigure,
   type SessionSort,
 } from "@/utils/exercise-session-figures";
@@ -50,8 +46,8 @@ import { SessionsLoadError } from "./sessions-load-error";
 // exercise data view and the client's Performance view alike
 // (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section 4.4). A row is a whole
 // session, read the way a coach reads one: the working sets in shorthand, the
-// type's figures with the main one's change from the session before, a star on
-// a session holding a record; a click opens that workout
+// type's figures, a star on a session holding a record; a click opens that
+// workout
 // (utils/exercise-session-figures.ts). It reads the progression points the
 // chart reads and the PR cards' records, and pages in memory: the chart already
 // holds every session in the window.
@@ -101,13 +97,6 @@ type SessionsPagesProps = Omit<ExerciseSessionsTableProps, "windowKey"> & {
 const PINNED_CELL = "sticky left-0 z-[1] bg-white";
 const PINNED_ROW_HOVER = "group-hover/row:bg-[#f8fcfb]";
 
-// The check-in review's change colours: teal better, amber worse, grey level
-const CHANGE_TONE: Record<FigureChange["tone"], string> = {
-  better: "text-[#0d9488]",
-  worse: "text-[#d97706]",
-  level: "text-[#93b0b4]",
-};
-
 const Dash = () => <span className="text-[#c2d0cc]">—</span>;
 
 function SessionsPages({
@@ -130,15 +119,7 @@ function SessionsPages({
   // the records behind the stars have all landed: one frame, the whole row
   const pending = points === undefined || exerciseType === undefined || recordsLoading;
   const figures: readonly SessionFigure[] = exerciseType ? EXERCISE_TYPE_FIGURES[exerciseType] : [];
-  const main = exerciseType ? mainFigure(exerciseType) : null;
   const rows = useMemo(() => sortSessions(points ?? [], sort), [points, sort]);
-  const previous = useMemo(
-    () =>
-      exerciseType
-        ? previousSessions(points ?? [], exerciseType)
-        : new Map<string, ExerciseProgressionPoint>(),
-    [points, exerciseType],
-  );
 
   // A refresh that shrank the window can't leave the page past its end
   const pageCount = Math.ceil(rows.length / HISTORY_PAGE_SIZE);
@@ -224,21 +205,10 @@ function SessionsPages({
                     </TableCell>
                     {figures.map((figure) => {
                       const value = formatSessionFigure(figure, point, preference);
-                      const change =
-                        figure === main
-                          ? figureChange(figure, point, previous.get(point.sessionLogId), preference)
-                          : null;
                       return (
                         <TableCell key={figure}>
                           {value ? (
-                            <span className={cn(MONO_CELL_CLASS, TEXT_PRIMARY)}>
-                              {value}
-                              {change && (
-                                <span className={cn("ml-1.5 text-[11px]", CHANGE_TONE[change.tone])}>
-                                  {change.text}
-                                </span>
-                              )}
-                            </span>
+                            <span className={cn(MONO_CELL_CLASS, TEXT_PRIMARY)}>{value}</span>
                           ) : (
                             <Dash />
                           )}

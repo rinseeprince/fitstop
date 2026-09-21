@@ -2,8 +2,7 @@ import { format } from "date-fns";
 import type { ExerciseProgressionPoint, ExerciseSessionSet } from "@/types/training";
 import { dayFromUtcStamp } from "@/lib/date-helpers";
 import type { ExerciseType } from "./exercise-types";
-import type { MarkerReadout, MarkerValueKey } from "./exercise-progress-markers";
-import { formatMarkerDelta, markerSeriesValue } from "./exercise-marker-format";
+import type { MarkerValueKey } from "./exercise-progress-markers";
 import { hasLoad } from "./exercise-session-markers";
 import {
   formatDistance,
@@ -19,8 +18,8 @@ import {
 // session (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section 4.4, owner
 // 2026-09-21): a row is a whole session, so it shows the session's working
 // sets in coach shorthand, then a fixed few figures for the session as a whole
-// chosen by the exercise's type, the main one first with its change from the
-// session before. The builder's columns describe one set and are not used here.
+// chosen by the exercise's type, the main one first. The builder's columns
+// describe one set and are not used here.
 // A figure reads a value the progression point already carries
 // (utils/exercise-session-markers.ts); where the chart plots the same figure it
 // reads the same key, so a point and its row always match. The one table of the
@@ -100,11 +99,6 @@ export const EXERCISE_TYPE_FIGURES: Record<ExerciseType, readonly SessionFigure[
   carry_sled: ["load", "distance", "time"],
   holds: ["longest_hold", "total_time", "rpe"],
 };
-
-/** The figure a type's rows lead with and show the change in. */
-export function mainFigure(type: ExerciseType): SessionFigure {
-  return EXERCISE_TYPE_FIGURES[type][0];
-}
 
 /** A heading: a load's names the unit its bare numbers are in, the rest their figure. */
 export function sessionFigureHeading(figure: SessionFigure, viewer: UnitSystem): string {
@@ -221,85 +215,6 @@ export function sessionSetsHeading(
 ): string {
   const loaded = points.some((point) => point.sets.some(hasLoad));
   return loaded ? `Sets (${formatLoad(0, viewer).unit})` : "Sets";
-}
-
-// --- The change --------------------------------------------------------------
-
-/** How a main figure's change reads: the chart marker's readout for the same value. */
-const CHANGE_READOUT: Record<SessionFigure, MarkerReadout | null> = {
-  e1rm: "load",
-  top_set: null,
-  volume: null,
-  rpe: null,
-  best_set: "reps",
-  total_reps: null,
-  pace: "pace",
-  distance: null,
-  time: null,
-  hr_zone: null,
-  split: "split",
-  stroke_rate: null,
-  watts: null,
-  load: "load",
-  longest_hold: "duration",
-  total_time: null,
-};
-
-// A run, a row or a carry compares with a session of the same distance: a 5 km
-// pace against an interval day's means nothing
-const SAME_DISTANCE_TYPES: ReadonlySet<ExerciseType> = new Set(["endurance", "erg", "carry_sled"]);
-
-const sameDistance = (a: number | null, b: number | null): boolean =>
-  a != null && b != null && Math.abs(a - b) <= 0.005 * Math.max(a, b);
-
-/**
- * The session each session's change is taken from: the latest earlier one in
- * the window with the main figure — for Endurance, Erg and Carry & sled, of the
- * same total distance, within half a percent. A session with none shows no change.
- */
-export function previousSessions(
-  points: readonly ExerciseProgressionPoint[],
-  type: ExerciseType,
-): Map<string, ExerciseProgressionPoint> {
-  const key = SESSION_FIGURE_SPECS[mainFigure(type)].value;
-  const matchDistance = SAME_DISTANCE_TYPES.has(type);
-  const oldestFirst = [...points].sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1));
-  const previous = new Map<string, ExerciseProgressionPoint>();
-  oldestFirst.forEach((point, index) => {
-    if (point[key] == null) return;
-    for (let j = index - 1; j >= 0; j -= 1) {
-      const earlier = oldestFirst[j];
-      if (earlier[key] == null) continue;
-      if (matchDistance && !sameDistance(point.totalDistanceMeters, earlier.totalDistanceMeters)) continue;
-      previous.set(point.sessionLogId, earlier);
-      return;
-    }
-  });
-  return previous;
-}
-
-export type FigureChange = { text: string; tone: "better" | "worse" | "level" };
-
-/**
- * A main figure's change from the session before, taken between the numbers
- * shown (the viewer's units) like the KPI strip's: "+3.1", "-0:10".
- */
-export function figureChange(
-  figure: SessionFigure,
-  point: ExerciseProgressionPoint,
-  previous: ExerciseProgressionPoint | undefined,
-  viewer: UnitSystem,
-): FigureChange | null {
-  const readout = CHANGE_READOUT[figure];
-  const spec = SESSION_FIGURE_SPECS[figure];
-  const now = point[spec.value];
-  const before = previous?.[spec.value];
-  if (readout == null || now == null || before == null) return null;
-  const delta = markerSeriesValue(readout, now, viewer) - markerSeriesValue(readout, before, viewer);
-  const text = formatMarkerDelta(readout, delta);
-  if (delta === 0) return { text, tone: "level" };
-  const up = delta > 0;
-  return { text, tone: up === (spec.leads === "higher") ? "better" : "worse" };
 }
 
 // --- Sort ---------------------------------------------------------------------

@@ -8,9 +8,8 @@ import type { ExercisePR, ExerciseProgressionPoint } from "@/types/training";
 
 // The Sessions table beneath every exercise's chart: one row per logged session
 // in the window, newest first — the working sets in shorthand, the type's
-// figures with the main one's change, a star on a session holding a record, a
-// click opening the workout — sorted from its headings and paged by the rail's
-// arrows.
+// figures, a star on a session holding a record, a click opening the workout —
+// sorted from its headings and paged by the rail's arrows.
 
 const units = vi.hoisted(() => ({ preference: "metric" as "metric" | "imperial" }));
 // Required, not optional: units-context imports auth-context, which constructs
@@ -74,27 +73,16 @@ describe("ExerciseSessionsTable", () => {
     units.preference = "metric";
   });
 
-  it("reads a lift's sessions newest first: the sets, then e1RM with its change, the top set, volume and RPE", () => {
+  it("reads a lift's sessions newest first: the sets, then e1RM, the top set, volume and RPE — each cell its number alone", () => {
     renderTable();
     expect(headings()).toEqual(["Date", "Sets (kg)", "e1RM (kg)", "Top set (kg)", "Volume (kg)", "RPE"]);
     expect(rowDates()).toEqual([
       "Aug 12, 2026", "Aug 11, 2026", "Aug 10, 2026", "Aug 9, 2026", "Aug 8, 2026",
       "Aug 7, 2026", "Aug 6, 2026", "Aug 5, 2026", "Aug 4, 2026", "Aug 3, 2026",
     ]);
-    // 105 × 5: Epley 122.5, then 60 × 5 the next session: 70, down 52.5
-    // Two equal sets: the top set is the first, and its RPE the row's
-    expect(cellsOf(bodyRows()[1])).toEqual(["Aug 11, 2026", "105 × 5 · 105 × 5", "122.5+2.9", "105 × 5", "1,050", "8"]);
-    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 12, 2026", "60 × 5 · 60 × 5", "70-52.5", "60 × 5", "600", "8"]);
-  });
-
-  it("colours a change teal when better and amber when worse, and shows none on the oldest session", async () => {
-    const user = userEvent.setup();
-    renderTable();
-    expect(screen.getByText("-52.5")).toHaveClass("text-[#d97706]");
-    expect(screen.getAllByText("+2.9")[0]).toHaveClass("text-[#0d9488]");
-    await user.click(screen.getByRole("button", { name: "Next page" }));
-    // Aug 1, the first session in the window, has none before it
-    expect(cellsOf(bodyRows()[1])[2]).toBe("93.3");
+    // 105 × 5: Epley 122.5. Two equal sets: the top set is the first, and its RPE the row's
+    expect(cellsOf(bodyRows()[1])).toEqual(["Aug 11, 2026", "105 × 5 · 105 × 5", "122.5", "105 × 5", "1,050", "8"]);
+    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 12, 2026", "60 × 5 · 60 × 5", "70", "60 × 5", "600", "8"]);
   });
 
   it("reads a bodyweight exercise's reps and a run's time over its distance", () => {
@@ -103,7 +91,7 @@ describe("ExerciseSessionsTable", () => {
       points: [session(1, [{ reps: 8 }, { reps: 7 }]), session(2, [{ reps: 12, rpe: 9 }, { reps: 11 }, { reps: 10 }])],
     });
     expect(headings()).toEqual(["Date", "Sets", "Best set", "Total reps", "RPE"]);
-    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 2, 2026", "12 · 11 · 10", "12+4", "33", "9"]);
+    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 2, 2026", "12 · 11 · 10", "12", "33", "9"]);
     cleanup();
 
     units.preference = "imperial";
@@ -115,7 +103,7 @@ describe("ExerciseSessionsTable", () => {
     expect(cellsOf(bodyRows()[0])).toEqual(["Aug 1, 2026", "3.11 mi in 26:10", "8:25 /mi", "3.11 mi", "26:10", "Z3"]);
   });
 
-  it("compares a run with the last run of the same distance, never an interval day", () => {
+  it("reads a run's session as a whole: repeats of one distance as one, the average pace over the total", () => {
     renderTable({
       exerciseType: "endurance",
       points: [
@@ -124,7 +112,7 @@ describe("ExerciseSessionsTable", () => {
         session(15, [{ distanceMeters: 5000, durationSeconds: 1450, paceSecondsPerKm: 290 }]),
       ],
     });
-    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 15, 2026", "5 km in 24:10", "4:50 /km-0:10", "5 km", "24:10", "—"]);
+    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 15, 2026", "5 km in 24:10", "4:50 /km", "5 km", "24:10", "—"]);
     expect(cellsOf(bodyRows()[1])).toEqual([
       "Aug 8, 2026", "3 × 800 m: 2:52 · 2:50 · 2:48", "3:33 /km", "2.4 km", "8:30", "—",
     ]);

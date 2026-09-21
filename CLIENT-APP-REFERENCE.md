@@ -566,12 +566,8 @@ failed `prs` read leaves the rows without stars.
 - **Cells** read in the viewer's units: loads bare under a heading naming the unit — "e1RM (kg)",
   "Top set (lbs)" — snapped like every read-only load; distances "5 km" / "800 m" (miles and yards
   for an imperial viewer); times as clocks; pace "4:50 /km" or "/mi"; split "1:52.3 /500m"; HR zone
-  "Z3"; the other numbers bare. A missing value reads a dash.
-- **The change** — the main figure's difference from the previous point in the window that has one,
-  taken between the numbers shown ("+3.1", "-0:10"), beside it, teal when better and amber when
-  worse by the figure's direction (higher is better but for pace and split), grey when level. For
-  `endurance`, `erg` and `carry_sled` the previous point must have the same `totalDistanceMeters`
-  within half a percent. The oldest point, or one with no match, shows none.
+  "Z3"; the other numbers bare. A cell holds its number and nothing else; a missing value reads a
+  dash.
 - **The star** — beside the date, on a point holding a record the `prs` rows name: a record whose
   `date` is the point's `date` and whose values one of its `sets` carries (`rep_max` its reps and
   weight; `best_reps` its reps with no load; `best_time` its distance and time; `heaviest_carry` its

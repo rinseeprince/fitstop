@@ -254,7 +254,7 @@ commit's plan.
     Time, Hold, Sets) are gone. Every exercise's progress view shows the table beneath whatever the
     hero shows — the chart of every lens, and the PR cards on the PRs lens — one row per logged
     session in the window, newest first, and a row answers what a coach asks of a session: what did
-    they do, and was it better than last time. Each row has:
+    they do, and how did it measure. Each row has:
     - *Sets* — the session's working sets in coach shorthand, in order, warm-ups left out: `100 × 8 ·
       102.5 × 8 · 105 × 6` for loaded reps (the load's unit in the heading), `12 · 11 · 10` for reps
       alone, `60 × 40 m` for a carry, `5 km in 24:10` for one piece and `6 × 800 m: 2:52 · 2:50 · …`
@@ -269,10 +269,8 @@ commit's plan.
       Watts (the averages). Carry & sled: Load (the heaviest), Distance, Time (the totals). Holds: Longest hold, Total time, RPE. RPE is the top set's, or with
       no weight logged the highest, as the RPE lens reads it. Where the chart plots a figure, it is
       the same number.
-    - *Change* — the main figure against the previous session in the window, teal when better,
-      amber when worse and grey when level (the check-in review's colours); for Endurance, Erg and
-      Carry & sled against the previous session of the same total distance (within half a percent),
-      since a 5 km pace against an interval day's means nothing. The oldest session, or one with no earlier match, shows none.
+    - *No change numbers* (owner, 2026-09-21, after 16a-2 shipped: "I don't want it"): a cell holds
+      its number and nothing else — no difference from the session before beside it.
     - *PR* — a star on a session that holds one of the records the PR cards show, the record named
       in its tooltip.
     - *The row opens the workout* — the coach's opens the session log (set by set, target over
@@ -556,7 +554,7 @@ anything you rely on.
 | 15 | Timed groups in the builder, and their completion | Coaches prescribe timed groups |
 | 16 | Progress charts by exercise type | Charts show each type's markers |
 | 16a | A sessions table beneath every chart | Every chart has a table of its sessions beneath it |
-| 16a-2 | The sessions table, as a coach reads it | Each row shows the session's sets, its figures and the change |
+| 16a-2 | The sessions table, as a coach reads it | Each row shows the session's sets and its figures |
 | 16b | Race-distance PRs and every exercise's bests | Endurance PRs are race distances; one table lists every best |
 | 17 | Endurance progression | Duplicate-with-progression moves endurance targets |
 | 18 | Phases: the structure | Programs carry phases; nothing looks different |
@@ -1283,10 +1281,10 @@ Implement commit 16a-2 — The sessions table, as a coach reads it — from docs
 Before anything else, read the plan's §1–§5 (skip the other commits' prompts), then CONVENTIONS.md and docs/ARCHITECTURE.md in full, then docs/newdesignsystem.md and CLIENT-APP-REFERENCE.md. Work the way §2 says: ARCHITECTURE.md describes today's product, so where this commit changes a shape it describes, follow the plan and rewrite that part of the doc. Plan first, with plain sentences, and wait for my go.
 
 WHAT WE'RE BUILDING
-Each row of the Sessions table reads a session the way a coach reads it: what they did, and whether it was better than last time.
+Each row of the Sessions table reads a session the way a coach reads it: what they did, and the figures that measure it.
 
 WHEN THIS COMMIT IS DONE
-- A row shows the session's working sets in coach shorthand, its type's figures with the main one first, the change in the main figure and a PR star, per §4.4; a row opens that workout.
+- A row shows the session's working sets in coach shorthand, its type's figures with the main one first and a PR star, per §4.4; a row opens that workout.
 - 16a's one column per measure, its Columns menu and its invented columns are gone; the headings sort the figures.
 - The chart's endurance, erg and carry lines plot the same session numbers as the rows.
 - The client's Performance view has the same table; its rows open the client's own workout.

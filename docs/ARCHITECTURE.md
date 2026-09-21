@@ -698,13 +698,8 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   (the totals), HR zone (the highest); Erg — Split (the average), Distance, Time, Stroke rate, Watts
   (the averages); Carry & sled — Load (the heaviest), Distance, Time; Holds — Longest hold, Total
   time, RPE. A figure reads the point key the chart plots wherever the chart plots the same figure,
-  so a point and its row always match (`SESSION_FIGURE_SPECS`). The main figure carries its **change**
-  from the session before in the window, taken between the numbers shown like the KPI strip's
-  ("+3.1", "-0:10"), teal when better and amber when worse by the figure's own direction, grey when
-  level — for Endurance, Erg and Carry & sled against the previous session of the same total distance
-  within half a percent, since a 5 km pace against an interval day's means nothing
-  (`previousSessions`, `figureChange`); the first session, or one with no match, shows none. A
-  **star** beside the date marks a session holding one of the records the PR cards show, named in
+  so a point and its row always match (`SESSION_FIGURE_SPECS`); a cell holds its number and nothing
+  else. A **star** beside the date marks a session holding one of the records the PR cards show, named in
   its tooltip ("5 Rep Max · 105 kg"; `recordsHeldBy`, `utils/exercise-records.ts` — a record's day
   and the set it names). A **row opens its workout**: the coach's the session log dialog, set by set
   with targets over actuals; the client's their own workout (`/client/training?eventId=`), a row
