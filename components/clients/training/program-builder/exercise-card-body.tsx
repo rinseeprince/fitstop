@@ -66,10 +66,12 @@ export function ExerciseCardBody({
 
   return (
     <div className="space-y-1 border-t border-[rgba(13,148,136,0.08)] p-2">
-      {/* The grid scrolls sideways when its columns don't fit the card; the
-          half-pixel margins leave room for the boxes' focus rings at the
-          scroll edge. */}
-      <div className="-mx-0.5 space-y-1 overflow-x-auto px-0.5">
+      {/* The grid scrolls sideways when its columns don't fit the card, and a
+          scrolling box clips whatever crosses its edges: 2px of padding on
+          the sides and below give the boxes' 2px focus rings room, the side
+          margins and the smaller bottom margin (the card's 4px gap less the
+          padding) keep everything around the grid where it was. */}
+      <div className="-mx-0.5 mb-0.5 space-y-1 overflow-x-auto px-0.5 pb-0.5">
         {/* Column header for the set rows */}
         <div
           className={cn(SET_GRID_BASE, LABEL_CLASS)}
