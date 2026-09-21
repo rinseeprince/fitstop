@@ -29,8 +29,8 @@ When this plan is done:
   heart rate, power, % FTP) — starting from a preset set by the exercise's type: Strength,
   Bodyweight, Endurance, Erg, Carry & sled or Holds.
 - **Clients log all of it**, including group scores: AMRAP rounds and For time finish times.
-- **Progress charts show each exercise's own markers**, every exercise reads as a table of its
-  sessions, one table lists every exercise's bests, endurance and erg PRs are race distances, and
+- **Progress charts show each exercise's own markers** with a table of its sessions beneath, one
+  table lists every exercise's bests, endurance and erg PRs are race distances, and
   duplicate-with-progression can progress endurance targets.
 - **Programs can be periodised** into named, coloured phases (Foundation, Deload, Taper…) shown as
   tabs in the builder, colouring the coach's calendar and the client's program, and named in the
@@ -242,30 +242,44 @@ commit's plan.
   best set reps. Endurance — pace, distance, best times. Erg — split, watts, best times. Carry & sled
   — load over distance, time. Holds — longest hold. A chart follows what was actually logged when
   that differs from the type.
-- **Progress reads as tables, and endurance PRs are race distances (owner, 2026-09-21, after commit
-  16's smoke; commits 16a–16b):**
-  - *The Sessions table (16a).* Every exercise gets a Sessions lens: one row per logged session in the
-    window, newest first, one column per measure the exercise's sessions carry, ticked on and off in a
-    Columns menu on the rail like the builder's column selector. A row holds the session's best per
-    column, by one rule per measure: the top set's weight, reps, RPE, RIR and tempo; the estimated 1RM
-    and the volume; the most reps in a bodyweight set; the total distance and total calories; the
-    fastest pace, split and time, the time with its distance beside it; the top watts, cadence, stroke
-    rate and heart rate; the longest hold; sets done over sets prescribed. Sorting is the rail's sort
-    select, one pair per shown column — heaviest and lightest, most and fewest, fastest and slowest,
-    longest and shortest, newest and oldest — never click-to-sort headers. Column visibility and the
-    sort are the view's, not the address's, and reset when another exercise is picked. Strength and
-    Bodyweight keep their chart lenses beside the table; Endurance, Erg, Carry & sled and Holds read as
-    the table alone and lose their chart lenses. The client's Performance view shows the same table
-    with every measured column and the same sorts, and no Columns menu. The session window
-    (8/12/24/All) stays visible and greyed on the PRs lens, saying PRs are all-time. The table reads
-    the progression points the chart already reads: no new read, no migration.
+- **Every chart has a table of its sessions beneath it, and endurance PRs are race distances (owner,
+  2026-09-21, after commit 16's smoke; commits 16a–16b):**
+  - *The Sessions table (16a).* Every exercise's progress view shows a table of its logged sessions
+    beneath whatever the hero shows: the chart of every lens, and the PR cards on the PRs lens.
+    Sessions is not a lens, and every type keeps its chart lenses. The table has one row per logged
+    session in the window, newest first, and one column per measure the exercise's sessions carry; a
+    column nothing in the window recorded does not appear. A row holds the session's value per column,
+    by one rule per measure: the top set's weight, reps, RPE, RIR and tempo — in a session with no
+    loaded set, the highest RPE and the lowest RIR logged; the estimated 1RM and the volume; the most
+    reps in a bodyweight set; the total distance and the total calories; the fastest pace, split and
+    time, the time with its distance beside it; the highest watts, cadence, stroke rate, resistance,
+    heart rate, HR zone and % FTP; the longest hold; the average rest taken; sets done over sets
+    prescribed. The coach's RPE chart lens reads the same RPE as the table, so an RPE logged on a run,
+    a hold or a bodyweight set reaches both.
+  - *The table's rail (16a).* The table sits on its own rail, Sessions, which carries a Columns menu
+    (the builder's column-selector recipe without presets, each column ticked on and off), the sort as
+    the design system's rail dropdown — one pair per shown column: heaviest and lightest, most and
+    fewest, fastest and slowest, longest and shortest, highest and lowest, newest and oldest; never
+    click-to-sort headers — and the history tables' pager. Switching the lens changes only what sits
+    above the table: its columns and its sort stay. Column visibility and the sort are the view's, not
+    the address's, and reset when another exercise is picked.
+  - *The window (16a).* The session window (8/12/24/All) governs the chart and the table together and
+    stays live on every lens; on the PRs lens it governs the table alone, and the PRs rail says the
+    cards are all-time.
+  - *The client (16a).* The client's Performance view has the same shape: the chart, then the Sessions
+    table with every measured column, the same sort and pager and no Columns menu, then Personal
+    records.
+  - *No new data (16a).* The table reads the progression points the chart already reads, which carry
+    every measure but tempo: tempo is text and the read returns numbers. Tempo joins the table in 16b,
+    whose migration adds it to the read.
   - *All exercises (16b).* The exercise picker gains "All exercises": one row per exercise the client
     has logged, with its type, sessions logged, last logged and its bests — heaviest load, best
     estimated 1RM, most reps in a bodyweight set, best time at its longest race distance, heaviest
     carry, longest hold, empty where the type never logs it — sortable by any of them and by name,
-    type, sessions and last logged, with the same Columns menu, in both views. One SQL function
-    computes every exercise's bests in one pass, bounded by the exercises logged, so the page costs one
-    round trip however many exercises there are.
+    type, sessions and last logged, with the same Columns menu and pager, in both views. Picking it
+    shows that table under the hero, with no chart and no lenses. One SQL function computes every
+    exercise's bests in one pass, bounded by the exercises logged, so the page costs one round trip
+    however many exercises there are.
   - *Race-distance PRs (16b).* An Endurance exercise's PRs are its best times at the race distances:
     400 m, 800 m, 1 km, 1600 m, 1 mile, 5 km, 10 km, half marathon, marathon, 50 km, 100 km. An Erg
     exercise's are the erg distances: 500 m, 1 km, 2 km, 5 km, 6 km, 10 km, half marathon, marathon.
@@ -519,7 +533,7 @@ anything you rely on.
 | 14 | Timed groups: scores and client logging | Clients do and score AMRAP, EMOM and For time |
 | 15 | Timed groups in the builder, and their completion | Coaches prescribe timed groups |
 | 16 | Progress charts by exercise type | Charts show each type's markers |
-| 16a | Progress as tables | Every exercise reads as a table of its sessions |
+| 16a | A sessions table beneath every chart | Every chart has a table of its sessions beneath it |
 | 16b | Race-distance PRs and every exercise's bests | Endurance PRs are race distances; one table lists every best |
 | 17 | Endurance progression | Duplicate-with-progression moves endurance targets |
 | 18 | Phases: the structure | Programs carry phases; nothing looks different |
@@ -1211,26 +1225,27 @@ the column rules a chart follows are `utils/exercise-progress-markers.ts` and
 `utils/exercise-session-markers.ts` (migration 188; `docs/ARCHITECTURE.md` → "Exercise progress:
 charts and PRs"). *The owner's amendments after the smoke (2026-09-21) are commits 16a and 16b.*
 
-### Commit 16a — Progress as tables
+### Commit 16a — A sessions table beneath every chart
 
 ```text
-Implement commit 16a of 22 — Progress as tables — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
+Implement commit 16a of 22 — A sessions table beneath every chart — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
 
 Before anything else, read the plan's §1–§5 (skip the other commits' prompts), then CONVENTIONS.md and docs/ARCHITECTURE.md in full, then docs/newdesignsystem.md. Work the way §2 says: ARCHITECTURE.md describes today's product, so where this commit changes a shape it describes, follow the plan and rewrite that part of the doc. Plan first, with plain sentences, and wait for my go.
 
 WHAT WE'RE BUILDING
-Every exercise's progress reads as a table of its sessions.
+Every exercise's progress chart has a table of its sessions beneath it.
 
 WHEN THIS COMMIT IS DONE
-- Every exercise has a Sessions lens in the coach's exercise data view and the client's progress view: one row per logged session in the window, newest first, one column per measure the exercise's sessions carry, each cell the session's best by the rule §4.4 gives that measure.
-- The coach ticks columns on and off in a Columns menu on the rail — the builder's column-selector recipe — and sorts with the rail's sort select, one pair per shown column; both are the view's, not the address's, and reset on another exercise.
-- Strength and Bodyweight keep their chart lenses beside the table; Endurance, Erg, Carry & sled and Holds read as the table alone.
-- The session window stays visible and greyed on the PRs lens.
-- The table reads the progression points the chart already reads: no new read and no migration. docs/newdesignsystem.md gains the sessions-table recipe; CLIENT-APP-REFERENCE.md says which per-session rule each column follows, since the React Native app is the real client.
+- In the coach's exercise data view and the client's progress view, a Sessions table sits beneath whatever the hero shows — the chart of every lens, and the PR cards — with one row per logged session in the window and each cell the session's value by the rule §4.4 gives its measure. Every type keeps its chart lenses; there is no Sessions lens.
+- The table's rail carries the coach's Columns menu, the sort as the design system's rail dropdown, and the pager. Switching the lens leaves the table, its columns and its sort as they are; picking another exercise resets them.
+- The coach's RPE chart lens and the table's RPE column read one value, so an RPE logged on a run, a hold or a bodyweight set shows in both.
+- The session window governs the chart and the table together and stays live on the PRs lens, whose rail says the cards are all-time.
+- The table reads the progression points the chart already reads: no new read and no migration. Every measure is a column but tempo, which joins in 16b.
+- docs/newdesignsystem.md gains the sessions-table recipe; CLIENT-APP-REFERENCE.md says which rule each column follows, since the React Native app is the real client.
 
-RULES: §4.4 — closed, including its 2026-09-21 amendment. Include a frame test for the Sessions lens, the Columns menu and the sort (§2).
+RULES: §4.4 — closed, including its 2026-09-21 amendment. Include a frame test for a lens switch with the table beneath, the Columns menu and the sort (§2).
 
-NOT IN THIS COMMIT: race-distance PRs and the All exercises table (commit 16b).
+NOT IN THIS COMMIT: race-distance PRs, the All exercises table and the Tempo column (commit 16b).
 ```
 
 ### Commit 16b — Race-distance PRs and every exercise's bests
@@ -1245,7 +1260,8 @@ Endurance and erg PRs are race distances, and one table lists every exercise's b
 
 WHEN THIS COMMIT IS DONE
 - An Endurance exercise's PRs are its best times at the race distances §4.4 lists and an Erg exercise's at the erg distances, a set matched within half a percent; carries stay per exact distance; no time is estimated. The coach's PRs lens, the client's Personal records and the Overview's "New personal record" all use the same buckets.
-- The exercise picker offers "All exercises" in both views: one row per exercise the client has logged with its type, sessions, last logged and its bests, sortable by any column, with the Columns menu of commit 16a.
+- The exercise picker offers "All exercises" in both views: one row per exercise the client has logged with its type, sessions, last logged and its bests, sortable by any column, with commit 16a's Columns menu and pager. Picking it shows that table under the hero, with no chart and no lenses.
+- The Sessions table gains its Tempo column, the top set's, the progression read returning tempo.
 - The bests come from one SQL function in one round trip, bounded by the exercises logged, like the existing progression and PR functions; the migration pushes to DEV only. CLIENT-APP-REFERENCE.md carries the new shapes, since the React Native app is the real client.
 
 RULES: §4.4 — closed, including its 2026-09-21 amendment. Include a frame test for the All exercises pick (§2).
