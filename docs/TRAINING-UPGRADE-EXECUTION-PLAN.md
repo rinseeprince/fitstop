@@ -254,7 +254,7 @@ commit's plan.
     Time, Hold, Sets) are gone. Every exercise's progress view shows the table beneath whatever the
     hero shows — the chart of every lens, and the PR cards on the PRs lens — one row per logged
     session in the window, newest first, and a row answers what a coach asks of a session: what did
-    they do, was it better than last time, and was it what was prescribed. Each row has:
+    they do, and was it better than last time. Each row has:
     - *Sets* — the session's working sets in coach shorthand, in order, warm-ups left out: `100 × 8 ·
       102.5 × 8 · 105 × 6` for loaded reps (the load's unit in the heading), `12 · 11 · 10` for reps
       alone, `60 × 40 m` for a carry, `5 km in 24:10` for one piece and `6 × 800 m: 2:52 · 2:50 · …`
@@ -273,9 +273,6 @@ commit's plan.
       red when worse; for Endurance, Erg and Carry & sled against the previous session of the same
       total distance (within half a percent), since a 5 km pace against an interval day's means
       nothing. The oldest session, or one with no earlier match, shows none.
-    - *Target* — a tick when every working set was within every target the coach set; otherwise
-      amber, naming what missed and on how many sets ("Reps below on 1 of 3"), by the judgement the
-      workout log uses. Blank when nothing was prescribed.
     - *PR* — a star on a session that holds one of the records the PR cards show, the record named
       in its tooltip.
     - *The row opens the workout* — the coach's opens the session log (set by set, target over
@@ -296,8 +293,7 @@ commit's plan.
     cards are all-time.
   - *The client (16a).* The client's Performance view has the same shape: the chart, then the same
     Sessions table, then Personal records.
-  - *No new data (16a-2).* The progression read already carries every set and the prescription it
-    was logged against; no migration.
+  - *No new data (16a-2).* The progression read already carries every set; no migration.
   - *All exercises (16b).* The exercise picker gains "All exercises": one row per exercise the client
     has logged, with its type, sessions logged, last logged and its bests — heaviest load, best
     estimated 1RM, most reps in a bodyweight set, best time at its longest race distance, heaviest
@@ -560,7 +556,7 @@ anything you rely on.
 | 15 | Timed groups in the builder, and their completion | Coaches prescribe timed groups |
 | 16 | Progress charts by exercise type | Charts show each type's markers |
 | 16a | A sessions table beneath every chart | Every chart has a table of its sessions beneath it |
-| 16a-2 | The sessions table, as a coach reads it | Each row shows the session's sets, its figures, the change and the target |
+| 16a-2 | The sessions table, as a coach reads it | Each row shows the session's sets, its figures and the change |
 | 16b | Race-distance PRs and every exercise's bests | Endurance PRs are race distances; one table lists every best |
 | 17 | Endurance progression | Duplicate-with-progression moves endurance targets |
 | 18 | Phases: the structure | Programs carry phases; nothing looks different |
@@ -1287,14 +1283,14 @@ Implement commit 16a-2 — The sessions table, as a coach reads it — from docs
 Before anything else, read the plan's §1–§5 (skip the other commits' prompts), then CONVENTIONS.md and docs/ARCHITECTURE.md in full, then docs/newdesignsystem.md and CLIENT-APP-REFERENCE.md. Work the way §2 says: ARCHITECTURE.md describes today's product, so where this commit changes a shape it describes, follow the plan and rewrite that part of the doc. Plan first, with plain sentences, and wait for my go.
 
 WHAT WE'RE BUILDING
-Each row of the Sessions table reads a session the way a coach reads it: what they did, whether it was better than last time, and whether it was what was prescribed.
+Each row of the Sessions table reads a session the way a coach reads it: what they did, and whether it was better than last time.
 
 WHEN THIS COMMIT IS DONE
-- A row shows the session's working sets in coach shorthand, its type's figures with the main one first, the change in the main figure, the target result and a PR star, per §4.4; a row opens that workout.
+- A row shows the session's working sets in coach shorthand, its type's figures with the main one first, the change in the main figure and a PR star, per §4.4; a row opens that workout.
 - 16a's one column per measure, its Columns menu and its invented columns are gone; the headings sort the figures.
 - The chart's endurance, erg and carry lines plot the same session numbers as the rows.
 - The client's Performance view has the same table; its rows open the client's own workout.
-- No migration: the progression read already carries every set and the prescription it was logged against. CLIENT-APP-REFERENCE.md carries the row's shape and the shorthand, since the React Native app is the real client; docs/newdesignsystem.md's sessions-table recipe is rewritten.
+- No migration: the progression read already carries every set. CLIENT-APP-REFERENCE.md carries the row's shape and the shorthand, since the React Native app is the real client; docs/newdesignsystem.md's sessions-table recipe is rewritten.
 
 RULES: §4.4 — closed, including its 2026-09-21 amendments. Include a frame test for a lens switch with the table beneath, a heading sort and a row opening its workout (§2).
 
