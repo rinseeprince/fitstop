@@ -23,6 +23,19 @@ function SheetClose({
   return <SheetPrimitive.Close data-slot="sheet-close" {...props} />
 }
 
+// The sheet's corner close, top-right of whatever positions it. SheetContent
+// renders it unless `hideClose`; a sheet whose body slides inside a still
+// content (the builder's assistant-hosting sheets) hides the content's and
+// renders this inside its sliding body, so the close arrives with the sheet.
+function SheetCloseButton() {
+  return (
+    <SheetPrimitive.Close data-slot="sheet-close" className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
+      <XIcon className="size-4" />
+      <span className="sr-only">Close</span>
+    </SheetPrimitive.Close>
+  )
+}
+
 function SheetPortal({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Portal>) {
@@ -102,12 +115,7 @@ function SheetContent({
         {...props}
       >
         {children}
-        {!hideClose && (
-          <SheetPrimitive.Close data-slot="sheet-close" className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
-            <XIcon className="size-4" />
-            <span className="sr-only">Close</span>
-          </SheetPrimitive.Close>
-        )}
+        {!hideClose && <SheetCloseButton />}
       </SheetPrimitive.Content>
     </SheetPortal>
   )
@@ -163,6 +171,7 @@ export {
   Sheet,
   SheetTrigger,
   SheetClose,
+  SheetCloseButton,
   SheetContent,
   SheetHeader,
   SheetFooter,

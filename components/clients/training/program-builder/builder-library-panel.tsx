@@ -9,6 +9,7 @@ import { SegmentedControl } from "@/components/programs/shared/segmented-control
 import { LibrarySessionList } from "./library-session-list";
 import { LibraryExerciseList } from "./library-exercise-list";
 import { LABEL_CLASS, TEXT_PRIMARY } from "./builder-tokens";
+import type { SavedSession } from "@/types/training";
 
 // The builder's single tabbed library panel (S4.5/S4.75) — the left column of
 // the 3-column frame (icon strip · panel · builder): a flush 296px white
@@ -47,11 +48,17 @@ export function BuilderLibraryPanel({
   // The builder's single exit on EVERY target — the dark hero no longer
   // carries a back arrow, so this is also where the unsaved-changes guard runs.
   onBack,
+  // The Sessions tab's New session / Edit session sheet is the builder's
+  // (program-builder.tsx), which steps the corner assistant aside while it is up.
+  onNewSession,
+  onEditSession,
 }: {
   mode: "view" | "edit";
   clientName?: string;
   backLabel: string;
   onBack: () => void;
+  onNewSession: () => void;
+  onEditSession: (session: SavedSession) => void;
 }) {
   const [tab, setTab] = useState<LibraryTab>("sessions");
   const editable = mode === "edit";
@@ -108,7 +115,11 @@ export function BuilderLibraryPanel({
       </div>
 
       {tab === "sessions" ? (
-        <LibrarySessionList editable={editable} />
+        <LibrarySessionList
+          editable={editable}
+          onNewSession={onNewSession}
+          onEditSession={onEditSession}
+        />
       ) : (
         <LibraryExerciseList editable={editable} />
       )}

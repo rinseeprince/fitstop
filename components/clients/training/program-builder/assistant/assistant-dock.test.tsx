@@ -50,7 +50,7 @@ import { SessionEditorSheet } from "../session-editor-sheet";
 function Dock() {
   return (
     <AssistantProvider>
-      <AssistantDock sessionSheetOpen={false} />
+      <AssistantDock sheetOpen={false} />
     </AssistantProvider>
   );
 }
@@ -259,7 +259,7 @@ describe("the panel inside the session sheet", () => {
           open={sheetOpen}
           onClose={() => setSheetOpen(false)}
         />
-        <AssistantDock sessionSheetOpen={sheetOpen} />
+        <AssistantDock sheetOpen={sheetOpen} />
       </AssistantProvider>
     );
   }

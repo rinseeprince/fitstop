@@ -9,8 +9,6 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useStandaloneSessions } from "@/hooks/use-standalone-sessions";
 import { useDialogSubject } from "@/hooks/use-dialog-subject";
-import { StandaloneSessionEditor } from "@/components/programs/standalone-session-editor";
-import type { SessionEditorState } from "@/components/programs/use-standalone-session-editor";
 import { RowActions } from "@/components/programs/shared/row-actions";
 import type { SavedSession } from "@/types/training";
 import type { LibrarySessionDragData } from "./use-program-dnd";
@@ -105,13 +103,22 @@ function LibrarySessionCard({
   );
 }
 
-export function LibrarySessionList({ editable }: { editable: boolean }) {
+export function LibrarySessionList({
+  editable,
+  onNewSession,
+  onEditSession,
+}: {
+  editable: boolean;
+  // The New session / Edit session sheet is the builder's: it opens over the
+  // builder, and the corner assistant steps aside for it (program-builder.tsx).
+  onNewSession: () => void;
+  onEditSession: (session: SavedSession) => void;
+}) {
   const { sessions, isLoading, mutate } = useStandaloneSessions();
   const [query, setQuery] = useState("");
   // The subject outlives the close: Radix re-renders a closing card from live
-  // state, so the sheet and the confirm keep what they showed while they fade
-  // (CONVENTIONS §7 → "No frame disagrees").
-  const editorDialog = useDialogSubject<SessionEditorState>();
+  // state, so the confirm keeps what it showed while it fades (CONVENTIONS §7
+  // → "No frame disagrees").
   const deleteDialog = useDialogSubject<SavedSession>();
 
   const handleDelete = async (session: SavedSession) => {
@@ -177,7 +184,7 @@ export function LibrarySessionList({ editable }: { editable: boolean }) {
               key={session.id}
               session={session}
               editable={editable}
-              onEdit={() => editorDialog.show({ mode: "edit", session })}
+              onEdit={() => onEditSession(session)}
               onDelete={() => deleteDialog.show(session)}
             />
           ))
@@ -188,17 +195,11 @@ export function LibrarySessionList({ editable }: { editable: boolean }) {
         <button
           type="button"
           className="flex h-8 w-full items-center justify-center gap-1.5 rounded-[6px] border border-dashed border-[rgba(13,148,136,0.25)] text-xs font-medium text-[#5a7d82] transition-colors hover:border-[#0d9488] hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0a5c55]"
-          onClick={() => editorDialog.show({ mode: "create" })}
+          onClick={onNewSession}
         >
           <Plus className="h-3.5 w-3.5" strokeWidth={1.5} /> New session
         </button>
       </div>
-
-      <StandaloneSessionEditor
-        open={editorDialog.open}
-        state={editorDialog.subject}
-        onClose={editorDialog.close}
-      />
 
       <ConfirmDialog
         open={deleteDialog.open}

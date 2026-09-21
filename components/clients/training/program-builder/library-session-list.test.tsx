@@ -3,7 +3,6 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 import { DndContext } from "@dnd-kit/core";
 import type { ReactNode } from "react";
 import type { SavedSession } from "@/types/training";
-import type { SessionEditorState } from "@/components/programs/use-standalone-session-editor";
 import { LibrarySessionList } from "./library-session-list";
 
 // jsdom never paints and Radix Presence unmounts at once there, so the exit
@@ -29,30 +28,6 @@ vi.mock("@/hooks/use-standalone-sessions", () => ({
     error: null,
     mutate: sessionMutate,
   }),
-}));
-
-vi.mock("@/components/programs/standalone-session-editor", () => ({
-  StandaloneSessionEditor: ({
-    open,
-    state,
-    onClose,
-  }: {
-    open: boolean;
-    state: SessionEditorState | null;
-    onClose: () => void;
-  }): ReactNode => (
-    <div
-      data-testid="session-editor"
-      data-open={String(open)}
-      data-subject={
-        state == null ? "" : state.mode === "edit" ? `edit:${state.session.id}` : "create"
-      }
-    >
-      <button type="button" onClick={onClose}>
-        Close editor
-      </button>
-    </div>
-  ),
 }));
 
 // The action mirrors AlertDialogAction: it runs onConfirm, then Radix closes.
@@ -85,13 +60,19 @@ vi.mock("@/components/ui/confirm-dialog", () => ({
   ),
 }));
 
-const editor = () => screen.getByTestId("session-editor");
 const confirm = () => screen.getByTestId("confirm");
+
+const onNewSession = vi.fn();
+const onEditSession = vi.fn();
 
 function renderList() {
   return render(
     <DndContext>
-      <LibrarySessionList editable />
+      <LibrarySessionList
+        editable
+        onNewSession={onNewSession}
+        onEditSession={onEditSession}
+      />
     </DndContext>,
   );
 }
@@ -107,21 +88,16 @@ describe("LibrarySessionList", () => {
     vi.unstubAllGlobals();
   });
 
-  it("the editor keeps its session through the close, and the next show replaces it", () => {
+  // The sheet is the builder's (program-builder.tsx), which keeps its subject
+  // through the close and steps the corner assistant aside while it is up.
+  it("New session and Edit hand the session editor to the builder", () => {
     renderList();
-    expect(editor()).toHaveAttribute("data-open", "false");
-
     fireEvent.click(screen.getAllByLabelText("Edit")[0]);
-    expect(editor()).toHaveAttribute("data-open", "true");
-    expect(editor()).toHaveAttribute("data-subject", "edit:sess-1");
-
-    fireEvent.click(screen.getByText("Close editor"));
-    expect(editor()).toHaveAttribute("data-open", "false");
-    expect(editor()).toHaveAttribute("data-subject", "edit:sess-1");
+    expect(onEditSession).toHaveBeenCalledTimes(1);
+    expect(onEditSession.mock.calls[0][0]).toMatchObject({ id: "sess-1" });
 
     fireEvent.click(screen.getByRole("button", { name: /New session/ }));
-    expect(editor()).toHaveAttribute("data-open", "true");
-    expect(editor()).toHaveAttribute("data-subject", "create");
+    expect(onNewSession).toHaveBeenCalledTimes(1);
   });
 
   it("the delete confirm keeps naming its session through the close, and the next show replaces it", () => {

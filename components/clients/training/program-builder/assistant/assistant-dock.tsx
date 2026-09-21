@@ -11,25 +11,26 @@ import { AssistantPanel } from "./assistant-panel";
 // animated/transformed Dialog ancestor would hijack position:fixed and offset
 // the corner. z-[60] sits above all z-50 builder chrome and below the z-[100]
 // toast viewport (toasts transiently overlap the corner — accepted). Mounted
-// only inside ProgramBuilder, under AssistantProvider, which owns whether the
-// panel is open.
+// by ProgramBuilder, under AssistantProvider, which owns whether the panel is
+// open.
 //
-// One host at a time. While the session sheet is open this renders nothing:
-// the sheet hosts the panel inside its own content, where the modal rules
-// include it, and its footer button is the way in — the corner chip sat on top
-// of that footer. The sheet's open flag is the one source both hosts read, so
-// the panel is in exactly one of them on every frame. Over the grid the panel
-// is a plain element with no layer of its own: nothing to out-rank, and a
-// modal opened over it (a confirm, the duplicate-week dialog) covers it as it
-// covers the grid.
+// One host at a time. While a sheet is over the builder this renders nothing.
+// The session sheet and the create-session slide-over host the panel inside
+// their own content, where the modal rules include it, and their footer button
+// is the way in; the library's session editor offers no assistant, because it
+// edits a library session and the assistant edits only the program. The corner
+// chip sat on top of each one's footer and took no clicks under its modal.
+// `sheetOpen` is derived by ProgramBuilder from each sheet's one owner, the
+// same source the sheet reads, so the panel is in exactly one host on every
+// frame. Over the grid the panel is a plain element with no layer of its own.
 type AssistantDockProps = {
-  sessionSheetOpen: boolean;
+  sheetOpen: boolean;
 };
 
-export function AssistantDock({ sessionSheetOpen }: AssistantDockProps) {
+export function AssistantDock({ sheetOpen }: AssistantDockProps) {
   const { open, setOpen } = useAssistant();
 
-  if (typeof document === "undefined" || sessionSheetOpen) return null;
+  if (typeof document === "undefined" || sheetOpen) return null;
 
   return createPortal(
     <div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end">

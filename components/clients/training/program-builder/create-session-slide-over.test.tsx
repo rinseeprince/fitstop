@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, cleanup, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { CreateSessionSlideOver } from "./create-session-slide-over";
 import { ProgramDraftProvider, useProgramDraft } from "./program-draft-provider";
 import type { SavedPlan, SavedSession } from "@/types/training";
@@ -146,6 +146,62 @@ describe("CreateSessionSlideOver", () => {
     planFixture = makePlan();
     backMock.mockClear();
     replaceMock.mockClear();
+  });
+
+  // The sheet hosts the program assistant in the session sheet's shape
+  // (sheet-assistant-host.tsx): the Assistant button first in its footer, the
+  // panel inside its own content, where the modal's rules include it.
+  describe("hosting the program assistant", () => {
+    const sheet = () => screen.getByRole("dialog", { name: "New session" });
+    const panel = () => screen.getByRole("dialog", { name: "Program assistant" });
+
+    it("carries the Assistant button first in its footer, before Cancel and Save session", async () => {
+      renderSlideOver();
+      await waitFor(() => expect(screen.getByTestId("slot-probe").textContent).toBe("Untitled session"));
+      const footerButtons = within(sheet())
+        .getAllByRole("button")
+        .map((b) => b.textContent?.trim())
+        .filter((name) => name === "Assistant" || name === "Cancel" || name === "Save session");
+      expect(footerButtons).toEqual(["Assistant", "Cancel", "Save session"]);
+    });
+
+    it("opens the panel inside the sheet, with pointer events, and Escape in it collapses only the panel", async () => {
+      renderSlideOver();
+      await waitFor(() => expect(screen.getByTestId("slot-probe").textContent).toBe("Untitled session"));
+      fireEvent.click(within(sheet()).getByRole("button", { name: "Assistant" }));
+
+      const hosted = panel();
+      expect(sheet().contains(hosted)).toBe(true);
+      expect(document.body.style.pointerEvents).toBe("none");
+      // What pointer-events resolves to: Radix writes it inline on the body and
+      // on each layer's content; everything else inherits its nearest ancestor's.
+      const resolved = (element: HTMLElement): string => {
+        for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+          if (node.style.pointerEvents) return node.style.pointerEvents;
+        }
+        return "auto";
+      };
+      expect(resolved(hosted)).toBe("auto");
+
+      fireEvent.keyDown(within(hosted).getByRole("textbox"), { key: "Escape" });
+      expect(screen.queryByRole("dialog", { name: "Program assistant" })).toBeNull();
+      expect(backMock).not.toHaveBeenCalled();
+
+      // Anywhere else in the sheet, Escape closes it as before.
+      fireEvent.keyDown(within(sheet()).getByDisplayValue("Untitled session"), { key: "Escape" });
+      expect(backMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("anchors the panel to a still frame whose body slides, and draws its close in the body", async () => {
+      renderSlideOver();
+      await waitFor(() => expect(screen.getByTestId("slot-probe").textContent).toBe("Untitled session"));
+      const content = sheet();
+      expect(content.style.animation).toBe("none");
+      const close = within(content).getByRole("button", { name: "Close" });
+      const body = close.parentElement as HTMLElement;
+      expect(body).not.toBe(content);
+      expect(body).toHaveClass("animate-in", "slide-in-from-right", "bg-white");
+    });
   });
 
   it("creates the optimistic Untitled session in the target slot on mount", async () => {

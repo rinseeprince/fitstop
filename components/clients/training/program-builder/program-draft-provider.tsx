@@ -12,6 +12,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useSavedPlan } from "@/hooks/use-saved-plan";
+import { AssistantProvider } from "./assistant/assistant-provider";
 import type { SavedPlan } from "@/types/training";
 import type {
   BuilderTarget,
@@ -277,9 +278,13 @@ export function ProgramDraftProvider({
     planSave,
   };
 
+  // The program assistant's conversation is about THIS draft, so it lives and
+  // dies with this provider, and everything under it — the builder page, the
+  // route's create-session slide-over, the client-draft and plan-editor mounts
+  // — reaches one assistant (assistant-provider.tsx).
   return (
     <ProgramDraftContext.Provider value={value}>
-      {children}
+      <AssistantProvider>{children}</AssistantProvider>
     </ProgramDraftContext.Provider>
   );
 }

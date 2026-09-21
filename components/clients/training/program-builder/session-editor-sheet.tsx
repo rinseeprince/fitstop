@@ -1,7 +1,6 @@
 "use client";
 
-import { useRef } from "react";
-import { BookmarkPlus, Loader2, Sparkles } from "lucide-react";
+import { BookmarkPlus, Loader2 } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -12,9 +11,16 @@ import { Button } from "@/components/ui/button";
 import type { SessionDraft } from "./program-builder-types";
 import { SessionEditorBody, type SessionEditorBodyProps } from "./session-editor-body";
 import { SessionHero } from "./session-hero";
-import { useAssistant } from "./assistant/assistant-provider";
-import { AssistantPanel } from "./assistant/assistant-panel";
+import {
+  ASSISTANT_SHEET_BODY_CLASS,
+  ASSISTANT_SHEET_CONTENT_CLASS,
+  ASSISTANT_SHEET_STILL,
+  SheetAssistantButton,
+  SheetAssistantPanel,
+  useSheetAssistantHost,
+} from "./assistant/sheet-assistant-host";
 import { countSessionExercises } from "@/utils/exercise-groups";
+import { cn } from "@/lib/utils";
 
 // Click-to-edit chrome for one of a day cell's sessions: the editor body in a
 // right slide-over. Write-through — "Save program" on the page is the commit
@@ -28,23 +34,11 @@ import { countSessionExercises } from "@/utils/exercise-groups";
 // borderless cards — a deliberate deviation from the white-bodied sheet recipe,
 // because spacing-not-borders outranks it here.
 //
-// While it is open the sheet hosts the program assistant's panel: the sheet is
-// a modal layer, so a panel anywhere else on the page would be given no pointer
-// events, bounced out of by the focus trap, hidden from screen readers and
-// locked out of wheel scrolling. As a child of the sheet's own content it is
-// inside every one of those rules by construction (assistant-panel.tsx; the
-// state is the provider's, so the conversation is the one the corner dock
-// showed). Escape belongs to whatever it was pressed in: inside the panel it
-// collapses the panel, anywhere else it closes the sheet.
-//
-// The content is a STILL FRAME, and the body inside it is what slides. The
-// content is the modal's scope and the panel's anchor, so it must not move
-// while the sheet arrives: a panel anchored to a sliding content rode in from
-// the right edge with it (the owner's veto, 2026-09-19). So the content carries
-// no entrance of its own (`animation: none` while open, inline, because the
-// base sheet's entrance is a class the class merge does not know), shows
-// nothing of its own (transparent, no shadow) and holds the panel in place,
-// while the body carries the sheet's look and its slide-in beneath the panel.
+// While it is open the sheet hosts the program assistant's panel, in the shape
+// every assistant-hosting sheet shares (sheet-assistant-host.tsx): a still
+// content holding the panel, the body sliding in beneath it, the Assistant
+// button first in the footer. Escape belongs to whatever it was pressed in:
+// inside the panel it collapses the panel, anywhere else it closes the sheet.
 // The slide-out stays on the content: Radix reads the closing node's animation
 // to keep it mounted, and by then the panel is back in the corner.
 type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session" | "chrome"> & {
@@ -68,8 +62,7 @@ export function SessionEditorSheet({
   ...bodyProps
 }: SessionEditorSheetProps) {
   const editable = mode === "edit";
-  const assistant = useAssistant();
-  const panelRef = useRef<HTMLDivElement>(null);
+  const { panelRef, escapeWasInPanel } = useSheetAssistantHost();
 
   return (
     <Sheet
@@ -81,19 +74,13 @@ export function SessionEditorSheet({
       <SheetContent
         side="right"
         hideClose
-        className="w-full gap-0 bg-transparent p-0 shadow-none sm:w-[780px] sm:max-w-full"
-        style={open ? { animation: "none" } : undefined}
-        // Radix brings every Escape on the page to the top layer — this sheet.
-        // One pressed inside the hosted panel is the panel's to answer (its own
-        // key handler collapses it), so the sheet declines it and stays;
-        // anywhere else in the sheet, the sheet closes as before.
+        className={ASSISTANT_SHEET_CONTENT_CLASS}
+        style={open ? ASSISTANT_SHEET_STILL : undefined}
         onEscapeKeyDown={(event) => {
-          if (event.target instanceof Node && panelRef.current?.contains(event.target)) {
-            event.preventDefault();
-          }
+          if (escapeWasInPanel(event)) event.preventDefault();
         }}
       >
-        <div className="flex h-full min-h-0 flex-col bg-[#f4f7f6] shadow-lg ease-in-out duration-500 animate-in slide-in-from-right">
+        <div className={cn(ASSISTANT_SHEET_BODY_CLASS, "bg-[#f4f7f6]")}>
         {session && (
           <>
             {/* The visible title is the hero's inline-edit input, which has no
@@ -131,14 +118,9 @@ export function SessionEditorSheet({
               />
             </div>
 
-            {/* White footer on the grey body. The assistant's corner chip is
-                hidden while this sheet is up, so this button is the way in —
-                one row of actions rather than two overlapping sets. */}
+            {/* White footer on the grey body, the Assistant button first. */}
             <div className="flex items-center gap-2 border-t border-[rgba(13,148,136,0.08)] bg-white px-5 py-3">
-              <Button variant="outline" onClick={() => assistant.setOpen(true)}>
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
-                Assistant
-              </Button>
+              <SheetAssistantButton />
               <div className="flex-1" />
               <Button
                 variant="outline"
@@ -163,19 +145,9 @@ export function SessionEditorSheet({
         )}
         </div>
 
-        {/* The hosted panel, anchored to the still content and last in it so
-            the tab order reaches it after Done. The content is flush with the
-            viewport's right and bottom edges, so bottom-5 right-5 here is the
-            corner the dock uses over the grid: the panel keeps its pixels while
-            the body slides in beneath it. z-10 paints it over everything in the
-            body, whose pinned set cells carry a z-index of their own
-            (PINNED_CELL_CLASS in set-row-editor.tsx). On `open`, not `session`:
-            a closing sheet keeps its session for its slide-out but hands the
-            panel back to the corner dock in the same commit, so there is one
-            panel on every frame and it never moves on a close either. */}
-        {open && assistant.open && (
-          <AssistantPanel ref={panelRef} className="absolute bottom-5 right-5 z-10" />
-        )}
+        {/* On `open`, not `session`: a closing sheet keeps its session for its
+            slide-out but hands the panel back to the corner in the same commit. */}
+        <SheetAssistantPanel hosting={open} panelRef={panelRef} />
       </SheetContent>
     </Sheet>
   );

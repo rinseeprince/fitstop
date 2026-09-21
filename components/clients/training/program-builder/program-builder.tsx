@@ -4,7 +4,7 @@ import type { WindowCap } from "@/services/program-event-walk";
 import { addDaysToDateString, formatDateOnlyShort } from "@/lib/date-helpers";
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { leaveCoachPage } from "@/lib/coach-history";
 import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { Ban, Loader2, Pencil, Save, Trash2 } from "lucide-react";
@@ -36,7 +36,9 @@ import { useProgramDnd } from "./use-program-dnd";
 import { useSaveDayAsWorkout } from "./use-save-day-as-workout";
 import { useProgramDraft } from "./program-draft-provider";
 import { AssistantDock } from "./assistant/assistant-dock";
-import { AssistantProvider } from "./assistant/assistant-provider";
+import { createSessionHref, isCreateSessionPath } from "./create-session-route";
+import { StandaloneSessionEditor } from "@/components/programs/standalone-session-editor";
+import type { SessionEditorState } from "@/components/programs/use-standalone-session-editor";
 import { useClientApply } from "./use-client-apply";
 import { ProgramTopBar } from "./program-top-bar";
 import { ProgramGrid } from "./program-grid";
@@ -84,6 +86,9 @@ function limitNotice(limit: WindowCap): string {
 
 export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   const router = useRouter();
+  // Read above the early returns (a hook): the create-session slide-over is open
+  // exactly while this is its address (create-session-route.ts).
+  const pathname = usePathname();
   const {
     savedPlanId,
     target,
@@ -152,6 +157,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   // re-renders a closing sheet from live state (CONVENTIONS §7 → "No frame
   // disagrees"), so the sheet slides out still showing its session.
   const sessionSheet = useDialogSubject<string>();
+  // The library panel's New session / Edit session sheet: owned here, beside
+  // the dock, because the dock steps aside while it is open. The subject
+  // outlives the close, so the sheet keeps what it showed while it slides out.
+  const librarySessionEditor = useDialogSubject<SessionEditorState>();
   // The uid only — the week resolves live at render, so a vanished uid or a
   // mode flip closes the progression dialog by unmounting it.
   const [progressionWeekUid, setProgressionWeekUid] = useState<string | null>(null);
@@ -248,6 +257,14 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   const editingSession = findSession(draft, sessionSheet.subject);
   // A session the draft drops while its sheet is up (an assistant op) closes it.
   const sessionSheetOpen = sessionSheet.open && editingSession != null;
+  // Every sheet that can be over the builder, each read from its one owner:
+  // the session sheet's subject, the create-session slide-over's address, the
+  // library session editor's subject. The corner assistant steps aside while
+  // any is open (assistant-dock.tsx), in the same commit as the sheet.
+  const sheetOverBuilder =
+    sessionSheetOpen ||
+    isCreateSessionPath(pathname, isLibrary ? savedPlanId : null) ||
+    librarySessionEditor.open;
   const progressionWeek =
     mode === "edit"
       ? (draft.weeks.find((w) => w.uid === progressionWeekUid) ?? null)
@@ -292,6 +309,8 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
             clientName={clientName ?? undefined}
             backLabel={backLabel}
             onBack={requestExit}
+            onNewSession={() => librarySessionEditor.show({ mode: "create" })}
+            onEditSession={(session) => librarySessionEditor.show({ mode: "edit", session })}
           />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Page header. The section topbar returns null for the builder
@@ -548,45 +567,43 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           )}
       </DndContext>
 
-      {/* The assistant's state lives above both of the panel's hosts — the
-          session sheet and the corner dock — so the panel keeps its
-          conversation when a session opens or closes, and the sheet's open
-          flag is the one thing both hosts read (assistant-provider.tsx). */}
-      <AssistantProvider>
-        <SessionEditorSheet
-          open={sessionSheetOpen}
-          session={editingSession}
-          // A session on a locked day opens read-only — the guarded mutators
-          // would refuse its edits anyway.
-          mode={
-            editingSession &&
-            dayRules &&
-            isSessionLocked(draft, dayRules.locked, editingSession.uid)
-              ? "view"
-              : mode
-          }
-          identityEditable={!isClientDraft}
-          defaultSurplusPercentage={draft.defaultSurplusPercentage}
-          onClose={sessionSheet.close}
-          onUpdateSession={updateSession}
-          onAddExercise={addExercise}
-          onRemoveExercise={removeExercise}
-          onEditExercise={updateExercise}
-          onLinkExercises={linkExercises}
-          onUnlinkGroup={unlinkGroup}
-          onMoveExercise={moveExercise}
-          onMoveGroup={moveGroup}
-          onUpdateGroup={updateGroup}
-          onSpecEdit={editSetSpec}
-          onSaveAsWorkout={(uid) => void saveDayAsWorkout(uid)}
-          isSavingWorkout={isSavingWorkout}
-        />
-        {/* The corner chip hides while the sheet is up — it sat on top of the
-            sheet's own footer, whose Assistant button is the way in — and the
-            sheet hosts the open panel inside its content
-            (session-editor-sheet.tsx). */}
-        <AssistantDock sessionSheetOpen={sessionSheetOpen} />
-      </AssistantProvider>
+      {/* The assistant's state lives in ProgramDraftProvider, above every host
+          of its panel, so the panel keeps its conversation when a sheet opens
+          or closes (assistant-provider.tsx). */}
+      <SessionEditorSheet
+        open={sessionSheetOpen}
+        session={editingSession}
+        // A session on a locked day opens read-only — the guarded mutators
+        // would refuse its edits anyway.
+        mode={
+          editingSession &&
+          dayRules &&
+          isSessionLocked(draft, dayRules.locked, editingSession.uid)
+            ? "view"
+            : mode
+        }
+        identityEditable={!isClientDraft}
+        defaultSurplusPercentage={draft.defaultSurplusPercentage}
+        onClose={sessionSheet.close}
+        onUpdateSession={updateSession}
+        onAddExercise={addExercise}
+        onRemoveExercise={removeExercise}
+        onEditExercise={updateExercise}
+        onLinkExercises={linkExercises}
+        onUnlinkGroup={unlinkGroup}
+        onMoveExercise={moveExercise}
+        onMoveGroup={moveGroup}
+        onUpdateGroup={updateGroup}
+        onSpecEdit={editSetSpec}
+        onSaveAsWorkout={(uid) => void saveDayAsWorkout(uid)}
+        isSavingWorkout={isSavingWorkout}
+      />
+      <StandaloneSessionEditor
+        open={librarySessionEditor.open}
+        state={librarySessionEditor.subject}
+        onClose={librarySessionEditor.close}
+      />
+      <AssistantDock sheetOpen={sheetOverBuilder} />
 
       {/* Conditional mount: an always-mounted dialog would fetch the exercise
           catalog on every builder render and leak closed-state preview
@@ -633,9 +650,8 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
             sessionSheet.show(blank.uid);
             return;
           }
-          router.push(
-            `/dashboard/programs/${savedPlanId}/sessions/new?w=${t.weekIndex}&d=${t.dayIndex}`,
-          );
+          if (!savedPlanId) return;
+          router.push(createSessionHref(savedPlanId, t.weekIndex, t.dayIndex));
         }}
       />
 

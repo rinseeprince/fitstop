@@ -13,8 +13,12 @@ import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 // -- mocks --------------------------------------------------------------------
 
 const pushMock = vi.fn();
+// The address the builder reads: the create-session slide-over is open exactly
+// while it is `/dashboard/programs/<id>/sessions/new`.
+const { pathname } = vi.hoisted(() => ({ pathname: { current: "/dashboard/programs/plan-1" } }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
+  usePathname: () => pathname.current,
 }));
 // Whether a coach page precedes the builder's page — what its exit reads. The
 // exit LEAVES the page when one does and takes its fallback when none does.
@@ -607,6 +611,7 @@ describe("ProgramBuilder save flow", () => {
 describe("ProgramBuilder session sheet — the subject outlives the close", () => {
   beforeEach(() => {
     cleanup();
+    pathname.current = "/dashboard/programs/plan-1";
     fetchCalls.length = 0;
     planFixture = makeDraftPlan();
   });
@@ -646,6 +651,40 @@ describe("ProgramBuilder session sheet — the subject outlives the close", () =
     expect(sheet()).toHaveAttribute("data-open", "true");
     expect(sheet()).toHaveAttribute("data-session", "Pull");
     expect(screen.getByRole("dialog", { name: "Pull" })).toBeInTheDocument();
+  });
+
+  it("the corner assistant steps aside while the create-session slide-over's address is up", () => {
+    const view = renderLibrary();
+    expect(launcher()).toBeInTheDocument();
+
+    pathname.current = "/dashboard/programs/plan-1/sessions/new";
+    view.rerender(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    // The slide-over hosts the panel and carries the Assistant button.
+    expect(launcher()).toBeNull();
+
+    pathname.current = "/dashboard/programs/plan-1";
+    view.rerender(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    expect(launcher()).toBeInTheDocument();
+  });
+
+  it("the corner assistant steps aside while the library's session editor is open, which offers none", () => {
+    renderLibrary();
+    fireEvent.click(screen.getByRole("button", { name: /New session/ }));
+    const editor = screen.getByRole("dialog", { name: "New session" });
+    expect(launcher()).toBeNull();
+    // It edits a library session, not the program: no Assistant button in it.
+    expect(within(editor).queryByRole("button", { name: "Assistant" })).toBeNull();
+
+    fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
+    expect(launcher()).toBeInTheDocument();
   });
 
   it("a session dropped from the draft while its sheet is up closes the sheet", () => {

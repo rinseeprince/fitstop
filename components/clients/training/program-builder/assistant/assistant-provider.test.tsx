@@ -68,7 +68,8 @@ const sheetProps = {
   isSavingWorkout: false,
 };
 
-// ProgramBuilder's wiring: one provider above the session sheet and the dock.
+// The builder's wiring: one provider (ProgramDraftProvider mounts it) above the
+// session sheet and the dock.
 function Builder() {
   const [sheetOpen, setSheetOpen] = useState(false);
   return (
@@ -77,7 +78,7 @@ function Builder() {
         Open session
       </button>
       <SessionEditorSheet {...sheetProps} open={sheetOpen} onClose={() => setSheetOpen(false)} />
-      <AssistantDock sessionSheetOpen={sheetOpen} />
+      <AssistantDock sheetOpen={sheetOpen} />
     </AssistantProvider>
   );
 }

@@ -94,7 +94,13 @@ const onBack = vi.fn();
 function renderPanel(mode: "view" | "edit" = "edit") {
   return render(
     <DndContext>
-      <BuilderLibraryPanel mode={mode} backLabel="Back to programs" onBack={onBack} />
+      <BuilderLibraryPanel
+        mode={mode}
+        backLabel="Back to programs"
+        onBack={onBack}
+        onNewSession={vi.fn()}
+        onEditSession={vi.fn()}
+      />
     </DndContext>,
   );
 }
@@ -176,6 +182,8 @@ describe("BuilderLibraryPanel", () => {
           clientName="Jane Doe"
           backLabel="Back to calendar"
           onBack={onBack}
+          onNewSession={vi.fn()}
+          onEditSession={vi.fn()}
         />
       </DndContext>,
     );

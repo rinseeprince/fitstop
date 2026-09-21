@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { useSWRConfig } from "swr";
 import {
   Sheet,
+  SheetCloseButton,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -19,6 +20,15 @@ import { sessionDraftToStandalonePayload } from "./program-builder-serialize";
 import { findSession } from "./program-builder-model";
 import { SessionEditorBody } from "./session-editor-body";
 import { MONO_LABEL_CLASS } from "./builder-tokens";
+import {
+  ASSISTANT_SHEET_BODY_CLASS,
+  ASSISTANT_SHEET_CONTENT_CLASS,
+  ASSISTANT_SHEET_STILL,
+  SheetAssistantButton,
+  SheetAssistantPanel,
+  useSheetAssistantHost,
+} from "./assistant/sheet-assistant-host";
+import { cn } from "@/lib/utils";
 
 // The routed create-blank-session slide-over (@modal intercepted route).
 // Single-owner lifecycle: THIS component creates the optimistic "Untitled
@@ -30,6 +40,14 @@ import { MONO_LABEL_CLASS } from "./builder-tokens";
 // regenerate on every seed, so they can't be trusted in a URL). "Save session"
 // persists a standalone library session AND keeps the copy in the day; the
 // program itself still only persists via Save program (locked decision).
+//
+// The session is the program's, on its day, so the sheet hosts the program
+// assistant the way the session sheet does (sheet-assistant-host.tsx): the
+// Assistant button first in the footer, the panel in the still content's
+// corner, Escape inside the panel collapsing it. The sheet is open exactly
+// while its address is, which is also what steps the corner dock aside
+// (create-session-route.ts), so the two hosts trade the panel in one commit.
+// Its close is drawn in the sliding body, so it arrives with the sheet.
 export function CreateSessionSlideOver() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -63,6 +81,7 @@ export function CreateSessionSlideOver() {
   const hasTarget = Number.isInteger(w) && Number.isInteger(d) && w >= 0 && d >= 0;
 
   const [isSaving, setIsSaving] = useState(false);
+  const { panelRef, escapeWasInPanel } = useSheetAssistantHost();
   const savedRef = useRef(false);
   // The session this flow created — its identity, so the flow edits and
   // discards that one session and never the day's others.
@@ -214,62 +233,76 @@ export function CreateSessionSlideOver() {
     >
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 bg-white p-0 sm:w-[780px] sm:max-w-full"
+        hideClose
+        className={ASSISTANT_SHEET_CONTENT_CLASS}
+        style={ASSISTANT_SHEET_STILL}
+        // Mid-save nothing closes it; an Escape pressed inside the hosted panel
+        // is the panel's to answer.
         onEscapeKeyDown={(e) => {
-          if (isSaving) e.preventDefault();
+          if (isSaving || escapeWasInPanel(e)) e.preventDefault();
         }}
         onInteractOutside={(e) => {
           if (isSaving) e.preventDefault();
         }}
       >
-        <SheetHeader className="border-b border-[rgba(13,148,136,0.08)] px-5 py-3.5">
-          <SheetTitle className="pr-8 text-[15px] font-semibold text-[#0c1a1e]">
-            New session
-          </SheetTitle>
-          <SheetDescription asChild>
-            <span className={MONO_LABEL_CLASS}>
-              Adding to Week {w + 1} · Day {d + 1}
-            </span>
-          </SheetDescription>
-        </SheetHeader>
+        <div className={cn(ASSISTANT_SHEET_BODY_CLASS, "bg-white")}>
+          <SheetHeader className="border-b border-[rgba(13,148,136,0.08)] px-5 py-3.5">
+            <SheetTitle className="pr-8 text-[15px] font-semibold text-[#0c1a1e]">
+              New session
+            </SheetTitle>
+            <SheetDescription asChild>
+              <span className={MONO_LABEL_CLASS}>
+                Adding to Week {w + 1} · Day {d + 1}
+              </span>
+            </SheetDescription>
+          </SheetHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-4">
-          {session ? (
-            <SessionEditorBody
-              session={session}
-              mode="edit"
-              defaultSurplusPercentage={draft?.defaultSurplusPercentage ?? null}
-              onUpdateSession={updateSession}
-              onAddExercise={addExercise}
-              onRemoveExercise={removeExercise}
-              onEditExercise={updateExercise}
-              onLinkExercises={linkExercises}
-              onUnlinkGroup={unlinkGroup}
-              onMoveExercise={moveExercise}
-              onMoveGroup={moveGroup}
-              onUpdateGroup={updateGroup}
-              onSpecEdit={editSetSpec}
-            />
-          ) : (
-            <div className="flex flex-1 items-center justify-center">
-              <Loader2 className="h-5 w-5 animate-spin text-[#93b0b4]" />
-            </div>
-          )}
-        </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-4">
+            {session ? (
+              <SessionEditorBody
+                session={session}
+                mode="edit"
+                defaultSurplusPercentage={draft?.defaultSurplusPercentage ?? null}
+                onUpdateSession={updateSession}
+                onAddExercise={addExercise}
+                onRemoveExercise={removeExercise}
+                onEditExercise={updateExercise}
+                onLinkExercises={linkExercises}
+                onUnlinkGroup={unlinkGroup}
+                onMoveExercise={moveExercise}
+                onMoveGroup={moveGroup}
+                onUpdateGroup={updateGroup}
+                onSpecEdit={editSetSpec}
+              />
+            ) : (
+              <div className="flex flex-1 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-[#93b0b4]" />
+              </div>
+            )}
+          </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-[rgba(13,148,136,0.08)] px-5 py-3">
-          <Button variant="ghost" disabled={isSaving} onClick={close}>
-            Cancel
-          </Button>
-          <Button
-            className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
-            disabled={isSaving || !session}
-            onClick={() => void handleSave()}
-          >
-            {isSaving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-            Save session
-          </Button>
+          <div className="flex items-center gap-2 border-t border-[rgba(13,148,136,0.08)] px-5 py-3">
+            <SheetAssistantButton />
+            <div className="flex-1" />
+            <Button variant="ghost" disabled={isSaving} onClick={close}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
+              disabled={isSaving || !session}
+              onClick={() => void handleSave()}
+            >
+              {isSaving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Save session
+            </Button>
+          </div>
+          {/* Last in the body, as the content's own close was last in it, so
+              the first focus stays on the session's name. */}
+          <SheetCloseButton />
         </div>
+        {/* Mounted only while the address is the sheet's, so it hosts for as
+            long as it is on the page. */}
+        <SheetAssistantPanel hosting panelRef={panelRef} />
       </SheetContent>
     </Sheet>
   );
