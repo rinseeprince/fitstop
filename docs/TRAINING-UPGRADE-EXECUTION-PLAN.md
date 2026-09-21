@@ -308,7 +308,13 @@ commit's plan.
     type, sessions and last logged, with the same pager, in both views. Picking it
     shows that table under the hero, with no chart and no lenses. One SQL function computes every
     exercise's bests in one pass, bounded by the exercises logged, so the page costs one round trip
-    however many exercises there are.
+    however many exercises there are. Answered at 16b's plan (owner, 2026-09-21): it is what both
+    views open on with no exercise picked — the pane with no exercise in its address, so the "Select
+    an exercise" prompt goes; a row opens its exercise, as a pick does; the pager carries the
+    history tables' count ("Showing 10 of 23 exercises"), since no window above says how many; and
+    every view of an exercise — its chart, its Sessions table, its PRs, its row — reads the logs the
+    picker counts for it: the exercise done, never one it replaced, and a name typed never a catalog
+    exercise's of the same name.
   - *Race-distance PRs (16b).* An Endurance exercise's PRs are its best times at the race distances:
     400 m, 800 m, 1 km, 1600 m, 1 mile, 5 km, 10 km, half marathon, marathon, 50 km, 100 km. An Erg
     exercise's are the erg distances: 500 m, 1 km, 2 km, 5 km, 6 km, 10 km, half marathon, marathon.
@@ -318,7 +324,10 @@ commit's plan.
     run that matches no race distance earns no PR row (it still appears in the Sessions table). The
     coach's PRs lens, the client's Personal records and the Overview's "New personal record" use the
     same buckets. The lists are rules of the exercise type — no new column; a discipline fact on the
-    catalog row is the fix if a swim or bike list is ever wanted.
+    catalog row is the fix if a swim or bike list is ever wanted. Answered at 16b's plan (owner,
+    2026-09-21): a set's time for a record is the Sessions table's — its typed time, else its pace or
+    split over its distance — so a run logged with a pace alone can hold one; and a race reads by
+    its name for every viewer ("5 km", "1 mile", "Half marathon"), never converted.
 
 ### 4.5 Timed groups and scores (commits 14–15)
 
@@ -1304,7 +1313,7 @@ RULES: §4.4 — closed, including its 2026-09-21 amendments. Include a frame te
 NOT IN THIS COMMIT: race-distance PRs and the All exercises table (commit 16b).
 ```
 
-### Commit 16b — Race-distance PRs and every exercise's bests
+### Commit 16b — Race-distance PRs and every exercise's bests — SHIPPED 2026-09-21
 
 ```text
 Implement commit 16b of 22 — Race-distance PRs and every exercise's bests — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

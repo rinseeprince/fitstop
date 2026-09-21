@@ -5,7 +5,6 @@ import {
   isBodyweightSet,
   isHold,
   isLift,
-  isTimedDistance,
   type MarkerSet,
 } from "./exercise-session-markers";
 import { emptyLoggedActuals } from "./set-log-measures";
@@ -48,11 +47,9 @@ describe("the set shapes", () => {
     expect(isLift(set({ reps: 5 }))).toBe(false);
   });
 
-  it("reads a time with a distance as a timed distance and a time without one as a hold", () => {
-    expect(isTimedDistance(set({ durationSeconds: 222, distanceMeters: 1000 }))).toBe(true);
+  it("reads a time without a distance as a hold, and a time with one as none", () => {
     expect(isHold(set({ durationSeconds: 222, distanceMeters: 1000 }))).toBe(false);
     expect(isHold(set({ durationSeconds: 90 }))).toBe(true);
-    expect(isTimedDistance(set({ durationSeconds: 90 }))).toBe(false);
     expect(isHold(set({ durationSeconds: 90, weight: 20 }))).toBe(true);
   });
 });

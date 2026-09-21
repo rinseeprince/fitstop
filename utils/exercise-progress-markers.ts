@@ -174,7 +174,12 @@ export function effectiveMarker(
 
 // --- Bests --------------------------------------------------------------------
 
-/** The PR kinds, mirrored by get_exercise_prs (migration 188) and ExerciseBest. */
+/**
+ * The PR kinds, mirrored by exercise_records (migration 191), which
+ * get_exercise_prs reads, and by ExerciseBest. An Endurance or Erg exercise's
+ * best times are at race distances (utils/race-distances.ts), every other
+ * type's at the distance logged.
+ */
 export const BEST_KINDS = ["rep_max", "best_reps", "best_time", "heaviest_carry", "longest_hold"] as const;
 
 export type BestKind = (typeof BEST_KINDS)[number];
@@ -221,8 +226,8 @@ export function orderedBestKinds(
 export const PR_EMPTY_HINTS: Record<ExerciseType, string> = {
   strength: "Log sets with weight to start tracking PRs.",
   bodyweight: "Log your reps to start tracking PRs.",
-  endurance: "Log a distance and a time to start tracking PRs.",
-  erg: "Log a distance and a time to start tracking PRs.",
+  endurance: "Log a time over a race distance to start tracking PRs.",
+  erg: "Log a time over a race distance to start tracking PRs.",
   carry_sled: "Log a load and a distance to start tracking PRs.",
   holds: "Log how long you held to start tracking PRs.",
 };

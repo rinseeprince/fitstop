@@ -17,6 +17,7 @@ function repMax(overrides: Partial<Extract<ExercisePR, { kind: "rep_max" }>> = {
     reps: 5,
     weight: 100,
     date: "2026-03-15T00:00:00Z",
+    sessionLogId: "sl-1",
     isRecent: false,
     ...overrides,
   };
@@ -72,7 +73,7 @@ describe("ExercisePrView", () => {
     expect(screen.getByText(/No personal records yet\. Log sets with weight/)).toBeInTheDocument();
     cleanup();
     render(<ExercisePrView data={[]} exerciseType="endurance" isLoading={false} />);
-    expect(screen.getByText(/Log a distance and a time/)).toBeInTheDocument();
+    expect(screen.getByText(/Log a time over a race distance/)).toBeInTheDocument();
   });
 
   it("renders loading skeletons", () => {
@@ -112,23 +113,41 @@ describe("ExercisePrView", () => {
     expect(screen.queryByText("264.55")).toBeNull();
   });
 
-  it("renders best times per distance as a clock, labelled by the distance in the viewer's units", () => {
+  it("renders best times at race distances as a clock, labelled by the race for every viewer", () => {
+    units.preference = "imperial";
     const data: ExercisePR[] = [
-      { kind: "best_time", distanceMeters: 1000, durationSeconds: 222.1, date: "2026-03-15T00:00:00Z", isRecent: true },
-      { kind: "best_time", distanceMeters: 5000, durationSeconds: 1505, date: "2026-03-01T00:00:00Z", isRecent: false },
+      { kind: "best_time", distanceMeters: 1000, durationSeconds: 222.1, race: "1k", date: "2026-03-15T00:00:00Z", sessionLogId: "sl-1", isRecent: true },
+      { kind: "best_time", distanceMeters: 21097.5, durationSeconds: 5530, race: "half_marathon", date: "2026-03-01T00:00:00Z", sessionLogId: "sl-2", isRecent: false },
     ];
-    render(<ExercisePrView data={data} exerciseType="erg" isLoading={false} />);
+    render(<ExercisePrView data={data} exerciseType="endurance" isLoading={false} />);
     expect(screen.getByText("1 km")).toBeInTheDocument();
     expect(screen.getByText("3:42.1")).toBeInTheDocument();
-    expect(screen.getByText("5 km")).toBeInTheDocument();
-    expect(screen.getByText("25:05")).toBeInTheDocument();
+    // A race is its name, never its length converted ("13.1 mi")
+    expect(screen.getByText("Half marathon")).toBeInTheDocument();
+    expect(screen.getByText("1:32:10")).toBeInTheDocument();
     expect(screen.queryByText("Best times")).toBeNull();
+  });
+
+  it("renders a best time at the distance logged by the distance in the viewer's units, where the type has no races", () => {
+    units.preference = "imperial";
+    const data: ExercisePR[] = [
+      { kind: "best_time", distanceMeters: 1000, durationSeconds: 222.1, race: null, date: "2026-03-15T00:00:00Z", sessionLogId: "sl-1", isRecent: true },
+    ];
+    render(<ExercisePrView data={data} exerciseType="carry_sled" isLoading={false} />);
+    expect(screen.getByText("1094 yd")).toBeInTheDocument();
+  });
+
+  it("tells an Endurance or Erg exercise with no race record to log a time over a race distance", () => {
+    render(<ExercisePrView data={[]} exerciseType="endurance" isLoading={false} />);
+    expect(
+      screen.getByText("No personal records yet. Log a time over a race distance to start tracking PRs."),
+    ).toBeInTheDocument();
   });
 
   it("puts a heading over each kind when an exercise has bests of more than one, its own kind first", () => {
     const data: ExercisePR[] = [
       repMax({ reps: 5, weight: 10, date: "2026-03-10T00:00:00Z" }),
-      { kind: "best_reps", reps: 15, date: "2026-03-15T00:00:00Z", isRecent: false },
+      { kind: "best_reps", reps: 15, date: "2026-03-15T00:00:00Z", sessionLogId: "sl-1", isRecent: false },
     ];
     const { container } = render(
       <ExercisePrView data={data} exerciseType="bodyweight" isLoading={false} />,
@@ -142,8 +161,8 @@ describe("ExercisePrView", () => {
 
   it("renders a carry by its distance and load, and a hold as a clock", () => {
     const data: ExercisePR[] = [
-      { kind: "heaviest_carry", distanceMeters: 40, weight: 64, date: "2026-03-15T00:00:00Z", isRecent: false },
-      { kind: "longest_hold", durationSeconds: 120, date: "2026-03-15T00:00:00Z", isRecent: false },
+      { kind: "heaviest_carry", distanceMeters: 40, weight: 64, date: "2026-03-15T00:00:00Z", sessionLogId: "sl-1", isRecent: false },
+      { kind: "longest_hold", durationSeconds: 120, date: "2026-03-15T00:00:00Z", sessionLogId: "sl-1", isRecent: false },
     ];
     render(<ExercisePrView data={data} exerciseType="carry_sled" isLoading={false} />);
     expect(screen.getByText("40 m carry")).toBeInTheDocument();

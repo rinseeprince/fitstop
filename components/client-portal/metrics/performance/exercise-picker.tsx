@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
 import {
   Popover,
   PopoverContent,
@@ -18,6 +17,7 @@ import {
 } from "@/components/ui/command";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ExerciseListItem } from "@/types/training";
+import { ALL_EXERCISES_LABEL } from "@/utils/exercise-bests-table";
 
 type ExercisePickerProps = {
   exercises: ExerciseListItem[] | undefined;
@@ -25,19 +25,24 @@ type ExercisePickerProps = {
   selectedExerciseId: string | null;
   selectedExerciseName: string | null;
   onSelect: (exercise: ExerciseListItem) => void;
+  /** Picks All exercises: the view with no exercise in its address. */
+  onSelectAll: () => void;
 };
 
 // Light-themed exercise picker for the client metrics hub. Mirrors the coach
 // ExerciseSearchSelect structure (Popover + cmdk) but on the portal's light
-// surface rather than the coach tab's dark cards.
+// surface rather than the coach tab's dark cards. Its first row is All
+// exercises, which is what it reads with no exercise picked.
 export function ExercisePicker({
   exercises,
   isLoading,
   selectedExerciseId,
   selectedExerciseName,
   onSelect,
+  onSelectAll,
 }: ExercisePickerProps) {
   const [open, setOpen] = useState(false);
+  const allPicked = selectedExerciseId == null && selectedExerciseName == null;
 
   const selectedFromList = exercises?.find(
     (ex) =>
@@ -65,13 +70,8 @@ export function ExercisePicker({
             <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-[#93b0b4]">
               Exercise
             </p>
-            <p
-              className={cn(
-                "mt-0.5 truncate text-[15px] font-medium",
-                displayName ? "text-[#0c1a1e]" : "text-[#93b0b4]",
-              )}
-            >
-              {displayName ?? "Select exercise..."}
+            <p className="mt-0.5 truncate text-[15px] font-medium text-[#0c1a1e]">
+              {displayName ?? ALL_EXERCISES_LABEL}
             </p>
           </div>
           <div className="ml-3 flex shrink-0 items-center gap-2">
@@ -93,6 +93,16 @@ export function ExercisePicker({
           <CommandList>
             <CommandEmpty>No exercises found.</CommandEmpty>
             <CommandGroup>
+              <CommandItem
+                value={ALL_EXERCISES_LABEL}
+                onSelect={() => {
+                  onSelectAll();
+                  setOpen(false);
+                }}
+              >
+                <span className="flex-1 truncate">{ALL_EXERCISES_LABEL}</span>
+                {allPicked && <Check className="ml-2 h-4 w-4 shrink-0 text-[#0d9488]" />}
+              </CommandItem>
               {exercises?.map((ex) => {
                 const isSelected =
                   (selectedExerciseId && ex.exerciseId === selectedExerciseId) ||

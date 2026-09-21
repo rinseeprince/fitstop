@@ -1,4 +1,5 @@
 import type { AttentionAlert } from "@/types/attention-feed";
+import type { RaceDistance } from "@/utils/race-distances";
 
 /**
  * The most-recent check-in awaiting coach review, or null if none.
@@ -28,15 +29,16 @@ export type BlockEnding = {
 /**
  * A new personal record, by what it beat (services/client-activity-feed-service.ts
  * detects them against get_exercise_prs' bests): the heaviest load ever lifted,
- * the most reps in a set logged with no load, the fastest time over a distance,
- * the heaviest load carried over a distance, the longest hold. `previousBest`
- * is in the record's own measure — kilograms, reps, seconds, kilograms,
- * seconds — canonical, converted at the render boundary.
+ * the most reps in a set logged with no load, the fastest time at a distance —
+ * a race distance for an Endurance or Erg exercise, named by `race` — the
+ * heaviest load carried over a distance, the longest hold. `previousBest` is in
+ * the record's own measure — kilograms, reps, seconds, kilograms, seconds —
+ * canonical, converted at the render boundary.
  */
 export type PrActivity =
   | { kind: "load"; weight: number; previousBest: number }
   | { kind: "reps"; reps: number; previousBest: number }
-  | { kind: "time"; distanceMeters: number; durationSeconds: number; previousBest: number }
+  | { kind: "time"; distanceMeters: number; race: RaceDistance | null; durationSeconds: number; previousBest: number }
   | { kind: "carry"; distanceMeters: number; weight: number; previousBest: number }
   | { kind: "hold"; durationSeconds: number; previousBest: number };
 

@@ -5,6 +5,7 @@ import type { ExerciseType } from "@/utils/exercise-types";
 import type { LoggedActuals } from "@/utils/set-log-measures";
 import type { GroupSettings } from "@/utils/exercise-groups";
 import type { GroupScoreValue } from "@/utils/group-scores";
+import type { RaceDistance } from "@/utils/race-distances";
 
 // Training plan split types
 export type TrainingSplitType =
@@ -558,18 +559,48 @@ export type ExerciseProgressionPoint = {
 /**
  * An exercise's bests, one shape per kind (utils/exercise-progress-markers.ts
  * BEST_KINDS): the heaviest weight per rep count, the most reps in a set logged
- * with no load, the fastest time per distance, the heaviest load per distance,
- * the longest set logged with no distance.
+ * with no load, the fastest time at each distance, the heaviest load per
+ * distance, the longest set logged with no distance. An Endurance or Erg
+ * exercise's best times are at race distances (utils/race-distances.ts):
+ * `race` names it and `distanceMeters` is the race's own length; every other
+ * type's are at the distance logged, with no race.
  */
 export type ExerciseBest =
   | { kind: "rep_max"; reps: number; weight: number }
   | { kind: "best_reps"; reps: number }
-  | { kind: "best_time"; distanceMeters: number; durationSeconds: number }
+  | { kind: "best_time"; distanceMeters: number; durationSeconds: number; race: RaceDistance | null }
   | { kind: "heaviest_carry"; distanceMeters: number; weight: number }
   | { kind: "longest_hold"; durationSeconds: number };
 
 export type ExercisePR = ExerciseBest & {
   date: string;
+  /** The logged session that set it: the one its Sessions table row stars. */
+  sessionLogId: string;
   /** Set within the last 28 days. */
   isRecent: boolean;
+};
+
+/**
+ * One exercise the client has logged with its bests — a row of the All
+ * exercises table (get_client_exercise_bests, migration 191). The bests are its
+ * records summarised, so a row and the exercise's PR cards never disagree:
+ * the heaviest of its rep maxes, the best estimated 1RM they give, its best
+ * bodyweight set, its record at the longest race distance it holds one at,
+ * its heaviest carry with the distance, its longest hold — null where it has
+ * none. Canonical units: kilograms, metres, seconds.
+ */
+export type ExerciseBestsRow = {
+  exerciseId: string | null;
+  name: string;
+  exerciseType: ExerciseType;
+  /** The sessions it was logged in. */
+  sessionCount: number;
+  /** The latest of them — a day stamp, like a progression point's date. */
+  lastLoggedDate: string;
+  heaviestLoad: number | null;
+  bestEstimatedOneRepMax: number | null;
+  bestSetReps: number | null;
+  bestTime: { race: RaceDistance; durationSeconds: number } | null;
+  heaviestCarry: { weight: number; distanceMeters: number } | null;
+  longestHoldSeconds: number | null;
 };

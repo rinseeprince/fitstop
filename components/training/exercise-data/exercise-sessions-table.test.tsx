@@ -123,17 +123,37 @@ describe("ExerciseSessionsTable", () => {
     expect(cellsOf(bodyRows()[0])).toEqual(["Aug 1, 2026", "—", "—", "—", "—", "—"]);
   });
 
-  it("stars a session holding a record, naming the record", () => {
+  it("stars the session each record names, naming the record", () => {
     renderTable({
       records: [
-        { kind: "rep_max", reps: 5, weight: 105, date: "2026-08-11T00:00:00+00:00", isRecent: true },
-        { kind: "rep_max", reps: 1, weight: 120, date: "2026-07-01T00:00:00+00:00", isRecent: false },
+        { kind: "rep_max", reps: 5, weight: 105, date: "2026-08-11T00:00:00+00:00", sessionLogId: "sl-11", isRecent: true },
+        // Set by a session outside the window: no row to star
+        { kind: "rep_max", reps: 1, weight: 120, date: "2026-07-01T00:00:00+00:00", sessionLogId: "sl-old", isRecent: false },
       ],
     });
     const star = screen.getByRole("img", { name: "Personal record: 5 Rep Max · 105 kg" });
     expect(within(bodyRows()[1]).getByRole("img")).toBe(star);
     expect(star).toHaveAttribute("title", "5 Rep Max · 105 kg");
     expect(screen.getAllByRole("img")).toHaveLength(1);
+  });
+
+  it("stars a session holding a race record, naming the race", () => {
+    renderTable({
+      points: [session(3, [{ distanceMeters: 5020, durationSeconds: 1205 }])],
+      exerciseType: "endurance",
+      records: [
+        {
+          kind: "best_time",
+          distanceMeters: 5000,
+          durationSeconds: 1205,
+          race: "5k",
+          date: "2026-08-03T00:00:00+00:00",
+          sessionLogId: "sl-3",
+          isRecent: true,
+        },
+      ],
+    });
+    expect(within(bodyRows()[0]).getByRole("img", { name: "Personal record: 5 km · 20:05" })).toBeInTheDocument();
   });
 
   it("opens a session's workout from its row, and leaves a row with no workout still", async () => {

@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock supabase-admin before importing the service. The service talks to
-// Postgres RPCs (migrations 094 to 188); per-test we mock supabaseAdmin.rpc to
+// Postgres RPCs (migrations 094 to 191); per-test we mock supabaseAdmin.rpc to
 // return the windowed row shape the RPCs produce.
 //
-// Test-layer boundary: identity-union, windowing and the bests' SQL are
-// covered against the real DB by scripts/perf-correctness.ts. The per-session
-// marker math is utils/exercise-session-markers.test.ts. These tests cover the
-// JS mapper: RPC arguments, grouping by session, the prescribed snapshot, the
-// set-row mapping into the kernel, the bests' kinds and isRecent.
+// Test-layer boundary: the identity, windowing and the records' SQL are
+// covered against the real DB by scripts/perf-correctness.ts, and the
+// functions' text by services/exercise-analytics-functions.test.ts and
+// utils/race-distances.test.ts. The per-session marker math is
+// utils/exercise-session-markers.test.ts. These tests cover the JS mapper: RPC
+// arguments, grouping by session, the prescribed snapshot, the set-row mapping
+// into the kernel, the records' kinds, races, sessions and isRecent, and every
+// exercise's bests.
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: {
     rpc: vi.fn(),
@@ -18,6 +21,7 @@ vi.mock("./supabase-admin", () => ({
 
 import { supabaseAdmin } from "./supabase-admin";
 import {
+  getClientExerciseBests,
   getClientExerciseList,
   getExerciseProgressionSeries,
   getExercisePRs,
@@ -352,33 +356,159 @@ describe("getExercisePRs", () => {
     const now = Date.now();
     const recent = new Date(now - 27 * 24 * 60 * 60 * 1000).toISOString();
     const old = new Date(now - 29 * 24 * 60 * 60 * 1000).toISOString();
+    const row = (overrides: Record<string, unknown>) => ({
+      reps: null,
+      weight: null,
+      distance_meters: null,
+      duration_seconds: null,
+      race: null,
+      session_log_id: SESSION_LOG_1,
+      ...overrides,
+    });
     mockRpcResolve([
-      { kind: "rep_max", reps: 5, weight: "110", distance_meters: null, duration_seconds: null, date: recent },
-      { kind: "best_reps", reps: 15, weight: null, distance_meters: null, duration_seconds: null, date: old },
-      { kind: "best_time", reps: null, weight: null, distance_meters: "1000.00", duration_seconds: "222.1", date: recent },
-      { kind: "heaviest_carry", reps: null, weight: "64", distance_meters: "40.00", duration_seconds: null, date: old },
-      { kind: "longest_hold", reps: null, weight: null, distance_meters: null, duration_seconds: "120.0", date: old },
+      row({ kind: "rep_max", reps: 5, weight: "110", date: recent }),
+      row({ kind: "best_reps", reps: 15, date: old, session_log_id: SESSION_LOG_2 }),
+      row({ kind: "best_time", distance_meters: "5000", duration_seconds: "1204.80000", race: "5k", date: recent }),
+      row({ kind: "best_time", distance_meters: "40.00", duration_seconds: "35.0", date: old }),
+      row({ kind: "heaviest_carry", weight: "64", distance_meters: "40.00", date: old }),
+      row({ kind: "longest_hold", duration_seconds: "120.0", date: old }),
     ]);
     const records = await getExercisePRs(CLIENT_ID, { exerciseId: EXERCISE_ID });
     expect(records).toEqual([
-      { kind: "rep_max", reps: 5, weight: 110, date: recent, isRecent: true },
-      { kind: "best_reps", reps: 15, date: old, isRecent: false },
-      { kind: "best_time", distanceMeters: 1000, durationSeconds: 222.1, date: recent, isRecent: true },
-      { kind: "heaviest_carry", distanceMeters: 40, weight: 64, date: old, isRecent: false },
-      { kind: "longest_hold", durationSeconds: 120, date: old, isRecent: false },
+      { kind: "rep_max", reps: 5, weight: 110, date: recent, sessionLogId: SESSION_LOG_1, isRecent: true },
+      { kind: "best_reps", reps: 15, date: old, sessionLogId: SESSION_LOG_2, isRecent: false },
+      // At a race distance: its length and its name
+      {
+        kind: "best_time",
+        distanceMeters: 5000,
+        durationSeconds: 1204.8,
+        race: "5k",
+        date: recent,
+        sessionLogId: SESSION_LOG_1,
+        isRecent: true,
+      },
+      // At the distance logged: no race
+      {
+        kind: "best_time",
+        distanceMeters: 40,
+        durationSeconds: 35,
+        race: null,
+        date: old,
+        sessionLogId: SESSION_LOG_1,
+        isRecent: false,
+      },
+      { kind: "heaviest_carry", distanceMeters: 40, weight: 64, date: old, sessionLogId: SESSION_LOG_1, isRecent: false },
+      { kind: "longest_hold", durationSeconds: 120, date: old, sessionLogId: SESSION_LOG_1, isRecent: false },
     ]);
   });
 
-  it("drops a row of an unknown kind or one missing its measure", async () => {
+  it("drops a row of an unknown kind or one missing its measure, and reads an unknown race as none", async () => {
     mockRpcResolve([
-      { kind: "fastest_mile", reps: null, weight: null, distance_meters: "1609.34", duration_seconds: "400", date: "2026-05-01T00:00:00Z" },
-      { kind: "rep_max", reps: 5, weight: null, distance_meters: null, duration_seconds: null, date: "2026-05-01T00:00:00Z" },
+      { kind: "fastest_mile", reps: null, weight: null, distance_meters: "1609.34", duration_seconds: "400", race: null, date: "2026-05-01T00:00:00Z", session_log_id: SESSION_LOG_1 },
+      { kind: "rep_max", reps: 5, weight: null, distance_meters: null, duration_seconds: null, race: null, date: "2026-05-01T00:00:00Z", session_log_id: SESSION_LOG_1 },
+      { kind: "best_time", reps: null, weight: null, distance_meters: "15000", duration_seconds: "3600", race: "15k", date: "2026-05-01T00:00:00Z", session_log_id: SESSION_LOG_1 },
     ]);
-    expect(await getExercisePRs(CLIENT_ID, { exerciseId: EXERCISE_ID })).toEqual([]);
+    expect(await getExercisePRs(CLIENT_ID, { exerciseId: EXERCISE_ID })).toEqual([
+      expect.objectContaining({ kind: "best_time", distanceMeters: 15000, race: null }),
+    ]);
   });
 
   it("throws on RPC error", async () => {
     mockRpc.mockResolvedValueOnce({ data: null, error: { message: "boom" } } as never);
     await expect(getExercisePRs(CLIENT_ID, { exerciseId: EXERCISE_ID })).rejects.toThrow("Failed to fetch exercise PRs: boom");
+  });
+});
+
+// =============================================================================
+// getClientExerciseBests
+// =============================================================================
+
+describe("getClientExerciseBests", () => {
+  /** One exercise's row of get_client_exercise_bests: nothing but its facts unless the case says so. */
+  const bestsRow = (overrides: Record<string, unknown> = {}) => ({
+    exercise_id: EXERCISE_ID,
+    name: "Barbell Bench Press",
+    exercise_type: "strength",
+    session_count: 18,
+    last_logged_date: "2026-09-20T00:00:00+00:00",
+    heaviest_load: null,
+    best_e1rm_weight: null,
+    best_e1rm_reps: null,
+    best_reps: null,
+    best_time_race: null,
+    best_time_seconds: null,
+    heaviest_carry_weight: null,
+    heaviest_carry_distance_meters: null,
+    longest_hold_seconds: null,
+    ...overrides,
+  });
+
+  it("asks for the client's every exercise in one call", async () => {
+    mockRpcResolve([]);
+    expect(await getClientExerciseBests(CLIENT_ID)).toEqual([]);
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith("get_client_exercise_bests", { p_client_id: CLIENT_ID });
+  });
+
+  it("maps each exercise's bests, working out its e1RM as the Sessions table does", async () => {
+    mockRpcResolve([
+      bestsRow({ heaviest_load: "110.00", best_e1rm_weight: "102.50", best_e1rm_reps: 8 }),
+      bestsRow({
+        exercise_id: "run",
+        name: "Running",
+        exercise_type: "endurance",
+        session_count: 13,
+        best_time_race: "half_marathon",
+        best_time_seconds: "5530.00000",
+      }),
+      bestsRow({
+        exercise_id: "carry",
+        name: "Farmer Carry",
+        exercise_type: "carry_sled",
+        heaviest_carry_weight: "70.00",
+        heaviest_carry_distance_meters: "40.00",
+      }),
+      bestsRow({ exercise_id: null, name: "Wall sit", exercise_type: null, best_reps: 12, longest_hold_seconds: "95.0" }),
+    ]);
+    expect(await getClientExerciseBests(CLIENT_ID)).toEqual([
+      {
+        exerciseId: EXERCISE_ID,
+        name: "Barbell Bench Press",
+        exerciseType: "strength",
+        sessionCount: 18,
+        lastLoggedDate: "2026-09-20T00:00:00+00:00",
+        heaviestLoad: 110,
+        // Epley: 102.5 x (1 + 8/30), to a tenth
+        bestEstimatedOneRepMax: 129.8,
+        bestSetReps: null,
+        bestTime: null,
+        heaviestCarry: null,
+        longestHoldSeconds: null,
+      },
+      expect.objectContaining({
+        exerciseId: "run",
+        exerciseType: "endurance",
+        bestTime: { race: "half_marathon", durationSeconds: 5530 },
+        heaviestLoad: null,
+        bestEstimatedOneRepMax: null,
+      }),
+      expect.objectContaining({ exerciseType: "carry_sled", heaviestCarry: { weight: 70, distanceMeters: 40 } }),
+      // A freehand name has no catalog row and reads as Strength
+      expect.objectContaining({ exerciseId: null, exerciseType: "strength", bestSetReps: 12, longestHoldSeconds: 95 }),
+    ]);
+  });
+
+  it("reads a single's e1RM as its weight, and an unknown race as no best time", async () => {
+    mockRpcResolve([
+      bestsRow({ best_e1rm_weight: "140", best_e1rm_reps: 1, best_time_race: "15k", best_time_seconds: "3600" }),
+    ]);
+    const [row] = await getClientExerciseBests(CLIENT_ID);
+    expect(row.bestEstimatedOneRepMax).toBe(140);
+    expect(row.bestTime).toBeNull();
+  });
+
+  it("throws on RPC error", async () => {
+    mockRpc.mockResolvedValueOnce({ data: null, error: { message: "boom" } } as never);
+    await expect(getClientExerciseBests(CLIENT_ID)).rejects.toThrow("Failed to fetch exercise bests: boom");
   });
 });

@@ -6,10 +6,12 @@ import { trainingAreaKeyPrefix } from "./use-calendar-events";
 
 // The exercise-history reads' keys, built here and nowhere else (CONVENTIONS
 // section 7): the coach's Journey Training pane and the client's Performance
-// view each read a list, a progression and the PRs through them.
+// view each read a list, every exercise's bests, a progression and the PRs
+// through them.
 
 type ExerciseHistoryQuery =
   | { metric: "list" }
+  | { metric: "bests" }
   | {
       metric: "progression";
       exerciseId?: string | null;
@@ -25,7 +27,7 @@ type ExerciseHistoryQuery =
 function exerciseHistoryParams(query: ExerciseHistoryQuery): string {
   const params = new URLSearchParams();
   params.set("metric", query.metric);
-  if (query.metric !== "list") {
+  if (query.metric === "progression" || query.metric === "prs") {
     if (query.exerciseId) params.set("exerciseId", query.exerciseId);
     else if (query.exerciseName) params.set("exerciseName", query.exerciseName);
     if (query.metric === "progression" && query.sessionCount != null) {

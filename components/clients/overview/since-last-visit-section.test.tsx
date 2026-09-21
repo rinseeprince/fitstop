@@ -240,8 +240,18 @@ describe("a personal record of every kind", () => {
       text: "Pull Up · 15 reps, was 12",
     },
     {
-      item: { type: "pr", at: "2026-06-01T18:00:00Z", exerciseName: "Rowing", kind: "time", distanceMeters: 1000, durationSeconds: 222.1, previousBest: 230 },
+      item: { type: "pr", at: "2026-06-01T18:00:00Z", exerciseName: "Rowing", kind: "time", distanceMeters: 1000, race: "1k", durationSeconds: 222.1, previousBest: 230 },
       text: "Rowing · 1 km in 3:42.1, was 3:50",
+    },
+    {
+      // A race reads by its name, never its length in metres
+      item: { type: "pr", at: "2026-06-01T18:00:00Z", exerciseName: "Running", kind: "time", distanceMeters: 21097.5, race: "half_marathon", durationSeconds: 5530, previousBest: 5700 },
+      text: "Running · Half marathon in 1:32:10, was 1:35:00",
+    },
+    {
+      // A time at the distance logged, where the type keeps no races
+      item: { type: "pr", at: "2026-06-01T18:00:00Z", exerciseName: "Sled Push", kind: "time", distanceMeters: 50, race: null, durationSeconds: 45, previousBest: 50 },
+      text: "Sled Push · 50 m in 0:45, was 0:50",
     },
     {
       item: { type: "pr", at: "2026-06-01T18:00:00Z", exerciseName: "Farmers Carry", kind: "carry", distanceMeters: 40, weight: 64, previousBest: 60 },

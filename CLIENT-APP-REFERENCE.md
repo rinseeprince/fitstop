@@ -63,7 +63,7 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 - View the active program as ordered day-slots grouped by `weekIndex` — rest days appear as real "Rest" entries
 - See per-set prescription (`setSpecs`: set type; reps, load, RPE, RIR, distance, duration, pace, split, calories, cadence, stroke rate, resistance, HR zone, target HR, power and % FTP each as a min/max pair; tempo as one compound value; rest) plus an optional demo `videoUrl` — and each exercise's `prescribedFields`, the columns to render
 - Log a prescribed day by tapping its event; on a rest day, pick a session from this week — it moves to that day (`events/layout`) and opens as an ordinary event; rearrange the whole week from the Program tab — a client-composed `events/layout` list
-- Per-exercise history and PRs via `exercise-history`
+- Per-exercise history and PRs, and every exercise's bests in one table, via `exercise-history`
 - The plan is a **positional multi-week program** — render by `weekIndex` + `orderIndex`, not by weekday
 
 ### 3. Nutrition Plans & Macro Tracking
@@ -184,7 +184,7 @@ All client API endpoints require authentication except where noted.
 - `GET /api/client/training/week?date={YYYY-MM-DD}` - The training week containing `date` (`ClientTrainingWeek`, `types/client-training-week.ts`): `{ weekStart, weekEnd, today, sessions[] }`, each session `{ eventId, sessionId, name, focus, date, state }` with `state` = `done | today | upcoming | missed` derived against the client's today. Sessions come by date, each day's in the day's order; a day can hold several, so a week can hold more than seven. `no-store`. The session picker and the week view list THIS — it is exactly the set a layout write may touch
 - `POST /api/client/training/events/layout` - **Move / swap / rearrange the client's own week.** Body `{ moves: [{ eventId, fromDate, toDate }] }` (1–50). One transaction for the whole list (`move_training_events_atomic`, migrations 150 and 179), so a swap is two entries and a rotation never half-applies. Rules: only a still-scheduled session moves (a logged day is pinned); a session moves only within the training week it currently sits in; neither `fromDate` nor `toDate` may fall before `logsOpenFrom` (a week a check-in has closed keeps its shape). **A session moved onto a day that already holds sessions joins it, after them; several moved onto one day land in the order the list gives them** — so list them in the order the client moved them. `fromDate` is the day the client SAW the session on — if it has moved since (a coach edit), `409` "Your week changed since you opened it — reload and try again". Other answers: `400` a rule of the client's own calendar, with the sentence · `404` not this client's. Returns `{ moved: [...] }`. Nutrition follows the moved sessions (a day's target is computed from the sessions on it, so the next read re-prices it); a day the client has already logged shows the refreshed target at their next food save. The **rest-day "Log a session" picker** is a one-entry layout (move here, then open the event); "Do a different session" on a prescribed day with a still-scheduled pick from another day is a two-entry swap, and a pick already on the same day simply opens it. The **Program tab's week view** is the third caller and the general case: the app applies moves locally over `training/week` (`lib/week-layout.ts`) — a day lists the sessions staying on it, then the ones moved onto it in the order they were moved — and sends every changed session with the day it was read on, day by day in that order; a `409` means reload the week and start over
 - `GET /api/client/exercises/catalog?since={ISO}` - Exercise-catalog delta sync: a sparse fieldset of rows (`id`, `name`, `muscle_group`, `equipment`, `exercise_type` — one of `strength`, `bodyweight`, `endurance`, `erg`, `carry_sled`, `holds`: the column preset an exercise of it starts on — and `updated_at`) with `updated_at` after `since` (omit `since` for a full resync). Complete past the ~1000-row PostgREST cap (paged internally on `(updated_at, id)`); deletes are invisible to the delta, so resync periodically
-- `GET /api/client/training/exercise-history?metric=list|progression|prs` - `progression`/`prs` also take `exerciseId` or `exerciseName`; `progression` takes `sessionCount` (1–500; an unwindowed read is floored at 12 sessions, so the session window's "All" sends 500). **Warm-up sets are excluded from every metric.** A `list` row carries `exerciseType` (the catalog row's; `strength` for a freehand name) — it says which chart markers lead. A `progression` point (`ExerciseProgressionPoint`, `types/training.ts`) is one logged session: its working sets in the order logged (`sets`: `{ weight, reps, distanceMeters, durationSeconds }` each), the calendar workout it was logged for (`eventId`, `null` on a log with none — open it at the workout screen), the strength keys (`topSetWeight`, `topSetReps`, `rpe`, `estimatedOneRepMax`, `totalVolume`, `prescribedSets`, `actualSets`, `prescribedRepsMin`, `prescribedRepsMax`), the top set's distance and time (`topSetDistanceMeters`, `topSetDurationSeconds` — a carry), `bestSetReps` and `totalReps`, the session's distance and time added up (`totalDistanceMeters`, `totalDurationSeconds`), the average pace and split over them (`averagePaceSecondsPerKm`, `averageSplitSecondsPer500m`), `averageStrokeRate`, `averagePower`, `maxHeartRateZone` and `longestHoldSeconds`, canonical units, `null` where nothing was logged. `date` is the session's day stamp: the workout's date at UTC midnight — show its UTC date, never the timestamp in the device's zone. A `prs` row is typed by `kind`. See "RN contract — exercise progress"
+- `GET /api/client/training/exercise-history?metric=list|bests|progression|prs` - `progression`/`prs` also take `exerciseId` or `exerciseName` (the list row's `exerciseId`, else its `name`: an exercise's logs are the ones the list counts for it — the catalog exercise done, else the one prescribed, else the name typed, so a swapped exercise's sets are the exercise done's); `bests` takes nothing and returns every exercise the client has logged with its bests, all-time (see "RN contract — All exercises"); `progression` takes `sessionCount` (1–500; an unwindowed read is floored at 12 sessions, so the session window's "All" sends 500). **Warm-up sets are excluded from every metric.** A `list` row carries `exerciseType` (the catalog row's; `strength` for a freehand name) — it says which chart markers lead. A `progression` point (`ExerciseProgressionPoint`, `types/training.ts`) is one logged session: its working sets in the order logged (`sets`: `{ weight, reps, distanceMeters, durationSeconds }` each), the calendar workout it was logged for (`eventId`, `null` on a log with none — open it at the workout screen), the strength keys (`topSetWeight`, `topSetReps`, `rpe`, `estimatedOneRepMax`, `totalVolume`, `prescribedSets`, `actualSets`, `prescribedRepsMin`, `prescribedRepsMax`), the top set's distance and time (`topSetDistanceMeters`, `topSetDurationSeconds` — a carry), `bestSetReps` and `totalReps`, the session's distance and time added up (`totalDistanceMeters`, `totalDurationSeconds`), the average pace and split over them (`averagePaceSecondsPerKm`, `averageSplitSecondsPer500m`), `averageStrokeRate`, `averagePower`, `maxHeartRateZone` and `longestHoldSeconds`, canonical units, `null` where nothing was logged. `date` is the session's day stamp: the workout's date at UTC midnight — show its UTC date, never the timestamp in the device's zone. A `prs` row is typed by `kind` and names the session that set it (`sessionLogId`). See "RN contract — exercise progress"
 
 ### Nutrition
 - `GET /api/client/nutrition` (alias: `GET /api/client/nutrition-plan`) - Get nutrition targets (`getClientNutritionTargets`)
@@ -533,7 +533,27 @@ charts and PRs"). Point keys are `ExerciseProgressionPoint`'s.
 - **Offer the type's leads always, then any other marker some point in the window has a value for**, in this order: weight, e1rm, volume, reps, pace, distance, split, power, time, hold. RPE (`rpe`: the top set's, or in a session with no loaded set the highest RPE logged) and compliance (`actualSets` against `prescribedSets`) are the coach's lenses: the payload carries them, the client app offers no lens for them — the Sessions table below shows the client both.
 - **The values are computed on columns, never names**: a load is a weight above zero, and the top set (`topSetWeight`) is the heaviest of any set, a carry's included; a lift is a load logged with neither a distance nor a time, and `estimatedOneRepMax` and `totalVolume` read lifts alone; `bestSetReps` counts sets logged with reps, no load and neither a distance nor a time, and `totalReps` adds up every set's reps but a set's repeats; `longestHoldSeconds` is the longest set that logged a time and no distance; an endurance session reads as a whole — reps on a set with a distance or a time are repeats (3 reps of 1 km is 3 km), never a rep count, a set's time is its typed time or else its pace or split over its distance, `totalDistanceMeters` and `totalDurationSeconds` add every repeat up, and `averagePaceSecondsPerKm` / `averageSplitSecondsPer500m` are the session's time over its distance (else, with no distance anywhere, the mean of the rates typed, once per repeat); stroke rate and watts are its averages. Any time over a distance gives both rates, so offer a rate only as the type's lead — pace on `endurance`, split on `erg` — never as a follower. Warm-ups count toward nothing.
 - **Lower is better for pace and split; a total time has no best; higher for the rest.** Loads read through `formatLoad`, distances in the viewer's unit, a pace per the viewer's unit, a split per 500 m, times as clocks (CONVENTIONS §20).
-- **`prs` rows, all-time, first-achieved on a tie, each with `date` and `isRecent` (within 28 days):** `{ kind: "rep_max", reps, weight }` (the heaviest per rep count, over lifts — a set with a load and reps and neither a distance nor a time), `{ kind: "best_reps", reps }` (the most reps in a set logged with no load and neither a distance nor a time — reps on a distance or a time are repeats and make neither kind), `{ kind: "best_time", distanceMeters, durationSeconds }` (the fastest per distance, exactly as logged — 5 km and 5.02 km are two rows), `{ kind: "heaviest_carry", distanceMeters, weight }`, `{ kind: "longest_hold", durationSeconds }`. Bounded: 100 rep buckets, the 50 shortest distances per distance kind, one row for each single best. List the type's own kinds first (`strength` rep_max; `bodyweight` best_reps; `endurance` and `erg` best_time; `carry_sled` heaviest_carry then best_time; `holds` longest_hold), then the rest; ignore a `kind` you don't know.
+- **`prs` rows, all-time, first-achieved on a tie, each with `date`, `sessionLogId` (the session that set it) and `isRecent` (within 28 days):** `{ kind: "rep_max", reps, weight }` (the heaviest per rep count, over lifts — a set with a load and reps and neither a distance nor a time), `{ kind: "best_reps", reps }` (the most reps in a set logged with no load and neither a distance nor a time — reps on a distance or a time are repeats and make neither kind), `{ kind: "best_time", distanceMeters, durationSeconds, race }` (the fastest at each distance — see below), `{ kind: "heaviest_carry", distanceMeters, weight }` (per exact logged distance), `{ kind: "longest_hold", durationSeconds }`. A set's time is its typed time, else its pace or split over its distance, so a run logged with a pace alone can hold a record. Bounded: 100 rep buckets, the 50 shortest distances per distance kind, one row for each single best. List the type's own kinds first (`strength` rep_max; `bodyweight` best_reps; `endurance` and `erg` best_time; `carry_sled` heaviest_carry then best_time; `holds` longest_hold), then the rest; ignore a `kind` you don't know.
+- **An `endurance` or `erg` exercise's best times are at race distances** (`utils/race-distances.ts`). The row's `race` names the race and `distanceMeters` is the race's own length; a set counts for a race within half a percent of it (5.02 km and 3.1 mi are both 5 km), for the nearer of two that close, and a set at no race distance has no `best_time` row — no time is estimated. Every other type's `best_time` rows are per exact logged distance with `race: null`. Label a race by its name, the same for every viewer — never convert it ("5 km" for an imperial client, not "3.1 mi"); label a `race: null` row by its distance in the viewer's units:
+
+| `race` | Name | `endurance` | `erg` |
+|---|---|---|---|
+| `400m` | 400 m | ✓ | |
+| `500m` | 500 m | | ✓ |
+| `800m` | 800 m | ✓ | |
+| `1k` | 1 km | ✓ | ✓ |
+| `1600m` | 1600 m | ✓ | |
+| `mile` | 1 mile | ✓ | |
+| `2k` | 2 km | | ✓ |
+| `5k` | 5 km | ✓ | ✓ |
+| `6k` | 6 km | | ✓ |
+| `10k` | 10 km | ✓ | ✓ |
+| `half_marathon` | Half marathon | ✓ | ✓ |
+| `marathon` | Marathon | ✓ | ✓ |
+| `50k` | 50 km | ✓ | |
+| `100k` | 100 km | ✓ | |
+
+  Ignore a `race` you don't know, as a `kind`.
 
 ### RN contract — the Sessions table
 
@@ -572,17 +592,44 @@ failed `prs` read leaves the rows without stars.
   "Z3"; the other numbers bare. A cell holds its number and nothing else; a missing value reads a
   dash.
 - **The star** — beside the date, on a point holding a record the `prs` rows name: a record whose
-  `date` is the point's `date` and whose values one of its `sets` carries (`rep_max` its reps and
-  weight on a set with neither a distance nor a time; `best_reps` its reps on a set with no load and
-  neither a distance nor a time; `best_time` its distance and time; `heaviest_carry` its
-  distance and weight; `longest_hold` its time with no distance), the record's words as the
-  Personal records card reads them.
+  `sessionLogId` is the point's `sessionLogId`, the record's words as the Personal records card
+  reads them ("5 Rep Max · 105 kg", "5 km · 20:05").
 - **A row opens its workout** — the workout screen for the point's `eventId`; a point with none stays
   still.
 - **Sort:** tap a figure's heading to sort by it — the first tap the way it leads (highest e1RM,
   heaviest top set, most reps, fastest pace and split, longest distance, time and hold; Date newest
   first), a second tap the other way — and show which heading is sorted and which way. One sort at a
   time: ties sort newest first, and a point with no value in the sorted figure sits last.
+
+### RN contract — All exercises
+
+The exercise picker's first row is **All exercises**, and it is what the Performance view shows when
+no exercise is picked: one table of every exercise the client has logged with its bests, under the
+picker, with no chart, no metric switcher, no session window, no Sessions table and no Personal
+records (`utils/exercise-bests-table.ts` is the one table; `docs/ARCHITECTURE.md` → "Exercise
+progress: charts and PRs"). It reads `metric=bests` alone — one request, however many exercises —
+and only while it is shown; show nothing of it until the rows land, "No exercises logged yet" for
+none, and on a failed read say so with a retry.
+
+- **A row** (`ExerciseBestsRow`, `types/training.ts`), most sessions first: `exerciseId` (null for a
+  name typed), `name`, `exerciseType`, `sessionCount` (the sessions it was logged in), `lastLoggedDate`
+  (the day stamp of the latest — show its UTC date), and its bests, each a summary of its `prs` rows so
+  a row never disagrees with them, canonical units, `null` where it has none: `heaviestLoad` (the
+  heaviest of its rep maxes), `bestEstimatedOneRepMax` (the best Epley estimate they give — the
+  Sessions table's e1RM), `bestSetReps`, `bestTime` (`{ race, durationSeconds }` — its record at the
+  longest race distance it holds one at; `endurance` and `erg` only), `heaviestCarry`
+  (`{ weight, distanceMeters }`), `longestHoldSeconds`.
+- **Columns**, in order: Exercise, Type, Sessions, Last logged, Heaviest load, Best e1RM, Most reps,
+  Best time, Heaviest carry, Longest hold. Loads bare under a heading naming the viewer's unit
+  ("Heaviest load (kg)"), snapped like every read-only load; a best time as the race's name and the
+  clock, "Half marathon · 1:32:10"; a carry as its load and distance, "70 × 40 m" (yards for an
+  imperial viewer); a hold as a clock; a dash for a `null`.
+- **Sort:** tap a heading to sort by it — the first tap the way the column leads (name and type A to
+  Z, most sessions, newest, heaviest load, highest e1RM, most reps, fastest time, heaviest carry,
+  longest hold), a second tap the other way, one sort at a time; ties by name, a row with no value in
+  the sorted column last. It opens on most sessions first.
+- **Pages** of ten on the device, with a count ("Showing 10 of 23 exercises") and previous/next.
+- **A row opens that exercise** — as picking it from the picker does.
 ### Training log payload (`POST /api/client/training/events/{eventId}/log`)
 
 ```typescript

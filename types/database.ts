@@ -3124,6 +3124,22 @@ export type Database = {
         Args: { p_client_id: string; p_event_id: string }
         Returns: Json
       }
+      client_exercises: {
+        Args: {
+          p_client_id: string
+          p_end_date?: string
+          p_start_date?: string
+        }
+        Returns: {
+          exercise_id: string
+          exercise_type: string
+          identity_key: string
+          last_logged_date: string
+          log_count: number
+          name: string
+          session_count: number
+        }[]
+      }
       create_check_in_form_template_atomic: {
         Args: {
           p_coach_id: string
@@ -3206,6 +3222,51 @@ export type Database = {
         }
         Returns: Json
       }
+      exercise_log_identity: {
+        Args: {
+          p_exercise_id: string
+          p_performed_name: string
+          p_prescribed_exercise_id: string
+        }
+        Returns: string
+      }
+      exercise_records: {
+        Args: {
+          p_client_id: string
+          p_exclude_dates?: string[]
+          p_identity_key?: string
+        }
+        Returns: {
+          date: string
+          distance_meters: number
+          duration_seconds: number
+          identity_key: string
+          kind: string
+          race: string
+          reps: number
+          session_log_id: string
+          weight: number
+        }[]
+      }
+      get_client_exercise_bests: {
+        Args: { p_client_id: string }
+        Returns: {
+          best_e1rm_reps: number
+          best_e1rm_weight: number
+          best_reps: number
+          best_time_race: string
+          best_time_seconds: number
+          exercise_id: string
+          exercise_type: string
+          heaviest_carry_distance_meters: number
+          heaviest_carry_weight: number
+          heaviest_load: number
+          last_logged_date: string
+          longest_hold_seconds: number
+          name: string
+          session_count: number
+        }[]
+      }
       get_client_exercise_list: {
         Args: {
           p_client_id: string
@@ -3275,7 +3336,9 @@ export type Database = {
           distance_meters: number
           duration_seconds: number
           kind: string
+          race: string
           reps: number
+          session_log_id: string
           weight: number
         }[]
       }

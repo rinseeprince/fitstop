@@ -14,6 +14,11 @@
  *   - check-in keyset: the (created_at, id) `.or()` cursor predicate against real
  *     PostgREST, including a same-created_at tie split across a page boundary.
  *
+ *   - 191 records: race-distance buckets (half a percent, the nearer of 1600 m
+ *     and the mile, no record off a race distance), a set's time from its pace
+ *     or split, one identity (a swap counts for the exercise done), and every
+ *     exercise's bests (get_client_exercise_bests).
+ *
  * A failure here is a real SQL / PostgREST bug.
  *
  *   npx tsx scripts/perf-correctness.ts
@@ -25,6 +30,7 @@ import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getClientCheckIns } from "@/services/check-in-service";
+import type { Database } from "@/types/database";
 import { PERF_COACH_ID } from "./perf-fixtures";
 
 // ---------------------------------------------------------------------------
@@ -103,6 +109,60 @@ const CI_TIE_LO = "5ca1ec0c-0000-4000-8005-0000000000a1"; // 2026-05-06 (sorts s
 const CI_5 = "5ca1ec0c-0000-4000-8005-000000000005";      // 2026-04-29
 
 // ---------------------------------------------------------------------------
+// Commit 16b fixtures — race-distance records, one identity and every
+// exercise's bests (migration 191). Its own client so cleanup stays scoped.
+// ---------------------------------------------------------------------------
+
+const B16_CLIENT_ID = "5ca1ec0c-0000-4000-8000-000000000003";
+const B16_PLAN_ID = "5ca1ec0c-0000-4000-8000-000000000030";
+const B16_TS = "5ca1ec0c-0000-4000-8000-000000000031";
+// The Row a swap replaced: the prescribed exercise of the swapped log
+const B16_TE_ROW = "5ca1ec0c-0000-4000-8002-000000000030";
+const RUN_ID = "5ca1ec0c-0000-4000-8001-000000000010"; // Endurance
+const ROW_ID = "5ca1ec0c-0000-4000-8001-000000000011"; // Erg
+const CARRY_ID = "5ca1ec0c-0000-4000-8001-000000000012"; // Carry & sled
+function slB16(i: number): string {
+  return `5ca1ec0c-0000-4000-8003-b${i.toString(16).padStart(11, "0")}`;
+}
+
+type B16Set = {
+  reps?: number;
+  weight?: number;
+  distance?: number;
+  duration?: number;
+  pace?: number;
+  split?: number;
+};
+
+const B16_SESSIONS: Array<{
+  id: string;
+  date: string;
+  exerciseId: string;
+  teId: string | null;
+  name: string;
+  sets: B16Set[];
+}> = [
+  // 5.02 km: counts for 5 km
+  { id: slB16(1), date: "2026-06-01", exerciseId: RUN_ID, teId: null, name: "Fixture Run", sets: [{ distance: 5020, duration: 1210 }] },
+  // 3.1 mi logged with a pace alone: its time is its pace over its distance, a faster 5 km
+  { id: slB16(2), date: "2026-06-08", exerciseId: RUN_ID, teId: null, name: "Fixture Run", sets: [{ distance: 4988.97, pace: 240 }] },
+  // 4.8 km: no race distance, no record
+  { id: slB16(3), date: "2026-06-15", exerciseId: RUN_ID, teId: null, name: "Fixture Run", sets: [{ distance: 4800, duration: 1100 }] },
+  // Within half a percent of both 1600 m and the mile: each counts for the nearer
+  { id: slB16(4), date: "2026-06-22", exerciseId: RUN_ID, teId: null, name: "Fixture Run", sets: [{ distance: 1604, duration: 330 }, { distance: 1605, duration: 335 }] },
+  // 10 km: the longest race the run holds a record at
+  { id: slB16(5), date: "2026-06-29", exerciseId: RUN_ID, teId: null, name: "Fixture Run", sets: [{ distance: 10000, duration: 2700 }] },
+  // A swap: the Row prescribed, a run done — a run's, never the Row's
+  { id: slB16(6), date: "2026-07-06", exerciseId: RUN_ID, teId: B16_TE_ROW, name: "Fixture Run", sets: [{ distance: 2000, duration: 400 }] },
+  // An erg's 2 km, and 500 m by its split alone
+  { id: slB16(7), date: "2026-06-03", exerciseId: ROW_ID, teId: null, name: "Fixture Row", sets: [{ distance: 2000, duration: 470 }, { distance: 500, split: 105 }] },
+  // Carries at their own distances
+  { id: slB16(8), date: "2026-06-05", exerciseId: CARRY_ID, teId: null, name: "Fixture Carry", sets: [{ weight: 70, distance: 40 }, { weight: 64, distance: 40 }, { weight: 80, distance: 20 }] },
+  // The best estimate is not the heaviest single: 100 x 5 is 116.7
+  { id: slB16(9), date: "2026-06-10", exerciseId: SQUAT_ID, teId: null, name: "Squat", sets: [{ weight: 100, reps: 5 }, { weight: 110, reps: 1 }] },
+];
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -119,6 +179,7 @@ async function main() {
   await seedPlanAndExercises();
   await seedSessionsAndLogs();
   await seedStreakAndCheckin();
+  await seedRecordsFixture();
 
   const failures: string[] = [];
 
@@ -132,6 +193,9 @@ async function main() {
   await assertLegacyNameFallback(failures);
   await assertStreak(failures);
   await assertCheckinCursor(failures);
+  await assertRaceRecords(failures);
+  await assertOneIdentity(failures);
+  await assertExerciseBests(failures);
 
   if (failures.length > 0) {
     console.error("");
@@ -150,6 +214,16 @@ async function main() {
 
 async function clean() {
   console.log("Cleaning prior fixture rows...");
+
+  // Commit 16b fixture first: its logs name the shared Squat
+  await del("session_logs (16b)",
+    supabaseAdmin.from("session_logs").delete().eq("client_id", B16_CLIENT_ID));
+  await del("training_plans (16b)",
+    supabaseAdmin.from("training_plans").delete().eq("client_id", B16_CLIENT_ID));
+  await del("clients (16b)",
+    supabaseAdmin.from("clients").delete().eq("id", B16_CLIENT_ID));
+  await del("exercises (16b catalog)",
+    supabaseAdmin.from("exercises").delete().in("id", [RUN_ID, ROW_ID, CARRY_ID]));
 
   // session_logs cascades to exercise_logs → set_logs
   await del("session_logs",
@@ -472,6 +546,111 @@ async function seedStreakAndCheckin() {
 }
 
 // ---------------------------------------------------------------------------
+// Commit 16b seed — its own client: a run, an erg, a carry, a lift and a swap
+// ---------------------------------------------------------------------------
+
+async function seedRecordsFixture() {
+  console.log("Seeding 16b race records + bests fixture...");
+
+  const { error: catErr } = await supabaseAdmin.from("exercises").insert([
+    { id: RUN_ID, coach_id: null, name: "Fixture Run", exercise_type: "endurance" },
+    { id: ROW_ID, coach_id: null, name: "Fixture Row", exercise_type: "erg" },
+    { id: CARRY_ID, coach_id: null, name: "Fixture Carry", exercise_type: "carry_sled" },
+  ]);
+  if (catErr) throw new Error(`16b catalog seed: ${catErr.message}`);
+
+  const { error: cErr } = await supabaseAdmin.from("clients").insert({
+    id: B16_CLIENT_ID,
+    coach_id: PERF_COACH_ID,
+    name: "Perf 16b Client",
+    email: "perf-16b@fixture.local",
+    active: true,
+    unit_preference: "metric",
+  });
+  if (cErr) throw new Error(`16b client seed: ${cErr.message}`);
+
+  const planStart = new Date();
+  const planEnd = new Date(planStart);
+  planEnd.setUTCDate(planEnd.getUTCDate() + 55);
+  const { error: planErr } = await supabaseAdmin.from("training_plans").insert({
+    id: B16_PLAN_ID,
+    client_id: B16_CLIENT_ID,
+    coach_id: PERF_COACH_ID,
+    name: "Perf 16b Plan",
+    coach_prompt: "fixture",
+    split_type: "full_body",
+    frequency_per_week: 1,
+    effective_from: planStart.toISOString().slice(0, 10),
+    effective_until: planEnd.toISOString().slice(0, 10),
+  });
+  if (planErr) throw new Error(`16b plan: ${planErr.message}`);
+  const { error: sessErr } = await supabaseAdmin
+    .from("training_sessions")
+    .insert({ id: B16_TS, plan_id: B16_PLAN_ID, name: "Fixture 16b Session", order_index: 0 });
+  if (sessErr) throw new Error(`16b session: ${sessErr.message}`);
+  const { error: groupErr } = await supabaseAdmin
+    .from("training_exercise_groups")
+    .insert({ id: B16_TE_ROW, session_id: B16_TS, order_index: 0, format: "straight_sets" });
+  if (groupErr) throw new Error(`16b group: ${groupErr.message}`);
+  const { error: teErr } = await supabaseAdmin.from("training_exercises").insert({
+    id: B16_TE_ROW,
+    session_id: B16_TS,
+    group_id: B16_TE_ROW,
+    name: "Fixture Row",
+    order_index: 0,
+    sets: 1,
+    exercise_id: ROW_ID,
+    prescribed_fields: ["set_type", "distance", "duration", "split", "rest"],
+  });
+  if (teErr) throw new Error(`16b training_exercises: ${teErr.message}`);
+
+  const { error: slErr } = await supabaseAdmin.from("session_logs").insert(
+    B16_SESSIONS.map((session) => ({
+      id: session.id,
+      client_id: B16_CLIENT_ID,
+      training_session_id: B16_TS,
+      completed_at: `${session.date}T00:00:00+00:00`,
+      completion_quality: "full",
+      week_start_date: weekStart(session.date),
+    })),
+  );
+  if (slErr) throw new Error(`16b session_logs: ${slErr.message}`);
+
+  const exerciseLogRows: Database["public"]["Tables"]["exercise_logs"]["Insert"][] = [];
+  const setLogRows: Database["public"]["Tables"]["set_logs"]["Insert"][] = [];
+  B16_SESSIONS.forEach((session, i) => {
+    const elId = makeUUID("0b16", i);
+    exerciseLogRows.push({
+      id: elId,
+      session_log_id: session.id,
+      training_exercise_id: session.teId,
+      exercise_id: session.exerciseId,
+      performed_name: session.name,
+      completed: true,
+      prescribed_exercise_snapshot: { name: session.name, sets: session.sets.length },
+    });
+    session.sets.forEach((set, idx) => {
+      setLogRows.push({
+        exercise_log_id: elId,
+        set_number: idx + 1,
+        reps: set.reps ?? null,
+        weight: set.weight ?? null,
+        distance_meters: set.distance ?? null,
+        duration_seconds: set.duration ?? null,
+        pace_seconds_per_km: set.pace ?? null,
+        split_seconds_per_500m: set.split ?? null,
+      });
+    });
+  });
+  const { error: elErr } = await supabaseAdmin.from("exercise_logs").insert(exerciseLogRows);
+  if (elErr) throw new Error(`16b exercise_logs: ${elErr.message}`);
+  const { error: setErr } = await supabaseAdmin.from("set_logs").insert(setLogRows);
+  if (setErr) throw new Error(`16b set_logs: ${setErr.message}`);
+
+  console.log(`  inserted ${B16_SESSIONS.length} session_logs, ${setLogRows.length} set_logs for the 16b client`);
+}
+
+// ---------------------------------------------------------------------------
 // Assertions
 // ---------------------------------------------------------------------------
 
@@ -768,6 +947,136 @@ async function assertCheckinCursor(failures: string[]) {
 // ---------------------------------------------------------------------------
 // Tiny assertion helper
 // ---------------------------------------------------------------------------
+
+/** An exercise's best times as get_exercise_prs returns them, to the hundredth. */
+async function bestTimes(exerciseId: string, excludeDates?: string[]) {
+  const { data, error } = await supabaseAdmin.rpc("get_exercise_prs", {
+    p_client_id: B16_CLIENT_ID,
+    p_exercise_id: exerciseId,
+    p_exclude_dates: excludeDates,
+  });
+  if (error) throw new Error(`get_exercise_prs: ${error.message}`);
+  return (data ?? [])
+    .filter((row) => row.kind === "best_time")
+    .map((row) => ({
+      race: row.race,
+      distance: Number(row.distance_meters),
+      duration: Math.round(Number(row.duration_seconds) * 100) / 100,
+      session: row.session_log_id,
+    }));
+}
+
+async function assertRaceRecords(failures: string[]) {
+  console.log("Asserting race-distance records (migration 191)...");
+
+  // A run: 1600 m and the mile split the difference, 3.1 mi by its pace beats
+  // the 5.02 km run at 5 km, the 4.8 km run and the swap's 2 km earn nothing
+  const run = await bestTimes(RUN_ID);
+  const expectedRun = [
+    { race: "1600m", distance: 1600, duration: 330, session: slB16(4) },
+    { race: "mile", distance: 1609.344, duration: 335, session: slB16(4) },
+    { race: "5k", distance: 5000, duration: 1197.35, session: slB16(2) },
+    { race: "10k", distance: 10000, duration: 2700, session: slB16(5) },
+  ];
+  if (JSON.stringify(run) !== JSON.stringify(expectedRun)) {
+    failures.push(`race records (run): expected ${JSON.stringify(expectedRun)}, got ${JSON.stringify(run)}`);
+  }
+
+  // As they stood before the pace-only run's day: the 5.02 km run holds the 5 km
+  const before = await bestTimes(RUN_ID, ["2026-06-08"]);
+  const fiveK = before.find((row) => row.race === "5k");
+  if (!fiveK || fiveK.duration !== 1210 || fiveK.session !== slB16(1)) {
+    failures.push(`race records (run, excluding 2026-06-08): expected 5k 1210 from ${slB16(1)}, got ${JSON.stringify(fiveK)}`);
+  }
+
+  // An erg: its own distances, a 500 m by its split alone — and not the swap's 2 km
+  const row = await bestTimes(ROW_ID);
+  const expectedRow = [
+    { race: "500m", distance: 500, duration: 105, session: slB16(7) },
+    { race: "2k", distance: 2000, duration: 470, session: slB16(7) },
+  ];
+  if (JSON.stringify(row) !== JSON.stringify(expectedRow)) {
+    failures.push(`race records (erg): expected ${JSON.stringify(expectedRow)}, got ${JSON.stringify(row)}`);
+  }
+
+  // A carry: per exact distance, no race
+  const { data: carry, error } = await supabaseAdmin.rpc("get_exercise_prs", {
+    p_client_id: B16_CLIENT_ID,
+    p_exercise_id: CARRY_ID,
+  });
+  if (error) {
+    failures.push(`carry records: rpc error ${error.message}`);
+    return;
+  }
+  const carries = (carry ?? []).map((r) => `${r.kind}:${Number(r.distance_meters)}:${Number(r.weight)}:${r.race}`);
+  const expectedCarries = ["heaviest_carry:20:80:null", "heaviest_carry:40:70:null"];
+  if (JSON.stringify(carries) !== JSON.stringify(expectedCarries)) {
+    failures.push(`carry records: expected ${JSON.stringify(expectedCarries)}, got ${JSON.stringify(carries)}`);
+  }
+}
+
+async function assertOneIdentity(failures: string[]) {
+  console.log("Asserting one identity: a swap counts for the exercise done (migration 191)...");
+
+  const { data, error } = await supabaseAdmin.rpc("get_exercise_progression_window", {
+    p_client_id: B16_CLIENT_ID,
+    p_exercise_id: ROW_ID,
+  });
+  if (error) {
+    failures.push(`identity (row progression): rpc error ${error.message}`);
+    return;
+  }
+  const sessions = [...new Set((data ?? []).map((r) => r.session_log_id))];
+  if (JSON.stringify(sessions) !== JSON.stringify([slB16(7)])) {
+    failures.push(`identity: the Row's sessions should be its own alone [${slB16(7)}], got ${JSON.stringify(sessions)}`);
+  }
+}
+
+async function assertExerciseBests(failures: string[]) {
+  console.log("Asserting get_client_exercise_bests (migration 191)...");
+
+  const { data, error } = await supabaseAdmin.rpc("get_client_exercise_bests", {
+    p_client_id: B16_CLIENT_ID,
+  });
+  if (error) {
+    failures.push(`bests: rpc error ${error.message}`);
+    return;
+  }
+  const rows = data ?? [];
+  if (rows.length !== 4) {
+    failures.push(`bests: expected 4 exercises, got ${rows.length}`);
+    return;
+  }
+  const byId = new Map(rows.map((row) => [row.exercise_id, row as unknown as Record<string, unknown>]));
+  // Most sessions first: the run's six include the swap, the Row's one does not
+  expect(rows[0] as unknown as Record<string, unknown>, "bests[0]", { exercise_id: RUN_ID, session_count: 6 }, failures);
+  expect(byId.get(RUN_ID) ?? {}, "bests(run)", {
+    exercise_type: "endurance",
+    best_time_race: "10k",
+    best_time_seconds: 2700,
+    heaviest_load: null,
+    best_e1rm_weight: null,
+  }, failures);
+  expect(byId.get(ROW_ID) ?? {}, "bests(row)", {
+    exercise_type: "erg",
+    session_count: 1,
+    best_time_race: "2k",
+    best_time_seconds: 470,
+  }, failures);
+  expect(byId.get(CARRY_ID) ?? {}, "bests(carry)", {
+    exercise_type: "carry_sled",
+    heaviest_carry_weight: 80,
+    heaviest_carry_distance_meters: 20,
+    best_time_race: null,
+  }, failures);
+  expect(byId.get(SQUAT_ID) ?? {}, "bests(squat)", {
+    heaviest_load: 110,
+    best_e1rm_weight: 100,
+    best_e1rm_reps: 5,
+    best_reps: null,
+    longest_hold_seconds: null,
+  }, failures);
+}
 
 function expect(
   actual: Record<string, unknown>,

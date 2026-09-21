@@ -21,10 +21,12 @@ import { dayFromUtcStamp } from "@/lib/date-helpers";
 import { describeRecord } from "@/utils/exercise-records";
 
 // An exercise's PRs are its bests of every kind the logs carry: rep maxes for
-// a lift, the best bodyweight set, the fastest time per distance, the heaviest
-// carry per distance, the longest hold (utils/exercise-progress-markers.ts).
-// Its type's own kinds come first. One kind renders as the plain grid it always
-// was; more than one puts a heading over each.
+// a lift, the best bodyweight set, the fastest time at each distance — a race
+// distance for an Endurance or Erg exercise, named by the race
+// (utils/race-distances.ts) — the heaviest carry per distance, the longest hold
+// (utils/exercise-progress-markers.ts). Its type's own kinds come first. One
+// kind renders as the plain grid it always was; more than one puts a heading
+// over each.
 //
 // The viewer's own unit preference: every load reads through formatLoad, which
 // snaps an imperial conversion to a loadable increment.
@@ -39,7 +41,7 @@ function prKey(pr: ExercisePR): string {
     case "rep_max":
       return `rep_max:${pr.reps}`;
     case "best_time":
-      return `best_time:${pr.distanceMeters}`;
+      return `best_time:${pr.race ?? pr.distanceMeters}`;
     case "heaviest_carry":
       return `heaviest_carry:${pr.distanceMeters}`;
     default:

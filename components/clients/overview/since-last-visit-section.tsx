@@ -26,6 +26,7 @@ import {
   formatWeight,
   type UnitSystem,
 } from "@/utils/unit-conversions";
+import { raceName } from "@/utils/race-distances";
 
 // The card shows OVERVIEW_CARD_ROWS_SHOWN rows and offers the rest.
 //
@@ -70,7 +71,9 @@ function toViewer(metricKey: string, value: number, viewer: UnitSystem): number 
 /**
  * The record and what it beat, in the record's own measure. A load is a
  * barbell load, so formatLoad — it snaps to something you can actually put on
- * a bar; a distance and a time read the way the client's boxes read them.
+ * a bar; a distance and a time read the way the client's boxes read them, and
+ * a race distance by its name, as the PR cards read it ("5 km", "Half
+ * marathon").
  */
 function prDetail(item: Extract<ActivityItem, { type: "pr" }>, viewer: UnitSystem): string {
   const load = (kg: number) => {
@@ -82,8 +85,10 @@ function prDetail(item: Extract<ActivityItem, { type: "pr" }>, viewer: UnitSyste
       return `${load(item.weight)}, was ${load(item.previousBest)}`;
     case "reps":
       return `${item.reps} reps, was ${item.previousBest}`;
-    case "time":
-      return `${formatDistance(item.distanceMeters, viewer)} in ${formatDuration(item.durationSeconds)}, was ${formatDuration(item.previousBest)}`;
+    case "time": {
+      const distance = item.race ? raceName(item.race) : formatDistance(item.distanceMeters, viewer);
+      return `${distance} in ${formatDuration(item.durationSeconds)}, was ${formatDuration(item.previousBest)}`;
+    }
     case "carry":
       return `${formatDistance(item.distanceMeters, viewer)} with ${load(item.weight)}, was ${load(item.previousBest)}`;
     case "hold":

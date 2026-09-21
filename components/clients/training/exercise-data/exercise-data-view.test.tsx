@@ -3,7 +3,12 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ExerciseDataView } from "./exercise-data-view";
 import { EXERCISE_HISTORY_MAX_SESSIONS } from "@/lib/training-constants";
-import type { ExerciseListItem, ExerciseProgressionPoint, ExercisePR } from "@/types/training";
+import type {
+  ExerciseBestsRow,
+  ExerciseListItem,
+  ExerciseProgressionPoint,
+  ExercisePR,
+} from "@/types/training";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -91,7 +96,25 @@ function makePR(overrides: Partial<Extract<ExercisePR, { kind: "rep_max" }>> = {
     reps: 5,
     weight: 100,
     date: "2026-03-15T00:00:00Z",
+    sessionLogId: "sl-1",
     isRecent: false,
+    ...overrides,
+  };
+}
+
+function makeBests(overrides: Partial<ExerciseBestsRow> = {}): ExerciseBestsRow {
+  return {
+    exerciseId: "ex-1",
+    name: "Bench Press",
+    exerciseType: "strength",
+    sessionCount: 12,
+    lastLoggedDate: "2026-03-15T00:00:00Z",
+    heaviestLoad: 110,
+    bestEstimatedOneRepMax: 128.3,
+    bestSetReps: null,
+    bestTime: null,
+    heaviestCarry: null,
+    longestHoldSeconds: null,
     ...overrides,
   };
 }
@@ -111,6 +134,8 @@ const mockRetry = vi.fn();
 
 function setupSWR(options: {
   list?: ExerciseListItem[];
+  bests?: ExerciseBestsRow[];
+  bestsFailed?: boolean;
   progression?: ExerciseProgressionPoint[];
   prs?: ExercisePR[];
   listLoading?: boolean;
@@ -127,6 +152,12 @@ function setupSWR(options: {
         isLoading: options.listLoading ?? false,
         error: null,
       };
+    }
+    if (url.includes("metric=bests")) {
+      if (options.bestsFailed) {
+        return { data: undefined, isLoading: false, error: new Error("boom"), mutate: mockRetry };
+      }
+      return { data: { success: true, data: options.bests ?? [] }, isLoading: false, error: null };
     }
     if (url.includes("metric=progression")) {
       if (options.progressionRetrying) {
@@ -164,14 +195,78 @@ describe("ExerciseDataView", () => {
     mockSearchParams.delete("exerciseName");
   });
 
-  it("renders empty state when no exercise is selected", () => {
-    setupSWR({ list: [makeListItem()] });
+  it("opens on All exercises with no exercise in the address: every exercise's bests, no lenses, no window", () => {
+    setupSWR({
+      list: [makeListItem()],
+      bests: [makeBests(), makeBests({ exerciseId: "run", name: "Running", exerciseType: "endurance", sessionCount: 4, heaviestLoad: null, bestEstimatedOneRepMax: null, bestTime: { race: "5k", durationSeconds: 1205 } })],
+    });
 
     render(<ExerciseDataView clientId="client-1" />);
 
-    expect(
-      screen.getByText("Select an exercise to view progression data."),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toHaveTextContent("All exercises");
+    const table = screen.getByRole("region", { name: "Exercises" });
+    expect(within(table).getByText("Bench Press")).toBeInTheDocument();
+    expect(within(table).getByText("5 km · 20:05")).toBeInTheDocument();
+    expect(screen.getByText("Showing 2 of 2 exercises")).toBeInTheDocument();
+    // One exercise's surfaces: none of them
+    expect(screen.queryByRole("button", { name: "PRs" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "12" })).toBeNull();
+    expect(screen.queryByText("Progression")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Sessions" })).toBeNull();
+    expect(screen.queryByText("Select an exercise to view progression data.")).toBeNull();
+    // It reads the bests, and nothing of one exercise
+    const urls = mockUseSWR.mock.calls.map(([url]) => url as string | null).filter(Boolean);
+    expect(urls.some((url) => url!.includes("metric=bests"))).toBe(true);
+    expect(urls.some((url) => url!.includes("metric=progression") || url!.includes("metric=prs"))).toBe(false);
+  });
+
+  it("reads no bests while an exercise is shown", () => {
+    mockSearchParams.set("exerciseId", "ex-1");
+    mockSearchParams.set("exerciseName", "Bench Press");
+    setupSWR({ list: [makeListItem()], progression: [makePoint()] });
+
+    render(<ExerciseDataView clientId="client-1" />);
+
+    const urls = mockUseSWR.mock.calls.map(([url]) => url as string | null).filter(Boolean);
+    expect(urls.some((url) => url!.includes("metric=bests"))).toBe(false);
+    expect(screen.queryByRole("region", { name: "Exercises" })).toBeNull();
+  });
+
+  it("picking All exercises takes the exercise out of the address in one replace, and nothing else", async () => {
+    const user = userEvent.setup();
+    mockSearchParams.set("exerciseId", "ex-1");
+    mockSearchParams.set("exerciseName", "Bench Press");
+    setupSWR({ list: [makeListItem()], progression: [makePoint()], bests: [makeBests()] });
+
+    render(<ExerciseDataView clientId="client-1" />);
+    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByRole("option", { name: "All exercises" }));
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("?", { scroll: false });
+    // The pane follows the address, not the click: the exercise stays until it commits
+    expect(screen.getByRole("region", { name: "Sessions" })).toBeInTheDocument();
+  });
+
+  it("opens an exercise from its row of All exercises, in one replace", async () => {
+    const user = userEvent.setup();
+    setupSWR({ list: [makeListItem()], bests: [makeBests({ exerciseId: null, name: "Wall sit", exerciseType: "holds" })] });
+
+    render(<ExerciseDataView clientId="client-1" />);
+    await user.click(screen.getByText("Wall sit"));
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("?exerciseName=Wall+sit", { scroll: false });
+  });
+
+  it("says a failed bests read failed, with Try again", async () => {
+    const user = userEvent.setup();
+    setupSWR({ list: [makeListItem()], bestsFailed: true });
+
+    render(<ExerciseDataView clientId="client-1" />);
+    expect(screen.getByText("Couldn't load the exercises")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(mockRetry).toHaveBeenCalled();
   });
 
   it("renders exercise picker with exercise list", () => {
@@ -270,17 +365,14 @@ describe("ExerciseDataView", () => {
     expect(mockReplace).toHaveBeenCalledWith("?exerciseId=ex-1&exerciseName=Bench+Press", {
       scroll: false,
     });
-    // One owner: nothing is selected until the address says so.
-    expect(
-      screen.getByText("Select an exercise to view progression data."),
-    ).toBeInTheDocument();
+    // One owner: All exercises stays until the address says otherwise.
+    expect(screen.getByRole("region", { name: "Exercises" })).toBeInTheDocument();
 
     mockSearchParams.set("exerciseId", "ex-1");
     mockSearchParams.set("exerciseName", "Bench Press");
     rerender(<ExerciseDataView clientId="client-1" />);
-    expect(
-      screen.queryByText("Select an exercise to view progression data."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Exercises" })).not.toBeInTheDocument();
+    expect(screen.getByText("Progression")).toBeInTheDocument();
   });
 
   it("pre-selects exercise from exerciseId URL param", () => {
@@ -393,7 +485,7 @@ describe("ExerciseDataView — the Sessions table", () => {
   });
 
   it("stars the session holding a record on every lens, the records read before the PRs lens is picked", () => {
-    setupSWR({ list: [makeListItem()], progression: benchSessions, prs: [makePR({ reps: 8, weight: 90, date: "2026-03-08T00:00:00Z" })] });
+    setupSWR({ list: [makeListItem()], progression: benchSessions, prs: [makePR({ reps: 8, weight: 90, date: "2026-03-08T00:00:00Z", sessionLogId: "sl-2" })] });
     render(<ExerciseDataView clientId="client-1" />);
     const star = screen.getByRole("img", { name: "Personal record: 8 Rep Max · 90 kg" });
     expect(within(screen.getAllByRole("row")[2]).getByRole("img")).toBe(star);

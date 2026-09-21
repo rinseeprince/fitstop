@@ -13,6 +13,7 @@ import {
 import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise-trend-chart";
 import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
 import { ExerciseSessionsTable } from "@/components/training/exercise-data/exercise-sessions-table";
+import { AllExercisesTable } from "@/components/training/exercise-data/all-exercises-table";
 import { SessionLogDetailDialog } from "@/components/clients/training/session-log-detail-dialog";
 import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { ExerciseKpiStrip } from "./exercise-kpi-strip";
@@ -29,6 +30,7 @@ import {
 } from "@/utils/exercise-progress-markers";
 import { DEFAULT_EXERCISE_TYPE } from "@/utils/exercise-types";
 import type {
+  ExerciseBestsRow,
   ExerciseListItem,
   ExerciseProgressionPoint,
   ExercisePR,
@@ -60,7 +62,8 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
 
   // The selected exercise is the pane's subject and lives in the address
   // alone (CONVENTIONS §7): derived every render, written by the pick below
-  // and by the history table's drill-down, carried across a tab change.
+  // and by the history table's drill-down, carried across a tab change. No
+  // exercise in the address is All exercises — every exercise's bests.
   const selectedExerciseId = searchParams.get("exerciseId");
   const selectedExerciseName = searchParams.get("exerciseName");
 
@@ -83,6 +86,21 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     coachExerciseHistoryKey(clientId, { metric: "list" }),
     swrFetcher,
     { ...SWR_CONFIG, onError: (err) => console.error("Failed to load exercise list:", err) },
+  );
+
+  // SWR: every exercise's bests — read only while All exercises is shown
+  const {
+    data: bestsData,
+    error: bestsError,
+    isLoading: bestsLoading,
+    mutate: mutateBests,
+  } = useSWR<{
+    success: boolean;
+    data: ExerciseBestsRow[];
+  }>(
+    subject == null ? coachExerciseHistoryKey(clientId, { metric: "bests" }) : null,
+    swrFetcher,
+    { ...SWR_CONFIG, onError: (err) => console.error("Failed to load every exercise's bests:", err) },
   );
 
   // SWR: the window's sessions — on every lens, PRs included: the chart, the
@@ -160,10 +178,14 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
   );
   const metric: ExerciseMetric =
     selectedMetric === "prs" ? "prs" : effectiveMarker(selectedMetric, offered);
-  const lensOptions: ExerciseMetricOption[] = [
-    ...offered.map((marker) => ({ value: marker, label: markerLens(exerciseType, marker).label })),
-    { value: "prs", label: "PRs" },
-  ];
+  // All exercises has no lenses
+  const lensOptions: ExerciseMetricOption[] =
+    subject == null
+      ? []
+      : [
+          ...offered.map((marker) => ({ value: marker, label: markerLens(exerciseType, marker).label })),
+          { value: "prs", label: "PRs" },
+        ];
 
   // KPIs
   const kpis = useMemo(() => {
@@ -171,8 +193,9 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     return computeKpis(metric, exerciseType, points, preference);
   }, [metric, exerciseType, points, preference]);
 
-  // A refinement of the pane, not a place: one replace and nothing else.
-  const handleExerciseSelect = (exercise: ExerciseListItem) => {
+  // A refinement of the pane, not a place: one replace and nothing else —
+  // from the picker, or from a row of All exercises.
+  const handleExerciseSelect = (exercise: Pick<ExerciseListItem, "exerciseId" | "name">) => {
     const params = new URLSearchParams(searchParams.toString());
     if (exercise.exerciseId) params.set("exerciseId", exercise.exerciseId);
     else params.delete("exerciseId");
@@ -180,7 +203,17 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     router.replace(`?${params.toString()}`, { scroll: false });
   };
 
+  // All exercises: the same one replace, the exercise taken out of the address
+  const handleSelectAll = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("exerciseId");
+    params.delete("exerciseName");
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
+
   const hasExercise = subject != null;
+  // Failed with nothing in hand and no retry in flight
+  const bestsFailed = bestsError != null && bestsData === undefined && !bestsLoading;
 
   return (
     // Block flow, not space-y: divider spec = 16px above the rail (hero slab
@@ -194,18 +227,27 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
           selectedExerciseId={selectedExerciseId}
           selectedExerciseName={selectedExerciseName}
           onSelect={handleExerciseSelect}
+          onSelectAll={handleSelectAll}
           options={lensOptions}
           metric={metric}
           onMetricChange={setSelectedMetric}
         />
       </div>
 
+      {/* All exercises — no exercise in the address: every exercise's bests
+          under the hero, its own rail and pager; no chart, lenses, window or
+          KPIs, which are one exercise's. A row opens its exercise. */}
       {!hasExercise && (
-        <p className="text-center text-[13px] text-[#93b0b4] py-12">
-          Select an exercise to view progression data.
-        </p>
+        <AllExercisesTable
+          audience="coach"
+          rows={bestsData?.data}
+          isError={bestsFailed}
+          onRetry={() => void mutateBests()}
+          onOpenExercise={handleExerciseSelect}
+        />
       )}
 
+      {/* One exercise */}
       {hasExercise && (
         <>
           {/* 2. Divider rail: section identity left, session window right —

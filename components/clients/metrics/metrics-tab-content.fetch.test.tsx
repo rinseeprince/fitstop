@@ -160,7 +160,14 @@ describe("MetricsTabContent — each pane requests only its own reads", () => {
         `/api/clients/${CLIENT_ID}/metric-entries`,
       ],
     ],
-    ["training", [`/api/clients/${CLIENT_ID}/training/exercise-history?metric=list`]],
+    // The Training pane opens on All exercises: the exercise list and every exercise's bests
+    [
+      "training",
+      [
+        `/api/clients/${CLIENT_ID}/training/exercise-history?metric=bests`,
+        `/api/clients/${CLIENT_ID}/training/exercise-history?metric=list`,
+      ],
+    ],
     ["blocks", [`/api/clients/${CLIENT_ID}/blocks`, `/api/clients/${CLIENT_ID}/blocks/facts`]],
   ];
 

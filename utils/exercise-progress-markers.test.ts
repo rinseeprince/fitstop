@@ -29,17 +29,17 @@ function markerSet(): MarkerSet {
 }
 
 const MIGRATIONS = join(process.cwd(), "supabase/migrations");
-const MIGRATION = join(MIGRATIONS, "188_progress_charts_by_exercise_type.sql");
 
-/** get_exercise_prs as the database runs it: its body in the last migration that defines it. */
-function latestPrsFunction(): string {
+/** A function as the database runs it: from its CREATE in the last migration that defines it to its body's end. */
+function latestFunction(name: string): string {
+  const header = `CREATE OR REPLACE FUNCTION ${name}(`;
   const defining = readdirSync(MIGRATIONS)
     .filter((file) => file.endsWith(".sql"))
     .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
     .map((file) => readFileSync(join(MIGRATIONS, file), "utf8"))
-    .filter((sql) => sql.includes("CREATE OR REPLACE FUNCTION get_exercise_prs"));
+    .filter((sql) => sql.includes(header));
   const sql = defining[defining.length - 1];
-  const start = sql.indexOf("CREATE OR REPLACE FUNCTION get_exercise_prs");
+  const start = sql.indexOf(header);
   return sql.slice(start, sql.indexOf("$$;", start));
 }
 
@@ -290,12 +290,11 @@ describe("the bests", () => {
   });
 });
 
-describe("migration 188 mirrors the tables", () => {
-  const sql = readFileSync(MIGRATION, "utf8");
+describe("the progression window, as the latest migration defines it, mirrors the tables", () => {
+  const sql = latestFunction("get_exercise_progression_window");
 
   it("returns every numeric measure of a logged set from the progression window", () => {
-    const start = sql.indexOf("CREATE OR REPLACE FUNCTION get_exercise_progression_window");
-    const returnsStart = sql.indexOf("RETURNS TABLE (", start);
+    const returnsStart = sql.indexOf("RETURNS TABLE (");
     const returnsEnd = sql.indexOf(")", returnsStart);
     const returned = sql
       .slice(returnsStart, returnsEnd)
@@ -308,11 +307,10 @@ describe("migration 188 mirrors the tables", () => {
       );
     }
   });
-
 });
 
-describe("get_exercise_prs, as the latest migration defines it", () => {
-  const body = latestPrsFunction();
+describe("exercise_records, as the latest migration defines it", () => {
+  const body = latestFunction("exercise_records");
 
   it("computes every best kind and no other", () => {
     const literals = [...body.matchAll(/'([a-z_]+)'::TEXT AS kind/g)].map((m) => m[1]);

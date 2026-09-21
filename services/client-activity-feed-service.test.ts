@@ -5,14 +5,15 @@ vi.mock("./exercise-analytics-service", () => ({ getExercisePRs: vi.fn() }));
 
 import {
   buildMeasurementItems,
-  collectNewExerciseBests,
+  detectPrItems,
+  exercisesLoggedIn,
   mergeAndCapActivity,
   predecessorKey,
   prItemsFor,
   ACTIVITY_FEED_CAP,
   type MetricEntryFeedRow,
-  type PrCandidate,
 } from "./client-activity-feed-service";
+import { getExercisePRs } from "./exercise-analytics-service";
 import type { ActivityItem } from "@/types/coach-brief";
 import type { ExerciseBest, ExercisePR } from "@/types/training";
 
@@ -71,264 +72,207 @@ describe("buildMeasurementItems", () => {
   });
 });
 
-const logged = (
+const exerciseRow = (
   overrides: Partial<{
-    weight: number | null;
-    reps: number | null;
-    distance_meters: number | null;
-    duration_seconds: number | null;
-    set_type: string;
+    session_log_id: string;
+    exercise_id: string | null;
+    performed_name: string | null;
+    prescribed_exercise_snapshot: unknown;
+    training_exercises: { exercise_id: string | null } | null;
   }> = {}
 ) => ({
-  weight: null,
-  reps: null,
-  distance_meters: null,
-  duration_seconds: null,
-  set_type: "working",
+  session_log_id: "log-1",
+  exercise_id: null,
+  performed_name: null,
+  prescribed_exercise_snapshot: null,
+  training_exercises: null,
   ...overrides,
 });
 
-describe("collectNewExerciseBests", () => {
-  const sessionAt = new Map([
-    ["log-1", "2026-06-14T18:00:00Z"],
-    ["log-2", "2026-06-16T18:00:00Z"],
-  ]);
-
-  it("takes the heaviest non-warmup load, keyed on catalog id, across sessions", () => {
-    const bests = collectNewExerciseBests(
-      [
-        {
-          session_log_id: "log-1",
-          exercise_id: "ex-1",
-          performed_name: "Bench Press",
-          prescribed_exercise_snapshot: null,
-          training_exercises: null,
-          set_logs: [
-            logged({ weight: 120, reps: 5, set_type: "warmup" }),
-            logged({ weight: 100, reps: 5 }),
-          ],
-        },
-        {
-          session_log_id: "log-2",
-          exercise_id: null,
-          performed_name: "Bench Press",
-          prescribed_exercise_snapshot: null,
-          training_exercises: { exercise_id: "ex-1" },
-          set_logs: [logged({ weight: 102.5, reps: 3, set_type: "failure" })],
-        },
-      ],
-      sessionAt
-    );
-
-    expect(bests).toEqual([
-      {
-        exerciseId: "ex-1",
-        exerciseName: "Bench Press",
-        candidates: [{ kind: "load", weight: 102.5, at: "2026-06-16T18:00:00Z" }],
-      },
+describe("exercisesLoggedIn", () => {
+  it("names each exercise once, the way the records are keyed: the catalog id, direct or prescribed, else the name", () => {
+    expect(
+      exercisesLoggedIn([
+        exerciseRow({ exercise_id: "ex-1", performed_name: "Bench Press" }),
+        exerciseRow({ session_log_id: "log-2", training_exercises: { exercise_id: "ex-1" }, performed_name: "Bench Press" }),
+        exerciseRow({ performed_name: "Sled Push" }),
+        exerciseRow({ session_log_id: "log-2", performed_name: "sled push" }),
+      ])
+    ).toEqual([
+      { exerciseId: "ex-1", exerciseName: "Bench Press" },
+      { exerciseId: null, exerciseName: "Sled Push" },
     ]);
   });
 
-  it("falls back to a name identity and skips exercises whose sets recorded nothing a best reads", () => {
-    const bests = collectNewExerciseBests(
-      [
-        {
-          session_log_id: "log-1",
-          exercise_id: null,
-          performed_name: "Sled Push",
-          prescribed_exercise_snapshot: null,
-          training_exercises: null,
-          set_logs: [logged({ weight: 60 })],
-        },
-        {
-          session_log_id: "log-1",
-          exercise_id: null,
-          performed_name: "Plank",
-          prescribed_exercise_snapshot: null,
-          training_exercises: null,
-          set_logs: [logged({ weight: null })],
-        },
-      ],
-      sessionAt
-    );
-
-    expect(bests).toEqual([
-      {
-        exerciseId: null,
-        exerciseName: "Sled Push",
-        candidates: [{ kind: "load", weight: 60, at: "2026-06-14T18:00:00Z" }],
-      },
-    ]);
-  });
-
-  it("reads every kind off the logged columns: reps with no load, a time at a distance, a carry, a hold", () => {
-    const bests = collectNewExerciseBests(
-      [
-        {
-          session_log_id: "log-1",
-          exercise_id: "pull-up",
-          performed_name: "Pull Up",
-          prescribed_exercise_snapshot: null,
-          training_exercises: null,
-          set_logs: [logged({ reps: 12 }), logged({ reps: 15, weight: 0 }), logged({ reps: 6, weight: 10 })],
-        },
-        {
-          session_log_id: "log-1",
-          exercise_id: "row",
-          performed_name: "Rowing",
-          prescribed_exercise_snapshot: null,
-          training_exercises: null,
-          set_logs: [
-            logged({ distance_meters: 1000, duration_seconds: 230 }),
-            logged({ distance_meters: 1000, duration_seconds: 222.1 }),
-            logged({ distance_meters: 500, duration_seconds: 105 }),
-          ],
-        },
-        {
-          session_log_id: "log-2",
-          exercise_id: "carry",
-          performed_name: "Farmers Carry",
-          prescribed_exercise_snapshot: null,
-          training_exercises: null,
-          set_logs: [logged({ weight: 60, distance_meters: 40, duration_seconds: 38 }), logged({ weight: 64, distance_meters: 40, duration_seconds: 35 })],
-        },
-        {
-          session_log_id: "log-2",
-          exercise_id: "plank",
-          performed_name: "Plank",
-          prescribed_exercise_snapshot: null,
-          training_exercises: null,
-          set_logs: [logged({ duration_seconds: 90 }), logged({ duration_seconds: 120 })],
-        },
-      ],
-      sessionAt
-    );
-
-    expect(bests).toEqual([
-      {
-        exerciseId: "pull-up",
-        exerciseName: "Pull Up",
-        candidates: [
-          { kind: "reps", reps: 15, at: "2026-06-14T18:00:00Z" },
-          { kind: "load", weight: 10, at: "2026-06-14T18:00:00Z" },
-        ],
-      },
-      {
-        exerciseId: "row",
-        exerciseName: "Rowing",
-        candidates: [
-          { kind: "time", distanceMeters: 1000, durationSeconds: 222.1, at: "2026-06-14T18:00:00Z" },
-          { kind: "time", distanceMeters: 500, durationSeconds: 105, at: "2026-06-14T18:00:00Z" },
-        ],
-      },
-      {
-        exerciseId: "carry",
-        exerciseName: "Farmers Carry",
-        candidates: [
-          { kind: "carry", distanceMeters: 40, weight: 64, at: "2026-06-16T18:00:00Z" },
-          { kind: "time", distanceMeters: 40, durationSeconds: 35, at: "2026-06-16T18:00:00Z" },
-        ],
-      },
-      {
-        exerciseId: "plank",
-        exerciseName: "Plank",
-        candidates: [{ kind: "hold", durationSeconds: 120, at: "2026-06-16T18:00:00Z" }],
-      },
-    ]);
+  it("shows the prescription's name where the log typed none, and skips a log with no exercise to ask for", () => {
+    expect(
+      exercisesLoggedIn([
+        exerciseRow({ training_exercises: { exercise_id: "ex-2" }, prescribed_exercise_snapshot: { name: "Pull Up" } }),
+        exerciseRow({ prescribed_exercise_snapshot: { name: "Mystery" } }),
+      ])
+    ).toEqual([{ exerciseId: "ex-2", exerciseName: "Pull Up" }]);
   });
 });
 
-describe("collectNewExerciseBests — repeats (owner, 2026-09-21)", () => {
-  const sessionAt = new Map([["log-1", "2026-06-14T18:00:00Z"]]);
-  const AT = "2026-06-14T18:00:00Z";
-  const only = (performedName: string, sets: ReturnType<typeof logged>[]) =>
-    collectNewExerciseBests(
-      [
-        {
-          session_log_id: "log-1",
-          exercise_id: null,
-          performed_name: performedName,
-          prescribed_exercise_snapshot: null,
-          training_exercises: null,
-          set_logs: sets,
-        },
-      ],
-      sessionAt
-    ).flatMap((best) => best.candidates);
-
-  it("offers no reps from repeats of a distance: the run's 3 × 1 km is a distance, never 3 reps", () => {
-    expect(
-      only("Running", [logged({ reps: 3, distance_meters: 1000 }), logged({ reps: 3, distance_meters: 800 })])
-    ).toEqual([]);
-  });
-
-  it("offers a carry's load as a carry, never as a lift, whatever its reps", () => {
-    expect(only("Farmer Carry", [logged({ weight: 64, reps: 3, distance_meters: 40 })])).toEqual([
-      { kind: "carry", distanceMeters: 40, weight: 64, at: AT },
-    ]);
-  });
-
-  it("offers a load held for a time as a hold, never as a lift, and timed repeats no reps", () => {
-    expect(only("Farmer Hold", [logged({ weight: 64, reps: 3, duration_seconds: 30 })])).toEqual([
-      { kind: "hold", durationSeconds: 30, at: AT },
-    ]);
-    expect(only("Plank", [logged({ reps: 3, duration_seconds: 30 })])).toEqual([
-      { kind: "hold", durationSeconds: 30, at: AT },
-    ]);
-  });
-
-  it("leaves pull-ups and lifts as they were", () => {
-    expect(only("Pull Up", [logged({ reps: 12 }), logged({ reps: 8, weight: 20 })])).toEqual([
-      { kind: "reps", reps: 12, at: AT },
-      { kind: "load", weight: 20, at: AT },
-    ]);
-  });
+const NEW_AT = "2026-06-16T18:00:00Z";
+const sessionAt = new Map([["new-log", NEW_AT]]);
+const pr = (best: ExerciseBest, sessionLogId = "old-log"): ExercisePR => ({
+  ...best,
+  date: "2026-06-01T00:00:00+00:00",
+  sessionLogId,
+  isRecent: false,
 });
 
 describe("prItemsFor", () => {
-  const AT = "2026-06-16T18:00:00Z";
-  const pr = (best: ExerciseBest): ExercisePR => ({ ...best, date: "2026-06-01T00:00:00+00:00", isRecent: false });
-
-  it("announces a load that beats the heaviest weight of any rep count, and nothing on a first-ever exercise", () => {
-    const candidates: PrCandidate[] = [{ kind: "load", weight: 110, at: AT }];
+  it("announces the heaviest load when a new session lifted more than ever, at any reps — and a first never", () => {
+    const prior = [pr({ kind: "rep_max", reps: 5, weight: 100 }), pr({ kind: "rep_max", reps: 3, weight: 105 })];
+    const now = [pr({ kind: "rep_max", reps: 5, weight: 100 }), pr({ kind: "rep_max", reps: 3, weight: 110 }, "new-log")];
+    expect(prItemsFor("Bench Press", now, prior, sessionAt)).toEqual([
+      { type: "pr", at: NEW_AT, exerciseName: "Bench Press", kind: "load", weight: 110, previousBest: 105 },
+    ]);
+    // A new 8-rep max under the heaviest weight is no load PR
     expect(
-      prItemsFor("Bench Press", candidates, [pr({ kind: "rep_max", reps: 5, weight: 100 }), pr({ kind: "rep_max", reps: 3, weight: 105 })])
-    ).toEqual([{ type: "pr", at: AT, exerciseName: "Bench Press", kind: "load", weight: 110, previousBest: 105 }]);
-    expect(prItemsFor("Bench Press", [{ kind: "load", weight: 105, at: AT }], [pr({ kind: "rep_max", reps: 3, weight: 105 })])).toEqual([]);
-    expect(prItemsFor("Bench Press", candidates, [])).toEqual([]);
+      prItemsFor("Bench Press", [...prior, pr({ kind: "rep_max", reps: 8, weight: 95 }, "new-log")], prior, sessionAt)
+    ).toEqual([]);
+    // Equalling the heaviest weight is no PR, whichever rep max holds it
+    expect(
+      prItemsFor("Bench Press", [pr({ kind: "rep_max", reps: 1, weight: 105 }, "new-log"), ...prior], prior, sessionAt)
+    ).toEqual([]);
+    // A first-ever exercise: nothing before it to beat
+    expect(prItemsFor("Bench Press", now, [], sessionAt)).toEqual([]);
   });
 
-  it("announces more reps in a bodyweight set and a longer hold", () => {
+  it("announces more reps in a bodyweight set and a longer hold, and nothing a new session doesn't hold", () => {
     expect(
-      prItemsFor("Pull Up", [{ kind: "reps", reps: 15, at: AT }], [pr({ kind: "best_reps", reps: 12 })])
-    ).toEqual([{ type: "pr", at: AT, exerciseName: "Pull Up", kind: "reps", reps: 15, previousBest: 12 }]);
-    expect(
-      prItemsFor("Plank", [{ kind: "hold", durationSeconds: 120, at: AT }], [pr({ kind: "longest_hold", durationSeconds: 105 })])
-    ).toEqual([{ type: "pr", at: AT, exerciseName: "Plank", kind: "hold", durationSeconds: 120, previousBest: 105 }]);
-    expect(prItemsFor("Plank", [{ kind: "hold", durationSeconds: 100, at: AT }], [pr({ kind: "longest_hold", durationSeconds: 105 })])).toEqual([]);
-  });
-
-  it("judges a time and a carry against the best at the same distance only", () => {
-    const prior = [
-      pr({ kind: "best_time", distanceMeters: 1000, durationSeconds: 230 }),
-      pr({ kind: "heaviest_carry", distanceMeters: 40, weight: 60 }),
-    ];
+      prItemsFor("Pull Up", [pr({ kind: "best_reps", reps: 15 }, "new-log")], [pr({ kind: "best_reps", reps: 12 })], sessionAt)
+    ).toEqual([{ type: "pr", at: NEW_AT, exerciseName: "Pull Up", kind: "reps", reps: 15, previousBest: 12 }]);
     expect(
       prItemsFor(
-        "Rowing",
-        [
-          { kind: "time", distanceMeters: 1000, durationSeconds: 222.1, at: AT },
-          { kind: "time", distanceMeters: 500, durationSeconds: 105, at: AT },
-        ],
-        prior
+        "Plank",
+        [pr({ kind: "longest_hold", durationSeconds: 120 }, "new-log")],
+        [pr({ kind: "longest_hold", durationSeconds: 105 })],
+        sessionAt
       )
-    ).toEqual([
-      { type: "pr", at: AT, exerciseName: "Rowing", kind: "time", distanceMeters: 1000, durationSeconds: 222.1, previousBest: 230 },
-    ]);
+    ).toEqual([{ type: "pr", at: NEW_AT, exerciseName: "Plank", kind: "hold", durationSeconds: 120, previousBest: 105 }]);
+    // The record stayed with an older session
     expect(
-      prItemsFor("Farmers Carry", [{ kind: "carry", distanceMeters: 40, weight: 64, at: AT }], prior)
-    ).toEqual([{ type: "pr", at: AT, exerciseName: "Farmers Carry", kind: "carry", distanceMeters: 40, weight: 64, previousBest: 60 }]);
-    expect(prItemsFor("Rowing", [{ kind: "time", distanceMeters: 1000, durationSeconds: 235, at: AT }], prior)).toEqual([]);
+      prItemsFor("Plank", [pr({ kind: "longest_hold", durationSeconds: 105 })], [pr({ kind: "longest_hold", durationSeconds: 105 })], sessionAt)
+    ).toEqual([]);
+    // A first best set: nothing before it to beat
+    expect(prItemsFor("Pull Up", [pr({ kind: "best_reps", reps: 15 }, "new-log")], [], sessionAt)).toEqual([]);
+  });
+
+  it("announces nothing for a new session that only equals the record, as a backfill dated before it can", () => {
+    // First-achieved on a tie: a new session dated earlier holds a record it only equals
+    expect(
+      prItemsFor(
+        "Running",
+        [pr({ kind: "best_time", distanceMeters: 5000, durationSeconds: 1245, race: "5k" }, "new-log")],
+        [pr({ kind: "best_time", distanceMeters: 5000, durationSeconds: 1245, race: "5k" })],
+        sessionAt
+      )
+    ).toEqual([]);
+    expect(
+      prItemsFor("Pull Up", [pr({ kind: "best_reps", reps: 12 }, "new-log")], [pr({ kind: "best_reps", reps: 12 })], sessionAt)
+    ).toEqual([]);
+  });
+
+  it("judges a time at a race distance against that race's record only, named by the race", () => {
+    const prior = [
+      pr({ kind: "best_time", distanceMeters: 5000, durationSeconds: 1245, race: "5k" }),
+      pr({ kind: "best_time", distanceMeters: 10000, durationSeconds: 2640, race: "10k" }),
+    ];
+    const now = [
+      pr({ kind: "best_time", distanceMeters: 5000, durationSeconds: 1210, race: "5k" }, "new-log"),
+      pr({ kind: "best_time", distanceMeters: 10000, durationSeconds: 2640, race: "10k" }),
+      // A first 1 km record: nothing before it at that race
+      pr({ kind: "best_time", distanceMeters: 1000, durationSeconds: 225, race: "1k" }, "new-log"),
+    ];
+    expect(prItemsFor("Running", now, prior, sessionAt)).toEqual([
+      {
+        type: "pr",
+        at: NEW_AT,
+        exerciseName: "Running",
+        kind: "time",
+        distanceMeters: 5000,
+        race: "5k",
+        durationSeconds: 1210,
+        previousBest: 1245,
+      },
+    ]);
+  });
+
+  it("judges a carry and a time at the distance logged against that distance only", () => {
+    const prior = [
+      pr({ kind: "heaviest_carry", distanceMeters: 40, weight: 60 }),
+      pr({ kind: "best_time", distanceMeters: 40, durationSeconds: 38, race: null }),
+    ];
+    const now = [
+      pr({ kind: "heaviest_carry", distanceMeters: 40, weight: 64 }, "new-log"),
+      pr({ kind: "heaviest_carry", distanceMeters: 20, weight: 80 }, "new-log"),
+      pr({ kind: "best_time", distanceMeters: 40, durationSeconds: 35, race: null }, "new-log"),
+    ];
+    expect(prItemsFor("Farmers Carry", now, prior, sessionAt)).toEqual([
+      { type: "pr", at: NEW_AT, exerciseName: "Farmers Carry", kind: "carry", distanceMeters: 40, weight: 64, previousBest: 60 },
+      {
+        type: "pr",
+        at: NEW_AT,
+        exerciseName: "Farmers Carry",
+        kind: "time",
+        distanceMeters: 40,
+        race: null,
+        durationSeconds: 35,
+        previousBest: 38,
+      },
+    ]);
+  });
+});
+
+describe("detectPrItems", () => {
+  const getPRs = vi.mocked(getExercisePRs);
+
+  it("reads each exercise's records, and a second time only where a new session holds one", async () => {
+    getPRs.mockReset();
+    getPRs.mockImplementation((_clientId, options) => {
+      if (options.exerciseId === "bench") {
+        return Promise.resolve(
+          options.excludeDates
+            ? [pr({ kind: "rep_max", reps: 1, weight: 100 })]
+            : [pr({ kind: "rep_max", reps: 1, weight: 105 }, "new-log")]
+        );
+      }
+      // The run's records all stayed with older sessions
+      return Promise.resolve([pr({ kind: "best_time", distanceMeters: 5000, durationSeconds: 1245, race: "5k" })]);
+    });
+
+    const items = await detectPrItems(
+      "client-1",
+      [
+        { exerciseId: "bench", exerciseName: "Bench Press" },
+        { exerciseId: null, exerciseName: "Running" },
+      ],
+      sessionAt,
+      new Set(["2026-06-16"])
+    );
+
+    expect(items).toEqual([
+      { type: "pr", at: NEW_AT, exerciseName: "Bench Press", kind: "load", weight: 105, previousBest: 100 },
+    ]);
+    expect(getPRs.mock.calls).toEqual([
+      ["client-1", { exerciseId: "bench" }],
+      ["client-1", { exerciseName: "Running" }],
+      ["client-1", { exerciseId: "bench", excludeDates: ["2026-06-16"] }],
+    ]);
+  });
+
+  it("keeps the rest of the feed when one exercise's read fails", async () => {
+    getPRs.mockReset();
+    getPRs.mockRejectedValue(new Error("boom"));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(
+      detectPrItems("client-1", [{ exerciseId: "bench", exerciseName: "Bench Press" }], sessionAt, new Set())
+    ).resolves.toEqual([]);
+    errors.mockRestore();
   });
 });
 

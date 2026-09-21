@@ -19,6 +19,7 @@ vi.mock("@/lib/auth-helpers", () => ({
 }));
 
 vi.mock("@/services/exercise-analytics-service", () => ({
+  getClientExerciseBests: vi.fn(),
   getClientExerciseList: vi.fn(),
   getExerciseProgressionSeries: vi.fn(),
   getExercisePRs: vi.fn(),
@@ -28,6 +29,7 @@ import { GET } from "./route";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import {
+  getClientExerciseBests,
   getClientExerciseList,
   getExerciseProgressionSeries,
   getExercisePRs,
@@ -60,6 +62,28 @@ describe("GET /api/client/training/exercise-history", () => {
     expect(body).toEqual({ success: true, data: list });
     expect(getClientExerciseList).toHaveBeenCalledWith(CLIENT_ID);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("returns 200 with every exercise's bests scoped to the authed client", async () => {
+    const bests = [{ exerciseId: "e1", name: "Bench Press", exerciseType: "strength", sessionCount: 5 }];
+    vi.mocked(getClientExerciseBests).mockResolvedValue(bests as never);
+
+    const response = await GET(makeRequest("metric=bests"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true, data: bests });
+    expect(getClientExerciseBests).toHaveBeenCalledWith(CLIENT_ID);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("returns 401 for bests when unauthenticated and never calls the service", async () => {
+    vi.mocked(getAuthenticatedClientId).mockResolvedValue(null);
+
+    const response = await GET(makeRequest("metric=bests"));
+
+    expect(response.status).toBe(401);
+    expect(getClientExerciseBests).not.toHaveBeenCalled();
   });
 
   it("returns 200 progression and forwards sessionCount + exerciseId", async () => {
