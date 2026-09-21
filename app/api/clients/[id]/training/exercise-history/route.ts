@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
+import { EXERCISE_HISTORY_MAX_SESSIONS } from "@/lib/training-constants";
 import {
   getClientExerciseList,
   getExerciseProgressionSeries,
@@ -81,9 +82,12 @@ export async function GET(
     let sessionCount: number | undefined;
     if (sessionCountParam) {
       sessionCount = parseInt(sessionCountParam, 10);
-      if (isNaN(sessionCount) || sessionCount < 1 || sessionCount > 100) {
+      if (isNaN(sessionCount) || sessionCount < 1 || sessionCount > EXERCISE_HISTORY_MAX_SESSIONS) {
         return NextResponse.json(
-          { success: false, error: "sessionCount must be between 1 and 100" },
+          {
+            success: false,
+            error: `sessionCount must be between 1 and ${EXERCISE_HISTORY_MAX_SESSIONS}`,
+          },
           { status: 400 }
         );
       }

@@ -608,11 +608,11 @@ inversion: **the PRESCRIPTION drives the row list, not the log.**
 
 ### Exercise progress: charts and PRs
 
-Each exercise's progress chart shows the markers that matter for its type, and its PRs are its
-type's bests (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section 4.4). The coach's Journey → Training
-pane (`ExerciseDataView`) and the client's Performance view (`performance-view.tsx`) read the same
-three metrics — `GET /api/clients/[id]/training/exercise-history` and
-`GET /api/client/training/exercise-history`, `metric=list | progression | prs` — through the same
+Each exercise's progress chart shows the markers that matter for its type, a table of its sessions
+sits beneath it, and its PRs are its type's bests (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section
+4.4). The coach's Journey → Training pane (`ExerciseDataView`) and the client's Performance view
+(`performance-view.tsx`) read the same three metrics — `GET /api/clients/[id]/training/exercise-history`
+and `GET /api/client/training/exercise-history`, `metric=list | progression | prs` — through the same
 three functions (`services/exercise-analytics-service.ts`, over the three SQL functions of migration
 188), so a coach and a client see one exercise the same way.
 
@@ -635,21 +635,30 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   weighted set never competes with a bodyweight one; a time logged WITH a distance is a timed
   distance, where the fastest counts (Time, best times); a time logged with NO distance is a hold,
   where the longest counts; pace, split, watts and distance read their own columns, the first three
-  as the session's best set and the last as its total. So a weighted set on a Bodyweight exercise
+  as the session's best set and the last as its total; RPE is the top set's, and in a session with
+  no loaded set — no top set — the highest RPE logged. So a weighted set on a Bodyweight exercise
   offers Weight, e1RM and Volume after Best set reps; a plank typed Strength offers Longest time
-  after Strength's five; a run whose sets recorded an RPE offers the coach RPE after Pace and
-  Distance.
-- **The point is one shape for every type.** `ExerciseProgressionPoint` (`types/training.ts`) carries
-  every marker's value beside the strength keys it always had (`topSetWeight`, `topSetReps`,
-  `estimatedOneRepMax`, `totalVolume`, `topSetRpe`, the compliance pair), and what the best set
-  recorded with it — the top set's distance and time (a carry), the fastest pace's and split's
-  distance, the fastest time's distance and load. `get_exercise_progression_window` returns every
-  numeric measure of a logged set (`utils/exercise-progress-markers.test.ts` reads the migration
-  against `SET_LOG_MEASURES`), so the next marker is a row in the table, not a migration. The window,
-  the identity union (the catalog id, direct or through the prescribed row, else the performed name)
-  and the bound — twelve sessions unless a count or a date window is given — are migration 120's.
-  `get_client_exercise_list` carries the catalog row's `exercise_type` beside each exercise, Strength
-  for a freehand name, which is how both views know what leads.
+  after Strength's five; a run, a hold or a bodyweight set whose sets recorded an RPE offers the
+  coach RPE after the type's own.
+- **The point is one shape for every type.** `ExerciseProgressionPoint` (`types/training.ts`) is one
+  logged session: every marker's value beside the strength keys (`topSetWeight`, `topSetReps`,
+  `estimatedOneRepMax`, `totalVolume`, `rpe` and `rir` — the top set's, or with no loaded set the
+  highest RPE and the lowest RIR logged — the compliance pair), what the best set recorded with it —
+  the top set's distance and time (a carry), the fastest pace's and split's distance, the fastest
+  time's distance and load — and the Sessions table's other values: `totalCalories`, the highest
+  cadence, stroke rate, resistance, HR zone, heart rate and % FTP (`maxCadence` … `maxFtpPercent`)
+  and `averageRestSeconds`, the average rest taken, to the second. `get_exercise_progression_window`
+  returns every numeric measure of a logged set (`utils/exercise-progress-markers.test.ts` reads the
+  migration against `SET_LOG_MEASURES`), the service hands the kernel every one of them by that
+  table, so the next marker or column is a row in a table, not a migration. The window, the identity
+  union (the catalog id, direct or through the prescribed row, else the performed name) and the bound
+  — twelve sessions unless a count or a date window is given — are migration 120's; the session
+  window's All asks for `EXERCISE_HISTORY_MAX_SESSIONS` (500, `lib/training-constants.ts`), the count
+  both routes refuse to exceed. `get_client_exercise_list` carries the catalog row's `exercise_type`
+  beside each exercise, Strength for a freehand name, which is how both views know what leads. A
+  point's `date` is its session's day stamp — the workout's date at UTC midnight — and every readout
+  of it (the chart, the KPI strip's "days ago", the PR cards, the table) reads the day it names
+  (`dayFromUtcStamp`, `lib/date-helpers.ts`), never the timestamp in the viewer's zone.
 - **The lens shown derives, never remembers.** The coach's hero row and the client's switcher list
   what the exercise offers — the type's leads from the list the exercise was picked from, at once,
   and the followers when the progression lands — plus PRs on the coach's; the lens picked is kept
@@ -663,7 +672,45 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   cards for its five lenses — and RPE's and Compliance's on every type, which name no unit — and
   reads any other lens as Latest, the best by the marker's own word (Heaviest, Most, Fastest,
   Longest, Highest) and the Change since the first session (`exercise-marker-kpis.ts`); the insight
-  footer is Strength's alone.
+  footer goes with the worded cards (`usesStrengthAnalytics`), and its RPE line names no weight,
+  since a run's RPE reaches it. The session window (8/12/24/All on the coach's rail, 12/24/All on the
+  client's) governs the chart and the Sessions table together and stays live on every lens: on the
+  PRs lens it governs the table alone, and the rail reads "All-time" beside it, since the cards are.
+  The progression is read on every lens, PRs included, so a lens switch fetches nothing; a read that
+  fails with nothing in hand reads "Couldn't load the sessions" with Try again in the chart's slot and
+  the table's alike (`sessions-load-error.tsx`), never "Not enough data yet".
+- **Every chart has a table of its sessions beneath it** (`exercise-sessions-table.tsx`, shared by
+  both views): beneath whatever the coach's hero shows — the chart of every lens, the PR cards on the
+  PRs lens — and on the client's view between the chart and Personal records. One row per logged
+  session in the window, newest first: Date, then one column per measure the window's sessions
+  recorded, in one order — Load, Reps, Bodyweight reps, RPE, RIR, e1RM, Volume, Distance, Time, Hold,
+  Pace, Split, Calories, Cadence, Stroke rate, Resistance, HR zone, Heart rate, Power, % FTP, Rest,
+  Sets — a column nothing in the window recorded left out. The columns are one table,
+  `SESSION_COLUMN_SPECS` (`utils/exercise-session-columns.ts`): each column's heading (a load's names
+  the viewer's unit), the point key it reads — the chart marker's own where the column has a chart
+  twin, so the RPE lens and the RPE column read one value — how its cell reads (the logged-workout
+  table's grammar in the viewer's units; a Time cell the fastest time with its distance beside it,
+  muted; Sets "3/3", or the count alone with no prescription) and its sort pair. Every cell is a value
+  the kernel put on the point, one rule per measure, warm-ups counting toward none: the top set's
+  load, reps, RPE and RIR — with no loaded set, the highest RPE and the lowest RIR logged; the e1RM
+  and the volume; the most reps in a set with no load; the total distance and the total calories;
+  the fastest time, pace and split; the highest watts, cadence, stroke rate, resistance, HR zone,
+  heart rate and % FTP; the longest hold; the average rest taken; sets done over sets prescribed.
+  Tempo is text and the read carries no text, so it has no column. The table reads the progression
+  the chart already holds and pages it in memory — no read of its own.
+- **The table's rail** — Sessions, on the coach's view a `SectionLabel` carrying the Columns menu
+  (`session-columns-menu.tsx`: every recorded column but Date, grouped Strength, Endurance and
+  Framework, each ticked on and off, the menu open across ticks), the sort as the rail dropdown
+  (`RailDropdown`: Newest first, Oldest first, then a pair per shown column, its lead word first —
+  Heaviest and Lightest load, Fastest and Slowest pace; never a header click) and the history tables'
+  pager, ten sessions a page. A session with no value in the sorted column goes last, newest first;
+  a sort whose column is ticked off or leaves the window shows as Newest first, and returns with the
+  column; while the sessions load the pick stands. On the client's view the rail is a heading like
+  Personal records with the sort and the pager and no Columns menu: every recorded column shows. The
+  view — the columns ticked, the sort, the page — is local, never the address: the host keys the table
+  by the exercise, so another pick starts it on every column, Newest first, page 1; the window keys
+  its page, so a new window starts on page 1 with its columns and sort kept; a lens switch touches
+  none of it.
 - **PRs are the type's bests, every kind the logs carry.** `get_exercise_prs` returns typed rows
   (`ExercisePR`, `kind` ∈ `BEST_KINDS`): `rep_max` — the heaviest weight per rep count, as before;
   `best_reps` — the most reps in a set logged with no load; `best_time` — the fastest time per
@@ -684,10 +731,10 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   `kind` (`PrActivity`, `types/coach-brief.ts`); a first-ever value is a first, not a PR. The row
   reads "Rowing · 1 km in 3:42.1, was 3:50", "Pull Up · 15 reps, was 12", "Farmers Carry · 40 m with
   64 kg, was 60 kg", "Plank · 2:00, was 1:45", and a lift as it always did.
-- **Nothing is stored for any of this.** Every marker and every best is computed when asked from
-  the logged sets' real columns, inside the two functions, bounded as above; there is no per-session
-  marker table, no bests table and no chart kind on the exercise row — the type decides what leads
-  and the logged columns decide the rest at read.
+- **Nothing is stored for any of this.** Every marker, every cell of the Sessions table and every
+  best is computed when asked from the logged sets' real columns, inside the two functions, bounded as
+  above; there is no per-session marker table, no bests table and no chart kind on the exercise row —
+  the type decides what leads and the logged columns decide the rest at read.
 - **The reads' keys** are built in `hooks/use-exercise-history.ts` alone. The coach's sit inside the
   training area (`useInvalidateTrainingData` reaches them); the client's workout save and Clear log
   drop the client's (`useInvalidateClientExerciseHistory`), since a logged set is what the charts and
@@ -1022,7 +1069,7 @@ A type-level guard in the module fails the build if a seventh view is added with
 | Tab | Component | Description |
 |-----|-----------|-------------|
 | Overview | `ClientOverviewTab` | Seven sections, top to bottom: identity row · status band (whole-journey chart ∥ four structural cells) · Needs attention + Since your last visit · Current plan · Adherence (three dot rails) · Daily wellness (five cards) · Coach notes. Every editable fact lives in the details sheet, not on the page. See "Coach client Overview" below |
-| Metrics (**labelled "Journey"**) | `MetricsTabContent` | Four panes via `?journey=` — **Physique** (the hero's switcher selects ONE metric, carried as `?metric=`, and the hero, the progression chart and the measurement log all describe it: the chart over the measurement log's day-values, the log listing ONE ROW PER READING of the selected metric — newest day first, within a day the most recently written first, each with its source, its note and its change against the previous day's standing value, a removed reading muted with who removed it and when; its pager counting that metric's readings ("Showing 10 of 12 weight entries") and its empty state naming it; all from `GET …/measurement-series`: the day-values, the derived baseline, the start date, the readings list, readings before the start under "Before start". Three hover-revealed row actions — Edit reading and Remove reading on any live reading (Remove behind the destructive confirm), Restore reading on a removed one — see "client_measurements table" rule 8), **Wellness** (the same hero, chart and log over the merged check-in weekly averages ⊕ coach-logged `client_metric_entries`), each with the "Log measurement" modal (a physique key appends to the log, a wellness key upserts an entry), **Training** (`ExerciseDataView`, moved here from the Training tab in Session 7.1 — analytics live in Journey, prescription stays on its own tab: an exercise's chart by its type's markers and its PRs, see "Exercise progress: charts and PRs"), and **Blocks** (`client_phases`; see "Journey blocks"). `JourneySubtab` is deliberately WIDER than `MetricTab`: Training and Blocks key none of the metric shapes (`metricsByTab` / `logRowsByTab` / `DEFAULT_FOCUS`) and are mapped onto `"body"` by `toMetricTab()`, a whitelist so the next pane is safe without editing it |
+| Metrics (**labelled "Journey"**) | `MetricsTabContent` | Four panes via `?journey=` — **Physique** (the hero's switcher selects ONE metric, carried as `?metric=`, and the hero, the progression chart and the measurement log all describe it: the chart over the measurement log's day-values, the log listing ONE ROW PER READING of the selected metric — newest day first, within a day the most recently written first, each with its source, its note and its change against the previous day's standing value, a removed reading muted with who removed it and when; its pager counting that metric's readings ("Showing 10 of 12 weight entries") and its empty state naming it; all from `GET …/measurement-series`: the day-values, the derived baseline, the start date, the readings list, readings before the start under "Before start". Three hover-revealed row actions — Edit reading and Remove reading on any live reading (Remove behind the destructive confirm), Restore reading on a removed one — see "client_measurements table" rule 8), **Wellness** (the same hero, chart and log over the merged check-in weekly averages ⊕ coach-logged `client_metric_entries`), each with the "Log measurement" modal (a physique key appends to the log, a wellness key upserts an entry), **Training** (`ExerciseDataView`, moved here from the Training tab in Session 7.1 — analytics live in Journey, prescription stays on its own tab: an exercise's chart by its type's markers, the table of its sessions beneath it, and its PRs, see "Exercise progress: charts and PRs"), and **Blocks** (`client_phases`; see "Journey blocks"). `JourneySubtab` is deliberately WIDER than `MetricTab`: Training and Blocks key none of the metric shapes (`metricsByTab` / `logRowsByTab` / `DEFAULT_FOCUS`) and are mapped onto `"body"` by `toMetricTab()`, a whitelist so the next pane is safe without editing it |
 | Training Plan | `TrainingPlanCard` → `TrainingPlanBuilder` (Data / Plans) | Calendar + hero. **Exercise analytics moved to Journey → Training** (Session 7.1) — do not hunt for an Exercise Data pane here; the history table's exercise drill-down now crosses tabs to it. "Apply program" opens the program list, a place of its own (`?apply=1`); a pick replaces it with the client editor, a place of its own (`?editor=<savedPlanId>`), the shared `/dashboard/programs` builder in `client-draft` mode; "Edit plan" (the hero, and a block card's "edit plan") opens the same builder in `placed-plan` mode over the plan as it is on the calendar, a place of its own (`?plan=<planId>`; see "Edit plan"). (The plan-history list below the calendar was removed with the dead `training_plan_history` read chain — the table has had no writer since P7.) |
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |

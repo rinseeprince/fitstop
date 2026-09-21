@@ -24,6 +24,7 @@ import {
   getExerciseProgressionSeries,
   getExercisePRs,
 } from "@/services/exercise-analytics-service";
+import { EXERCISE_HISTORY_MAX_SESSIONS } from "@/lib/training-constants";
 import { GET } from "./route";
 
 const CLIENT_ID = "client-1";
@@ -73,7 +74,8 @@ describe("GET /api/clients/[id]/training/exercise-history", () => {
         topSetReps: 5,
         estimatedOneRepMax: 116.7,
         totalVolume: 1500,
-        topSetRpe: 8,
+        rpe: 8,
+        rir: null,
         topSetDistanceMeters: null,
         topSetDurationSeconds: null,
         bestSetReps: null,
@@ -87,6 +89,14 @@ describe("GET /api/clients/[id]/training/exercise-history", () => {
         bestTimeDistanceMeters: null,
         bestTimeWeight: null,
         longestHoldSeconds: null,
+        totalCalories: null,
+        maxCadence: null,
+        maxStrokeRate: null,
+        maxResistance: null,
+        maxHeartRateZone: null,
+        maxHeartRate: null,
+        maxFtpPercent: null,
+        averageRestSeconds: null,
         prescribedSets: 3,
         actualSets: 3,
         prescribedRepsMin: 5,
@@ -203,6 +213,33 @@ describe("GET /api/clients/[id]/training/exercise-history", () => {
       endDate: undefined,
     });
   });
+
+  it("accepts the session window's All — the bound the client's route shares", async () => {
+    vi.mocked(getExerciseProgressionSeries).mockResolvedValue([]);
+
+    const res = await GET(
+      makeRequest(`${BASE_URL}?metric=progression&exerciseId=ex-1&sessionCount=${EXERCISE_HISTORY_MAX_SESSIONS}`),
+      makeParams()
+    );
+
+    expect(res.status).toBe(200);
+    expect(getExerciseProgressionSeries).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.objectContaining({ sessionCount: EXERCISE_HISTORY_MAX_SESSIONS }),
+    );
+  });
+
+  it.each(["0", String(EXERCISE_HISTORY_MAX_SESSIONS + 1)])(
+    "returns 400 for an out-of-range sessionCount=%s",
+    async (sessionCount) => {
+      const res = await GET(
+        makeRequest(`${BASE_URL}?metric=progression&exerciseId=ex-1&sessionCount=${sessionCount}`),
+        makeParams()
+      );
+      expect(res.status).toBe(400);
+      expect(getExerciseProgressionSeries).not.toHaveBeenCalled();
+    },
+  );
 
   it("passes the date window through for metric=list (Session 7.7)", async () => {
     await GET(

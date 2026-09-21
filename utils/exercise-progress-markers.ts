@@ -13,8 +13,10 @@ import type { ExerciseType } from "./exercise-types";
 // for a marker offers it. The values are computed on column rules, never
 // names (utils/exercise-session-markers.ts): a set logged with reps and no
 // load is a bodyweight set, a time with a distance is a timed distance, a time
-// with no distance is a hold. RPE and Compliance are the coach's lenses and are
-// never offered to the client.
+// with no distance is a hold, and RPE is the top set's or, with no loaded set,
+// the highest logged — so a run's RPE reaches the chart. RPE and Compliance are
+// the coach's lenses and are never offered to the client. The Sessions table
+// reads the same values (utils/exercise-session-columns.ts).
 
 export const PROGRESS_MARKERS = [
   "weight",
@@ -74,7 +76,7 @@ export const PROGRESS_MARKER_SPECS: Record<ProgressMarker, ProgressMarkerSpec> =
   weight: { key: "weight", label: "Weight", title: "Top set weight over time", subtitle: "Heaviest weight lifted per session", noun: "weight", value: "topSetWeight", readout: "load", better: "higher", bestLabel: "Heaviest", shape: "area", star: true, coachOnly: false },
   e1rm: { key: "e1rm", label: "e1RM", title: "Estimated 1RM over time", subtitle: "Epley formula from top sets", noun: "estimated 1RM", value: "estimatedOneRepMax", readout: "load", better: "higher", bestLabel: "Best", shape: "area", star: false, coachOnly: false },
   volume: { key: "volume", label: "Volume", title: "Session volume", subtitle: "Total reps x weight per session", noun: "volume", value: "totalVolume", readout: "load", better: null, bestLabel: "Peak", shape: "bar", star: false, coachOnly: false },
-  rpe: { key: "rpe", label: "RPE", title: "RPE over time", subtitle: "Top set RPE per session", noun: "RPE data", value: "topSetRpe", readout: "rpe", better: null, bestLabel: "Highest", shape: "area", star: false, coachOnly: true },
+  rpe: { key: "rpe", label: "RPE", title: "RPE over time", subtitle: "Top set RPE per session, or the highest logged", noun: "RPE data", value: "rpe", readout: "rpe", better: null, bestLabel: "Highest", shape: "area", star: false, coachOnly: true },
   compliance: { key: "compliance", label: "Compliance", title: "Prescribed vs completed sets", subtitle: "Per-session compliance", noun: "prescribed data", value: "actualSets", readout: "sets", better: null, bestLabel: "Most", shape: "compliance", star: false, coachOnly: true },
   reps: { key: "reps", label: "Reps", title: "Best set reps over time", subtitle: "Most reps in one set per session, without added weight", noun: "reps without a weight", value: "bestSetReps", readout: "reps", better: "higher", bestLabel: "Most", shape: "area", star: true, coachOnly: false },
   pace: { key: "pace", label: "Pace", title: "Pace over time", subtitle: "Fastest pace per session", noun: "pace", value: "bestPaceSecondsPerKm", readout: "pace", better: "lower", bestLabel: "Fastest", shape: "area", star: true, coachOnly: false },

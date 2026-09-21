@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise-trend-chart";
 import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
+import { ExerciseSessionsTable } from "@/components/training/exercise-data/exercise-sessions-table";
 import { ExercisePicker } from "./exercise-picker";
 import {
   PerformanceControls,
@@ -14,6 +15,7 @@ import {
   type PerformanceSessionCount,
 } from "./performance-controls";
 import { clientExerciseHistoryKey } from "@/hooks/use-exercise-history";
+import { EXERCISE_HISTORY_MAX_SESSIONS } from "@/lib/training-constants";
 import {
   effectiveMarker,
   markerLens,
@@ -33,12 +35,9 @@ const SWR_CONFIG = {
   dedupingInterval: 2000,
 };
 
-// The client picker's "All" option: comfortably above any realistic per-exercise
-// history while staying inside the route's bound.
-const ALL_SESSIONS = 500;
-
-// Client performance category: pick an exercise, see its type's markers and its
-// personal records. Reuses the neutral chart + PR viz.
+// Client performance category: pick an exercise, see its type's markers, the
+// table of its sessions and its personal records. Reuses the neutral chart,
+// Sessions table and PR viz.
 //
 // No weightUnit prop: it threaded a mapper constant down from metrics-hub, so
 // the client always saw kilograms whatever their preference. ExercisePrView and
@@ -72,11 +71,16 @@ export function PerformanceView() {
         metric: "progression",
         exerciseId: selectedExerciseId,
         exerciseName: selectedExerciseName,
-        sessionCount: sessionCount === "all" ? ALL_SESSIONS : sessionCount,
+        sessionCount: sessionCount === "all" ? EXERCISE_HISTORY_MAX_SESSIONS : sessionCount,
       })
     : null;
 
-  const { data: progressionData, isLoading: progressionLoading } = useSWR<{
+  const {
+    data: progressionData,
+    error: progressionError,
+    isLoading: progressionLoading,
+    mutate: mutateProgression,
+  } = useSWR<{
     success: boolean;
     data: ExerciseProgressionPoint[];
   }>(progressionUrl, swrFetcher, {
@@ -105,6 +109,11 @@ export function PerformanceView() {
   // sessions this can undercount a very frequent lifter — acceptable for a
   // motivational stat; widening the window only requires picking "All".
   const points = progressionData?.data;
+  // Failed with nothing in hand and no retry in flight: the chart and the
+  // Sessions table say so together
+  const progressionFailed =
+    progressionError != null && points === undefined && !progressionLoading;
+  const retryProgression = () => void mutateProgression();
   const recentCount = useMemo(() => {
     if (!points) return 0;
     const cutoff = Date.now() - 84 * 24 * 60 * 60 * 1000;
@@ -172,6 +181,18 @@ export function PerformanceView() {
             exerciseType={exerciseType}
             showInsight={false}
             isLoading={progressionLoading}
+            isError={progressionFailed}
+            onRetry={retryProgression}
+          />
+
+          {/* Keyed by the exercise: another pick starts the table fresh */}
+          <ExerciseSessionsTable
+            key={selectedExerciseId ?? selectedExerciseName ?? ""}
+            audience="client"
+            points={points}
+            isError={progressionFailed}
+            onRetry={retryProgression}
+            windowKey={String(sessionCount)}
           />
 
           <section className="space-y-3">

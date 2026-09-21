@@ -171,11 +171,11 @@ function volumeKpis(
 }
 
 function rpeKpis(data: ExerciseProgressionPoint[]): KpiCard[] {
-  const withRpe = data.filter((p) => p.topSetRpe != null);
+  const withRpe = data.filter((p) => p.rpe != null);
   if (withRpe.length === 0) return [];
 
-  const avg = withRpe.reduce((s, p) => s + p.topSetRpe!, 0) / withRpe.length;
-  const last = withRpe[withRpe.length - 1].topSetRpe!;
+  const avg = withRpe.reduce((s, p) => s + p.rpe!, 0) / withRpe.length;
+  const last = withRpe[withRpe.length - 1].rpe!;
 
   // RPE drift: compare last 3 vs first 3
   const driftText = rpeDriftText(withRpe);
@@ -272,11 +272,11 @@ export function computeInsight(
         : `Volume below average - ${isRecent ? "recent peak may indicate recovery" : "potential deload period"}.`;
     }
     case "rpe": {
-      const withR = data.filter((p) => p.topSetRpe != null);
+      const withR = data.filter((p) => p.rpe != null);
       if (withR.length < 2) return null;
       const drift = rpeDriftText(withR);
-      if (drift.trend === "up") return "RPE rising for similar weights - possible accumulated fatigue.";
-      if (drift.trend === "down") return "RPE falling - strength adaptation progressing well.";
+      if (drift.trend === "up") return "RPE rising across sessions - possible accumulated fatigue.";
+      if (drift.trend === "down") return "RPE falling - adaptation progressing well.";
       return "RPE stable across sessions.";
     }
     case "compliance": {
@@ -352,8 +352,8 @@ function rpeDriftText(
   const n = Math.min(3, Math.floor(data.length / 2));
   const early = data.slice(0, n);
   const late = data.slice(-n);
-  const avgEarly = early.reduce((s, p) => s + (p.topSetRpe ?? 0), 0) / early.length;
-  const avgLate = late.reduce((s, p) => s + (p.topSetRpe ?? 0), 0) / late.length;
+  const avgEarly = early.reduce((s, p) => s + (p.rpe ?? 0), 0) / early.length;
+  const avgLate = late.reduce((s, p) => s + (p.rpe ?? 0), 0) / late.length;
   const diff = avgLate - avgEarly;
   if (diff > 0.5) return { value: `+${diff.toFixed(1)}`, meta: "Rising", trend: "up" };
   if (diff < -0.5) return { value: diff.toFixed(1), meta: "Falling", trend: "down" };

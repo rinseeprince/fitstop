@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PerformanceView } from "./performance-view";
 import type {
@@ -42,7 +42,8 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
     sessionLogId: "sl-1",
     topSetWeight: 80,
     topSetReps: 8,
-    topSetRpe: 7,
+    rpe: 7,
+    rir: null,
     topSetDistanceMeters: null,
     topSetDurationSeconds: null,
     estimatedOneRepMax: 100,
@@ -58,6 +59,14 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
     bestTimeDistanceMeters: null,
     bestTimeWeight: null,
     longestHoldSeconds: null,
+    totalCalories: null,
+    maxCadence: null,
+    maxStrokeRate: null,
+    maxResistance: null,
+    maxHeartRateZone: null,
+    maxHeartRate: null,
+    maxFtpPercent: null,
+    averageRestSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: 8,
@@ -92,6 +101,11 @@ function progressionUrls(): string[] {
 function selectExercise() {
   mockSearchParams.set("exerciseId", "ex-1");
   mockSearchParams.set("exerciseName", "Bench Press");
+}
+
+/** The Personal Records section: the Sessions table above it reads some of the same numbers. */
+function personalRecords() {
+  return within(screen.getByRole("heading", { name: "Personal Records" }).parentElement as HTMLElement);
 }
 
 describe("PerformanceView", () => {
@@ -152,12 +166,12 @@ describe("PerformanceView", () => {
     });
     render(<PerformanceView />);
 
-    expect(screen.getByText("5 Rep Max")).toBeInTheDocument();
-    expect(screen.getByText("100")).toBeInTheDocument();
+    expect(personalRecords().getByText("5 Rep Max")).toBeInTheDocument();
+    expect(personalRecords().getByText("100")).toBeInTheDocument();
     // Was "lbs" over a kilogram value: metrics-hub threaded a mapper constant
     // down, so the label never reflected the client's own preference.
-    expect(screen.getByText("kg")).toBeInTheDocument();
-    expect(screen.getByText("New")).toBeInTheDocument();
+    expect(personalRecords().getByText("kg")).toBeInTheDocument();
+    expect(personalRecords().getByText("New")).toBeInTheDocument();
   });
 
   it("omits the New badge when the PR is not recent", () => {
@@ -198,6 +212,31 @@ describe("PerformanceView", () => {
     expect(screen.getByText(/Not enough data yet/i)).toBeInTheDocument();
   });
 
+  it("puts the Sessions table between the chart and Personal Records, every column recorded and no Columns menu", () => {
+    selectExercise();
+    setupSWR({
+      list: [makeListItem()],
+      progression: [makePoint({ date: "2026-05-01T00:00:00Z", sessionLogId: "sl-1" }), makePoint({ date: "2026-05-08T00:00:00Z", sessionLogId: "sl-2" })],
+      prs: [makePR()],
+    });
+    render(<PerformanceView />);
+
+    const chart = screen.getByText("Top set weight over time");
+    const sessions = screen.getByRole("region", { name: "Sessions" });
+    const records = screen.getByRole("heading", { name: "Personal Records" });
+    expect(chart.compareDocumentPosition(sessions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(sessions.compareDocumentPosition(records) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // The client's own RPE and sets are among the columns; no menu hides any
+    expect(within(sessions).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
+      "Date", "Load (kg)", "Reps", "RPE", "e1RM (kg)", "Volume (kg)", "Sets",
+    ]);
+    expect(within(sessions).getByRole("heading", { name: "Sessions" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Columns for the sessions table" })).toBeNull();
+    expect(within(sessions).getByRole("button", { name: /Newest first/ })).toBeInTheDocument();
+    expect(within(sessions).getByText("Showing 2 of 2 sessions")).toBeInTheDocument();
+  });
+
   it("shows the keep-logging PR empty state when there are no PRs", () => {
     selectExercise();
     setupSWR({ list: [makeListItem()], progression: [makePoint(), makePoint({ date: "2026-05-08" })], prs: [] });
@@ -229,8 +268,8 @@ describe("PerformanceView — lenses by type", () => {
     expect(screen.queryByRole("button", { name: "Compliance" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Weight" })).toBeNull();
     expect(screen.getByText("Pace over time")).toBeInTheDocument();
-    expect(screen.getByText("5 km")).toBeInTheDocument();
-    expect(screen.getByText("25:05")).toBeInTheDocument();
+    expect(personalRecords().getByText("5 km")).toBeInTheDocument();
+    expect(personalRecords().getByText("25:05")).toBeInTheDocument();
   });
 
   it("shows no metric switcher when an exercise offers one lens", () => {

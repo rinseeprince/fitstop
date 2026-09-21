@@ -14,7 +14,10 @@ type ExerciseHistoryQuery =
       metric: "progression";
       exerciseId?: string | null;
       exerciseName?: string | null;
-      /** Omitted for the whole history the route allows; the RPC floors an unwindowed read at 12. */
+      /**
+       * The session window. "All" sends EXERCISE_HISTORY_MAX_SESSIONS: left out,
+       * the database function floors the read at 12 sessions.
+       */
       sessionCount?: number;
     }
   | { metric: "prs"; exerciseId?: string | null; exerciseName?: string | null };

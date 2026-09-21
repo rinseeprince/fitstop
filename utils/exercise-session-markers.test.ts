@@ -7,20 +7,12 @@ import {
   isTimedDistance,
   type MarkerSet,
 } from "./exercise-session-markers";
+import { emptyLoggedActuals } from "./set-log-measures";
 
+/** A working set recording nothing but what the case sets — every measure a set can carry. */
 function set(overrides: Partial<MarkerSet> = {}): MarkerSet {
-  return {
-    setType: "working",
-    reps: null,
-    weight: null,
-    rpe: null,
-    distanceMeters: null,
-    durationSeconds: null,
-    paceSecondsPerKm: null,
-    splitSecondsPer500m: null,
-    power: null,
-    ...overrides,
-  };
+  const { tempo: _tempo, ...measures } = emptyLoggedActuals();
+  return { setType: "working", ...measures, ...overrides };
 }
 
 describe("the set shapes", () => {
@@ -78,7 +70,7 @@ describe("aggregateSessionMarkers", () => {
     ]);
     expect(values.topSetWeight).toBe(100);
     expect(values.topSetReps).toBe(6);
-    expect(values.topSetRpe).toBe(9);
+    expect(values.rpe).toBe(9);
     expect(values.topSetDistanceMeters).toBe(40);
     expect(values.topSetDurationSeconds).toBe(35);
     expect(values.totalVolume).toBe(8 * 80 + 5 * 100 + 6 * 100 + 12 * 60);
@@ -142,5 +134,81 @@ describe("aggregateSessionMarkers", () => {
   it("rounds the estimated 1RM to a tenth", () => {
     const values = aggregateSessionMarkers([set({ reps: 7, weight: 100 })]);
     expect(values.estimatedOneRepMax).toBe(123.3);
+  });
+});
+
+describe("the Sessions table's values", () => {
+  it("reads RPE and RIR off the top set, even when it recorded none", () => {
+    const values = aggregateSessionMarkers([
+      set({ reps: 8, weight: 80, rpe: 7, rir: 3 }),
+      set({ reps: 5, weight: 100, rpe: 8.5, rir: 1 }),
+    ]);
+    expect(values.rpe).toBe(8.5);
+    expect(values.rir).toBe(1);
+
+    // The heaviest set logged no effort: the lighter set's RPE does not stand in
+    const silentTop = aggregateSessionMarkers([
+      set({ reps: 8, weight: 80, rpe: 9, rir: 1 }),
+      set({ reps: 5, weight: 100 }),
+    ]);
+    expect(silentTop.rpe).toBeNull();
+    expect(silentTop.rir).toBeNull();
+  });
+
+  it("takes the highest RPE and the lowest RIR logged in a session with no loaded set", () => {
+    const run = aggregateSessionMarkers([
+      set({ distanceMeters: 1000, durationSeconds: 240, rpe: 6, rir: 4 }),
+      set({ distanceMeters: 1000, durationSeconds: 236, rpe: 8, rir: 2 }),
+      set({ distanceMeters: 1000, durationSeconds: 250, rpe: 7 }),
+    ]);
+    expect(run.rpe).toBe(8);
+    expect(run.rir).toBe(2);
+
+    // A plank and a bodyweight set likewise; a typed 0 kg is no load
+    expect(aggregateSessionMarkers([set({ durationSeconds: 90, rpe: 7 }), set({ durationSeconds: 60, rpe: 9 })]).rpe).toBe(9);
+    expect(aggregateSessionMarkers([set({ reps: 12, weight: 0, rpe: 6 }), set({ reps: 10, rpe: 8 })]).rpe).toBe(8);
+  });
+
+  it("adds up the calories and takes the highest of each machine and body reading", () => {
+    const values = aggregateSessionMarkers([
+      set({ calories: 120, cadence: 88, strokeRate: 26, resistance: 5, heartRateZone: 2, heartRate: 148, ftpPercent: 75 }),
+      set({ calories: 180, cadence: 95, strokeRate: 24, resistance: 6.5, heartRateZone: 4, heartRate: 171, ftpPercent: 92.5 }),
+      set({ cadence: 91 }),
+    ]);
+    expect(values.totalCalories).toBe(300);
+    expect(values.maxCadence).toBe(95);
+    expect(values.maxStrokeRate).toBe(26);
+    expect(values.maxResistance).toBe(6.5);
+    expect(values.maxHeartRateZone).toBe(4);
+    expect(values.maxHeartRate).toBe(171);
+    expect(values.maxFtpPercent).toBe(92.5);
+  });
+
+  it("averages the rest taken over the sets that recorded one, to the second", () => {
+    const values = aggregateSessionMarkers([
+      set({ reps: 5, weight: 100, restSeconds: 90 }),
+      set({ reps: 5, weight: 100, restSeconds: 121 }),
+      set({ reps: 5, weight: 100 }),
+    ]);
+    expect(values.averageRestSeconds).toBe(106);
+  });
+
+  it("counts no warm-up toward any of them", () => {
+    const values = aggregateSessionMarkers([
+      set({ setType: "warmup", rpe: 10, rir: 0, calories: 500, cadence: 200, strokeRate: 60, resistance: 10, heartRateZone: 5, heartRate: 200, ftpPercent: 150, restSeconds: 600 }),
+      set({ durationSeconds: 60, rpe: 6, rir: 3, calories: 50, cadence: 80, strokeRate: 20, resistance: 3, heartRateZone: 2, heartRate: 130, ftpPercent: 60, restSeconds: 60 }),
+    ]);
+    expect(values).toMatchObject({
+      rpe: 6,
+      rir: 3,
+      totalCalories: 50,
+      maxCadence: 80,
+      maxStrokeRate: 20,
+      maxResistance: 3,
+      maxHeartRateZone: 2,
+      maxHeartRate: 130,
+      maxFtpPercent: 60,
+      averageRestSeconds: 60,
+    });
   });
 });

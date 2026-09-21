@@ -166,7 +166,7 @@ describe("getExerciseProgressionSeries", () => {
       date: "2026-05-01T00:00:00Z",
       topSetWeight: 100,
       topSetReps: 5,
-      topSetRpe: 8.5,
+      rpe: 8.5,
       totalVolume: 8 * 80 + 5 * 100,
       estimatedOneRepMax: 116.7,
       actualSets: 2,
@@ -196,6 +196,28 @@ describe("getExerciseProgressionSeries", () => {
       bestTimeDistanceMeters: 500,
       longestHoldSeconds: null,
       topSetWeight: null,
+    });
+  });
+
+  it("hands every other measure the read returns to the kernel: the Sessions table's values", async () => {
+    mockRpcResolve([
+      progressionRow({ set_id: "s1", distance_meters: "4000.00", duration_seconds: "1200.0", rpe: "7.5", rir: "2.0", calories: 310, cadence: 88, stroke_rate: 24, resistance: "6.5", heart_rate_zone: 3, heart_rate: 158, ftp_percent: "82.5", rest_seconds: 90 }),
+      progressionRow({ set_id: "s2", set_number: 2, distance_meters: "1000.00", duration_seconds: "280.0", rpe: "8.5", rir: "1.0", calories: 95, cadence: 97, stroke_rate: 28, resistance: "7.0", heart_rate_zone: 4, heart_rate: 171, ftp_percent: "96.0", rest_seconds: 121 }),
+    ]);
+    const [point] = await getExerciseProgressionSeries(CLIENT_ID, { exerciseId: EXERCISE_ID });
+    expect(point).toMatchObject({
+      // No loaded set: the hardest effort logged stands in for the top set's
+      rpe: 8.5,
+      rir: 1,
+      totalCalories: 405,
+      maxCadence: 97,
+      maxStrokeRate: 28,
+      maxResistance: 7,
+      maxHeartRateZone: 4,
+      maxHeartRate: 171,
+      maxFtpPercent: 96,
+      averageRestSeconds: 106,
+      totalDistanceMeters: 5000,
     });
   });
 

@@ -493,9 +493,11 @@ export type TrainingEventDetail = {
 // =============================================================================
 // Exercise analytics types
 // Used by exercise-analytics-service and the two exercise-history routes. A
-// progression point carries every chart marker a session can have
-// (utils/exercise-progress-markers.ts names them; utils/exercise-session-markers.ts
-// computes them), so a chart of any exercise type reads one shape.
+// progression point is one logged session: every chart marker it can have
+// (utils/exercise-progress-markers.ts names them) and every value the Sessions
+// table reads (utils/exercise-session-columns.ts), all computed by one kernel
+// (utils/exercise-session-markers.ts), so a chart and a table of any exercise
+// type read one shape.
 // =============================================================================
 
 export type ExerciseListItem = {
@@ -513,9 +515,12 @@ export type ExerciseProgressionPoint = {
   // A lift: the heaviest working set, and what else that set recorded
   topSetWeight: number | null;
   topSetReps: number | null;
-  topSetRpe: number | null;
   topSetDistanceMeters: number | null;
   topSetDurationSeconds: number | null;
+  // The top set's RPE and RIR — in a session with no loaded set, the highest
+  // RPE and the lowest RIR logged. The RPE chart lens and the table read one value.
+  rpe: number | null;
+  rir: number | null;
   estimatedOneRepMax: number | null;
   totalVolume: number | null;
   // A bodyweight set: the most reps in a set logged with no load
@@ -533,6 +538,16 @@ export type ExerciseProgressionPoint = {
   bestTimeWeight: number | null;
   // A hold: the longest set that logged a time and no distance
   longestHoldSeconds: number | null;
+  // The session's calories, added up; the highest of each machine and body reading
+  totalCalories: number | null;
+  maxCadence: number | null;
+  maxStrokeRate: number | null;
+  maxResistance: number | null;
+  maxHeartRateZone: number | null;
+  maxHeartRate: number | null;
+  maxFtpPercent: number | null;
+  // The average rest taken, to the second — only the React Native app's timer records rest
+  averageRestSeconds: number | null;
   // Compliance: the prescription the session was logged against
   prescribedSets: number | null;
   actualSets: number;

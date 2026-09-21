@@ -12,12 +12,14 @@ import {
 } from "./exercise-search-select";
 import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise-trend-chart";
 import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
+import { ExerciseSessionsTable } from "@/components/training/exercise-data/exercise-sessions-table";
 import { ExerciseKpiStrip } from "./exercise-kpi-strip";
 import { computeKpis } from "@/components/training/exercise-data/exercise-insight";
 import { useUnits } from "@/contexts/units-context";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { coachExerciseHistoryKey } from "@/hooks/use-exercise-history";
+import { EXERCISE_HISTORY_MAX_SESSIONS } from "@/lib/training-constants";
 import {
   effectiveMarker,
   markerLens,
@@ -30,7 +32,9 @@ import type {
   ExercisePR,
 } from "@/types/training";
 
-const SESSION_COUNTS: { value: number | "all"; label: string }[] = [
+type SessionWindow = number | "all";
+
+const SESSION_COUNTS: { value: SessionWindow; label: string }[] = [
   { value: 8, label: "8" },
   { value: 12, label: "12" },
   { value: 24, label: "24" },
@@ -62,7 +66,7 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
   // exercise offers, so a pick survives a switch to an exercise that offers
   // it and falls back where it doesn't — no effect resets it.
   const [selectedMetric, setSelectedMetric] = useState<ExerciseMetric>("weight");
-  const [sessionCount, setSessionCount] = useState<number | "all">(12);
+  const [sessionCount, setSessionCount] = useState<SessionWindow>(12);
 
   const { preference } = useUnits();
 
@@ -79,18 +83,26 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     { ...SWR_CONFIG, onError: (err) => console.error("Failed to load exercise list:", err) },
   );
 
-  // SWR: progression data (fetch for all non-PR metrics)
+  // SWR: the window's sessions — on every lens, PRs included: the chart, the
+  // KPI strip and the Sessions table beneath read this one read, so a lens
+  // switch fetches nothing. "All" sends the routes' bound; left out, the
+  // database function would floor the read at 12 sessions.
   const progressionUrl =
-    subject != null && selectedMetric !== "prs"
+    subject != null
       ? coachExerciseHistoryKey(clientId, {
           metric: "progression",
           exerciseId: selectedExerciseId,
           exerciseName: selectedExerciseName,
-          sessionCount: sessionCount === "all" ? undefined : sessionCount,
+          sessionCount: sessionCount === "all" ? EXERCISE_HISTORY_MAX_SESSIONS : sessionCount,
         })
       : null;
 
-  const { data: progressionData, isLoading: progressionLoading } = useSWR<{
+  const {
+    data: progressionData,
+    error: progressionError,
+    isLoading: progressionLoading,
+    mutate: mutateProgression,
+  } = useSWR<{
     success: boolean;
     data: ExerciseProgressionPoint[];
   }>(progressionUrl, swrFetcher, {
@@ -98,7 +110,7 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     onError: (err) => console.error("Failed to load progression data:", err),
   });
 
-  // SWR: PR data
+  // SWR: PR data — the PRs lens alone shows the cards
   const prUrl =
     subject != null && selectedMetric === "prs"
       ? coachExerciseHistoryKey(clientId, {
@@ -130,6 +142,12 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
   // The lenses: the type's own at once, and whatever else the logs carry once
   // the progression lands; then PRs
   const points = progressionData?.data;
+  // Failed with nothing in hand and no retry in flight: the chart and the table
+  // say so together (a retry shows both loading). A refresh that fails over
+  // sessions already shown keeps them.
+  const progressionFailed =
+    progressionError != null && points === undefined && !progressionLoading;
+  const retryProgression = () => void mutateProgression();
   const offered = useMemo(
     () => offeredMarkers(exerciseType, points ?? [], "coach"),
     [exerciseType, points],
@@ -185,12 +203,16 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
       {hasExercise && (
         <>
           {/* 2. Divider rail: section identity left, session window right —
-              the same slot the Data page's pager occupies. The metric lens
-              lives in the hero, so the PRs lens leaves a bare rail. */}
+              the same slot the Data page's pager occupies. The window governs
+              the chart and the Sessions table, so it stays on the PRs lens,
+              where the rail says the cards are all-time. */}
           <SectionLabel
             label={metric === "prs" ? "Personal records" : "Progression"}
             actions={
-              metric !== "prs" ? (
+              <div className="flex items-center gap-3">
+                {metric === "prs" && (
+                  <span className="text-[11px] text-[#93b0b4]">All-time</span>
+                )}
                 <div className="flex items-center gap-1">
                   {SESSION_COUNTS.map((sc) => (
                     <button
@@ -210,7 +232,7 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
                     </button>
                   ))}
                 </div>
-              ) : undefined
+              </div>
             }
           />
 
@@ -222,17 +244,32 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
             </div>
           )}
 
-          {/* 4. Chart or PR view */}
-          {metric === "prs" ? (
-            <ExercisePrView data={prData?.data} exerciseType={exerciseType} isLoading={prLoading} />
-          ) : (
-            <ExerciseTrendChart
-              data={points}
-              metric={metric}
-              exerciseType={exerciseType}
-              isLoading={progressionLoading}
-            />
-          )}
+          {/* 4. Chart or PR view — the 16px above the Sessions rail */}
+          <div className="mb-4">
+            {metric === "prs" ? (
+              <ExercisePrView data={prData?.data} exerciseType={exerciseType} isLoading={prLoading} />
+            ) : (
+              <ExerciseTrendChart
+                data={points}
+                metric={metric}
+                exerciseType={exerciseType}
+                isLoading={progressionLoading}
+                isError={progressionFailed}
+                onRetry={retryProgression}
+              />
+            )}
+          </div>
+
+          {/* 5. The Sessions table beneath whatever the hero shows. Keyed by the
+              exercise: another pick starts it fresh; a lens switch leaves it be. */}
+          <ExerciseSessionsTable
+            key={subject}
+            audience="coach"
+            points={points}
+            isError={progressionFailed}
+            onRetry={retryProgression}
+            windowKey={String(sessionCount)}
+          />
         </>
       )}
     </div>

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ExerciseDataView } from "./exercise-data-view";
+import { EXERCISE_HISTORY_MAX_SESSIONS } from "@/lib/training-constants";
 import type { ExerciseListItem, ExerciseProgressionPoint, ExercisePR } from "@/types/training";
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,8 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
     sessionLogId: "sl-1",
     topSetWeight: 80,
     topSetReps: 8,
-    topSetRpe: 7,
+    rpe: 7,
+    rir: null,
     topSetDistanceMeters: null,
     topSetDurationSeconds: null,
     estimatedOneRepMax: 100,
@@ -75,6 +77,14 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
     bestTimeDistanceMeters: null,
     bestTimeWeight: null,
     longestHoldSeconds: null,
+    totalCalories: null,
+    maxCadence: null,
+    maxStrokeRate: null,
+    maxResistance: null,
+    maxHeartRateZone: null,
+    maxHeartRate: null,
+    maxFtpPercent: null,
+    averageRestSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: 8,
@@ -102,13 +112,19 @@ type SWRResponse = {
   data: unknown;
   isLoading: boolean;
   error: Error | null;
+  mutate?: () => Promise<unknown>;
 };
+
+const mockRetry = vi.fn();
 
 function setupSWR(options: {
   list?: ExerciseListItem[];
   progression?: ExerciseProgressionPoint[];
   prs?: ExercisePR[];
   listLoading?: boolean;
+  progressionFailed?: boolean;
+  /** Failed, and SWR's retry is in flight. */
+  progressionRetrying?: boolean;
 }) {
   mockUseSWR.mockImplementation((url: string | null): SWRResponse => {
     if (url === null) return { data: undefined, isLoading: false, error: null };
@@ -121,10 +137,17 @@ function setupSWR(options: {
       };
     }
     if (url.includes("metric=progression")) {
+      if (options.progressionRetrying) {
+        return { data: undefined, isLoading: true, error: new Error("boom"), mutate: mockRetry };
+      }
+      if (options.progressionFailed) {
+        return { data: undefined, isLoading: false, error: new Error("boom"), mutate: mockRetry };
+      }
       return {
         data: { success: true, data: options.progression ?? [] },
         isLoading: false,
         error: null,
+        mutate: mockRetry,
       };
     }
     if (url.includes("metric=prs")) {
@@ -208,7 +231,7 @@ describe("ExerciseDataView", () => {
     }
   });
 
-  it("hides the session window and KPI strip for the PRs lens", async () => {
+  it("keeps the session window live on the PRs lens, whose rail says the cards are all-time", async () => {
     const user = userEvent.setup();
     mockSearchParams.set("exerciseId", "ex-1");
     mockSearchParams.set("exerciseName", "Bench Press");
@@ -221,15 +244,19 @@ describe("ExerciseDataView", () => {
 
     render(<ExerciseDataView clientId="client-1" />);
 
-    expect(screen.getByText("All")).toBeInTheDocument();
     expect(screen.getByText("Progression")).toBeInTheDocument();
+    expect(screen.queryByText("All-time")).toBeNull();
     // KPI strip renders for a windowed metric with data (exercises the
     // (progressionLoading || kpis.length > 0) wrapper guard)
     expect(screen.getByText("Top Set")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "PRs" }));
 
-    expect(screen.queryByText("All")).not.toBeInTheDocument();
+    // The window governs the Sessions table, so it stays; the cards are all-time
+    for (const label of ["8", "12", "24", "All"]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
+    expect(screen.getByText("All-time")).toBeInTheDocument();
     expect(screen.queryByText("Top Set")).not.toBeInTheDocument();
     expect(screen.getByText("Personal records")).toBeInTheDocument();
     expect(screen.queryByText("Progression")).not.toBeInTheDocument();
@@ -289,8 +316,8 @@ describe("ExerciseDataView — lenses by type", () => {
     setupSWR({
       list: [makeListItem({ name: "Pull Up", exerciseType: "bodyweight" })],
       progression: [
-        makePoint({ topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, topSetRpe: null, bestSetReps: 10 }),
-        makePoint({ date: "2026-03-08", topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, topSetRpe: null, bestSetReps: 12 }),
+        makePoint({ topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, rpe: null, bestSetReps: 10 }),
+        makePoint({ date: "2026-03-08", topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, rpe: null, bestSetReps: 12 }),
       ],
     });
 
@@ -310,8 +337,8 @@ describe("ExerciseDataView — lenses by type", () => {
     setupSWR({
       list: [makeListItem({ name: "Pull Up", exerciseType: "bodyweight" })],
       progression: [
-        makePoint({ topSetWeight: 10, topSetReps: 5, estimatedOneRepMax: 11.7, totalVolume: 50, topSetRpe: null, bestSetReps: null }),
-        makePoint({ date: "2026-03-08", topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, topSetRpe: null, bestSetReps: 12 }),
+        makePoint({ topSetWeight: 10, topSetReps: 5, estimatedOneRepMax: 11.7, totalVolume: 50, rpe: null, bestSetReps: null }),
+        makePoint({ date: "2026-03-08", topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, rpe: null, bestSetReps: 12 }),
       ],
     });
 
@@ -321,5 +348,110 @@ describe("ExerciseDataView — lenses by type", () => {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
     expect(screen.queryByRole("button", { name: "RPE" })).toBeNull();
+  });
+});
+
+describe("ExerciseDataView — the Sessions table", () => {
+  const benchSessions = [
+    makePoint({ date: "2026-03-01T00:00:00Z", sessionLogId: "sl-1", topSetWeight: 80 }),
+    makePoint({ date: "2026-03-08T00:00:00Z", sessionLogId: "sl-2", topSetWeight: 90 }),
+    makePoint({ date: "2026-03-15T00:00:00Z", sessionLogId: "sl-3", topSetWeight: 85 }),
+  ];
+
+  const firstLoads = () =>
+    screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[1].textContent);
+
+  const progressionUrls = () =>
+    mockUseSWR.mock.calls
+      .map(([url]) => url as string | null)
+      .filter((url): url is string => url != null && url.includes("metric=progression"));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchParams.set("exerciseId", "ex-1");
+    mockSearchParams.set("exerciseName", "Bench Press");
+    setupSWR({ list: [makeListItem()], progression: benchSessions, prs: [makePR()] });
+  });
+
+  it("sits beneath the chart and beneath the PR cards, reading the one sessions read on every lens", async () => {
+    const user = userEvent.setup();
+    render(<ExerciseDataView clientId="client-1" />);
+    expect(screen.getByRole("region", { name: "Sessions" })).toBeInTheDocument();
+    expect(firstLoads()).toEqual(["85", "90", "80"]);
+
+    mockUseSWR.mockClear();
+    await user.click(screen.getByRole("button", { name: "PRs" }));
+    expect(screen.getByText("5 Rep Max")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Sessions" })).toBeInTheDocument();
+    expect(firstLoads()).toEqual(["85", "90", "80"]);
+    // The PRs lens still reads the window's sessions — the same key, no new read
+    expect(progressionUrls().length).toBeGreaterThan(0);
+    expect(new Set(progressionUrls()).size).toBe(1);
+  });
+
+  it("keeps its sort, columns and page through a lens switch", async () => {
+    const user = userEvent.setup();
+    render(<ExerciseDataView clientId="client-1" />);
+    await user.click(screen.getByRole("button", { name: /Newest first/ }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Heaviest load" }));
+    await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Volume" }));
+    await user.keyboard("{Escape}");
+
+    await user.click(screen.getByRole("button", { name: "PRs" }));
+    await user.click(screen.getByRole("button", { name: "e1RM" }));
+
+    expect(screen.getByRole("button", { name: /Heaviest load/ })).toBeInTheDocument();
+    expect(firstLoads()).toEqual(["90", "85", "80"]);
+    expect(screen.queryByRole("columnheader", { name: "Volume (kg)" })).toBeNull();
+  });
+
+  it("starts fresh when another exercise is picked", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ExerciseDataView clientId="client-1" />);
+    await user.click(screen.getByRole("button", { name: /Newest first/ }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Heaviest load" }));
+    await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Volume" }));
+    await user.keyboard("{Escape}");
+
+    // The address is the subject: the drill-down or the picker writes it
+    mockSearchParams.set("exerciseId", "ex-2");
+    mockSearchParams.set("exerciseName", "Squat");
+    rerender(<ExerciseDataView clientId="client-1" />);
+
+    expect(screen.getByRole("button", { name: /Newest first/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Volume (kg)" })).toBeInTheDocument();
+    expect(firstLoads()).toEqual(["85", "90", "80"]);
+  });
+
+  it("asks for every session up to the bound when the window is All — never the read's 12-session floor", async () => {
+    const user = userEvent.setup();
+    render(<ExerciseDataView clientId="client-1" />);
+    expect(progressionUrls().at(-1)).toContain("sessionCount=12");
+    await user.click(screen.getByRole("button", { name: "All" }));
+    expect(progressionUrls().at(-1)).toContain(`sessionCount=${EXERCISE_HISTORY_MAX_SESSIONS}`);
+  });
+
+  it("shows the chart and the table loading together while a retry is in flight — never an error beside a skeleton", () => {
+    setupSWR({ list: [makeListItem()], progressionRetrying: true });
+    const { container } = render(<ExerciseDataView clientId="client-1" />);
+    expect(screen.queryByText("Couldn't load the sessions")).toBeNull();
+    const sessions = screen.getByRole("region", { name: "Sessions" });
+    expect(within(sessions).queryByRole("columnheader", { name: "Date" })).toBeNull();
+    expect(container.querySelectorAll("[data-slot='skeleton']").length).toBeGreaterThan(0);
+  });
+
+  it("says a failed sessions read failed in the chart and the table alike, each with Try again", async () => {
+    const user = userEvent.setup();
+    setupSWR({ list: [makeListItem()], progressionFailed: true });
+    render(<ExerciseDataView clientId="client-1" />);
+    expect(screen.getAllByText("Couldn't load the sessions")).toHaveLength(2);
+    expect(screen.queryByText(/Not enough data yet/)).toBeNull();
+    await user.click(screen.getAllByRole("button", { name: "Try again" })[1]);
+    expect(mockRetry).toHaveBeenCalledTimes(1);
   });
 });

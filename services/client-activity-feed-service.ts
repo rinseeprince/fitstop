@@ -5,7 +5,7 @@ import {
   isBodyweightSet,
   isHold,
   isTimedDistance,
-  type MarkerSet,
+  type SetShape,
 } from "@/utils/exercise-session-markers";
 import type { ActivityItem } from "@/types/coach-brief";
 import type { ExercisePR } from "@/types/training";
@@ -173,16 +173,11 @@ export function collectNewExerciseBests(
 
     for (const logged of row.set_logs) {
       if (logged.set_type === "warmup") continue;
-      const set: MarkerSet = {
-        setType: logged.set_type,
+      const set: SetShape = {
         reps: logged.reps,
         weight: logged.weight,
-        rpe: null,
         distanceMeters: logged.distance_meters,
         durationSeconds: logged.duration_seconds,
-        paceSecondsPerKm: null,
-        splitSecondsPer500m: null,
-        power: null,
       };
       // A load logged with no distance is a lift's; over a distance it is a carry
       if (hasLoad(set)) {

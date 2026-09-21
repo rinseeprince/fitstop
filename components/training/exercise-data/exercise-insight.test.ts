@@ -15,7 +15,8 @@ function point(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseProgr
     topSetReps: 5,
     estimatedOneRepMax: 112.5,
     totalVolume: 2000,
-    topSetRpe: 8,
+    rpe: 8,
+    rir: null,
     topSetDistanceMeters: null,
     topSetDurationSeconds: null,
     bestSetReps: null,
@@ -29,6 +30,14 @@ function point(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseProgr
     bestTimeDistanceMeters: null,
     bestTimeWeight: null,
     longestHoldSeconds: null,
+    totalCalories: null,
+    maxCadence: null,
+    maxStrokeRate: null,
+    maxResistance: null,
+    maxHeartRateZone: null,
+    maxHeartRate: null,
+    maxFtpPercent: null,
+    averageRestSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: 5,
@@ -112,6 +121,16 @@ describe("computeInsight", () => {
     expect(computeInsight("weight", data, "metric")).toContain("new PR of 100kg");
     expect(computeInsight("weight", data, "imperial")).toContain("new PR of 220lbs");
   });
+
+  // A run's, a hold's and a bodyweight set's RPE reach the lens too, so its
+  // footer names no weights and no strength
+  it("words the RPE drift for any exercise", () => {
+    const runs = [6, 6, 6, 8, 8, 8].map((rpe, i) =>
+      point({ date: `2026-05-0${i + 1}T00:00:00Z`, topSetWeight: null, rpe }),
+    );
+    expect(computeInsight("rpe", runs, "metric")).toBe("RPE rising across sessions - possible accumulated fatigue.");
+    expect(computeInsight("rpe", [...runs].reverse(), "metric")).toBe("RPE falling - adaptation progressing well.");
+  });
 });
 
 describe("usesStrengthAnalytics", () => {
@@ -126,10 +145,12 @@ describe("usesStrengthAnalytics", () => {
 
 describe("computeKpis — a marker's own three cards", () => {
   const blank: Omit<ExerciseProgressionPoint, "date" | "sessionLogId"> = {
-    topSetWeight: null, topSetReps: null, topSetRpe: null, topSetDistanceMeters: null, topSetDurationSeconds: null,
+    topSetWeight: null, topSetReps: null, rpe: null, rir: null, topSetDistanceMeters: null, topSetDurationSeconds: null,
     estimatedOneRepMax: null, totalVolume: null, bestSetReps: null, bestPaceSecondsPerKm: null, bestPaceDistanceMeters: null,
     totalDistanceMeters: null, bestSplitSecondsPer500m: null, bestSplitDistanceMeters: null, bestPower: null,
     bestTimeSeconds: null, bestTimeDistanceMeters: null, bestTimeWeight: null, longestHoldSeconds: null,
+    totalCalories: null, maxCadence: null, maxStrokeRate: null, maxResistance: null, maxHeartRateZone: null,
+    maxHeartRate: null, maxFtpPercent: null, averageRestSeconds: null,
     prescribedSets: null, actualSets: 1, prescribedRepsMin: null, prescribedRepsMax: null,
   };
   const run = (date: string, pace: number): ExerciseProgressionPoint => ({ ...blank, date, sessionLogId: date, bestPaceSecondsPerKm: pace });

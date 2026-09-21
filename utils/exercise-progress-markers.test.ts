@@ -19,7 +19,14 @@ import {
   type BestKind,
 } from "./exercise-progress-markers";
 import { EXERCISE_TYPES } from "./exercise-types";
-import { LOGGED_MEASURES, SET_LOG_MEASURES } from "./set-log-measures";
+import { aggregateSessionMarkers, type MarkerSet } from "./exercise-session-markers";
+import { LOGGED_MEASURES, SET_LOG_MEASURES, emptyLoggedActuals } from "./set-log-measures";
+
+/** A working set recording nothing — every measure a set can carry. */
+function markerSet(): MarkerSet {
+  const { tempo: _tempo, ...measures } = emptyLoggedActuals();
+  return { setType: "working", ...measures };
+}
 
 const MIGRATION = join(process.cwd(), "supabase/migrations/188_progress_charts_by_exercise_type.sql");
 
@@ -29,7 +36,8 @@ function point(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseProgr
     sessionLogId: "sl-1",
     topSetWeight: null,
     topSetReps: null,
-    topSetRpe: null,
+    rpe: null,
+    rir: null,
     topSetDistanceMeters: null,
     topSetDurationSeconds: null,
     estimatedOneRepMax: null,
@@ -45,6 +53,14 @@ function point(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseProgr
     bestTimeDistanceMeters: null,
     bestTimeWeight: null,
     longestHoldSeconds: null,
+    totalCalories: null,
+    maxCadence: null,
+    maxStrokeRate: null,
+    maxResistance: null,
+    maxHeartRateZone: null,
+    maxHeartRate: null,
+    maxFtpPercent: null,
+    averageRestSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: null,
@@ -154,10 +170,19 @@ describe("offeredMarkers", () => {
     expect(offeredMarkers("bodyweight", [weighted], "client")).toEqual(["reps", "weight", "e1rm", "volume"]);
   });
 
-  it("offers RPE to the coach on any exercise whose sets recorded one", () => {
-    const run = point({ bestPaceSecondsPerKm: 300, topSetRpe: 7 });
-    expect(offeredMarkers("endurance", [run], "coach")).toEqual(["pace", "distance", "compliance", "rpe"]);
-    expect(offeredMarkers("endurance", [run], "client")).toEqual(["pace", "distance"]);
+  it("offers RPE to the coach on any exercise whose sets recorded one — a run, a plank, a bodyweight set", () => {
+    // Points as the kernel makes them: no loaded set, so the highest RPE logged
+    const session = (sets: Partial<MarkerSet>[]) =>
+      point(aggregateSessionMarkers(sets.map((s) => ({ ...markerSet(), ...s }))));
+    const run = session([{ distanceMeters: 5000, durationSeconds: 1500, paceSecondsPerKm: 300, rpe: 7 }]);
+    // A distance with a time is a timed distance too, so Time follows as well
+    expect(offeredMarkers("endurance", [run], "coach")).toEqual(["pace", "distance", "compliance", "rpe", "time"]);
+    expect(offeredMarkers("endurance", [run], "client")).toEqual(["pace", "distance", "time"]);
+
+    const plank = session([{ durationSeconds: 90, rpe: 8 }]);
+    expect(offeredMarkers("holds", [plank], "coach")).toContain("rpe");
+    const pullUps = session([{ reps: 12, rpe: 9 }]);
+    expect(offeredMarkers("bodyweight", [pullUps], "coach")).toContain("rpe");
   });
 
   it("offers a Strength exercise a hold or a timed set when one was logged", () => {

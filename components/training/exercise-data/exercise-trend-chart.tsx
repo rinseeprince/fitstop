@@ -42,7 +42,9 @@ import {
 } from "@/utils/exercise-progress-markers";
 import type { ExerciseType } from "@/utils/exercise-types";
 import { useUnits } from "@/contexts/units-context";
+import { dayFromUtcStamp } from "@/lib/date-helpers";
 import type { ExerciseProgressionPoint } from "@/types/training";
+import { SessionsLoadError } from "./sessions-load-error";
 
 // The trend chart of one marker (utils/exercise-progress-markers.ts): the
 // marker says what it plots, how its numbers read, which way is better and
@@ -54,6 +56,12 @@ type ExerciseTrendChartProps = {
   metric: ProgressMarker;
   exerciseType: ExerciseType;
   isLoading: boolean;
+  /**
+   * The sessions read failed: the chart says so, with the Sessions table
+   * beneath it, rather than claiming there isn't enough data.
+   */
+  isError?: boolean;
+  onRetry?: () => void;
   /**
    * Whether to render the trend-commentary insight footer. Defaults to true
    * (coach view). The client view passes false: the insight copy is coach-style
@@ -101,8 +109,9 @@ const TOOLTIP_STYLE = {
   },
 };
 
+// A session's date is its day stamp (UTC midnight): read as the day it names
 function formatDateShort(iso: string) {
-  return format(new Date(iso), "MMM d");
+  return format(dayFromUtcStamp(iso), "MMM d");
 }
 
 const isClock = (spec: ProgressMarkerSpec) =>
@@ -151,7 +160,7 @@ function MetricTooltip({ active, payload, spec, viewer }: Record<string, unknown
       line = `${plotted.totalVolume?.toLocaleString()}${u}`;
       break;
     case "rpe":
-      line = `RPE ${p.topSetRpe}`;
+      line = `RPE ${p.rpe}`;
       break;
     case "compliance":
       line =
@@ -256,6 +265,8 @@ export function ExerciseTrendChart({
   metric,
   exerciseType,
   isLoading,
+  isError = false,
+  onRetry,
   showInsight = true,
 }: ExerciseTrendChartProps) {
   const { preference } = useUnits();
@@ -313,6 +324,12 @@ export function ExerciseTrendChart({
 
   if (isLoading) {
     return <Skeleton className="h-[380px] w-full rounded-[6px]" />;
+  }
+
+  // A failed read is never "not enough data" (docs/newdesignsystem.md →
+  // "Loading & async states")
+  if (isError) {
+    return <SessionsLoadError onRetry={onRetry} />;
   }
 
   if (metric === "compliance" && data && data.every((p) => p.prescribedSets == null)) {

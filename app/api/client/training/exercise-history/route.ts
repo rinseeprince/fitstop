@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
+import { EXERCISE_HISTORY_MAX_SESSIONS } from "@/lib/training-constants";
 import {
   getClientExerciseList,
   getExerciseProgressionSeries,
@@ -54,15 +55,18 @@ export async function GET(request: NextRequest) {
     }
 
     // metric === "progression"
-    // Cap at 500 (we own this route): the client picker's "All" option maps to 500,
-    // comfortably above any realistic per-exercise history while staying bounded.
+    // Capped at the one bound the session window's "All" asks for
+    // (EXERCISE_HISTORY_MAX_SESSIONS), the coach's route alike.
     const sessionCountParam = searchParams.get("sessionCount");
     let sessionCount: number | undefined;
     if (sessionCountParam) {
       sessionCount = parseInt(sessionCountParam, 10);
-      if (isNaN(sessionCount) || sessionCount < 1 || sessionCount > 500) {
+      if (isNaN(sessionCount) || sessionCount < 1 || sessionCount > EXERCISE_HISTORY_MAX_SESSIONS) {
         return NextResponse.json(
-          { success: false, error: "sessionCount must be between 1 and 500" },
+          {
+            success: false,
+            error: `sessionCount must be between 1 and ${EXERCISE_HISTORY_MAX_SESSIONS}`,
+          },
           { status: 400 },
         );
       }

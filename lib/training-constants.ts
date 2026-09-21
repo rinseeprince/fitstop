@@ -36,3 +36,13 @@ export const MAX_PROGRAM_SESSIONS = 2000;
  * sessions, so a week can hold more than seven; this only bounds one request.
  */
 export const MAX_WEEK_LAYOUT_MOVES = 50;
+
+/**
+ * The most sessions an exercise's progress read returns, and what the session
+ * window's "All" asks for on the coach's view and the client's alike — far
+ * above any real history of one exercise, and a bound on the read. Both
+ * exercise-history routes refuse a larger count. "All" must send it: a read
+ * with no count and no date window is floored at 12 sessions by the database
+ * function (get_exercise_progression_window, since migration 103).
+ */
+export const EXERCISE_HISTORY_MAX_SESSIONS = 500;

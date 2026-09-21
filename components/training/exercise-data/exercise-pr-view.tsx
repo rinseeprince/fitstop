@@ -17,6 +17,7 @@ import {
   type BestKind,
 } from "@/utils/exercise-progress-markers";
 import { useUnits } from "@/contexts/units-context";
+import { dayFromUtcStamp } from "@/lib/date-helpers";
 import {
   formatDistance,
   formatDuration,
@@ -158,7 +159,7 @@ export function ExercisePrView({ data, exerciseType, isLoading }: ExercisePrView
                       )}
                     </p>
                     <p className={cn(MONO, "text-[11px] text-[#93b0b4] mt-1 leading-tight")}>
-                      {format(new Date(pr.date), "MMM d, yyyy")}
+                      {format(dayFromUtcStamp(pr.date), "MMM d, yyyy")}
                     </p>
                   </div>
                 );

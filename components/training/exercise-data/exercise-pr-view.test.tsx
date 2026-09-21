@@ -45,6 +45,18 @@ describe("ExercisePrView", () => {
     expect(screen.queryByText("Rep maxes")).toBeNull();
   });
 
+  it("dates a PR by the day its session's stamp names, west of Greenwich too", () => {
+    const original = process.env.TZ;
+    try {
+      // 00:00 UTC on 15 Mar is the evening of 14 Mar in Los Angeles
+      process.env.TZ = "America/Los_Angeles";
+      render(<ExercisePrView data={[repMax({ date: "2026-03-15T00:00:00+00:00" })]} exerciseType="strength" isLoading={false} />);
+      expect(screen.getByText("Mar 15, 2026")).toBeInTheDocument();
+    } finally {
+      process.env.TZ = original;
+    }
+  });
+
   it("renders 'New' badge when isRecent is true", () => {
     render(<ExercisePrView data={[repMax({ isRecent: true })]} exerciseType="strength" isLoading={false} />);
     expect(screen.getByText("New")).toBeInTheDocument();

@@ -2,10 +2,12 @@ import { supabaseAdmin } from "./supabase-admin";
 import { countWorkingSets } from "@/utils/exercise-set-specs";
 import { toExerciseType } from "@/utils/exercise-types";
 import { isBestKind } from "@/utils/exercise-progress-markers";
+import { LOGGED_MEASURES, SET_LOG_MEASURES } from "@/utils/set-log-measures";
 import {
   aggregateSessionMarkers,
   type MarkerSet,
 } from "@/utils/exercise-session-markers";
+import type { Database } from "@/types/database";
 import type {
   ExerciseBest,
   ExerciseListItem,
@@ -15,16 +17,40 @@ import type {
 
 // ---------------------------------------------------------------------------
 // Public API — backed by SQL RPCs (migrations 094 to 188). Identity-union,
-// windowing and the bests live in Postgres; a session's chart markers are
-// computed in JS over the bounded RPC result by the one kernel
-// (utils/exercise-session-markers.ts), so every exercise type reads one shape.
+// windowing and the bests live in Postgres; a session's values — its chart
+// markers and every cell of its Sessions table row — are computed in JS over
+// the bounded RPC result by the one kernel (utils/exercise-session-markers.ts),
+// so every exercise type reads one shape.
 // ---------------------------------------------------------------------------
+
+type ProgressionRow =
+  Database["public"]["Functions"]["get_exercise_progression_window"]["Returns"][number];
 
 /** A PR is "recent" for this long after the day it was set. */
 const PR_RECENT_DAYS = 28;
 
 const toNumber = (value: number | string | null | undefined): number | null =>
   value == null ? null : Number(value);
+
+/**
+ * One progression row's set as the kernel reads it: every numeric measure the
+ * read returns, by the one table of them (migration 188's columns are
+ * SET_LOG_MEASURES' — utils/exercise-progress-markers.test.ts reads the
+ * migration against it), so a measure the table gains reaches the kernel here
+ * with no second list. A NUMERIC may arrive as a string.
+ */
+function markerSetFromRow(row: ProgressionRow): MarkerSet {
+  const measures: Record<string, number | null> = {};
+  for (const measure of LOGGED_MEASURES) {
+    const { key, column } = SET_LOG_MEASURES[measure];
+    measures[key] = toNumber(row[column]);
+  }
+  return {
+    // NOT NULL column (default 'working'); guarded for any legacy/null row.
+    setType: row.set_type ?? "working",
+    ...(measures as Omit<MarkerSet, "setType">),
+  };
+}
 
 export async function getClientExerciseList(
   clientId: string,
@@ -102,18 +128,7 @@ export async function getExerciseProgressionSeries(
     }
     // A zero-set exercise_log still emits one row (LEFT JOIN): no set to add
     if (row.set_id !== null && row.set_id !== undefined) {
-      group.sets.push({
-        // NOT NULL column (default 'working'); guarded for any legacy/null row.
-        setType: row.set_type ?? "working",
-        reps: row.reps,
-        weight: toNumber(row.weight),
-        rpe: toNumber(row.rpe),
-        distanceMeters: toNumber(row.distance_meters),
-        durationSeconds: toNumber(row.duration_seconds),
-        paceSecondsPerKm: row.pace_seconds_per_km,
-        splitSecondsPer500m: toNumber(row.split_seconds_per_500m),
-        power: row.power,
-      });
+      group.sets.push(markerSetFromRow(row));
     }
   }
 

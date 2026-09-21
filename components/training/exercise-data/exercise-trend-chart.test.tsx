@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ExerciseTrendChart } from "./exercise-trend-chart";
 import type { ExerciseProgressionPoint } from "@/types/training";
 
@@ -26,7 +27,8 @@ function makePoint(
     sessionLogId: "sl-1",
     topSetWeight: 80,
     topSetReps: 8,
-    topSetRpe: 7,
+    rpe: 7,
+    rir: null,
     topSetDistanceMeters: null,
     topSetDurationSeconds: null,
     estimatedOneRepMax: 100,
@@ -42,6 +44,14 @@ function makePoint(
     bestTimeDistanceMeters: null,
     bestTimeWeight: null,
     longestHoldSeconds: null,
+    totalCalories: null,
+    maxCadence: null,
+    maxStrokeRate: null,
+    maxResistance: null,
+    maxHeartRateZone: null,
+    maxHeartRate: null,
+    maxFtpPercent: null,
+    averageRestSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: 8,
@@ -65,10 +75,27 @@ describe("ExerciseTrendChart", () => {
     expect(container.querySelector("[data-slot='skeleton']")).toBeInTheDocument();
   });
 
+  it("says a failed read failed, never that there isn't enough data", async () => {
+    const onRetry = vi.fn();
+    render(
+      <ExerciseTrendChart data={undefined} metric="weight" exerciseType="strength" isLoading={false} isError onRetry={onRetry} />,
+    );
+    expect(screen.getByText("Couldn't load the sessions")).toBeInTheDocument();
+    expect(screen.queryByText(/Not enough data yet/)).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
   it("renders the RPE empty state when no set recorded one", () => {
-    const data = two.map((p) => ({ ...p, topSetRpe: null }));
+    const data = two.map((p) => ({ ...p, rpe: null }));
     render(<ExerciseTrendChart data={data} metric="rpe" exerciseType="strength" isLoading={false} />);
     expect(screen.getByText("No RPE data recorded for this exercise.")).toBeInTheDocument();
+  });
+
+  it("says where the RPE comes from: the top set's, or the highest logged", () => {
+    const runs = two.map((p) => ({ ...p, topSetWeight: null, rpe: 7 }));
+    render(<ExerciseTrendChart data={runs} metric="rpe" exerciseType="endurance" isLoading={false} />);
+    expect(screen.getByText("Top set RPE per session, or the highest logged")).toBeInTheDocument();
   });
 
   it("keeps Strength's titles and its unit on the subtitle", () => {

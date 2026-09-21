@@ -1,3 +1,5 @@
+import { differenceInCalendarDays } from "date-fns";
+import { dayFromUtcStamp } from "@/lib/date-helpers";
 import type { ExerciseProgressionPoint } from "@/types/training";
 import type { ProgressMarkerSpec } from "@/utils/exercise-progress-markers";
 import {
@@ -21,9 +23,12 @@ export type KpiCard = {
   trend?: "up" | "down" | "flat";
 };
 
-/** "Today", "1 day ago", "12 days ago" — how long since a best was set. */
+/**
+ * "Today", "1 day ago", "12 days ago" — how long since a best was set, counted
+ * in the viewer's calendar days from the day the session's stamp names.
+ */
 export function daysAgoText(iso: string, now: number = Date.now()): string {
-  const days = Math.floor((now - new Date(iso).getTime()) / 86400000);
+  const days = differenceInCalendarDays(now, dayFromUtcStamp(iso));
   if (days <= 0) return "Today";
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
