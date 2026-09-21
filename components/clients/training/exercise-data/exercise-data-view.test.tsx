@@ -58,33 +58,25 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
   return {
     date: "2026-03-01T00:00:00Z",
     sessionLogId: "sl-1",
+    eventId: null,
+    sets: [],
+    totalReps: null,
+    totalDurationSeconds: null,
+    averagePaceSecondsPerKm: null,
+    averageSplitSecondsPer500m: null,
+    averageStrokeRate: null,
+    averagePower: null,
     topSetWeight: 80,
     topSetReps: 8,
     rpe: 7,
-    rir: null,
     topSetDistanceMeters: null,
     topSetDurationSeconds: null,
     estimatedOneRepMax: 100,
     totalVolume: 2400,
     bestSetReps: null,
-    bestPaceSecondsPerKm: null,
-    bestPaceDistanceMeters: null,
     totalDistanceMeters: null,
-    bestSplitSecondsPer500m: null,
-    bestSplitDistanceMeters: null,
-    bestPower: null,
-    bestTimeSeconds: null,
-    bestTimeDistanceMeters: null,
-    bestTimeWeight: null,
     longestHoldSeconds: null,
-    totalCalories: null,
-    maxCadence: null,
-    maxStrokeRate: null,
-    maxResistance: null,
     maxHeartRateZone: null,
-    maxHeartRate: null,
-    maxFtpPercent: null,
-    averageRestSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: 8,
@@ -349,18 +341,24 @@ describe("ExerciseDataView — lenses by type", () => {
     for (const label of ["Best set reps", "Compliance", "Weight", "e1RM", "Volume", "PRs"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
-    expect(screen.queryByRole("button", { name: "RPE" })).toBeNull();
+    // No RPE lens (the table's RPE heading is a button too, but no lens)
+    expect(screen.queryByRole("button", { name: "RPE", pressed: false })).toBeNull();
+    expect(screen.queryByRole("button", { name: "RPE", pressed: true })).toBeNull();
   });
 });
 
 describe("ExerciseDataView — the Sessions table", () => {
-  const benchSessions = [
-    makePoint({ date: "2026-03-01T00:00:00Z", sessionLogId: "sl-1", topSetWeight: 80 }),
-    makePoint({ date: "2026-03-08T00:00:00Z", sessionLogId: "sl-2", topSetWeight: 90 }),
-    makePoint({ date: "2026-03-15T00:00:00Z", sessionLogId: "sl-3", topSetWeight: 85 }),
-  ];
+  const bench = (day: string, id: string, weight: number) =>
+    makePoint({
+      date: `2026-03-${day}T00:00:00Z`,
+      sessionLogId: id,
+      topSetWeight: weight,
+      sets: [{ weight, reps: 8, distanceMeters: null, durationSeconds: null }],
+    });
+  const benchSessions = [bench("01", "sl-1", 80), bench("08", "sl-2", 90), bench("15", "sl-3", 85)];
 
-  const firstLoads = () =>
+  // Each row's sets, as the table reads them
+  const rowSets = () =>
     screen
       .getAllByRole("row")
       .slice(1)
@@ -382,41 +380,42 @@ describe("ExerciseDataView — the Sessions table", () => {
     const user = userEvent.setup();
     render(<ExerciseDataView clientId="client-1" />);
     expect(screen.getByRole("region", { name: "Sessions" })).toBeInTheDocument();
-    expect(firstLoads()).toEqual(["85", "90", "80"]);
+    expect(rowSets()).toEqual(["85 × 8", "90 × 8", "80 × 8"]);
 
     mockUseSWR.mockClear();
     await user.click(screen.getByRole("button", { name: "PRs" }));
     expect(screen.getByText("5 Rep Max")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Sessions" })).toBeInTheDocument();
-    expect(firstLoads()).toEqual(["85", "90", "80"]);
+    expect(rowSets()).toEqual(["85 × 8", "90 × 8", "80 × 8"]);
     // The PRs lens still reads the window's sessions — the same key, no new read
     expect(progressionUrls().length).toBeGreaterThan(0);
     expect(new Set(progressionUrls()).size).toBe(1);
   });
 
-  it("keeps its sort, columns and page through a lens switch", async () => {
+  it("stars the session holding a record on every lens, the records read before the PRs lens is picked", () => {
+    setupSWR({ list: [makeListItem()], progression: benchSessions, prs: [makePR({ reps: 8, weight: 90, date: "2026-03-08T00:00:00Z" })] });
+    render(<ExerciseDataView clientId="client-1" />);
+    const star = screen.getByRole("img", { name: "Personal record: 8 Rep Max · 90 kg" });
+    expect(within(screen.getAllByRole("row")[2]).getByRole("img")).toBe(star);
+  });
+
+  it("keeps its sort and page through a lens switch", async () => {
     const user = userEvent.setup();
     render(<ExerciseDataView clientId="client-1" />);
-    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
-    await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Volume" }));
-    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Top set (kg)" }));
 
     await user.click(screen.getByRole("button", { name: "PRs" }));
-    await user.click(screen.getByRole("button", { name: "e1RM" }));
+    await user.click(screen.getByRole("button", { name: "e1RM", pressed: false }));
 
-    expect(screen.getByRole("columnheader", { name: "Load (kg)" })).toHaveAttribute("aria-sort", "descending");
-    expect(firstLoads()).toEqual(["90", "85", "80"]);
-    expect(screen.queryByRole("columnheader", { name: "Volume (kg)" })).toBeNull();
+    expect(screen.getByRole("columnheader", { name: "Top set (kg)" })).toHaveAttribute("aria-sort", "descending");
+    expect(rowSets()).toEqual(["90 × 8", "85 × 8", "80 × 8"]);
   });
 
   it("starts fresh when another exercise is picked", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<ExerciseDataView clientId="client-1" />);
-    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
-    await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Volume" }));
-    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Top set (kg)" }));
+    expect(rowSets()).toEqual(["90 × 8", "85 × 8", "80 × 8"]);
 
     // The address is the subject: the drill-down or the picker writes it
     mockSearchParams.set("exerciseId", "ex-2");
@@ -424,9 +423,28 @@ describe("ExerciseDataView — the Sessions table", () => {
     rerender(<ExerciseDataView clientId="client-1" />);
 
     expect(screen.getByRole("columnheader", { name: "Date" })).toHaveAttribute("aria-sort", "descending");
-    expect(screen.getByRole("columnheader", { name: "Load (kg)" })).toHaveAttribute("aria-sort", "none");
-    expect(screen.getByRole("columnheader", { name: "Volume (kg)" })).toBeInTheDocument();
-    expect(firstLoads()).toEqual(["85", "90", "80"]);
+    expect(screen.getByRole("columnheader", { name: "Top set (kg)" })).toHaveAttribute("aria-sort", "none");
+    expect(rowSets()).toEqual(["85 × 8", "90 × 8", "80 × 8"]);
+  });
+
+  it("opens a session's workout from its row, in one click", async () => {
+    const user = userEvent.setup();
+    render(<ExerciseDataView clientId="client-1" />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.click(screen.getByText("Mar 8, 2026"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    // The workout log reads the session the row is
+    const logUrls = mockUseSWR.mock.calls
+      .map(([url]) => url as string | null)
+      .filter((url): url is string => url != null && url.includes("sl-2"));
+    expect(logUrls.length).toBeGreaterThan(0);
+  });
+
+  it("holds its figures until the list says the exercise's type", () => {
+    setupSWR({ list: [makeListItem()], listLoading: true, progression: benchSessions, prs: [] });
+    render(<ExerciseDataView clientId="client-1" />);
+    const sessions = screen.getByRole("region", { name: "Sessions" });
+    expect(within(sessions).queryByRole("columnheader", { name: "Date" })).toBeNull();
   });
 
   it("asks for every session up to the bound when the window is All — never the read's 12-session floor", async () => {

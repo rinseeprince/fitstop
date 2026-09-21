@@ -34,33 +34,25 @@ function point(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseProgr
   return {
     date: "2026-09-01T00:00:00Z",
     sessionLogId: "sl-1",
+    eventId: null,
+    sets: [],
+    totalReps: null,
+    totalDurationSeconds: null,
+    averagePaceSecondsPerKm: null,
+    averageSplitSecondsPer500m: null,
+    averageStrokeRate: null,
+    averagePower: null,
     topSetWeight: null,
     topSetReps: null,
     rpe: null,
-    rir: null,
     topSetDistanceMeters: null,
     topSetDurationSeconds: null,
     estimatedOneRepMax: null,
     totalVolume: null,
     bestSetReps: null,
-    bestPaceSecondsPerKm: null,
-    bestPaceDistanceMeters: null,
     totalDistanceMeters: null,
-    bestSplitSecondsPer500m: null,
-    bestSplitDistanceMeters: null,
-    bestPower: null,
-    bestTimeSeconds: null,
-    bestTimeDistanceMeters: null,
-    bestTimeWeight: null,
     longestHoldSeconds: null,
-    totalCalories: null,
-    maxCadence: null,
-    maxStrokeRate: null,
-    maxResistance: null,
     maxHeartRateZone: null,
-    maxHeartRate: null,
-    maxFtpPercent: null,
-    averageRestSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: null,
@@ -195,12 +187,12 @@ describe("offeredMarkers", () => {
       "compliance",
       "hold",
     ]);
-    const sled = point({ topSetWeight: 80, bestTimeSeconds: 30, bestTimeDistanceMeters: 20, totalDistanceMeters: 60 });
+    const sled = point({ topSetWeight: 80, totalDurationSeconds: 30, totalDistanceMeters: 60 });
     expect(offeredMarkers("strength", [sled], "client")).toEqual(["weight", "e1rm", "volume", "distance", "time"]);
   });
 
   it("reads a value on any session in the window", () => {
-    expect(hasMarkerValue("pace", [point(), point({ bestPaceSecondsPerKm: 280 })])).toBe(true);
+    expect(hasMarkerValue("pace", [point(), point({ averagePaceSecondsPerKm: 280 })])).toBe(true);
     expect(hasMarkerValue("pace", [point(), point()])).toBe(false);
   });
 });

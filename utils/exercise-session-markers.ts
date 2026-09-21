@@ -1,12 +1,15 @@
-import type { ExerciseProgressionPoint } from "@/types/training";
+import type { ExerciseProgressionPoint, ExerciseSessionSet } from "@/types/training";
 import type { LoggedActuals } from "./set-log-measures";
 import { calculateEpleyE1RM } from "./exercise-analytics-helpers";
 
 // One session's values from its logged sets — the per-set math behind every
 // progression point (services/exercise-analytics-service.ts): the chart
 // markers, on the column rules utils/exercise-progress-markers.ts describes,
-// and every value the Sessions table reads (utils/exercise-session-columns.ts),
-// by one rule per measure (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section 4.4).
+// and the figures of the Sessions table (utils/exercise-session-figures.ts),
+// which reads the same values (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section
+// 4.4). A lift's values are its top set's and its best estimate; an endurance
+// session's are the session's own — its distance and time added up, and the
+// average pace or split over them where the session logged that column.
 // Warm-ups count toward nothing here; failure and drop sets count like working
 // sets.
 
@@ -18,11 +21,11 @@ import { calculateEpleyE1RM } from "./exercise-analytics-helpers";
 export type MarkerSet = { setType: string } & Omit<LoggedActuals, "tempo">;
 
 /** The measures the set shapes below read — a lift, a bodyweight set, a timed distance, a hold. */
-export type SetShape = Pick<MarkerSet, "weight" | "reps" | "distanceMeters" | "durationSeconds">;
+export type SetShape = ExerciseSessionSet;
 
 type SessionMarkerValues = Omit<
   ExerciseProgressionPoint,
-  "date" | "sessionLogId" | "prescribedSets" | "prescribedRepsMin" | "prescribedRepsMax"
+  "date" | "sessionLogId" | "eventId" | "prescribedSets" | "prescribedRepsMin" | "prescribedRepsMax"
 >;
 
 /** A load is a weight above zero: a blank box and a typed 0 both say "no weight". */
@@ -33,7 +36,7 @@ export const hasLoad = (set: Pick<SetShape, "weight">): boolean =>
 export const isBodyweightSet = (set: Pick<SetShape, "weight" | "reps">): boolean =>
   set.reps != null && !hasLoad(set);
 
-/** A time logged with a distance: a timed distance, where the fastest counts. */
+/** A time logged with a distance: a timed distance. */
 export const isTimedDistance = (set: Pick<SetShape, "durationSeconds" | "distanceMeters">): boolean =>
   set.durationSeconds != null && set.distanceMeters != null;
 
@@ -74,11 +77,39 @@ const recorded = (sets: readonly MarkerSet[], value: (set: MarkerSet) => number 
 const highest = (values: readonly number[]): number | null =>
   values.length === 0 ? null : Math.max(...values);
 
-const lowest = (values: readonly number[]): number | null =>
-  values.length === 0 ? null : Math.min(...values);
-
 const sum = (values: readonly number[]): number | null =>
   values.length === 0 ? null : values.reduce((total, v) => total + v, 0);
+
+const mean = (values: readonly number[]): number | null =>
+  values.length === 0 ? null : (sum(values) as number) / values.length;
+
+/**
+ * The session's average pace or split, where it logged one — the column says
+ * the measure is wanted, so a run has no split and an erg piece no pace: its
+ * time over its distance across the sets that logged both, else, where none
+ * did, the mean of the ones typed.
+ */
+function averageRate(
+  working: readonly MarkerSet[],
+  perMeters: number,
+  typed: (set: MarkerSet) => number | null,
+  round: (n: number) => number,
+): number | null {
+  const typedValues = recorded(working, typed);
+  if (typedValues.length === 0) return null;
+  const timed = working.filter(isTimedDistance);
+  const distance = sum(timed.map((s) => s.distanceMeters as number)) ?? 0;
+  if (distance > 0) {
+    const time = sum(timed.map((s) => s.durationSeconds as number)) as number;
+    return round((time / distance) * perMeters);
+  }
+  return round(mean(typedValues) as number);
+}
+
+const roundedMean = (values: readonly number[]): number | null => {
+  const m = mean(values);
+  return m == null ? null : Math.round(m);
+};
 
 export function aggregateSessionMarkers(sets: readonly MarkerSet[]): SessionMarkerValues {
   const working = sets.filter((s) => s.setType !== "warmup");
@@ -109,15 +140,16 @@ export function aggregateSessionMarkers(sets: readonly MarkerSet[]): SessionMark
   }
 
   const bestReps = best(working.filter(isBodyweightSet), (s) => s.reps, "higher");
-  const bestPace = best(working, (s) => s.paceSecondsPerKm, "lower");
-  const bestSplit = best(working, (s) => s.splitSecondsPer500m, "lower");
-  const bestPower = best(working, (s) => s.power, "higher");
-  const bestTime = best(working.filter(isTimedDistance), (s) => s.durationSeconds, "lower");
   const longestHold = best(working.filter(isHold), (s) => s.durationSeconds, "higher");
-
-  const restTaken = recorded(working, (s) => s.restSeconds);
+  const totalDuration = sum(recorded(working, (s) => s.durationSeconds));
 
   return {
+    sets: working.map((s) => ({
+      weight: s.weight,
+      reps: s.reps,
+      distanceMeters: s.distanceMeters,
+      durationSeconds: s.durationSeconds,
+    })),
     topSetWeight: topSet?.weight ?? null,
     topSetReps: topSet?.reps ?? null,
     topSetDistanceMeters: topSet?.distanceMeters ?? null,
@@ -125,29 +157,19 @@ export function aggregateSessionMarkers(sets: readonly MarkerSet[]): SessionMark
     // The top set's, even when it recorded none; with no loaded set in the
     // session there is no top set, and the hardest effort logged stands in
     rpe: topSet ? topSet.rpe : highest(recorded(working, (s) => s.rpe)),
-    rir: topSet ? topSet.rir : lowest(recorded(working, (s) => s.rir)),
     estimatedOneRepMax: estimatedOneRepMax != null ? round1(estimatedOneRepMax) : null,
     totalVolume,
     bestSetReps: bestReps?.reps ?? null,
-    bestPaceSecondsPerKm: bestPace?.paceSecondsPerKm ?? null,
-    bestPaceDistanceMeters: bestPace?.distanceMeters ?? null,
+    totalReps: sum(recorded(working, (s) => s.reps)),
     totalDistanceMeters: sum(recorded(working, (s) => s.distanceMeters)),
-    bestSplitSecondsPer500m: bestSplit?.splitSecondsPer500m ?? null,
-    bestSplitDistanceMeters: bestSplit?.distanceMeters ?? null,
-    bestPower: bestPower?.power ?? null,
-    bestTimeSeconds: bestTime?.durationSeconds ?? null,
-    bestTimeDistanceMeters: bestTime?.distanceMeters ?? null,
-    bestTimeWeight: bestTime && hasLoad(bestTime) ? bestTime.weight : null,
-    longestHoldSeconds: longestHold?.durationSeconds ?? null,
-    totalCalories: sum(recorded(working, (s) => s.calories)),
-    maxCadence: highest(recorded(working, (s) => s.cadence)),
-    maxStrokeRate: highest(recorded(working, (s) => s.strokeRate)),
-    maxResistance: highest(recorded(working, (s) => s.resistance)),
+    totalDurationSeconds: totalDuration == null ? null : round1(totalDuration),
+    // A pace is whole seconds, a split tenths (utils/set-log-measures.ts)
+    averagePaceSecondsPerKm: averageRate(working, 1000, (s) => s.paceSecondsPerKm, Math.round),
+    averageSplitSecondsPer500m: averageRate(working, 500, (s) => s.splitSecondsPer500m, round1),
+    averageStrokeRate: roundedMean(recorded(working, (s) => s.strokeRate)),
+    averagePower: roundedMean(recorded(working, (s) => s.power)),
     maxHeartRateZone: highest(recorded(working, (s) => s.heartRateZone)),
-    maxHeartRate: highest(recorded(working, (s) => s.heartRate)),
-    maxFtpPercent: highest(recorded(working, (s) => s.ftpPercent)),
-    averageRestSeconds:
-      restTaken.length === 0 ? null : Math.round((sum(restTaken) as number) / restTaken.length),
+    longestHoldSeconds: longestHold?.durationSeconds ?? null,
     actualSets: working.length,
   };
 }

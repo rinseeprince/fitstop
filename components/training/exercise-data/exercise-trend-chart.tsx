@@ -171,10 +171,11 @@ function MetricTooltip({ active, payload, spec, viewer }: Record<string, unknown
     case "reps":
       line = `${p.bestSetReps} reps`;
       break;
+    // A session as a whole: its average over the distance it covered
     case "pace":
       line = with_([
-        p.bestPaceSecondsPerKm != null ? formatPace(p.bestPaceSecondsPerKm, v) : null,
-        p.bestPaceDistanceMeters != null ? formatDistance(p.bestPaceDistanceMeters, v) : null,
+        p.averagePaceSecondsPerKm != null ? formatPace(p.averagePaceSecondsPerKm, v) : null,
+        p.totalDistanceMeters != null ? formatDistance(p.totalDistanceMeters, v) : null,
       ]);
       break;
     case "distance":
@@ -182,18 +183,19 @@ function MetricTooltip({ active, payload, spec, viewer }: Record<string, unknown
       break;
     case "split":
       line = with_([
-        p.bestSplitSecondsPer500m != null ? formatSplit(p.bestSplitSecondsPer500m) : null,
-        p.bestSplitDistanceMeters != null ? formatDistance(p.bestSplitDistanceMeters, v) : null,
+        p.averageSplitSecondsPer500m != null ? formatSplit(p.averageSplitSecondsPer500m) : null,
+        p.totalDistanceMeters != null ? formatDistance(p.totalDistanceMeters, v) : null,
       ]);
       break;
     case "power":
-      line = `${p.bestPower} W`;
+      line = `${p.averagePower} W`;
       break;
+    // The session's time over its distance, and a carry's heaviest load
     case "time":
       line = with_([
-        p.bestTimeSeconds != null ? formatDuration(p.bestTimeSeconds) : null,
-        p.bestTimeDistanceMeters != null ? formatDistance(p.bestTimeDistanceMeters, v) : null,
-        p.bestTimeWeight != null ? `${formatLoad(p.bestTimeWeight, v).value}${u}` : null,
+        p.totalDurationSeconds != null ? formatDuration(p.totalDurationSeconds) : null,
+        p.totalDistanceMeters != null ? formatDistance(p.totalDistanceMeters, v) : null,
+        p.topSetWeight != null ? `${formatLoad(p.topSetWeight, v).value}${u}` : null,
       ]);
       break;
     case "hold":
@@ -422,6 +424,7 @@ export function ExerciseTrendChart({
                 axisLine={false}
                 width={50}
                 orientation="right"
+                tickFormatter={tickFormatter}
               />
               <Tooltip content={tooltip} cursor={false} />
               <Bar dataKey={dataKey} fill={color} radius={[3, 3, 0, 0]} maxBarSize={24} />

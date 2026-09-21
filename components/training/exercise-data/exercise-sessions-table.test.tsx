@@ -4,11 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { ExerciseSessionsTable } from "./exercise-sessions-table";
 import { aggregateSessionMarkers, type MarkerSet } from "@/utils/exercise-session-markers";
 import { emptyLoggedActuals } from "@/utils/set-log-measures";
-import type { ExerciseProgressionPoint } from "@/types/training";
+import type { ExercisePR, ExerciseProgressionPoint } from "@/types/training";
 
 // The Sessions table beneath every exercise's chart: one row per logged session
-// in the window, newest first, a column per measure recorded, the coach's
-// Columns menu, the sort on the rail's dropdown and the history tables' pager.
+// in the window, newest first — the working sets in shorthand, the type's
+// figures with the main one's change, a star on a session holding a record, a
+// click opening the workout — sorted from its headings and paged by the rail's
+// arrows.
 
 const units = vi.hoisted(() => ({ preference: "metric" as "metric" | "imperial" }));
 // Required, not optional: units-context imports auth-context, which constructs
@@ -24,6 +26,7 @@ function session(day: number, sets: Partial<MarkerSet>[]): ExerciseProgressionPo
   return {
     date,
     sessionLogId: `sl-${day}`,
+    eventId: `ev-${day}`,
     ...aggregateSessionMarkers(sets.map((s) => ({ setType: "working", ...measures, ...s }))),
     prescribedSets: 3,
     prescribedRepsMin: null,
@@ -34,30 +37,31 @@ function session(day: number, sets: Partial<MarkerSet>[]): ExerciseProgressionPo
 /** Bench sessions oldest first, as the read returns them; the load climbs then drops. */
 const LOADS = [80, 82.5, 85, 87.5, 90, 92.5, 95, 97.5, 100, 102.5, 105, 60];
 const benchSessions = () =>
-  LOADS.map((weight, i) => session(i + 1, [{ reps: 5, weight, rpe: 8, rir: i === 0 ? 2 : null }]));
+  LOADS.map((weight, i) => session(i + 1, [{ reps: 5, weight, rpe: 8 }, { reps: 5, weight, rpe: 8.5 }]));
 
-// A modal menu hides the page from assistive tech while it is open (Radix), so
-// the table is read with hidden elements included: what a sighted coach sees.
-const ALL = { hidden: true } as const;
+const cellsOf = (row: HTMLElement) => within(row).getAllByRole("cell").map((c) => c.textContent);
 
-const cellsOf = (row: HTMLElement) => within(row).getAllByRole("cell", ALL).map((c) => c.textContent);
-
-const bodyRows = () => screen.getAllByRole("row", ALL).slice(1);
+const bodyRows = () => screen.getAllByRole("row").slice(1);
 
 const rowDates = () => bodyRows().map((row) => cellsOf(row)[0]);
 
-const headings = () => screen.getAllByRole("columnheader", ALL).map((th) => th.textContent);
+const headings = () => screen.getAllByRole("columnheader").map((th) => th.textContent);
 
 /** A heading's sort state, as a screen reader hears it. */
-const sortOf = (name: string) => screen.getByRole("columnheader", { name, ...ALL }).getAttribute("aria-sort");
+const sortOf = (name: string) => screen.getByRole("columnheader", { name }).getAttribute("aria-sort");
 
 function renderTable(overrides: Partial<Parameters<typeof ExerciseSessionsTable>[0]> = {}) {
   const props = {
     points: benchSessions(),
+    exerciseType: "strength" as const,
+    records: [] as ExercisePR[],
+    recordsLoading: false,
     isError: false,
     onRetry: vi.fn(),
     windowKey: "12",
     audience: "coach" as const,
+    onOpenSession: vi.fn(),
+    canOpenSession: () => true,
     ...overrides,
   };
   const view = render(<ExerciseSessionsTable {...props} />);
@@ -70,165 +74,169 @@ describe("ExerciseSessionsTable", () => {
     units.preference = "metric";
   });
 
-  it("lists the window's sessions newest first, Date then every column recorded", () => {
+  it("reads a lift's sessions newest first: the sets, then e1RM with its change, the top set, volume and RPE", () => {
     renderTable();
-    expect(headings()).toEqual(["Date", "Load (kg)", "Reps", "RPE", "RIR", "e1RM (kg)", "Volume (kg)", "Sets"]);
+    expect(headings()).toEqual(["Date", "Sets (kg)", "e1RM (kg)", "Top set (kg)", "Volume (kg)", "RPE"]);
     expect(rowDates()).toEqual([
       "Aug 12, 2026", "Aug 11, 2026", "Aug 10, 2026", "Aug 9, 2026", "Aug 8, 2026",
       "Aug 7, 2026", "Aug 6, 2026", "Aug 5, 2026", "Aug 4, 2026", "Aug 3, 2026",
     ]);
-    // A session that recorded nothing in a column reads a dash
-    expect(cellsOf(bodyRows()[0])).toEqual([
-      "Aug 12, 2026", "60", "5", "8", "—", "70", "300", "1/3",
+    // 105 × 5: Epley 122.5, then 60 × 5 the next session: 70, down 52.5
+    // Two equal sets: the top set is the first, and its RPE the row's
+    expect(cellsOf(bodyRows()[1])).toEqual(["Aug 11, 2026", "105 × 5 · 105 × 5", "122.5+2.9", "105 × 5", "1,050", "8"]);
+    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 12, 2026", "60 × 5 · 60 × 5", "70-52.5", "60 × 5", "600", "8"]);
+  });
+
+  it("colours a change teal when better and amber when worse, and shows none on the oldest session", async () => {
+    const user = userEvent.setup();
+    renderTable();
+    expect(screen.getByText("-52.5")).toHaveClass("text-[#d97706]");
+    expect(screen.getAllByText("+2.9")[0]).toHaveClass("text-[#0d9488]");
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    // Aug 1, the first session in the window, has none before it
+    expect(cellsOf(bodyRows()[1])[2]).toBe("93.3");
+  });
+
+  it("reads a bodyweight exercise's reps and a run's time over its distance", () => {
+    renderTable({
+      exerciseType: "bodyweight",
+      points: [session(1, [{ reps: 8 }, { reps: 7 }]), session(2, [{ reps: 12, rpe: 9 }, { reps: 11 }, { reps: 10 }])],
+    });
+    expect(headings()).toEqual(["Date", "Sets", "Best set", "Total reps", "RPE"]);
+    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 2, 2026", "12 · 11 · 10", "12+4", "33", "9"]);
+    cleanup();
+
+    units.preference = "imperial";
+    renderTable({
+      exerciseType: "endurance",
+      points: [session(1, [{ distanceMeters: 5000, durationSeconds: 1570, paceSecondsPerKm: 314, heartRateZone: 3 }])],
+    });
+    expect(headings()).toEqual(["Date", "Sets", "Pace", "Distance", "Time", "HR zone"]);
+    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 1, 2026", "3.11 mi in 26:10", "8:25 /mi", "3.11 mi", "26:10", "Z3"]);
+  });
+
+  it("compares a run with the last run of the same distance, never an interval day", () => {
+    renderTable({
+      exerciseType: "endurance",
+      points: [
+        session(1, [{ distanceMeters: 5000, durationSeconds: 1500, paceSecondsPerKm: 300 }]),
+        session(8, [172, 170, 168].map((durationSeconds) => ({ distanceMeters: 800, durationSeconds, paceSecondsPerKm: 213 }))),
+        session(15, [{ distanceMeters: 5000, durationSeconds: 1450, paceSecondsPerKm: 290 }]),
+      ],
+    });
+    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 15, 2026", "5 km in 24:10", "4:50 /km-0:10", "5 km", "24:10", "—"]);
+    expect(cellsOf(bodyRows()[1])).toEqual([
+      "Aug 8, 2026", "3 × 800 m: 2:52 · 2:50 · 2:48", "3:33 /km", "2.4 km", "8:30", "—",
     ]);
+  });
+
+  it("stars a session holding a record, naming the record", () => {
+    renderTable({
+      records: [
+        { kind: "rep_max", reps: 5, weight: 105, date: "2026-08-11T00:00:00+00:00", isRecent: true },
+        { kind: "rep_max", reps: 1, weight: 120, date: "2026-07-01T00:00:00+00:00", isRecent: false },
+      ],
+    });
+    const star = screen.getByRole("img", { name: "Personal record: 5 Rep Max · 105 kg" });
+    expect(within(bodyRows()[1]).getByRole("img")).toBe(star);
+    expect(star).toHaveAttribute("title", "5 Rep Max · 105 kg");
+    expect(screen.getAllByRole("img")).toHaveLength(1);
+  });
+
+  it("opens a session's workout from its row, and leaves a row with no workout still", async () => {
+    const user = userEvent.setup();
+    const onOpenSession = vi.fn();
+    renderTable({ onOpenSession, canOpenSession: (point) => point.sessionLogId !== "sl-11" });
+    await user.click(screen.getByText("Aug 12, 2026"));
+    expect(onOpenSession).toHaveBeenCalledTimes(1);
+    expect(onOpenSession.mock.calls[0][0].sessionLogId).toBe("sl-12");
+    await user.click(screen.getByText("Aug 11, 2026"));
+    expect(onOpenSession).toHaveBeenCalledTimes(1);
+    expect(bodyRows()[1]).not.toHaveClass("cursor-pointer");
+  });
+
+  it("claims nothing until the sessions, the exercise's type and its records have all landed", () => {
+    for (const pending of [{ points: undefined }, { exerciseType: undefined }, { recordsLoading: true }]) {
+      renderTable(pending);
+      expect(screen.queryByRole("columnheader", { name: "Date" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+      cleanup();
+    }
+    // A failed records read leaves the rows without stars
+    renderTable({ records: undefined });
+    expect(bodyRows()).toHaveLength(10);
   });
 
   it("pages ten sessions at a time with the rail's arrows, and never counts them there", async () => {
     const user = userEvent.setup();
     renderTable();
-    // The session window on the rail above already says how many (owner, 2026-09-21)
     expect(screen.queryByText(/Showing/)).toBeNull();
     expect(bodyRows()).toHaveLength(10);
     expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Next page" }));
     expect(rowDates()).toEqual(["Aug 2, 2026", "Aug 1, 2026"]);
     expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
-    expect(screen.queryByText(/Showing/)).toBeNull();
   });
 
-  it("keeps the arrows, greyed, when every session fits on one page", () => {
-    renderTable({ points: benchSessions().slice(0, 8) });
-    expect(bodyRows()).toHaveLength(8);
-    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
-    expect(screen.queryByText(/Showing/)).toBeNull();
-  });
-
-  it("sorts from any heading — the first click the way the column leads, a second click the other way — back to page 1", async () => {
+  it("sorts from a figure's heading — the first click the way it leads, a second the other way — back to page 1 in one click", async () => {
     const user = userEvent.setup();
     renderTable();
-    // No sort picker on the rail: the headings sort
-    expect(screen.queryByRole("button", { name: /Newest first/ })).toBeNull();
     expect(sortOf("Date")).toBe("descending");
-    expect(sortOf("Load (kg)")).toBe("none");
+    expect(sortOf("e1RM (kg)")).toBe("none");
+    // The sets are what was done, not a number to sort
+    expect(screen.queryByRole("button", { name: "Sets (kg)" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Next page" }));
 
-    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
+    await user.click(screen.getByRole("button", { name: "e1RM (kg)" }));
     // One click: the rows, the heading's arrow and the page land together
-    expect(sortOf("Load (kg)")).toBe("descending");
+    expect(sortOf("e1RM (kg)")).toBe("descending");
     expect(sortOf("Date")).toBe("none");
     expect(bodyRows()).toHaveLength(10);
     expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
-    expect(bodyRows().slice(0, 3).map((row) => cellsOf(row)[1])).toEqual(["105", "102.5", "100"]);
+    expect(rowDates().slice(0, 2)).toEqual(["Aug 11, 2026", "Aug 10, 2026"]);
 
-    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
-    expect(sortOf("Load (kg)")).toBe("ascending");
-    expect(bodyRows().slice(0, 2).map((row) => cellsOf(row)[1])).toEqual(["60", "80"]);
-
-    await user.click(screen.getByRole("button", { name: "Date" }));
-    expect(sortOf("Date")).toBe("descending");
+    await user.click(screen.getByRole("button", { name: "e1RM (kg)" }));
+    expect(sortOf("e1RM (kg)")).toBe("ascending");
     expect(rowDates()[0]).toBe("Aug 12, 2026");
-    await user.click(screen.getByRole("button", { name: "Date" }));
-    expect(sortOf("Date")).toBe("ascending");
-    expect(rowDates()[0]).toBe("Aug 1, 2026");
   });
 
-  it("says in each heading's title what a click will do", async () => {
+  it("says in each heading's title what a click will do, and sorts a pace fastest first", async () => {
     const user = userEvent.setup();
     renderTable();
-    expect(screen.getByRole("button", { name: "Load (kg)" })).toHaveAttribute("title", "Heaviest load first");
+    expect(screen.getByRole("button", { name: "e1RM (kg)" })).toHaveAttribute("title", "Highest e1RM first");
     expect(screen.getByRole("button", { name: "Date" })).toHaveAttribute("title", "Oldest first");
-    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
-    expect(screen.getByRole("button", { name: "Load (kg)" })).toHaveAttribute("title", "Lightest load first");
-    expect(screen.getByRole("button", { name: "Date" })).toHaveAttribute("title", "Newest first");
-  });
+    cleanup();
 
-  it("sorts a pace fastest first on its first click", async () => {
-    const user = userEvent.setup();
     renderTable({
+      exerciseType: "endurance",
       points: [
-        session(1, [{ distanceMeters: 5000, paceSecondsPerKm: 314 }]),
-        session(2, [{ distanceMeters: 5000, paceSecondsPerKm: 301 }]),
-        session(3, [{ distanceMeters: 5000, paceSecondsPerKm: 308 }]),
+        session(1, [{ distanceMeters: 5000, durationSeconds: 1570, paceSecondsPerKm: 314 }]),
+        session(2, [{ distanceMeters: 5000, durationSeconds: 1505, paceSecondsPerKm: 301 }]),
+        session(3, [{ distanceMeters: 5000, durationSeconds: 1540, paceSecondsPerKm: 308 }]),
       ],
     });
     await user.click(screen.getByRole("button", { name: "Pace" }));
     expect(sortOf("Pace")).toBe("ascending");
-    expect(bodyRows().map((row) => cellsOf(row)[2])).toEqual(["5:01 /km", "5:08 /km", "5:14 /km"]);
+    expect(rowDates()).toEqual(["Aug 2, 2026", "Aug 3, 2026", "Aug 1, 2026"]);
   });
 
-  it("ticks a column off from the Columns menu at once, the menu staying open", async () => {
-    const user = userEvent.setup();
-    renderTable();
-    await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
-
-    const menu = screen.getByRole("menu");
-    expect(within(menu).getAllByRole("group").map((g) => g.firstElementChild?.textContent)).toEqual([
-      "Strength",
-      "Framework",
-    ]);
-    expect(within(menu).getAllByRole("menuitemcheckbox").map((o) => o.textContent)).toEqual([
-      "Load", "Reps", "RPE", "RIR", "e1RM", "Volume", "Sets",
-    ]);
-
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "RIR" }));
-    expect(screen.getByRole("menu")).toBeInTheDocument();
-    expect(screen.getByRole("menuitemcheckbox", { name: "RIR" })).toHaveAttribute("aria-checked", "false");
-    expect(headings()).not.toContain("RIR");
-    expect(headings()).toContain("Load (kg)");
-  });
-
-  it("falls back to Newest first when the sorted column is ticked off, and returns to it when ticked back on", async () => {
-    const user = userEvent.setup();
-    renderTable();
-    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
-    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
-    expect(rowDates()[0]).toBe("Aug 12, 2026"); // 60 kg, lightest first
-
-    await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Load" }));
-    // In the same render as the tick, the menu still open
-    expect(sortOf("Date")).toBe("descending");
-    expect(rowDates()[1]).toBe("Aug 11, 2026");
-
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Load" }));
-    expect(sortOf("Load (kg)")).toBe("ascending");
-    expect(sortOf("Date")).toBe("none");
-  });
-
-  it("starts a new window on page 1, keeping its columns and its sort", async () => {
+  it("starts a new window on page 1, keeping its sort — through the new window's load", async () => {
     const user = userEvent.setup();
     const { rerender, props } = renderTable();
     await user.click(screen.getByRole("button", { name: "Date" }));
     expect(sortOf("Date")).toBe("ascending");
-    await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Volume" }));
-    await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Next page" }));
     expect(bodyRows()).toHaveLength(2);
+
+    rerender(<ExerciseSessionsTable {...props} points={undefined} windowKey="24" />);
+    expect(screen.queryByRole("columnheader", { name: "Date" })).toBeNull();
 
     const more = [...benchSessions(), session(20, [{ reps: 5, weight: 110 }])];
     rerender(<ExerciseSessionsTable {...props} points={more} windowKey="24" />);
     expect(bodyRows()).toHaveLength(10);
     expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
     expect(sortOf("Date")).toBe("ascending");
-    expect(headings()).not.toContain("Volume (kg)");
     expect(rowDates()[0]).toBe("Aug 1, 2026");
-  });
-
-  it("keeps the picked sort through a new window's load", async () => {
-    const user = userEvent.setup();
-    const { rerender, props } = renderTable();
-    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
-
-    rerender(<ExerciseSessionsTable {...props} points={undefined} windowKey="24" />);
-    expect(screen.queryByRole("columnheader", { name: "Date" })).toBeNull();
-    // No arrows until there are rows to page
-    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
-
-    rerender(<ExerciseSessionsTable {...props} windowKey="24" />);
-    expect(sortOf("Load (kg)")).toBe("descending");
-    expect(bodyRows().slice(0, 1).map((row) => cellsOf(row)[1])).toEqual(["105"]);
   });
 
   it("says a failed read failed, with Try again", async () => {
@@ -242,29 +250,15 @@ describe("ExerciseSessionsTable", () => {
   it("says when no session was logged", () => {
     renderTable({ points: [] });
     expect(screen.getByText("No sessions logged yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Columns for the sessions table" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
   });
 
-  it("reads each column in the viewer's units — a run's time with its distance", () => {
-    units.preference = "imperial";
-    renderTable({
-      points: [session(1, [{ distanceMeters: 5000, durationSeconds: 1570, paceSecondsPerKm: 314, heartRateZone: 3, rpe: 7 }])],
-    });
-    expect(headings()).toEqual(["Date", "RPE", "Distance", "Time", "Pace", "HR zone", "Sets"]);
-    expect(cellsOf(bodyRows()[0])).toEqual([
-      "Aug 1, 2026", "7", "3.11 mi", "26:103.11 mi", "8:25 /mi", "Z3", "1/3",
-    ]);
-  });
-
-  it("shows the client every column recorded, with no Columns menu, under a heading like Personal Records", () => {
+  it("shows the client the same table under a heading like Personal Records, with no Columns menu", () => {
     renderTable({ audience: "client" });
     expect(screen.getByRole("heading", { name: "Sessions" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Columns for the sessions table" })).toBeNull();
-    expect(headings()).toEqual(["Date", "Load (kg)", "Reps", "RPE", "RIR", "e1RM (kg)", "Volume (kg)", "Sets"]);
-    // The same heading sort as the coach's
+    expect(screen.queryByRole("button", { name: /Columns/ })).toBeNull();
+    expect(headings()).toEqual(["Date", "Sets (kg)", "e1RM (kg)", "Top set (kg)", "Volume (kg)", "RPE"]);
     expect(sortOf("Date")).toBe("descending");
-    expect(screen.getByRole("button", { name: "Reps" })).toHaveAttribute("title", "Most reps first");
     expect(screen.getByRole("button", { name: "Next page" })).toBeEnabled();
-    expect(screen.queryByText(/Showing/)).toBeNull();
   });
 });

@@ -633,21 +633,25 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   the top set, the Epley e1RM, the volume and the rep maxes read sets with one (a typed 0 is no
   weight); reps logged with NO load are a bodyweight set, and best set reps reads those alone, so a
   weighted set never competes with a bodyweight one; a time logged WITH a distance is a timed
-  distance, where the fastest counts (Time, best times); a time logged with NO distance is a hold,
-  where the longest counts; pace, split, watts and distance read their own columns, the first three
-  as the session's best set and the last as its total; RPE is the top set's, and in a session with
-  no loaded set — no top set — the highest RPE logged. So a weighted set on a Bodyweight exercise
-  offers Weight, e1RM and Volume after Best set reps; a plank typed Strength offers Longest time
-  after Strength's five; a run, a hold or a bodyweight set whose sets recorded an RPE offers the
-  coach RPE after the type's own.
+  distance, where the fastest counts for the best times; a time logged with NO distance is a hold,
+  where the longest counts; an endurance session reads as a whole — its distance and its time added
+  up (Distance, Time), and, where it logged a pace or a split, the average over them, its time over
+  its distance (so a run has no split and an erg piece no pace), with the average watts and stroke
+  rate; RPE is the top set's, and in a session with no loaded set — no top set — the highest RPE
+  logged. So a weighted set on a Bodyweight exercise offers Weight, e1RM and Volume after Best set
+  reps; a plank typed Strength offers Longest time and Time after Strength's five; a run, a hold or
+  a bodyweight set whose sets recorded an RPE offers the coach RPE after the type's own.
 - **The point is one shape for every type.** `ExerciseProgressionPoint` (`types/training.ts`) is one
-  logged session: every marker's value beside the strength keys (`topSetWeight`, `topSetReps`,
-  `estimatedOneRepMax`, `totalVolume`, `rpe` and `rir` — the top set's, or with no loaded set the
-  highest RPE and the lowest RIR logged — the compliance pair), what the best set recorded with it —
-  the top set's distance and time (a carry), the fastest pace's and split's distance, the fastest
-  time's distance and load — and the Sessions table's other values: `totalCalories`, the highest
-  cadence, stroke rate, resistance, HR zone, heart rate and % FTP (`maxCadence` … `maxFtpPercent`)
-  and `averageRestSeconds`, the average rest taken, to the second. `get_exercise_progression_window`
+  logged session: its working sets in the order logged (`sets`, each its load, reps, distance and
+  time — what the Sessions table's shorthand reads), the calendar workout it was logged for
+  (`eventId`, `session_logs.training_event_id`, read by id after the window in chunks of a hundred;
+  null on a log with none), and every value the chart and the table read — the strength keys
+  (`topSetWeight`, `topSetReps`, `estimatedOneRepMax`, `totalVolume`, `rpe` — the top set's, or with
+  no loaded set the highest logged — the compliance pair), the top set's distance and time (a carry),
+  the most reps in a set with no load and every set's reps added up (`bestSetReps`, `totalReps`), the
+  session's distance and time added up (`totalDistanceMeters`, `totalDurationSeconds`), the average
+  pace and split where it logged them (`averagePaceSecondsPerKm`, `averageSplitSecondsPer500m`), the
+  average stroke rate and watts, the highest HR zone and the longest hold. `get_exercise_progression_window`
   returns every numeric measure of a logged set (`utils/exercise-progress-markers.test.ts` reads the
   migration against `SET_LOG_MEASURES`), the service hands the kernel every one of them by that
   table, so the next marker or column is a row in a table, not a migration. The window, the identity
@@ -667,7 +671,8 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   exercise offers one lens. The trend chart (`exercise-trend-chart.tsx`) plots the marker's key in
   the viewer's units (`utils/exercise-marker-format.ts`: loads and distances converted, a pace per
   the viewer's unit, the time-like readouts as clocks on the axis), stars the best point in the
-  window for a marker that has a best — fastest for pace, split and time — and names what was never
+  window for a marker that has a best — fastest for pace and split, most for watts; a total has none
+  — and names what was never
   recorded ("No pace recorded for this exercise."). The coach's KPI strip keeps Strength's worded
   cards for its five lenses — and RPE's and Compliance's on every type, which name no unit — and
   reads any other lens as Latest, the best by the marker's own word (Heaviest, Most, Fastest,
@@ -680,40 +685,47 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   fails with nothing in hand reads "Couldn't load the sessions" with Try again in the chart's slot and
   the table's alike (`sessions-load-error.tsx`), never "Not enough data yet".
 - **Every chart has a table of its sessions beneath it** (`exercise-sessions-table.tsx`, shared by
-  both views): beneath whatever the coach's hero shows — the chart of every lens, the PR cards on the
-  PRs lens — and on the client's view between the chart and Personal records. One row per logged
-  session in the window, newest first: Date, then one column per measure the window's sessions
-  recorded, in one order — Load, Reps, Bodyweight reps, RPE, RIR, e1RM, Volume, Distance, Time, Hold,
-  Pace, Split, Calories, Cadence, Stroke rate, Resistance, HR zone, Heart rate, Power, % FTP, Rest,
-  Sets — a column nothing in the window recorded left out. The columns are one table,
-  `SESSION_COLUMN_SPECS` (`utils/exercise-session-columns.ts`): each column's heading (a load's names
-  the viewer's unit), the point key it reads — the chart marker's own where the column has a chart
-  twin, so the RPE lens and the RPE column read one value — how its cell reads (the logged-workout
-  table's grammar in the viewer's units; a Time cell the fastest time with its distance beside it,
-  muted; Sets "3/3", or the count alone with no prescription) and which way its heading sorts first.
-  Every cell is a value the kernel put on the point, one rule per measure, warm-ups counting toward
-  none: the top set's load, reps, RPE and RIR — with no loaded set, the highest RPE and the lowest
-  RIR logged; the e1RM and the volume; the most reps in a set with no load; the total distance and
-  the total calories; the fastest time, pace and split; the highest watts, cadence, stroke rate,
-  resistance, HR zone, heart rate and % FTP; the longest hold; the average rest taken; sets done over
-  sets prescribed. Tempo is text and the read carries no text, so it has no column. The table reads
-  the progression the chart already holds and pages it in memory — no read of its own.
-- **The table's rail** — Sessions, on the coach's view a `SectionLabel` carrying the Columns menu
-  (`session-columns-menu.tsx`: every recorded column but Date, grouped Strength, Endurance and
-  Framework, each ticked on and off, the menu open across ticks) and the history tables' pager's
-  chevrons alone (`PagerArrows`), ten sessions a page, with no count — the session window on the rail
-  above already says how many (owner, 2026-09-21). **The column headings sort the table** (owner,
-  2026-09-21; `SortHeading`): a heading's first click sorts by its column the way it leads —
-  heaviest, most, fastest, longest, highest, newest first (`nextSessionSort`) — a second click the
-  other way; the sorted heading is teal with an arrow and carries `aria-sort`, and every heading's
-  title words what a click will do ("Lightest load first"). One sort at a time: ties go newest first,
-  a session with no value in the sorted column goes last, and a sort whose column is ticked off or
-  leaves the window shows as Newest first and returns with the column. On the client's view the
-  rail is a heading like Personal records with the chevrons alone and no Columns menu — its headings
-  sort the same way — and every recorded column shows. The view — the columns ticked, the sort, the
-  page — is local, never the address: the host keys the table by the exercise, so another pick starts
-  it on every column, Newest first, page 1; the window keys its page, so a new window starts on page 1
-  with its columns and sort kept; a lens switch touches none of it.
+  both views; owner, 2026-09-21): beneath whatever the coach's hero shows — the chart of every lens,
+  the PR cards on the PRs lens — and on the client's view between the chart and Personal records. A
+  row is a whole session, so it reads the way a coach reads one, never the builder's per-set columns:
+  newest first, the date, then **Sets** — the session's working sets in coach shorthand, in order
+  (`formatSessionSets`: `100 × 8 · 102.5 × 8` for loaded reps with the load's unit in the heading,
+  `12 · 11 · 10` for reps alone, `60 × 40 m` for a carry, `5 km in 24:10` for one piece and
+  `6 × 800 m: 2:52 · 2:50 · 2:48` for repeats of one distance, `1:30 · 1:20` for holds) — then a fixed
+  few **figures** by the exercise's type, the main one first (`EXERCISE_TYPE_FIGURES`,
+  `utils/exercise-session-figures.ts`): Strength — e1RM, Top set (the heaviest set, load × reps),
+  Volume, RPE; Bodyweight — Best set, Total reps, RPE; Endurance — Pace (the average), Distance, Time
+  (the totals), HR zone (the highest); Erg — Split (the average), Distance, Time, Stroke rate, Watts
+  (the averages); Carry & sled — Load (the heaviest), Distance, Time; Holds — Longest hold, Total
+  time, RPE. A figure reads the point key the chart plots wherever the chart plots the same figure,
+  so a point and its row always match (`SESSION_FIGURE_SPECS`). The main figure carries its **change**
+  from the session before in the window, taken between the numbers shown like the KPI strip's
+  ("+3.1", "-0:10"), teal when better and amber when worse by the figure's own direction, grey when
+  level — for Endurance, Erg and Carry & sled against the previous session of the same total distance
+  within half a percent, since a 5 km pace against an interval day's means nothing
+  (`previousSessions`, `figureChange`); the first session, or one with no match, shows none. A
+  **star** beside the date marks a session holding one of the records the PR cards show, named in
+  its tooltip ("5 Rep Max · 105 kg"; `recordsHeldBy`, `utils/exercise-records.ts` — a record's day
+  and the set it names). A **row opens its workout**: the coach's the session log dialog, set by set
+  with targets over actuals; the client's their own workout (`/client/training?eventId=`), a row
+  with no calendar workout staying still. Anything else logged — tempo, RIR, cadence, rest — is
+  there. The table claims nothing until the sessions, the exercise's type (from the list) and the
+  records have all landed, then the whole row at once; a failed records read leaves rows without
+  stars. It reads the progression the chart already holds and the PR cards' read, and pages in
+  memory — no read of its own; the coach's records read happens on every lens for the stars.
+- **The table's rail** — Sessions, on the coach's view a `SectionLabel` carrying the history tables'
+  pager's chevrons alone (`PagerArrows`), ten sessions a page, with no count — the session window on
+  the rail above already says how many (owner, 2026-09-21). **The headings sort the table** (owner,
+  2026-09-21; `SortHeading`): a figure's first click sorts the way it leads — highest e1RM, heaviest
+  top set, most reps, fastest pace and split, longest distance, time and hold, newest first
+  (`nextSessionSort`) — a second click the other way; the sorted heading is teal with an arrow and
+  carries `aria-sort`, and every heading's title words what a click will do ("Lowest e1RM first").
+  The sets don't sort. One sort at a time: ties go newest first and a session with no value in the
+  sorted figure goes last. On the client's view the rail is a heading like Personal records with the
+  chevrons alone, and the headings sort the same way. The sort and the page are local, never the
+  address: the host keys the table by the exercise, so another pick starts it Newest first on page 1;
+  the window keys its page, so a new window starts on page 1 with its sort kept; a lens switch
+  touches neither.
 - **PRs are the type's bests, every kind the logs carry.** `get_exercise_prs` returns typed rows
   (`ExercisePR`, `kind` ∈ `BEST_KINDS`): `rep_max` — the heaviest weight per rep count, as before;
   `best_reps` — the most reps in a set logged with no load; `best_time` — the fastest time per

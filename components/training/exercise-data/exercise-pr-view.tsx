@@ -18,12 +18,7 @@ import {
 } from "@/utils/exercise-progress-markers";
 import { useUnits } from "@/contexts/units-context";
 import { dayFromUtcStamp } from "@/lib/date-helpers";
-import {
-  formatDistance,
-  formatDuration,
-  formatLoad,
-  type UnitSystem,
-} from "@/utils/unit-conversions";
+import { describeRecord } from "@/utils/exercise-records";
 
 // An exercise's PRs are its bests of every kind the logs carry: rep maxes for
 // a lift, the best bodyweight set, the fastest time per distance, the heaviest
@@ -38,49 +33,6 @@ type ExercisePrViewProps = {
   exerciseType: ExerciseType;
   isLoading: boolean;
 };
-
-/** One card's words: its label, and the number with the unit that sits beside it. */
-function describePr(
-  pr: ExercisePR,
-  viewer: UnitSystem,
-): { label: string; numericLabel: boolean; value: string; unit: string } {
-  switch (pr.kind) {
-    case "rep_max": {
-      const load = formatLoad(pr.weight, viewer);
-      return {
-        label: pr.reps === 1 ? "1 Rep Max" : `${pr.reps} Rep Max`,
-        numericLabel: true,
-        value: String(load.value),
-        unit: load.unit,
-      };
-    }
-    case "best_reps":
-      return { label: "Best set", numericLabel: false, value: String(pr.reps), unit: "reps" };
-    case "best_time":
-      return {
-        label: formatDistance(pr.distanceMeters, viewer),
-        numericLabel: true,
-        value: formatDuration(pr.durationSeconds),
-        unit: "",
-      };
-    case "heaviest_carry": {
-      const load = formatLoad(pr.weight, viewer);
-      return {
-        label: `${formatDistance(pr.distanceMeters, viewer)} carry`,
-        numericLabel: true,
-        value: String(load.value),
-        unit: load.unit,
-      };
-    }
-    case "longest_hold":
-      return {
-        label: "Longest hold",
-        numericLabel: false,
-        value: formatDuration(pr.durationSeconds),
-        unit: "",
-      };
-  }
-}
 
 function prKey(pr: ExercisePR): string {
   switch (pr.kind) {
@@ -138,7 +90,7 @@ export function ExercisePrView({ data, exerciseType, isLoading }: ExercisePrView
             )}
             <div className={GRID_CLASS}>
               {records.map((pr) => {
-                const words = describePr(pr, preference);
+                const words = describeRecord(pr, preference);
                 return (
                   <div
                     key={prKey(pr)}

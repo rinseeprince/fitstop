@@ -23,109 +23,122 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { HISTORY_PAGE_SIZE } from "@/hooks/use-history-data";
 import { useUnits } from "@/contexts/units-context";
-import type { ExerciseProgressionPoint } from "@/types/training";
+import type { ExercisePR, ExerciseProgressionPoint } from "@/types/training";
+import type { ExerciseType } from "@/utils/exercise-types";
+import { recordLine, recordsHeldBy } from "@/utils/exercise-records";
 import {
   DEFAULT_SESSION_SORT,
-  effectiveSessionSort,
-  formatSessionCell,
+  EXERCISE_TYPE_FIGURES,
+  figureChange,
   formatSessionDate,
+  formatSessionFigure,
+  formatSessionSets,
+  mainFigure,
   nextSessionSort,
-  sessionColumnHeading,
-  sessionColumnsIn,
+  previousSessions,
+  sessionFigureHeading,
+  sessionSetsHeading,
   sessionSortLabel,
   sortSessions,
-  type SessionColumn,
+  type FigureChange,
+  type SessionFigure,
   type SessionSort,
-} from "@/utils/exercise-session-columns";
-import { SessionColumnsMenu } from "./session-columns-menu";
+} from "@/utils/exercise-session-figures";
 import { SessionsLoadError } from "./sessions-load-error";
 
 // The table of an exercise's logged sessions beneath its chart — the coach's
 // exercise data view and the client's Performance view alike
-// (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section 4.4). It reads the
-// progression points the chart reads, one row per session in the window, one
-// column per measure they carry (utils/exercise-session-columns.ts), and pages
-// them in memory: the chart already holds every session in the window.
+// (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section 4.4). A row is a whole
+// session, read the way a coach reads one: the working sets in shorthand, the
+// type's figures with the main one's change from the session before, a star on
+// a session holding a record; a click opens that workout
+// (utils/exercise-session-figures.ts). It reads the progression points the
+// chart reads and the PR cards' records, and pages in memory: the chart already
+// holds every session in the window.
 //
 // Its rail pages with the arrows alone: the session window on the rail above
-// already says how many sessions there are. Its column headings sort it — a
-// click sorts by the column in the direction it leads with, a second click the
-// other way (owner, 2026-09-21); one sort, its ties newest first.
+// already says how many sessions there are. Its headings sort it — a click
+// sorts by the figure the way it leads, a second click the other way (owner,
+// 2026-09-21); one sort, its ties newest first.
 //
-// Its view — the columns ticked, the sort, the page — is local, never the
-// address. The host keys the table by the exercise, so another exercise starts
-// fresh; the window keys the page, so a new window starts on page 1 with its
-// columns and sort kept; a lens switch touches none of it.
+// Its sort and page are local, never the address. The host keys the table by
+// the exercise, so another exercise starts fresh; the window keys the page, so
+// a new window starts on page 1 with its sort kept; a lens switch touches none
+// of it.
 
 type ExerciseSessionsTableProps = {
   /** The window's sessions, oldest first — the chart's read; undefined until it lands. */
   points: ExerciseProgressionPoint[] | undefined;
+  /** The exercise's type, which picks the figures; undefined until the exercise list lands. */
+  exerciseType: ExerciseType | undefined;
+  /** The exercise's records — the PR cards' read; a failed read leaves the rows without stars. */
+  records: ExercisePR[] | undefined;
+  recordsLoading: boolean;
   /** The read failed with nothing in hand. */
   isError: boolean;
   onRetry: () => void;
   /** The session window: a new one starts the table on its first page. */
   windowKey: string;
-  /** The coach ticks columns on and off; the client sees every column recorded. */
+  /** The coach's rail is a divider; the client's heads its section like Personal Records. */
   audience: "coach" | "client";
+  /** Opens a session's workout, for the rows that have one. */
+  onOpenSession: (point: ExerciseProgressionPoint) => void;
+  canOpenSession: (point: ExerciseProgressionPoint) => boolean;
 };
 
 export function ExerciseSessionsTable({ windowKey, ...props }: ExerciseSessionsTableProps) {
-  const [hidden, setHidden] = useState<ReadonlySet<SessionColumn>>(() => new Set());
   const [sort, setSort] = useState<SessionSort>(DEFAULT_SESSION_SORT);
-
-  const toggleColumn = (column: SessionColumn) =>
-    setHidden((current) => {
-      const next = new Set(current);
-      if (next.has(column)) next.delete(column);
-      else next.add(column);
-      return next;
-    });
-
-  return (
-    <SessionsPages
-      key={windowKey}
-      {...props}
-      hidden={hidden}
-      onToggleColumn={toggleColumn}
-      sort={sort}
-      onSortChange={setSort}
-    />
-  );
+  return <SessionsPages key={windowKey} {...props} sort={sort} onSortChange={setSort} />;
 }
 
 type SessionsPagesProps = Omit<ExerciseSessionsTableProps, "windowKey"> & {
-  hidden: ReadonlySet<SessionColumn>;
-  onToggleColumn: (column: SessionColumn) => void;
   sort: SessionSort;
   onSortChange: (sort: SessionSort) => void;
 };
 
-// The Date column stays put while the measures scroll under it — the logged
+// The Date column stays put while the figures scroll under it — the logged
 // workout table's pinned cell, opaque, with the row hover's opaque twin.
 const PINNED_CELL = "sticky left-0 z-[1] bg-white";
 const PINNED_ROW_HOVER = "group-hover/row:bg-[#f8fcfb]";
+
+// The check-in review's change colours: teal better, amber worse, grey level
+const CHANGE_TONE: Record<FigureChange["tone"], string> = {
+  better: "text-[#0d9488]",
+  worse: "text-[#d97706]",
+  level: "text-[#93b0b4]",
+};
 
 const Dash = () => <span className="text-[#c2d0cc]">—</span>;
 
 function SessionsPages({
   points,
+  exerciseType,
+  records,
+  recordsLoading,
   isError,
   onRetry,
   audience,
-  hidden,
-  onToggleColumn,
+  onOpenSession,
+  canOpenSession,
   sort,
   onSortChange,
 }: SessionsPagesProps) {
   const { preference } = useUnits();
   const [page, setPage] = useState(0);
 
-  const pending = points === undefined;
-  const recorded = useMemo(() => sessionColumnsIn(points ?? []), [points]);
-  const shown =
-    audience === "coach" ? recorded.filter((column) => !hidden.has(column)) : recorded;
-  const shownSort = effectiveSessionSort(sort, shown);
-  const rows = useMemo(() => sortSessions(points ?? [], shownSort), [points, shownSort]);
+  // Nothing claimed until the sessions, the type that picks the figures and
+  // the records behind the stars have all landed: one frame, the whole row
+  const pending = points === undefined || exerciseType === undefined || recordsLoading;
+  const figures: readonly SessionFigure[] = exerciseType ? EXERCISE_TYPE_FIGURES[exerciseType] : [];
+  const main = exerciseType ? mainFigure(exerciseType) : null;
+  const rows = useMemo(() => sortSessions(points ?? [], sort), [points, sort]);
+  const previous = useMemo(
+    () =>
+      exerciseType
+        ? previousSessions(points ?? [], exerciseType)
+        : new Map<string, ExerciseProgressionPoint>(),
+    [points, exerciseType],
+  );
 
   // A refresh that shrank the window can't leave the page past its end
   const pageCount = Math.ceil(rows.length / HISTORY_PAGE_SIZE);
@@ -133,36 +146,25 @@ function SessionsPages({
   const pageRows = rows.slice(shownPage * HISTORY_PAGE_SIZE, (shownPage + 1) * HISTORY_PAGE_SIZE);
 
   // One click, one render: the sort and the first page land together
-  const handleSort = (column: "date" | SessionColumn) => {
-    onSortChange(nextSessionSort(shownSort, column));
+  const handleSort = (column: "date" | SessionFigure) => {
+    onSortChange(nextSessionSort(sort, column));
     setPage(0);
   };
 
-  const controls = (
-    <div className="flex items-center gap-3">
-      {audience === "coach" && (
-        <SessionColumnsMenu
-          columns={recorded}
-          hidden={hidden}
-          onToggle={onToggleColumn}
-          disabled={!pending && recorded.length === 0}
-        />
-      )}
-      {rows.length > 0 && (
-        <PagerArrows page={shownPage} pageCount={pageCount} onPageChange={setPage} />
-      )}
-    </div>
-  );
+  const pager =
+    !pending && rows.length > 0 ? (
+      <PagerArrows page={shownPage} pageCount={pageCount} onPageChange={setPage} />
+    ) : null;
 
   return (
     <section aria-label="Sessions">
       {audience === "coach" ? (
-        <SectionLabel label="Sessions" actions={controls} />
+        <SectionLabel label="Sessions" actions={pager} />
       ) : (
         // The client's Performance view heads its sections like Personal Records
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-[14px] font-semibold text-[#0c1a1e]">Sessions</h2>
-          {controls}
+          {pager}
         </div>
       )}
       <div className="rounded-[6px] bg-white p-5">
@@ -176,43 +178,77 @@ function SessionsPages({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <SortHeading column="date" sort={shownSort} onSort={handleSort} className={PINNED_CELL}>
+                <SortHeading column="date" sort={sort} onSort={handleSort} className={PINNED_CELL}>
                   Date
                 </SortHeading>
-                {shown.map((column) => (
-                  <SortHeading key={column} column={column} sort={shownSort} onSort={handleSort}>
-                    {sessionColumnHeading(column, preference)}
+                <TableHead>{sessionSetsHeading(points ?? [], preference)}</TableHead>
+                {figures.map((figure) => (
+                  <SortHeading key={figure} column={figure} sort={sort} onSort={handleSort}>
+                    {sessionFigureHeading(figure, preference)}
                   </SortHeading>
                 ))}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pageRows.map((point) => (
-                <TableRow key={point.sessionLogId} className="group/row">
-                  <TableCell className={cn(PINNED_CELL, PINNED_ROW_HOVER)}>
-                    <span className={cn(MONO_CELL_CLASS, TEXT_SECONDARY)}>
-                      {formatSessionDate(point.date)}
-                    </span>
-                  </TableCell>
-                  {shown.map((column) => {
-                    const cell = formatSessionCell(column, point, preference);
-                    return (
-                      <TableCell key={column}>
-                        {cell ? (
-                          <span className={cn(MONO_CELL_CLASS, TEXT_PRIMARY)}>
-                            {cell.value}
-                            {cell.aside && (
-                              <span className="ml-1.5 text-[11px] text-[#93b0b4]">{cell.aside}</span>
-                            )}
-                          </span>
-                        ) : (
-                          <Dash />
-                        )}
-                      </TableCell>
-                    );
-                  })}
-                </TableRow>
-              ))}
+              {pageRows.map((point) => {
+                const opens = canOpenSession(point);
+                const held = records ? recordsHeldBy(point, records) : [];
+                return (
+                  <TableRow
+                    key={point.sessionLogId}
+                    className={cn("group/row", opens && "cursor-pointer")}
+                    onClick={opens ? () => onOpenSession(point) : undefined}
+                  >
+                    <TableCell className={cn(PINNED_CELL, PINNED_ROW_HOVER)}>
+                      <span className={cn(MONO_CELL_CLASS, TEXT_SECONDARY)}>
+                        {formatSessionDate(point.date)}
+                      </span>
+                      {held.length > 0 && (
+                        <span
+                          role="img"
+                          aria-label={`Personal record: ${held.map((record) => recordLine(record, preference)).join(", ")}`}
+                          title={held.map((record) => recordLine(record, preference)).join("\n")}
+                          className="ml-1.5 text-[12px] text-[#d97706]"
+                        >
+                          ★
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="min-w-[200px] whitespace-normal">
+                      {point.sets.length > 0 ? (
+                        <span className={cn(MONO_CELL_CLASS, TEXT_PRIMARY)}>
+                          {formatSessionSets(point.sets, preference)}
+                        </span>
+                      ) : (
+                        <Dash />
+                      )}
+                    </TableCell>
+                    {figures.map((figure) => {
+                      const value = formatSessionFigure(figure, point, preference);
+                      const change =
+                        figure === main
+                          ? figureChange(figure, point, previous.get(point.sessionLogId), preference)
+                          : null;
+                      return (
+                        <TableCell key={figure}>
+                          {value ? (
+                            <span className={cn(MONO_CELL_CLASS, TEXT_PRIMARY)}>
+                              {value}
+                              {change && (
+                                <span className={cn("ml-1.5 text-[11px]", CHANGE_TONE[change.tone])}>
+                                  {change.text}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <Dash />
+                          )}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}
@@ -222,9 +258,9 @@ function SessionsPages({
 }
 
 /**
- * A column heading that sorts the table: the heading's own words as a button,
- * the sorted one teal with an arrow (down = high to low), its state in
- * aria-sort, and in its title what a click does ("Lightest load first").
+ * A heading that sorts the table: the heading's own words as a button, the
+ * sorted one teal with an arrow (down = high to low), its state in aria-sort,
+ * and in its title what a click does ("Lowest e1RM first").
  */
 function SortHeading({
   column,
@@ -233,9 +269,9 @@ function SortHeading({
   className,
   children,
 }: {
-  column: "date" | SessionColumn;
+  column: "date" | SessionFigure;
   sort: SessionSort;
-  onSort: (column: "date" | SessionColumn) => void;
+  onSort: (column: "date" | SessionFigure) => void;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -265,7 +301,7 @@ function SortHeading({
   );
 }
 
-/** The table's shape while its sessions load: a page of rows, nothing claimed about the columns. */
+/** The table's shape while its sessions load: a page of rows, nothing claimed about the figures. */
 function SessionsSkeleton() {
   return (
     <Table aria-hidden>

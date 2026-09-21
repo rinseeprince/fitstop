@@ -37,7 +37,7 @@ const SWR_CONFIG = {
 
 // Client performance category: pick an exercise, see its type's markers, the
 // table of its sessions and its personal records. Reuses the neutral chart,
-// Sessions table and PR viz.
+// Sessions table and PR viz; a session's row opens the workout it was.
 //
 // No weightUnit prop: it threaded a mapper constant down from metrics-hub, so
 // the client always saw kilograms whatever their preference. ExercisePrView and
@@ -185,14 +185,21 @@ export function PerformanceView() {
             onRetry={retryProgression}
           />
 
-          {/* Keyed by the exercise: another pick starts the table fresh */}
+          {/* Keyed by the exercise: another pick starts the table fresh. Its
+              figures wait for the list that says the exercise's type; a row
+              opens the client's own workout. */}
           <ExerciseSessionsTable
             key={selectedExerciseId ?? selectedExerciseName ?? ""}
             audience="client"
             points={points}
+            exerciseType={listLoading ? undefined : exerciseType}
+            records={prData?.data}
+            recordsLoading={prLoading}
             isError={progressionFailed}
             onRetry={retryProgression}
             windowKey={String(sessionCount)}
+            onOpenSession={(point) => router.push(`/client/training?eventId=${point.eventId}`)}
+            canOpenSession={(point) => point.eventId != null}
           />
 
           <section className="space-y-3">

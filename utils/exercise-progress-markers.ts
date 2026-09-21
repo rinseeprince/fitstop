@@ -14,9 +14,11 @@ import type { ExerciseType } from "./exercise-types";
 // names (utils/exercise-session-markers.ts): a set logged with reps and no
 // load is a bodyweight set, a time with a distance is a timed distance, a time
 // with no distance is a hold, and RPE is the top set's or, with no loaded set,
-// the highest logged — so a run's RPE reaches the chart. RPE and Compliance are
-// the coach's lenses and are never offered to the client. The Sessions table
-// reads the same values (utils/exercise-session-columns.ts).
+// the highest logged — so a run's RPE reaches the chart. An endurance session
+// plots as a whole: its distance and time added up, the average pace, split and
+// watts over them. RPE and Compliance are the coach's lenses and are never
+// offered to the client. The Sessions table's figures read the same values
+// (utils/exercise-session-figures.ts), so a point and its row always match.
 
 export const PROGRESS_MARKERS = [
   "weight",
@@ -79,11 +81,11 @@ export const PROGRESS_MARKER_SPECS: Record<ProgressMarker, ProgressMarkerSpec> =
   rpe: { key: "rpe", label: "RPE", title: "RPE over time", subtitle: "Top set RPE per session, or the highest logged", noun: "RPE data", value: "rpe", readout: "rpe", better: null, bestLabel: "Highest", shape: "area", star: false, coachOnly: true },
   compliance: { key: "compliance", label: "Compliance", title: "Prescribed vs completed sets", subtitle: "Per-session compliance", noun: "prescribed data", value: "actualSets", readout: "sets", better: null, bestLabel: "Most", shape: "compliance", star: false, coachOnly: true },
   reps: { key: "reps", label: "Reps", title: "Best set reps over time", subtitle: "Most reps in one set per session, without added weight", noun: "reps without a weight", value: "bestSetReps", readout: "reps", better: "higher", bestLabel: "Most", shape: "area", star: true, coachOnly: false },
-  pace: { key: "pace", label: "Pace", title: "Pace over time", subtitle: "Fastest pace per session", noun: "pace", value: "bestPaceSecondsPerKm", readout: "pace", better: "lower", bestLabel: "Fastest", shape: "area", star: true, coachOnly: false },
+  pace: { key: "pace", label: "Pace", title: "Pace over time", subtitle: "Average pace per session", noun: "pace", value: "averagePaceSecondsPerKm", readout: "pace", better: "lower", bestLabel: "Fastest", shape: "area", star: true, coachOnly: false },
   distance: { key: "distance", label: "Distance", title: "Distance per session", subtitle: "Total distance logged per session", noun: "distance", value: "totalDistanceMeters", readout: "distance", better: "higher", bestLabel: "Longest", shape: "bar", star: false, coachOnly: false },
-  split: { key: "split", label: "Split", title: "Split over time", subtitle: "Fastest 500 m split per session", noun: "split", value: "bestSplitSecondsPer500m", readout: "split", better: "lower", bestLabel: "Fastest", shape: "area", star: true, coachOnly: false },
-  power: { key: "power", label: "Watts", title: "Power over time", subtitle: "Highest watts per session", noun: "watts", value: "bestPower", readout: "watts", better: "higher", bestLabel: "Highest", shape: "area", star: true, coachOnly: false },
-  time: { key: "time", label: "Time", title: "Fastest time per session", subtitle: "The fastest set that logged a distance and a time", noun: "timed set", value: "bestTimeSeconds", readout: "duration", better: "lower", bestLabel: "Fastest", shape: "area", star: true, coachOnly: false },
+  split: { key: "split", label: "Split", title: "Split over time", subtitle: "Average 500 m split per session", noun: "split", value: "averageSplitSecondsPer500m", readout: "split", better: "lower", bestLabel: "Fastest", shape: "area", star: true, coachOnly: false },
+  power: { key: "power", label: "Watts", title: "Power over time", subtitle: "Average watts per session", noun: "watts", value: "averagePower", readout: "watts", better: "higher", bestLabel: "Highest", shape: "area", star: true, coachOnly: false },
+  time: { key: "time", label: "Time", title: "Time per session", subtitle: "Total time logged per session", noun: "time", value: "totalDurationSeconds", readout: "duration", better: null, bestLabel: "Longest", shape: "bar", star: false, coachOnly: false },
   hold: { key: "hold", label: "Longest time", title: "Longest time per session", subtitle: "The longest set that logged a time and no distance", noun: "hold", value: "longestHoldSeconds", readout: "duration", better: "higher", bestLabel: "Longest", shape: "area", star: true, coachOnly: false },
 };
 

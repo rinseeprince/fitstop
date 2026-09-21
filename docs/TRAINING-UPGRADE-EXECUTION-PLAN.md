@@ -263,16 +263,16 @@ commit's plan.
     - *The figures* — a fixed few numbers for the whole session, by the exercise's type, the main one
       first; each sorts. Strength: e1RM (the best estimate across the working sets), Top set (the
       heaviest set, load × reps), Volume, RPE. Bodyweight: Best set (the most reps in one set), Total
-      reps, RPE. Endurance: Pace (the session's average — total time over total distance), Distance
-      and Time (the session's totals), HR zone (the highest logged). Erg: Split (the average),
-      Distance, Time, Stroke rate and Watts (the averages). Carry & sled: Load (the heaviest),
-      Distance, Time (the totals). Holds: Longest hold, Total time, RPE. RPE is the top set's, or with
+      reps, RPE. Endurance: Pace (the session's average — total time over total distance, where the
+      session logged a pace), Distance and Time (the session's totals), HR zone (the highest
+      logged). Erg: Split (the average, where it logged a split), Distance, Time, Stroke rate and
+      Watts (the averages). Carry & sled: Load (the heaviest), Distance, Time (the totals). Holds: Longest hold, Total time, RPE. RPE is the top set's, or with
       no weight logged the highest, as the RPE lens reads it. Where the chart plots a figure, it is
       the same number.
-    - *Change* — the main figure against the previous session in the window, green when better and
-      red when worse; for Endurance, Erg and Carry & sled against the previous session of the same
-      total distance (within half a percent), since a 5 km pace against an interval day's means
-      nothing. The oldest session, or one with no earlier match, shows none.
+    - *Change* — the main figure against the previous session in the window, teal when better,
+      amber when worse and grey when level (the check-in review's colours); for Endurance, Erg and
+      Carry & sled against the previous session of the same total distance (within half a percent),
+      since a 5 km pace against an interval day's means nothing. The oldest session, or one with no earlier match, shows none.
     - *PR* — a star on a session that holds one of the records the PR cards show, the record named
       in its tooltip.
     - *The row opens the workout* — the coach's opens the session log (set by set, target over
@@ -1275,7 +1275,7 @@ RULES: §4.4 — closed, including its 2026-09-21 amendment. Include a frame tes
 NOT IN THIS COMMIT: race-distance PRs, the All exercises table and the Tempo column (commit 16b).
 ```
 
-### Commit 16a-2 — The sessions table, as a coach reads it
+### Commit 16a-2 — The sessions table, as a coach reads it — SHIPPED 2026-09-21
 
 ```text
 Implement commit 16a-2 — The sessions table, as a coach reads it — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

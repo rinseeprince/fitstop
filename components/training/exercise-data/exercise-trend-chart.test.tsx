@@ -25,33 +25,25 @@ function makePoint(
   return {
     date: "2026-03-01T00:00:00Z",
     sessionLogId: "sl-1",
+    eventId: null,
+    sets: [],
+    totalReps: null,
+    totalDurationSeconds: null,
+    averagePaceSecondsPerKm: null,
+    averageSplitSecondsPer500m: null,
+    averageStrokeRate: null,
+    averagePower: null,
     topSetWeight: 80,
     topSetReps: 8,
     rpe: 7,
-    rir: null,
     topSetDistanceMeters: null,
     topSetDurationSeconds: null,
     estimatedOneRepMax: 100,
     totalVolume: 2400,
     bestSetReps: null,
-    bestPaceSecondsPerKm: null,
-    bestPaceDistanceMeters: null,
     totalDistanceMeters: null,
-    bestSplitSecondsPer500m: null,
-    bestSplitDistanceMeters: null,
-    bestPower: null,
-    bestTimeSeconds: null,
-    bestTimeDistanceMeters: null,
-    bestTimeWeight: null,
     longestHoldSeconds: null,
-    totalCalories: null,
-    maxCadence: null,
-    maxStrokeRate: null,
-    maxResistance: null,
     maxHeartRateZone: null,
-    maxHeartRate: null,
-    maxFtpPercent: null,
-    averageRestSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: 8,
@@ -125,12 +117,12 @@ describe("ExerciseTrendChart", () => {
 
   it("charts a run's pace with the pace unit and its best starred", () => {
     const data = [
-      makePoint({ bestPaceSecondsPerKm: 314, bestPaceDistanceMeters: 5000 }),
-      makePoint({ date: "2026-03-08T00:00:00Z", sessionLogId: "sl-2", bestPaceSecondsPerKm: 301, bestPaceDistanceMeters: 5000 }),
+      makePoint({ averagePaceSecondsPerKm: 314, totalDistanceMeters: 5000 }),
+      makePoint({ date: "2026-03-08T00:00:00Z", sessionLogId: "sl-2", averagePaceSecondsPerKm: 301, totalDistanceMeters: 5000 }),
     ];
     render(<ExerciseTrendChart data={data} metric="pace" exerciseType="endurance" isLoading={false} />);
     expect(screen.getByText("Pace over time")).toBeInTheDocument();
-    expect(screen.getByText("Fastest pace per session · /km")).toBeInTheDocument();
+    expect(screen.getByText("Average pace per session · /km")).toBeInTheDocument();
     expect(screen.getByText("Pace")).toBeInTheDocument();
     expect(screen.getByText("Fastest")).toBeInTheDocument();
   });

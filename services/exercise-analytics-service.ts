@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { countWorkingSets } from "@/utils/exercise-set-specs";
 import { toExerciseType } from "@/utils/exercise-types";
 import { isBestKind } from "@/utils/exercise-progress-markers";
@@ -18,9 +19,9 @@ import type {
 // ---------------------------------------------------------------------------
 // Public API — backed by SQL RPCs (migrations 094 to 188). Identity-union,
 // windowing and the bests live in Postgres; a session's values — its chart
-// markers and every cell of its Sessions table row — are computed in JS over
-// the bounded RPC result by the one kernel (utils/exercise-session-markers.ts),
-// so every exercise type reads one shape.
+// markers, its working sets and the figures of its Sessions table row — are
+// computed in JS over the bounded RPC result by the one kernel
+// (utils/exercise-session-markers.ts), so every exercise type reads one shape.
 // ---------------------------------------------------------------------------
 
 type ProgressionRow =
@@ -132,6 +133,9 @@ export async function getExerciseProgressionSeries(
     }
   }
 
+  // The calendar workout each session was logged for, so its row can open it
+  const eventIds = await sessionLogEventIds([...groups.keys()]);
+
   const points: ExerciseProgressionPoint[] = [];
 
   for (const [sessionLogId, group] of groups) {
@@ -158,6 +162,7 @@ export async function getExerciseProgressionSeries(
     points.push({
       date: group.completedAt,
       sessionLogId,
+      eventId: eventIds.get(sessionLogId) ?? null,
       ...aggregateSessionMarkers(group.sets),
       prescribedSets,
       prescribedRepsMin,
@@ -168,6 +173,22 @@ export async function getExerciseProgressionSeries(
   // Sort by date ASC (RPC already returns ASC, but defensive against future RPC reordering)
   points.sort((a, b) => (a.date < b.date ? -1 : 1));
   return points;
+}
+
+/** Each session log's calendar workout (`session_logs.training_event_id`), by log id. */
+async function sessionLogEventIds(sessionLogIds: string[]): Promise<Map<string, string | null>> {
+  const rows = await fetchAllByChunkedIds(
+    sessionLogIds,
+    (chunk, from, to) =>
+      supabaseAdmin
+        .from("session_logs")
+        .select("id, training_event_id")
+        .in("id", chunk)
+        .order("id")
+        .range(from, to),
+    { errorLabel: "the sessions' workouts" },
+  );
+  return new Map(rows.map((row) => [row.id, row.training_event_id]));
 }
 
 type ExercisePrOptions = {

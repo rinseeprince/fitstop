@@ -184,7 +184,7 @@ All client API endpoints require authentication except where noted.
 - `GET /api/client/training/week?date={YYYY-MM-DD}` - The training week containing `date` (`ClientTrainingWeek`, `types/client-training-week.ts`): `{ weekStart, weekEnd, today, sessions[] }`, each session `{ eventId, sessionId, name, focus, date, state }` with `state` = `done | today | upcoming | missed` derived against the client's today. Sessions come by date, each day's in the day's order; a day can hold several, so a week can hold more than seven. `no-store`. The session picker and the week view list THIS — it is exactly the set a layout write may touch
 - `POST /api/client/training/events/layout` - **Move / swap / rearrange the client's own week.** Body `{ moves: [{ eventId, fromDate, toDate }] }` (1–50). One transaction for the whole list (`move_training_events_atomic`, migrations 150 and 179), so a swap is two entries and a rotation never half-applies. Rules: only a still-scheduled session moves (a logged day is pinned); a session moves only within the training week it currently sits in; neither `fromDate` nor `toDate` may fall before `logsOpenFrom` (a week a check-in has closed keeps its shape). **A session moved onto a day that already holds sessions joins it, after them; several moved onto one day land in the order the list gives them** — so list them in the order the client moved them. `fromDate` is the day the client SAW the session on — if it has moved since (a coach edit), `409` "Your week changed since you opened it — reload and try again". Other answers: `400` a rule of the client's own calendar, with the sentence · `404` not this client's. Returns `{ moved: [...] }`. Nutrition follows the moved sessions (a day's target is computed from the sessions on it, so the next read re-prices it); a day the client has already logged shows the refreshed target at their next food save. The **rest-day "Log a session" picker** is a one-entry layout (move here, then open the event); "Do a different session" on a prescribed day with a still-scheduled pick from another day is a two-entry swap, and a pick already on the same day simply opens it. The **Program tab's week view** is the third caller and the general case: the app applies moves locally over `training/week` (`lib/week-layout.ts`) — a day lists the sessions staying on it, then the ones moved onto it in the order they were moved — and sends every changed session with the day it was read on, day by day in that order; a `409` means reload the week and start over
 - `GET /api/client/exercises/catalog?since={ISO}` - Exercise-catalog delta sync: a sparse fieldset of rows (`id`, `name`, `muscle_group`, `equipment`, `exercise_type` — one of `strength`, `bodyweight`, `endurance`, `erg`, `carry_sled`, `holds`: the column preset an exercise of it starts on — and `updated_at`) with `updated_at` after `since` (omit `since` for a full resync). Complete past the ~1000-row PostgREST cap (paged internally on `(updated_at, id)`); deletes are invisible to the delta, so resync periodically
-- `GET /api/client/training/exercise-history?metric=list|progression|prs` - `progression`/`prs` also take `exerciseId` or `exerciseName`; `progression` takes `sessionCount` (1–500; an unwindowed read is floored at 12 sessions, so the session window's "All" sends 500). **Warm-up sets are excluded from every metric.** A `list` row carries `exerciseType` (the catalog row's; `strength` for a freehand name) — it says which chart markers lead. A `progression` point (`ExerciseProgressionPoint`, `types/training.ts`) is one logged session: the strength keys (`topSetWeight`, `topSetReps`, `rpe`, `rir`, `estimatedOneRepMax`, `totalVolume`, `prescribedSets`, `actualSets`, `prescribedRepsMin`, `prescribedRepsMax`) plus every other chart marker — `bestSetReps`, `bestPaceSecondsPerKm`, `totalDistanceMeters`, `bestSplitSecondsPer500m`, `bestPower`, `bestTimeSeconds`, `longestHoldSeconds` — what the best set recorded with it (`topSetDistanceMeters`, `topSetDurationSeconds`, `bestPaceDistanceMeters`, `bestSplitDistanceMeters`, `bestTimeDistanceMeters`, `bestTimeWeight`), and the Sessions table's other values (`totalCalories`, `maxCadence`, `maxStrokeRate`, `maxResistance`, `maxHeartRateZone`, `maxHeartRate`, `maxFtpPercent`, `averageRestSeconds`), canonical units, `null` where nothing was logged. `date` is the session's day stamp: the workout's date at UTC midnight — show its UTC date, never the timestamp in the device's zone. A `prs` row is typed by `kind`. See "RN contract — exercise progress"
+- `GET /api/client/training/exercise-history?metric=list|progression|prs` - `progression`/`prs` also take `exerciseId` or `exerciseName`; `progression` takes `sessionCount` (1–500; an unwindowed read is floored at 12 sessions, so the session window's "All" sends 500). **Warm-up sets are excluded from every metric.** A `list` row carries `exerciseType` (the catalog row's; `strength` for a freehand name) — it says which chart markers lead. A `progression` point (`ExerciseProgressionPoint`, `types/training.ts`) is one logged session: its working sets in the order logged (`sets`: `{ weight, reps, distanceMeters, durationSeconds }` each), the calendar workout it was logged for (`eventId`, `null` on a log with none — open it at the workout screen), the strength keys (`topSetWeight`, `topSetReps`, `rpe`, `estimatedOneRepMax`, `totalVolume`, `prescribedSets`, `actualSets`, `prescribedRepsMin`, `prescribedRepsMax`), the top set's distance and time (`topSetDistanceMeters`, `topSetDurationSeconds` — a carry), `bestSetReps` and `totalReps`, the session's distance and time added up (`totalDistanceMeters`, `totalDurationSeconds`), the average pace and split where it logged them (`averagePaceSecondsPerKm`, `averageSplitSecondsPer500m`), `averageStrokeRate`, `averagePower`, `maxHeartRateZone` and `longestHoldSeconds`, canonical units, `null` where nothing was logged. `date` is the session's day stamp: the workout's date at UTC midnight — show its UTC date, never the timestamp in the device's zone. A `prs` row is typed by `kind`. See "RN contract — exercise progress"
 
 ### Nutrition
 - `GET /api/client/nutrition` (alias: `GET /api/client/nutrition-plan`) - Get nutrition targets (`getClientNutritionTargets`)
@@ -525,66 +525,64 @@ charts and PRs"). Point keys are `ExerciseProgressionPoint`'s.
 |---|---|
 | `strength` | Weight `topSetWeight` · e1RM `estimatedOneRepMax` · Volume `totalVolume` |
 | `bodyweight` | Best set reps `bestSetReps` |
-| `endurance` | Pace `bestPaceSecondsPerKm` · Distance `totalDistanceMeters` |
-| `erg` | Split `bestSplitSecondsPer500m` · Watts `bestPower` |
-| `carry_sled` | Load `topSetWeight` (with `topSetDistanceMeters`, `topSetDurationSeconds`) · Time `bestTimeSeconds` |
+| `endurance` | Pace `averagePaceSecondsPerKm` · Distance `totalDistanceMeters` |
+| `erg` | Split `averageSplitSecondsPer500m` · Watts `averagePower` |
+| `carry_sled` | Load `topSetWeight` (with `topSetDistanceMeters`, `topSetDurationSeconds`) · Time `totalDurationSeconds` |
 | `holds` | Longest hold `longestHoldSeconds` |
 
 - **Offer the type's leads always, then any other marker some point in the window has a value for**, in this order: weight, e1rm, volume, reps, pace, distance, split, power, time, hold. RPE (`rpe`: the top set's, or in a session with no loaded set the highest RPE logged) and compliance (`actualSets` against `prescribedSets`) are the coach's lenses: the payload carries them, the client app offers no lens for them — the Sessions table below shows the client both.
-- **The values are computed on columns, never names**: a load is a weight above zero; `bestSetReps` counts sets logged with no load; `bestTimeSeconds` is the fastest set that logged a distance and a time; `longestHoldSeconds` the longest set that logged a time and no distance; pace, split and watts are the session's best set, distance its total. Warm-ups count toward nothing.
-- **Lower is better for pace, split and time; higher for the rest.** Loads read through `formatLoad`, distances in the viewer's unit, a pace per the viewer's unit, a split per 500 m, times as clocks (CONVENTIONS §20).
+- **The values are computed on columns, never names**: a load is a weight above zero; `bestSetReps` counts sets logged with no load; `longestHoldSeconds` is the longest set that logged a time and no distance; an endurance session reads as a whole — `totalDistanceMeters` and `totalDurationSeconds` add its sets up, and `averagePaceSecondsPerKm` / `averageSplitSecondsPer500m` are its time over its distance across the sets that logged both, present only where the session logged a pace / a split (else the mean of the ones typed); stroke rate and watts are its averages. Warm-ups count toward nothing.
+- **Lower is better for pace and split; a total time has no best; higher for the rest.** Loads read through `formatLoad`, distances in the viewer's unit, a pace per the viewer's unit, a split per 500 m, times as clocks (CONVENTIONS §20).
 - **`prs` rows, all-time, first-achieved on a tie, each with `date` and `isRecent` (within 28 days):** `{ kind: "rep_max", reps, weight }` (the heaviest per rep count, as before), `{ kind: "best_reps", reps }` (the most reps in a set logged with no load), `{ kind: "best_time", distanceMeters, durationSeconds }` (the fastest per distance, exactly as logged — 5 km and 5.02 km are two rows), `{ kind: "heaviest_carry", distanceMeters, weight }`, `{ kind: "longest_hold", durationSeconds }`. Bounded: 100 rep buckets, the 50 shortest distances per distance kind, one row for each single best. List the type's own kinds first (`strength` rep_max; `bodyweight` best_reps; `endurance` and `erg` best_time; `carry_sled` heaviest_carry then best_time; `holds` longest_hold), then the rest; ignore a `kind` you don't know.
 
 ### RN contract — the Sessions table
 
 Beneath the chart, before Personal records, a table of the exercise's sessions in the same window
-(`utils/exercise-session-columns.ts` is the one table; `docs/ARCHITECTURE.md` → "Exercise progress:
-charts and PRs"). It reads the progression points the chart reads — no request of its own — and
-pages them on the device, ten a page, with previous/next arrows and no count — the window picker
-above already says how many sessions there are.
+(`utils/exercise-session-figures.ts` is the one table; `docs/ARCHITECTURE.md` → "Exercise progress:
+charts and PRs"). A row is a whole session and reads the way a coach reads one — never the builder's
+per-set columns. It reads the progression points the chart reads and the `prs` rows the Personal
+records read — no request of its own — and pages them on the device, ten a page, with previous/next
+arrows and no count: the window picker above already says how many sessions there are. Show nothing
+of it until the points, the exercise's type (the `list` row) and the `prs` rows have all landed; a
+failed `prs` read leaves the rows without stars.
 
 - **Rows:** one per point, newest first by default.
-- **Columns:** Date first, then each column below that some point in the window has a value for, in
-  this order; a column nothing recorded is left out. The client sees every such column — there is no
-  column picker on the client, and RPE, RIR and Sets are the client's own numbers. A missing cell
-  reads a dash.
-- **Cells** read in the viewer's units through the same grammar the log boxes read back: loads as
-  bare numbers in the viewer's unit (snapped like every read-only load) under a heading naming the
-  unit — "Load (kg)", "e1RM (lbs)"; distances "5 km" / "800 m" (miles and yards for an imperial
-  viewer); times as clocks; pace "4:45 /km" or "/mi"; split "1:52.3 /500m"; HR zone "Z3"; the other
-  numbers bare under their heading.
-- **Sort:** tap a column heading to sort by it — the first tap the way the column leads (the first word
-  of its pair below: heaviest, fastest, most, longest, highest; Date newest first), a second tap the
-  other way — and show which heading is sorted and which way. One sort at a time: ties sort newest
-  first, and a point with no value in the sorted column sits last, newest first among them.
+- **Date**, then **Sets** — the point's `sets` in coach shorthand, in order, joined by " · ": a set with
+  a load and reps reads `load × reps` (`102.5 × 8`, the load's unit in the heading — "Sets (kg)" —
+  when any set in the window carries a load); reps alone `12`; a load with a distance `60 × 40 m` (a
+  carry); a distance alone `5 km in 24:10`, and a run of sets of one distance with no load as one —
+  `6 × 800 m: 2:52 · 2:50 · 2:48` (or `2 × 400 m` with no times); a time alone `1:30`. It doesn't sort.
+- **Then the figures of the exercise's type**, the first one the main figure:
 
-| Column | Point key | The session's value | Sort (first tap / second tap) |
-|---|---|---|---|
-| Load | `topSetWeight` | the top set's weight (the heaviest working set) | Heaviest / Lightest load |
-| Reps | `topSetReps` | the top set's reps | Most / Fewest reps |
-| Bodyweight reps | `bestSetReps` | the most reps in a set logged with no load | Most / Fewest bodyweight reps |
-| RPE | `rpe` | the top set's RPE; with no loaded set, the highest RPE logged | Highest / Lowest RPE |
-| RIR | `rir` | the top set's RIR; with no loaded set, the lowest RIR logged | Highest / Lowest RIR |
-| e1RM | `estimatedOneRepMax` | the best Epley estimate | Highest / Lowest e1RM |
-| Volume | `totalVolume` | reps × weight over the loaded sets | Highest / Lowest volume |
-| Distance | `totalDistanceMeters` | the total distance | Longest / Shortest distance |
-| Time | `bestTimeSeconds` (+ `bestTimeDistanceMeters` beside it) | the fastest set that logged a distance and a time, with its distance | Fastest / Slowest time |
-| Hold | `longestHoldSeconds` | the longest set that logged a time and no distance | Longest / Shortest hold |
-| Pace | `bestPaceSecondsPerKm` | the fastest pace | Fastest / Slowest pace |
-| Split | `bestSplitSecondsPer500m` | the fastest split | Fastest / Slowest split |
-| Calories | `totalCalories` | the total calories | Most / Fewest calories |
-| Cadence | `maxCadence` | the highest | Highest / Lowest cadence |
-| Stroke rate | `maxStrokeRate` | the highest | Highest / Lowest stroke rate |
-| Resistance | `maxResistance` | the highest | Highest / Lowest resistance |
-| HR zone | `maxHeartRateZone` | the highest | Highest / Lowest HR zone |
-| Heart rate | `maxHeartRate` | the highest | Highest / Lowest heart rate |
-| Power | `bestPower` | the highest watts | Highest / Lowest power |
-| % FTP | `maxFtpPercent` | the highest | Highest / Lowest % FTP |
-| Rest | `averageRestSeconds` | the average rest taken, to the second (the app's rest timer records it) | Longest / Shortest rest |
-| Sets | `actualSets` / `prescribedSets` | sets done over sets prescribed ("3/3"), or the count alone with no prescription | Most / Fewest sets |
+| `exerciseType` | Figures (point key) |
+|---|---|
+| `strength` | e1RM `estimatedOneRepMax` · Top set `topSetWeight` × `topSetReps` · Volume `totalVolume` · RPE `rpe` |
+| `bodyweight` | Best set `bestSetReps` · Total reps `totalReps` · RPE `rpe` |
+| `endurance` | Pace `averagePaceSecondsPerKm` · Distance `totalDistanceMeters` · Time `totalDurationSeconds` · HR zone `maxHeartRateZone` |
+| `erg` | Split `averageSplitSecondsPer500m` · Distance `totalDistanceMeters` · Time `totalDurationSeconds` · Stroke rate `averageStrokeRate` · Watts `averagePower` |
+| `carry_sled` | Load `topSetWeight` · Distance `totalDistanceMeters` · Time `totalDurationSeconds` |
+| `holds` | Longest hold `longestHoldSeconds` · Total time `totalDurationSeconds` · RPE `rpe` |
 
-Warm-up sets count toward no cell. Tempo has no column yet: the read carries no text.
-
+- **Cells** read in the viewer's units: loads bare under a heading naming the unit — "e1RM (kg)",
+  "Top set (lbs)" — snapped like every read-only load; distances "5 km" / "800 m" (miles and yards
+  for an imperial viewer); times as clocks; pace "4:50 /km" or "/mi"; split "1:52.3 /500m"; HR zone
+  "Z3"; the other numbers bare. A missing value reads a dash.
+- **The change** — the main figure's difference from the previous point in the window that has one,
+  taken between the numbers shown ("+3.1", "-0:10"), beside it, teal when better and amber when
+  worse by the figure's direction (higher is better but for pace and split), grey when level. For
+  `endurance`, `erg` and `carry_sled` the previous point must have the same `totalDistanceMeters`
+  within half a percent. The oldest point, or one with no match, shows none.
+- **The star** — beside the date, on a point holding a record the `prs` rows name: a record whose
+  `date` is the point's `date` and whose values one of its `sets` carries (`rep_max` its reps and
+  weight; `best_reps` its reps with no load; `best_time` its distance and time; `heaviest_carry` its
+  distance and weight; `longest_hold` its time with no distance), the record's words as the
+  Personal records card reads them.
+- **A row opens its workout** — the workout screen for the point's `eventId`; a point with none stays
+  still.
+- **Sort:** tap a figure's heading to sort by it — the first tap the way it leads (highest e1RM,
+  heaviest top set, most reps, fastest pace and split, longest distance, time and hold; Date newest
+  first), a second tap the other way — and show which heading is sorted and which way. One sort at a
+  time: ties sort newest first, and a point with no value in the sorted figure sits last.
 ### Training log payload (`POST /api/client/training/events/{eventId}/log`)
 
 ```typescript

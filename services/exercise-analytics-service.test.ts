@@ -12,6 +12,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: {
     rpc: vi.fn(),
+    from: vi.fn(),
   },
 }));
 
@@ -23,6 +24,32 @@ import {
 } from "./exercise-analytics-service";
 
 const mockRpc = vi.mocked(supabaseAdmin.rpc);
+const mockFrom = vi.mocked(supabaseAdmin.from);
+
+/**
+ * The session logs' calendar workouts, read by id after the progression RPC:
+ * each log's is "ev-<log id>" unless the case says otherwise. Records the ids
+ * each read asked for.
+ */
+function mockSessionLogEvents(eventFor: (id: string) => string | null = (id) => `ev-${id}`) {
+  const asked: string[][] = [];
+  mockFrom.mockImplementation((() => {
+    let ids: string[] = [];
+    const builder = {
+      select: () => builder,
+      in: (_column: string, values: string[]) => {
+        ids = values;
+        asked.push(values);
+        return builder;
+      },
+      order: () => builder,
+      range: () =>
+        Promise.resolve({ data: ids.map((id) => ({ id, training_event_id: eventFor(id) })), error: null }),
+    };
+    return builder;
+  }) as never);
+  return asked;
+}
 
 const CLIENT_ID = "client-1";
 const SESSION_LOG_1 = "sl-1";
@@ -70,6 +97,7 @@ function progressionRow(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSessionLogEvents();
 });
 
 // =============================================================================
@@ -178,47 +206,76 @@ describe("getExerciseProgressionSeries", () => {
     mockRpcResolve([progressionRow({ set_id: null, set_number: null, set_type: null })]);
     const points = await getExerciseProgressionSeries(CLIENT_ID, { exerciseId: EXERCISE_ID });
     expect(points).toHaveLength(1);
-    expect(points[0]).toMatchObject({ actualSets: 0, topSetWeight: null, bestPaceSecondsPerKm: null });
+    expect(points[0]).toMatchObject({ actualSets: 0, sets: [], topSetWeight: null, averagePaceSecondsPerKm: null });
   });
 
-  it("hands every measure of a set to the kernel: an erg piece's markers", async () => {
+  it("hands every measure of a set to the kernel: an erg session as a whole", async () => {
     mockRpcResolve([
       progressionRow({ set_id: "s1", distance_meters: "1000.00", duration_seconds: "222.1", split_seconds_per_500m: "111.0", power: 215 }),
       progressionRow({ set_id: "s2", set_number: 2, distance_meters: "500.00", duration_seconds: "105.0", split_seconds_per_500m: "105.0", power: 240 }),
     ]);
     const [point] = await getExerciseProgressionSeries(CLIENT_ID, { exerciseId: EXERCISE_ID });
     expect(point).toMatchObject({
+      sets: [
+        { weight: null, reps: null, distanceMeters: 1000, durationSeconds: 222.1 },
+        { weight: null, reps: null, distanceMeters: 500, durationSeconds: 105 },
+      ],
       totalDistanceMeters: 1500,
-      bestSplitSecondsPer500m: 105,
-      bestSplitDistanceMeters: 500,
-      bestPower: 240,
-      bestTimeSeconds: 105,
-      bestTimeDistanceMeters: 500,
+      totalDurationSeconds: 327.1,
+      // 327.1 s over three 500 m lengths
+      averageSplitSecondsPer500m: 109,
+      averagePower: 228,
       longestHoldSeconds: null,
       topSetWeight: null,
     });
   });
 
-  it("hands every other measure the read returns to the kernel: the Sessions table's values", async () => {
+  it("hands every other measure the read returns to the kernel: the Sessions table's figures", async () => {
     mockRpcResolve([
-      progressionRow({ set_id: "s1", distance_meters: "4000.00", duration_seconds: "1200.0", rpe: "7.5", rir: "2.0", calories: 310, cadence: 88, stroke_rate: 24, resistance: "6.5", heart_rate_zone: 3, heart_rate: 158, ftp_percent: "82.5", rest_seconds: 90 }),
-      progressionRow({ set_id: "s2", set_number: 2, distance_meters: "1000.00", duration_seconds: "280.0", rpe: "8.5", rir: "1.0", calories: 95, cadence: 97, stroke_rate: 28, resistance: "7.0", heart_rate_zone: 4, heart_rate: 171, ftp_percent: "96.0", rest_seconds: 121 }),
+      progressionRow({ set_id: "s1", distance_meters: "4000.00", duration_seconds: "1200.0", pace_seconds_per_km: 300, rpe: "7.5", stroke_rate: 24, heart_rate_zone: 3 }),
+      progressionRow({ set_id: "s2", set_number: 2, distance_meters: "1000.00", duration_seconds: "280.0", pace_seconds_per_km: 280, rpe: "8.5", stroke_rate: 28, heart_rate_zone: 4 }),
     ]);
     const [point] = await getExerciseProgressionSeries(CLIENT_ID, { exerciseId: EXERCISE_ID });
     expect(point).toMatchObject({
       // No loaded set: the hardest effort logged stands in for the top set's
       rpe: 8.5,
-      rir: 1,
-      totalCalories: 405,
-      maxCadence: 97,
-      maxStrokeRate: 28,
-      maxResistance: 7,
+      averageStrokeRate: 26,
       maxHeartRateZone: 4,
-      maxHeartRate: 171,
-      maxFtpPercent: 96,
-      averageRestSeconds: 106,
       totalDistanceMeters: 5000,
+      totalDurationSeconds: 1480,
+      averagePaceSecondsPerKm: 296,
     });
+  });
+
+  it("carries each session's calendar workout, none where the log has none, asking once per hundred sessions", async () => {
+    const asked = mockSessionLogEvents((id) => (id === SESSION_LOG_2 ? null : `ev-${id}`));
+    mockRpcResolve([
+      progressionRow({ set_id: "s1" }),
+      progressionRow({ session_log_id: SESSION_LOG_2, completed_at: "2026-05-08T00:00:00Z", set_id: "s2" }),
+    ]);
+    const points = await getExerciseProgressionSeries(CLIENT_ID, { exerciseId: EXERCISE_ID });
+    expect(points.map((p) => [p.sessionLogId, p.eventId])).toEqual([
+      [SESSION_LOG_1, `ev-${SESSION_LOG_1}`],
+      [SESSION_LOG_2, null],
+    ]);
+    expect(mockFrom).toHaveBeenCalledWith("session_logs");
+    expect(asked).toEqual([[SESSION_LOG_1, SESSION_LOG_2]]);
+
+    // A long window asks in chunks the request line can carry
+    const many = mockSessionLogEvents();
+    mockRpcResolve(
+      Array.from({ length: 150 }, (_, i) =>
+        progressionRow({ session_log_id: `sl-${i}`, completed_at: `2026-01-01T00:00:${String(i % 60).padStart(2, "0")}Z`, set_id: `s-${i}` }),
+      ),
+    );
+    await getExerciseProgressionSeries(CLIENT_ID, { exerciseId: EXERCISE_ID });
+    expect(many.map((ids) => ids.length)).toEqual([100, 50]);
+  });
+
+  it("asks nothing more when the window holds no session", async () => {
+    mockRpcResolve([]);
+    expect(await getExerciseProgressionSeries(CLIENT_ID, { exerciseId: EXERCISE_ID })).toEqual([]);
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 
   it("excludes warm-ups and guards a null set type as working", async () => {

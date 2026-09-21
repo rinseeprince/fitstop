@@ -493,11 +493,11 @@ export type TrainingEventDetail = {
 // =============================================================================
 // Exercise analytics types
 // Used by exercise-analytics-service and the two exercise-history routes. A
-// progression point is one logged session: every chart marker it can have
-// (utils/exercise-progress-markers.ts names them) and every value the Sessions
-// table reads (utils/exercise-session-columns.ts), all computed by one kernel
-// (utils/exercise-session-markers.ts), so a chart and a table of any exercise
-// type read one shape.
+// progression point is one logged session: its working sets, every chart
+// marker it can have (utils/exercise-progress-markers.ts names them) and the
+// figures of its Sessions table row (utils/exercise-session-figures.ts), all
+// computed by one kernel (utils/exercise-session-markers.ts), so a chart and a
+// table of any exercise type read one shape.
 // =============================================================================
 
 export type ExerciseListItem = {
@@ -509,45 +509,45 @@ export type ExerciseListItem = {
   exerciseType: ExerciseType;
 };
 
+/** A working set as a session's shorthand reads it, canonical: kilograms, metres, seconds. */
+export type ExerciseSessionSet = {
+  weight: number | null;
+  reps: number | null;
+  distanceMeters: number | null;
+  durationSeconds: number | null;
+};
+
 export type ExerciseProgressionPoint = {
   date: string;
   sessionLogId: string;
+  /** The calendar workout the session was logged for; null on a log that has none. */
+  eventId: string | null;
+  /** The session's working sets, in the order they were logged. */
+  sets: ExerciseSessionSet[];
   // A lift: the heaviest working set, and what else that set recorded
   topSetWeight: number | null;
   topSetReps: number | null;
   topSetDistanceMeters: number | null;
   topSetDurationSeconds: number | null;
-  // The top set's RPE and RIR — in a session with no loaded set, the highest
-  // RPE and the lowest RIR logged. The RPE chart lens and the table read one value.
+  // The top set's RPE — in a session with no loaded set, the highest RPE
+  // logged. The RPE chart lens and the Sessions table read one value.
   rpe: number | null;
-  rir: number | null;
   estimatedOneRepMax: number | null;
   totalVolume: number | null;
-  // A bodyweight set: the most reps in a set logged with no load
+  // Reps: the most in one set logged with no load, and all of them added up
   bestSetReps: number | null;
-  // Endurance and erg measures, each the session's best set and its distance
-  bestPaceSecondsPerKm: number | null;
-  bestPaceDistanceMeters: number | null;
+  totalReps: number | null;
+  // The session as a whole: its distance and time added up, the average pace
+  // and split over them, the average stroke rate and watts, the highest zone
   totalDistanceMeters: number | null;
-  bestSplitSecondsPer500m: number | null;
-  bestSplitDistanceMeters: number | null;
-  bestPower: number | null;
-  // A timed distance: the fastest set that logged a distance and a time
-  bestTimeSeconds: number | null;
-  bestTimeDistanceMeters: number | null;
-  bestTimeWeight: number | null;
+  totalDurationSeconds: number | null;
+  averagePaceSecondsPerKm: number | null;
+  averageSplitSecondsPer500m: number | null;
+  averageStrokeRate: number | null;
+  averagePower: number | null;
+  maxHeartRateZone: number | null;
   // A hold: the longest set that logged a time and no distance
   longestHoldSeconds: number | null;
-  // The session's calories, added up; the highest of each machine and body reading
-  totalCalories: number | null;
-  maxCadence: number | null;
-  maxStrokeRate: number | null;
-  maxResistance: number | null;
-  maxHeartRateZone: number | null;
-  maxHeartRate: number | null;
-  maxFtpPercent: number | null;
-  // The average rest taken, to the second — only the React Native app's timer records rest
-  averageRestSeconds: number | null;
   // Compliance: the prescription the session was logged against
   prescribedSets: number | null;
   actualSets: number;

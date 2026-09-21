@@ -13,6 +13,8 @@ import {
 import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise-trend-chart";
 import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
 import { ExerciseSessionsTable } from "@/components/training/exercise-data/exercise-sessions-table";
+import { SessionLogDetailDialog } from "@/components/clients/training/session-log-detail-dialog";
+import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { ExerciseKpiStrip } from "./exercise-kpi-strip";
 import { computeKpis } from "@/components/training/exercise-data/exercise-insight";
 import { useUnits } from "@/contexts/units-context";
@@ -110,9 +112,10 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     onError: (err) => console.error("Failed to load progression data:", err),
   });
 
-  // SWR: PR data — the PRs lens alone shows the cards
+  // SWR: the exercise's records — the PRs lens's cards, and the stars on the
+  // Sessions table's rows on every lens
   const prUrl =
-    subject != null && selectedMetric === "prs"
+    subject != null
       ? coachExerciseHistoryKey(clientId, {
           metric: "prs",
           exerciseId: selectedExerciseId,
@@ -138,6 +141,9 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
         ex.name.toLowerCase() === selectedExerciseName.toLowerCase()),
   );
   const exerciseType = selectedFromList?.exerciseType ?? DEFAULT_EXERCISE_TYPE;
+
+  // A session's workout, opened from its row in the Sessions table
+  const sessionLog = useDialogSubject<string>();
 
   // The lenses: the type's own at once, and whatever else the logs carry once
   // the progression lands; then PRs
@@ -261,17 +267,32 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
           </div>
 
           {/* 5. The Sessions table beneath whatever the hero shows. Keyed by the
-              exercise: another pick starts it fresh; a lens switch leaves it be. */}
+              exercise: another pick starts it fresh; a lens switch leaves it be.
+              Its figures wait for the list that says the exercise's type. */}
           <ExerciseSessionsTable
             key={subject}
             audience="coach"
             points={points}
+            exerciseType={listLoading ? undefined : exerciseType}
+            records={prData?.data}
+            recordsLoading={prLoading}
             isError={progressionFailed}
             onRetry={retryProgression}
             windowKey={String(sessionCount)}
+            onOpenSession={(point) => sessionLog.show(point.sessionLogId)}
+            canOpenSession={() => true}
           />
         </>
       )}
+
+      <SessionLogDetailDialog
+        clientId={clientId}
+        sessionLogId={sessionLog.subject}
+        open={sessionLog.open}
+        onOpenChange={(open) => {
+          if (!open) sessionLog.close();
+        }}
+      />
     </div>
   );
 }

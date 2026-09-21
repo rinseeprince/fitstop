@@ -27,9 +27,10 @@ class ResizeObserverMock {
 globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
 
 const mockReplace = vi.fn();
+const mockPush = vi.fn();
 const mockSearchParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush }),
   useSearchParams: () => mockSearchParams,
 }));
 
@@ -40,33 +41,25 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
   return {
     date: "2026-05-01T00:00:00Z",
     sessionLogId: "sl-1",
+    eventId: null,
+    sets: [],
+    totalReps: null,
+    totalDurationSeconds: null,
+    averagePaceSecondsPerKm: null,
+    averageSplitSecondsPer500m: null,
+    averageStrokeRate: null,
+    averagePower: null,
     topSetWeight: 80,
     topSetReps: 8,
     rpe: 7,
-    rir: null,
     topSetDistanceMeters: null,
     topSetDurationSeconds: null,
     estimatedOneRepMax: 100,
     totalVolume: 2400,
     bestSetReps: null,
-    bestPaceSecondsPerKm: null,
-    bestPaceDistanceMeters: null,
     totalDistanceMeters: null,
-    bestSplitSecondsPer500m: null,
-    bestSplitDistanceMeters: null,
-    bestPower: null,
-    bestTimeSeconds: null,
-    bestTimeDistanceMeters: null,
-    bestTimeWeight: null,
     longestHoldSeconds: null,
-    totalCalories: null,
-    maxCadence: null,
-    maxStrokeRate: null,
-    maxResistance: null,
     maxHeartRateZone: null,
-    maxHeartRate: null,
-    maxFtpPercent: null,
-    averageRestSeconds: null,
     prescribedSets: 3,
     actualSets: 3,
     prescribedRepsMin: 8,
@@ -212,7 +205,7 @@ describe("PerformanceView", () => {
     expect(screen.getByText(/Not enough data yet/i)).toBeInTheDocument();
   });
 
-  it("puts the Sessions table between the chart and Personal Records, every column recorded and no Columns menu", () => {
+  it("puts the Sessions table between the chart and Personal Records: the sets, then the type's figures", () => {
     selectExercise();
     setupSWR({
       list: [makeListItem()],
@@ -227,17 +220,34 @@ describe("PerformanceView", () => {
     expect(chart.compareDocumentPosition(sessions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(sessions.compareDocumentPosition(records) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    // The client's own RPE and sets are among the columns; no menu hides any
     expect(within(sessions).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
-      "Date", "Load (kg)", "Reps", "RPE", "e1RM (kg)", "Volume (kg)", "Sets",
+      "Date", "Sets", "e1RM (kg)", "Top set (kg)", "Volume (kg)", "RPE",
     ]);
     expect(within(sessions).getByRole("heading", { name: "Sessions" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Columns for the sessions table" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Columns/ })).toBeNull();
     // The headings sort, newest first until one is clicked
     expect(within(sessions).getByRole("columnheader", { name: "Date" })).toHaveAttribute("aria-sort", "descending");
     // The arrows alone: the window above already says how many
     expect(within(sessions).queryByText(/Showing/)).toBeNull();
     expect(within(sessions).getByRole("button", { name: "Next page" })).toBeDisabled();
+  });
+
+  it("opens the client's own workout from a session's row, and leaves a row with no workout still", async () => {
+    const user = userEvent.setup();
+    selectExercise();
+    setupSWR({
+      list: [makeListItem()],
+      progression: [
+        makePoint({ date: "2026-05-01T00:00:00Z", sessionLogId: "sl-1", eventId: null }),
+        makePoint({ date: "2026-05-08T00:00:00Z", sessionLogId: "sl-2", eventId: "ev-2" }),
+      ],
+      prs: [],
+    });
+    render(<PerformanceView />);
+    await user.click(screen.getByText("May 1, 2026"));
+    expect(mockPush).not.toHaveBeenCalled();
+    await user.click(screen.getByText("May 8, 2026"));
+    expect(mockPush).toHaveBeenCalledWith("/client/training?eventId=ev-2");
   });
 
   it("shows the keep-logging PR empty state when there are no PRs", () => {
@@ -259,8 +269,8 @@ describe("PerformanceView — lenses by type", () => {
     setupSWR({
       list: [makeListItem({ name: "Running", exerciseType: "endurance" })],
       progression: [
-        makePoint({ topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, bestPaceSecondsPerKm: 314, totalDistanceMeters: 5000 }),
-        makePoint({ date: "2026-05-08", topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, bestPaceSecondsPerKm: 301, totalDistanceMeters: 5000 }),
+        makePoint({ topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, averagePaceSecondsPerKm: 314, totalDistanceMeters: 5000 }),
+        makePoint({ date: "2026-05-08", topSetWeight: null, topSetReps: null, estimatedOneRepMax: null, totalVolume: null, averagePaceSecondsPerKm: 301, totalDistanceMeters: 5000 }),
       ],
       prs: [{ kind: "best_time", distanceMeters: 5000, durationSeconds: 1505, date: "2026-05-08T00:00:00Z", isRecent: true }],
     });
