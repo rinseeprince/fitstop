@@ -193,6 +193,7 @@ function SessionsPages({
               {pageRows.map((point) => {
                 const opens = canOpenSession(point);
                 const held = records ? recordsHeldBy(point, records) : [];
+                const shorthand = formatSessionSets(point.sets, preference);
                 return (
                   <TableRow
                     key={point.sessionLogId}
@@ -215,10 +216,8 @@ function SessionsPages({
                       )}
                     </TableCell>
                     <TableCell className="min-w-[200px] whitespace-normal">
-                      {point.sets.length > 0 ? (
-                        <span className={cn(MONO_CELL_CLASS, TEXT_PRIMARY)}>
-                          {formatSessionSets(point.sets, preference)}
-                        </span>
+                      {shorthand ? (
+                        <span className={cn(MONO_CELL_CLASS, TEXT_PRIMARY)}>{shorthand}</span>
                       ) : (
                         <Dash />
                       )}

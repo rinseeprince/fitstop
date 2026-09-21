@@ -157,7 +157,7 @@ export function formatSessionFigure(
 
 // --- The sets ----------------------------------------------------------------
 
-/** One set in coach shorthand: `102.5 × 8`, `12`, `60 × 40 m`, `1:30`. */
+/** One set in coach shorthand: `102.5 × 8`, `12`, `60 × 40 m`, `1:30`, a load alone. */
 function formatSet(set: ExerciseSessionSet, viewer: UnitSystem): string {
   const load = hasLoad(set) ? loadNumber(set.weight as number, viewer) : null;
   if (set.distanceMeters != null) {
@@ -166,16 +166,21 @@ function formatSet(set: ExerciseSessionSet, viewer: UnitSystem): string {
   }
   if (set.reps != null) return load ? `${load} × ${set.reps}` : String(set.reps);
   if (set.durationSeconds != null) return formatDuration(set.durationSeconds);
-  return load ?? "—";
+  return load as string;
 }
+
+/** A set that logged none of what the shorthand reads (an RIR or a tempo alone) says nothing there. */
+const readsInShorthand = (set: ExerciseSessionSet): boolean =>
+  hasLoad(set) || set.reps != null || set.distanceMeters != null || set.durationSeconds != null;
 
 /**
  * The session's working sets in coach shorthand, in order: `100 × 8 · 102.5 ×
  * 8`, `12 · 11 · 10`, `60 × 40 m`, `1:30 · 1:20`. A piece of distance reads with
  * its time — `5 km in 24:10` — and a run of pieces of one distance as one:
- * `6 × 800 m: 2:52 · 2:50 · 2:48`.
+ * `6 × 800 m: 2:52 · 2:50 · 2:48`. Empty when no set logged any of them.
  */
-export function formatSessionSets(sets: readonly ExerciseSessionSet[], viewer: UnitSystem): string {
+export function formatSessionSets(logged: readonly ExerciseSessionSet[], viewer: UnitSystem): string {
+  const sets = logged.filter(readsInShorthand);
   const parts: string[] = [];
   let i = 0;
   while (i < sets.length) {

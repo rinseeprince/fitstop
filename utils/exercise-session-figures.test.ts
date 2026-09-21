@@ -171,6 +171,12 @@ describe("the sets in shorthand", () => {
     expect(formatSessionSets([set({ distanceMeters: 400 }), set({ distanceMeters: 400 })], "metric")).toBe("2 × 400 m");
   });
 
+  it("leaves out a set that logged none of load, reps, distance or time, and says nothing when none did", () => {
+    expect(formatSessionSets([set({}), set({ weight: 100, reps: 5 })], "metric")).toBe("100 × 5");
+    expect(formatSessionSets([set({}), set({})], "metric")).toBe("");
+    expect(formatSessionSets([set({ weight: 20 })], "metric")).toBe("20");
+  });
+
   it("reads loads and distances in the viewer's units", () => {
     expect(formatSessionSets([set({ weight: 100, reps: 5 })], "imperial")).toBe("220 × 5");
     expect(formatSessionSets([set({ distanceMeters: 1609.344, durationSeconds: 480 })], "imperial")).toBe("1 mi in 8:00");

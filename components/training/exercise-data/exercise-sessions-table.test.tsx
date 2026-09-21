@@ -130,6 +130,11 @@ describe("ExerciseSessionsTable", () => {
     ]);
   });
 
+  it("reads a session whose sets logged nothing the shorthand reads as a dash", () => {
+    renderTable({ points: [session(1, [{ rir: 2 }, { rir: 1 }])] });
+    expect(cellsOf(bodyRows()[0])).toEqual(["Aug 1, 2026", "—", "—", "—", "—", "—"]);
+  });
+
   it("stars a session holding a record, naming the record", () => {
     renderTable({
       records: [
