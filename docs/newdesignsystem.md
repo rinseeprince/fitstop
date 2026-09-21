@@ -529,6 +529,8 @@ The base `DropdownMenuContent`/`Item` primitives (`components/ui/dropdown-menu.t
 
 `<PopoverContent align="start" sideOffset={6} className="w-[320px] rounded-[6px] border-[rgba(13,148,136,0.08)] p-0">` — header `px-3.5 pb-2 pt-3` (title `text-sm font-semibold` + `MONO_LABEL_CLASS` subtitle + close X), scroll body `max-h-[260px] overflow-y-auto px-1.5 pb-1.5`, footer `border-t border-[rgba(13,148,136,0.06)] p-1.5` with a teal-text action.
 
+**Inside a sheet, a popover mounts in the sheet.** A modal sheet blocks the mouse wheel everywhere outside its own content, so `SheetContent` provides a node inside its content (`components/ui/portal-container.tsx`) and `PopoverContent` portals into it: the session editor's Add exercise list and the check-in form's saved questions scroll with the wheel like the rest of the sheet. Outside a sheet a popover mounts on `<body>`. Menus and selects stay on `<body>`: they are modal and carry their own scroll lock.
+
 ### Date picker popover (a date changed from an icon)
 
 Reference: `components/clients/training/plan-hero-line.tsx` + `start-date-calendar.tsx` — the pencil beside the Plans hero's "Starts <date>". A date changed from an icon, with no field to type in, opens a month calendar in a `Popover`; a date FIELD keeps its native input and `min`/`max` (see "Date inputs express their bounds natively").

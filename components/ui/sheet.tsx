@@ -6,6 +6,7 @@ import { XIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { ignoringToasts } from '@/lib/toast-interaction'
+import { PortalContainerProvider } from './portal-container'
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -81,6 +82,9 @@ function SheetContent({
    */
   hideClose?: boolean
 }) {
+  // The node the popovers opened inside this sheet mount in (portal-container.tsx)
+  const [popoverLayer, setPopoverLayer] = React.useState<HTMLDivElement | null>(null)
+
   return (
     <SheetPortal>
       <SheetOverlay className={overlayClassName} />
@@ -114,8 +118,10 @@ function SheetContent({
         )}
         {...props}
       >
-        {children}
+        <PortalContainerProvider container={popoverLayer}>{children}</PortalContainerProvider>
         {!hideClose && <SheetCloseButton />}
+        {/* `contents`: no box, so the sheet's flex layout and gap never see it */}
+        <div ref={setPopoverLayer} data-slot="sheet-popover-layer" className="contents" />
       </SheetPrimitive.Content>
     </SheetPortal>
   )
