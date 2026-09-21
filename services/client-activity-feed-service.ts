@@ -4,6 +4,7 @@ import {
   hasLoad,
   isBodyweightSet,
   isHold,
+  isLift,
   isTimedDistance,
   type SetShape,
 } from "@/utils/exercise-session-markers";
@@ -35,10 +36,12 @@ export type MetricEntryFeedRow = {
 /**
  * What a new session might have beaten, one candidate per kind — and per
  * distance for a time or a carry — read off the logged columns the way the
- * chart markers are (utils/exercise-session-markers.ts): a load is a weight
- * above zero — a lift's when logged with no distance, a carry's over one —
- * reps with no load are a bodyweight set, a time with a distance a timed
- * distance, a time with no distance a hold. `at` is the feed anchor of the
+ * chart markers and get_exercise_prs are (utils/exercise-session-markers.ts):
+ * a load is a weight above zero — a lift's when logged with neither a distance
+ * nor a time, a carry's over a distance — reps with no load, and neither a
+ * distance nor a time, are a bodyweight set, a time with a distance a timed
+ * distance, a time with no distance a hold. Reps on a distance or a time are
+ * repeats, so they announce no reps and no lift. `at` is the feed anchor of the
  * session that set it.
  */
 export type PrCandidate =
@@ -179,13 +182,11 @@ export function collectNewExerciseBests(
         distanceMeters: logged.distance_meters,
         durationSeconds: logged.duration_seconds,
       };
-      // A load logged with no distance is a lift's; over a distance it is a carry
-      if (hasLoad(set)) {
-        if (set.distanceMeters == null) {
-          offer({ kind: "load", weight: set.weight as number, at });
-        } else {
-          offer({ kind: "carry", distanceMeters: set.distanceMeters, weight: set.weight as number, at });
-        }
+      // A load lifted is a lift's; over a distance it is a carry's; held for a
+      // time it is a hold's, which its time below answers for
+      if (isLift(set)) offer({ kind: "load", weight: set.weight as number, at });
+      if (hasLoad(set) && set.distanceMeters != null) {
+        offer({ kind: "carry", distanceMeters: set.distanceMeters, weight: set.weight as number, at });
       }
       if (isBodyweightSet(set)) offer({ kind: "reps", reps: set.reps as number, at });
       if (isTimedDistance(set)) {

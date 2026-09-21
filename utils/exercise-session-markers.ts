@@ -9,8 +9,11 @@ import { calculateEpleyE1RM } from "./exercise-analytics-helpers";
 // which reads the same values (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section
 // 4.4). A lift's values are its top set's and its best estimate; an endurance
 // session's are the session's own — its distance and time added up, every
-// repeat counted, and the average pace and split over them. Warm-ups count
-// toward nothing here; failure and drop sets count like working sets.
+// repeat counted, and the average pace and split over them. Reps on a set with
+// a distance or a time are repeats, never a rep count, so such a set makes no
+// best set, e1RM, volume or rep total — get_exercise_prs (migration 190) reads
+// the records off the same sets. Warm-ups count toward nothing here; failure
+// and drop sets count like working sets.
 
 /**
  * A logged set as the aggregation reads it: its type and every numeric measure
@@ -31,9 +34,23 @@ type SessionMarkerValues = Omit<
 export const hasLoad = (set: Pick<SetShape, "weight">): boolean =>
   set.weight != null && set.weight > 0;
 
-/** Reps logged with no load: the shape best set reps counts. */
-export const isBodyweightSet = (set: Pick<SetShape, "weight" | "reps">): boolean =>
-  set.reps != null && !hasLoad(set);
+/**
+ * A set with a distance or a time: its reps are repeats — 3 reps of 1 km is
+ * 3 km, 3 reps of 30 s is 1:30 (owner, 2026-09-21) — never a rep count.
+ */
+const hasDistanceOrTime = (set: Pick<SetShape, "distanceMeters" | "durationSeconds">): boolean =>
+  set.distanceMeters != null || set.durationSeconds != null;
+
+/** Reps logged with no load, and neither a distance nor a time: the shape best set reps counts. */
+export const isBodyweightSet = (set: SetShape): boolean =>
+  set.reps != null && !hasLoad(set) && !hasDistanceOrTime(set);
+
+/**
+ * A load logged with neither a distance nor a time — lifted, not carried or
+ * held — so its reps are reps: the shape the e1RM, the volume and the rep maxes
+ * read.
+ */
+export const isLift = (set: SetShape): boolean => hasLoad(set) && !hasDistanceOrTime(set);
 
 /** A time logged with a distance: a timed distance. */
 export const isTimedDistance = (set: Pick<SetShape, "durationSeconds" | "distanceMeters">): boolean =>
@@ -141,11 +158,11 @@ const roundedMean = (values: readonly number[]): number | null => {
 
 export function aggregateSessionMarkers(sets: readonly MarkerSet[]): SessionMarkerValues {
   const working = sets.filter((s) => s.setType !== "warmup");
-  const lifts = working.filter(hasLoad);
 
-  // Top set: the heaviest load, tiebreak by the higher rep count
+  // Top set: the heaviest load of any set — a carry's included, which its Load
+  // lens reads — tiebreak by the higher rep count
   let topSet: MarkerSet | null = null;
-  for (const s of lifts) {
+  for (const s of working.filter(hasLoad)) {
     if (
       topSet == null ||
       (s.weight as number) > (topSet.weight as number) ||
@@ -155,10 +172,11 @@ export function aggregateSessionMarkers(sets: readonly MarkerSet[]): SessionMark
     }
   }
 
-  // Volume: SUM(reps * weight) over sets with both; e1RM: the best Epley estimate
+  // Volume: SUM(reps * weight) over the lifts with reps; e1RM: the best Epley
+  // estimate among them. A carry's or a timed set's reps are repeats, not reps.
   let totalVolume: number | null = null;
   let estimatedOneRepMax: number | null = null;
-  for (const s of lifts) {
+  for (const s of working.filter(isLift)) {
     if (s.reps == null) continue;
     totalVolume = (totalVolume ?? 0) + s.reps * (s.weight as number);
     const e1rm = calculateEpleyE1RM(s.weight as number, s.reps);
@@ -197,7 +215,8 @@ export function aggregateSessionMarkers(sets: readonly MarkerSet[]): SessionMark
     estimatedOneRepMax: estimatedOneRepMax != null ? round1(estimatedOneRepMax) : null,
     totalVolume,
     bestSetReps: bestReps?.reps ?? null,
-    totalReps: sum(recorded(working, (s) => s.reps)),
+    // Every set's reps, but a set's repeats are not reps
+    totalReps: sum(recorded(working, (s) => (hasDistanceOrTime(s) ? null : s.reps))),
     totalDistanceMeters: totalDistance,
     totalDurationSeconds: totalDuration == null ? null : round1(totalDuration),
     // A pace is whole seconds, a split tenths (utils/set-log-measures.ts)

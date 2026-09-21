@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExerciseBest, ExerciseProgressionPoint } from "@/types/training";
@@ -28,7 +28,26 @@ function markerSet(): MarkerSet {
   return { setType: "working", ...measures };
 }
 
-const MIGRATION = join(process.cwd(), "supabase/migrations/188_progress_charts_by_exercise_type.sql");
+const MIGRATIONS = join(process.cwd(), "supabase/migrations");
+const MIGRATION = join(MIGRATIONS, "188_progress_charts_by_exercise_type.sql");
+
+/** get_exercise_prs as the database runs it: its body in the last migration that defines it. */
+function latestPrsFunction(): string {
+  const defining = readdirSync(MIGRATIONS)
+    .filter((file) => file.endsWith(".sql"))
+    .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+    .map((file) => readFileSync(join(MIGRATIONS, file), "utf8"))
+    .filter((sql) => sql.includes("CREATE OR REPLACE FUNCTION get_exercise_prs"));
+  const sql = defining[defining.length - 1];
+  const start = sql.indexOf("CREATE OR REPLACE FUNCTION get_exercise_prs");
+  return sql.slice(start, sql.indexOf("$$;", start));
+}
+
+/** One CTE's text inside the function: from `name AS (` to the next CTE. */
+function cte(body: string, name: string, next: string): string {
+  const start = body.indexOf(`${name} AS (`);
+  return body.slice(start, body.indexOf(`${next} AS (`, start));
+}
 
 function point(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseProgressionPoint {
   return {
@@ -207,6 +226,26 @@ describe("offeredMarkers", () => {
     expect(offeredMarkers("carry_sled", [carry], "coach")).not.toContain("split");
   });
 
+  it("offers no lens off repeats: a run's reps give no Reps lens, a carry's no e1RM or Volume (owner, 2026-09-21)", () => {
+    const session = (sets: Partial<MarkerSet>[]) =>
+      point(aggregateSessionMarkers(sets.map((s) => ({ ...markerSet(), ...s }))));
+    // The owner's run on 21 Sep: 3 reps each of 1 km, 800 m, 600 m and 400 m, paces typed
+    const run = session([
+      { reps: 3, distanceMeters: 1000, paceSecondsPerKm: 270 },
+      { reps: 3, distanceMeters: 800, paceSecondsPerKm: 255 },
+      { reps: 3, distanceMeters: 600, paceSecondsPerKm: 240 },
+      { reps: 3, distanceMeters: 400, paceSecondsPerKm: 225 },
+    ]);
+    expect(offeredMarkers("endurance", [run], "coach")).not.toContain("reps");
+    expect(offeredMarkers("endurance", [run], "client")).not.toContain("reps");
+
+    const carry = session([{ weight: 64, reps: 3, distanceMeters: 40 }]);
+    expect(offeredMarkers("carry_sled", [carry], "coach")).toEqual(["weight", "time", "compliance", "distance"]);
+
+    // A pull-up set still offers its Reps lens
+    expect(offeredMarkers("endurance", [session([{ reps: 12 }])], "coach")).toContain("reps");
+  });
+
   it("reads a value on any session in the window", () => {
     expect(hasMarkerValue("pace", [point(), point({ averagePaceSecondsPerKm: 280 })])).toBe(true);
     expect(hasMarkerValue("pace", [point(), point()])).toBe(false);
@@ -270,10 +309,25 @@ describe("migration 188 mirrors the tables", () => {
     }
   });
 
+});
+
+describe("get_exercise_prs, as the latest migration defines it", () => {
+  const body = latestPrsFunction();
+
   it("computes every best kind and no other", () => {
-    const start = sql.indexOf("CREATE OR REPLACE FUNCTION get_exercise_prs");
-    const body = sql.slice(start);
     const literals = [...body.matchAll(/'([a-z_]+)'::TEXT AS kind/g)].map((m) => m[1]);
     expect(new Set(literals)).toEqual(new Set(BEST_KINDS));
+  });
+
+  it("never reads repeats as reps: a rep max and a best set skip a set with a distance or a duration (migration 190)", () => {
+    // The kernel's isLift and isBodyweightSet read the same sets
+    for (const [name, next] of [
+      ["rep_max", "best_reps"],
+      ["best_reps", "best_time"],
+    ]) {
+      const where = cte(body, name, next);
+      expect(where, `${name} skips a distance`).toContain("s.distance_meters IS NULL");
+      expect(where, `${name} skips a duration`).toContain("s.duration_seconds IS NULL");
+    }
   });
 });

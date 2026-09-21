@@ -11,15 +11,17 @@ import type { ExerciseType } from "./exercise-types";
 // TYPE says which markers lead its chart and are always offered; the LOGGED
 // COLUMNS say which others follow (offeredMarkers): a session that has a value
 // for a marker offers it. The values are computed on column rules, never
-// names (utils/exercise-session-markers.ts): a set logged with reps and no
-// load is a bodyweight set, a time with a distance is a timed distance, a time
-// with no distance is a hold, and RPE is the top set's or, with no loaded set,
-// the highest logged — so a run's RPE reaches the chart. An endurance session
+// names (utils/exercise-session-markers.ts): a set logged with reps, no load
+// and neither a distance nor a time is a bodyweight set, a load logged with
+// neither is a lift, a time with a distance is a timed distance, a time with
+// no distance is a hold, and RPE is the top set's or, with no loaded set, the
+// highest logged — so a run's RPE reaches the chart. An endurance session
 // plots as a whole: its distance and time added up, every repeat counted (reps
-// on a set with a distance or a time are repeats), the average pace, split and
-// watts over them. RPE and Compliance are the coach's lenses and are never
-// offered to the client. The Sessions table's figures read the same values
-// (utils/exercise-session-figures.ts), so a point and its row always match.
+// on a set with a distance or a time are repeats, never reps), the average
+// pace, split and watts over them. RPE and Compliance are the coach's lenses
+// and are never offered to the client. The Sessions table's figures read the
+// same values (utils/exercise-session-figures.ts), so a point and its row
+// always match.
 
 export const PROGRESS_MARKERS = [
   "weight",

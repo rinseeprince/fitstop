@@ -4,7 +4,7 @@ import type {
   ExerciseProgressionPoint,
   ExerciseSessionSet,
 } from "@/types/training";
-import { hasLoad } from "./exercise-session-markers";
+import { isBodyweightSet, isLift } from "./exercise-session-markers";
 import { formatDistance, formatDuration, formatLoad, type UnitSystem } from "./unit-conversions";
 
 // An exercise's records (get_exercise_prs, migration 188) as a coach and a
@@ -66,13 +66,17 @@ export function recordLine(best: ExerciseBest, viewer: UnitSystem): string {
   return `${words.label} · ${words.value}${words.unit ? ` ${words.unit}` : ""}`;
 }
 
-/** Whether a set is the one a record was set by, on the record's own column rules. */
+/**
+ * Whether a set is the one a record was set by, on the record's own column
+ * rules — the sets get_exercise_prs reads: a rep max is a lift's and a best set
+ * a bodyweight set's, never a set whose reps are repeats of a distance or a time.
+ */
 function setHolds(set: ExerciseSessionSet, best: ExerciseBest): boolean {
   switch (best.kind) {
     case "rep_max":
-      return set.reps === best.reps && set.weight === best.weight;
+      return isLift(set) && set.reps === best.reps && set.weight === best.weight;
     case "best_reps":
-      return set.reps === best.reps && !hasLoad(set);
+      return isBodyweightSet(set) && set.reps === best.reps;
     case "best_time":
       return set.distanceMeters === best.distanceMeters && set.durationSeconds === best.durationSeconds;
     case "heaviest_carry":

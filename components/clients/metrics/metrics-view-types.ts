@@ -35,10 +35,15 @@ export function isJourneySubtab(value: string | null): value is JourneySubtab {
   return (JOURNEY_SUBTABS as readonly string[]).includes(value ?? "");
 }
 
+/** Whether a Journey pane is a metric pane — one that shows a metric's data. */
+export function isMetricTab(pane: JourneySubtab): pane is MetricTab {
+  return (METRIC_TABS as readonly string[]).includes(pane);
+}
+
 /**
  * The metric derivations want a MetricTab, but a Journey pane may be one that
  * keys nothing (Training, Blocks). Those idle on "body" — nothing metric-keyed
- * renders on them.
+ * renders on them, and Log measurement opens on the body default from them.
  *
  * It WHITELISTS the metric panes rather than naming the non-metric ones. The
  * blacklist this replaced (`pane === "blocks" ? "body" : pane`) put the burden
@@ -47,9 +52,7 @@ export function isJourneySubtab(value: string | null): value is JourneySubtab {
  * metrics under a pane that renders none of them.
  */
 export function toMetricTab(pane: JourneySubtab): MetricTab {
-  return (METRIC_TABS as readonly string[]).includes(pane)
-    ? (pane as MetricTab)
-    : "body";
+  return isMetricTab(pane) ? pane : "body";
 }
 
 export const DEFAULT_FOCUS: Record<MetricTab, string> = {

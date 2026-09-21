@@ -4,6 +4,7 @@ import {
   hasLoad,
   isBodyweightSet,
   isHold,
+  isLift,
   isTimedDistance,
   type MarkerSet,
 } from "./exercise-session-markers";
@@ -27,6 +28,24 @@ describe("the set shapes", () => {
     expect(isBodyweightSet(set({ reps: 10, weight: 0 }))).toBe(true);
     expect(isBodyweightSet(set({ reps: 10, weight: 20 }))).toBe(false);
     expect(isBodyweightSet(set({ weight: 20 }))).toBe(false);
+  });
+
+  it("reads reps on a distance or a time as repeats, never a bodyweight set (owner, 2026-09-21)", () => {
+    // 3 reps of 1 km is 3 km, 3 reps of 30 s is 1:30
+    expect(isBodyweightSet(set({ reps: 3, distanceMeters: 1000, paceSecondsPerKm: 270 }))).toBe(false);
+    expect(isBodyweightSet(set({ reps: 3, durationSeconds: 30 }))).toBe(false);
+    expect(isBodyweightSet(set({ reps: 3, distanceMeters: 40, weight: 0 }))).toBe(false);
+  });
+
+  it("reads a load with neither a distance nor a time as a lift", () => {
+    expect(isLift(set({ weight: 100, reps: 5 }))).toBe(true);
+    expect(isLift(set({ weight: 100 }))).toBe(true);
+    // Carried, held for time, or no load at all: not a lift
+    expect(isLift(set({ weight: 64, reps: 3, distanceMeters: 40 }))).toBe(false);
+    expect(isLift(set({ weight: 64, reps: 3, durationSeconds: 30 }))).toBe(false);
+    expect(isLift(set({ weight: 100, reps: 8, durationSeconds: 40 }))).toBe(false);
+    expect(isLift(set({ weight: 0, reps: 5 }))).toBe(false);
+    expect(isLift(set({ reps: 5 }))).toBe(false);
   });
 
   it("reads a time with a distance as a timed distance and a time without one as a hold", () => {
@@ -84,14 +103,16 @@ describe("aggregateSessionMarkers", () => {
       set({ reps: 6, weight: 100, rpe: 9, distanceMeters: 40, durationSeconds: 35 }),
       set({ setType: "failure", reps: 12, weight: 60 }),
     ]);
+    // The top set is the heaviest load of any set — the carry's, here
     expect(values.topSetWeight).toBe(100);
     expect(values.topSetReps).toBe(6);
     expect(values.rpe).toBe(9);
     expect(values.topSetDistanceMeters).toBe(40);
     expect(values.topSetDurationSeconds).toBe(35);
-    expect(values.totalVolume).toBe(8 * 80 + 5 * 100 + 6 * 100 + 12 * 60);
-    // Epley on the best set: 100 * (1 + 6/30) = 120
-    expect(values.estimatedOneRepMax).toBe(120);
+    // The volume and the e1RM are the lifts': the carry's 6 are repeats of 40 m, not reps
+    expect(values.totalVolume).toBe(8 * 80 + 5 * 100 + 12 * 60);
+    // Epley on the best lift: 100 * (1 + 5/30) = 116.7
+    expect(values.estimatedOneRepMax).toBe(116.7);
   });
 
   it("counts a 0 kg set as no load: not a top set, not volume, but a bodyweight set", () => {
@@ -152,6 +173,49 @@ describe("aggregateSessionMarkers", () => {
     expect(holds.longestHoldSeconds).toBe(30);
     // A lift's reps stay its reps: nothing to multiply
     expect(aggregateSessionMarkers([set({ reps: 5, weight: 100 })]).totalDurationSeconds).toBeNull();
+  });
+
+  it("never reads repeats as reps: no best set, no rep total, no e1RM and no volume from them (owner, 2026-09-21)", () => {
+    // The owner's run: 3 × 1 km, 3 × 800 m, 3 × 600 m, 3 × 400 m
+    const run = aggregateSessionMarkers([
+      set({ reps: 3, distanceMeters: 1000, paceSecondsPerKm: 270 }),
+      set({ reps: 3, distanceMeters: 800, paceSecondsPerKm: 255 }),
+      set({ reps: 3, distanceMeters: 600, paceSecondsPerKm: 240 }),
+      set({ reps: 3, distanceMeters: 400, paceSecondsPerKm: 225 }),
+    ]);
+    expect(run.bestSetReps).toBeNull();
+    expect(run.totalReps).toBeNull();
+
+    // A carry of 3 × 40 m at 64 kg: its Load is the heaviest carry, and its 3 are repeats
+    const carry = aggregateSessionMarkers([set({ reps: 3, distanceMeters: 40, weight: 64 })]);
+    expect(carry.topSetWeight).toBe(64);
+    expect(carry.totalDistanceMeters).toBe(120);
+    expect(carry.estimatedOneRepMax).toBeNull();
+    expect(carry.totalVolume).toBeNull();
+    expect(carry.totalReps).toBeNull();
+
+    // Timed repeats, with a load or without: the same
+    const timed = aggregateSessionMarkers([
+      set({ reps: 3, durationSeconds: 30, weight: 64 }),
+      set({ reps: 3, durationSeconds: 30 }),
+    ]);
+    expect(timed.estimatedOneRepMax).toBeNull();
+    expect(timed.totalVolume).toBeNull();
+    expect(timed.bestSetReps).toBeNull();
+    expect(timed.totalReps).toBeNull();
+    expect(timed.totalDurationSeconds).toBe(180);
+  });
+
+  it("leaves pull-ups and lifts as they were beside repeats in the same session", () => {
+    const values = aggregateSessionMarkers([
+      set({ reps: 12 }),
+      set({ reps: 5, weight: 100 }),
+      set({ reps: 20, distanceMeters: 40 }),
+    ]);
+    expect(values.bestSetReps).toBe(12);
+    expect(values.totalReps).toBe(17);
+    expect(values.estimatedOneRepMax).toBe(116.7);
+    expect(values.totalVolume).toBe(500);
   });
 
   it("uses the time typed over the pace typed, and a split over its distance where no pace was", () => {

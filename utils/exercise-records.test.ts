@@ -56,6 +56,21 @@ describe("the records a session holds", () => {
     expect(held([set({ durationSeconds: 90, distanceMeters: 200 })])).toEqual([]);
   });
 
+  it("are never held by repeats: reps on a distance or a time are not reps (owner, 2026-09-21)", () => {
+    // Two sessions on one day: the lift and the bodyweight set hold the records,
+    // a carry's and a run's repeats of the same numbers hold nothing
+    const records = [record({ kind: "rep_max", reps: 3, weight: 64 }), record({ kind: "best_reps", reps: 3 })];
+    const held = (sets: ExerciseSessionSet[]) =>
+      recordsHeldBy({ date: DAY, sets }, records).map((r) => `${r.kind}`);
+
+    expect(held([set({ weight: 64, reps: 3 })])).toEqual(["rep_max"]);
+    expect(held([set({ reps: 3 })])).toEqual(["best_reps"]);
+    expect(held([set({ weight: 64, reps: 3, distanceMeters: 40 })])).toEqual([]);
+    expect(held([set({ weight: 64, reps: 3, durationSeconds: 30 })])).toEqual([]);
+    expect(held([set({ reps: 3, distanceMeters: 1000 })])).toEqual([]);
+    expect(held([set({ reps: 3, durationSeconds: 30 })])).toEqual([]);
+  });
+
   it("belong to the day they were set: the same set on another day holds nothing", () => {
     const records = [record({ kind: "rep_max", reps: 1, weight: 110 })];
     expect(recordsHeldBy({ date: "2026-08-19T00:00:00+00:00", sets: [set({ weight: 110, reps: 1 })] }, records)).toEqual([]);

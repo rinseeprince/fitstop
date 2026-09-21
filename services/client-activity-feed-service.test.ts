@@ -238,6 +238,53 @@ describe("collectNewExerciseBests", () => {
   });
 });
 
+describe("collectNewExerciseBests — repeats (owner, 2026-09-21)", () => {
+  const sessionAt = new Map([["log-1", "2026-06-14T18:00:00Z"]]);
+  const AT = "2026-06-14T18:00:00Z";
+  const only = (performedName: string, sets: ReturnType<typeof logged>[]) =>
+    collectNewExerciseBests(
+      [
+        {
+          session_log_id: "log-1",
+          exercise_id: null,
+          performed_name: performedName,
+          prescribed_exercise_snapshot: null,
+          training_exercises: null,
+          set_logs: sets,
+        },
+      ],
+      sessionAt
+    ).flatMap((best) => best.candidates);
+
+  it("offers no reps from repeats of a distance: the run's 3 × 1 km is a distance, never 3 reps", () => {
+    expect(
+      only("Running", [logged({ reps: 3, distance_meters: 1000 }), logged({ reps: 3, distance_meters: 800 })])
+    ).toEqual([]);
+  });
+
+  it("offers a carry's load as a carry, never as a lift, whatever its reps", () => {
+    expect(only("Farmer Carry", [logged({ weight: 64, reps: 3, distance_meters: 40 })])).toEqual([
+      { kind: "carry", distanceMeters: 40, weight: 64, at: AT },
+    ]);
+  });
+
+  it("offers a load held for a time as a hold, never as a lift, and timed repeats no reps", () => {
+    expect(only("Farmer Hold", [logged({ weight: 64, reps: 3, duration_seconds: 30 })])).toEqual([
+      { kind: "hold", durationSeconds: 30, at: AT },
+    ]);
+    expect(only("Plank", [logged({ reps: 3, duration_seconds: 30 })])).toEqual([
+      { kind: "hold", durationSeconds: 30, at: AT },
+    ]);
+  });
+
+  it("leaves pull-ups and lifts as they were", () => {
+    expect(only("Pull Up", [logged({ reps: 12 }), logged({ reps: 8, weight: 20 })])).toEqual([
+      { kind: "reps", reps: 12, at: AT },
+      { kind: "load", weight: 20, at: AT },
+    ]);
+  });
+});
+
 describe("prItemsFor", () => {
   const AT = "2026-06-16T18:00:00Z";
   const pr = (best: ExerciseBest): ExercisePR => ({ ...best, date: "2026-06-01T00:00:00+00:00", isRecent: false });

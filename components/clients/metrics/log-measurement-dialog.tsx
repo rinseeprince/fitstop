@@ -46,7 +46,8 @@ import type { MetricSummary } from "./metrics-view-types";
 type LogMeasurementDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  metrics: MetricSummary[];
+  /** Every metric it offers, as the catalog names it — no series is read here. */
+  metrics: Pick<MetricSummary, "id" | "name" | "tab" | "unit">[];
   /** Focused metric — seeds the select each time the dialog opens. */
   initialMetricId: string;
   onSubmit: (input: CreateMetricEntryRequest) => Promise<void>;

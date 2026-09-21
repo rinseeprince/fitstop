@@ -75,17 +75,25 @@ vi.mock("./hooks/use-reading-actions", () => ({
 vi.mock("./hooks/use-client-blocks", () => ({
   useClientBlocks: () => ({ blocks: [], clientToday: null, isLoading: false, isError: false }),
 }));
+vi.mock("./hooks/use-log-measurement", () => ({
+  useLogMeasurement: () => vi.fn(),
+}));
 vi.mock("./metric-progression-section", () => ({
   MetricProgressionSection: () => null,
 }));
 // Read lazily, at render: the factory is hoisted above the fixtures below.
 vi.mock("./hooks/use-merged-metrics", () => ({
-  useMergedMetrics: () => ({
-    metricsByTab: METRICS_BY_TAB,
-    logRowsByTab: LOG_ROWS_BY_TAB,
+  usePhysiqueMetrics: () => ({
+    metrics: METRICS_BY_TAB.body,
+    logRows: LOG_ROWS_BY_TAB.body,
     isLoading: false,
     isError: false,
-    logMeasurement: vi.fn(),
+  }),
+  useWellnessMetrics: () => ({
+    metrics: METRICS_BY_TAB.wellness,
+    logRows: LOG_ROWS_BY_TAB.wellness,
+    isLoading: false,
+    isError: false,
   }),
 }));
 

@@ -2,21 +2,22 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Skeleton } from "@/components/ui/skeleton";
 import { MetricsTopBar } from "./metrics-top-bar";
-import { MetricHero } from "./metric-hero";
-import { MetricProgressionSection } from "./metric-progression-section";
-import { MeasurementLogSection } from "./measurement-log-section";
+import { PhysiquePane, WellnessPane } from "./metric-pane";
 import { LogMeasurementDialog } from "./log-measurement-dialog";
 import { EditReadingDialog } from "./edit-reading-dialog";
 import { RemoveReadingDialog } from "./remove-reading-dialog";
-import { useMergedMetrics } from "./hooks/use-merged-metrics";
+import { useLogMeasurement } from "./hooks/use-log-measurement";
 import { useReadingActions } from "./hooks/use-reading-actions";
-import { useClientBlocks } from "./hooks/use-client-blocks";
+import {
+  BODY_METRIC_DEFINITIONS,
+  METRIC_DEFINITIONS,
+  WELLNESS_METRIC_DEFINITIONS,
+} from "./hooks/use-metrics-data";
 import { useDialogSubject } from "@/hooks/use-dialog-subject";
+import { useUnits } from "@/contexts/units-context";
 import { toast } from "sonner";
 import { BlocksSubtab } from "./blocks/blocks-subtab";
-import { shapeBlockBandIdentity } from "./blocks/block-chart-bands";
 // The Training pane's analytics live under clients/training/ and are MOUNTED
 // here (Session 7.1): analytics belong to Journey, prescription stays on the
 // Training tab. Same coach-facing audience, and the dependency runs one way —
@@ -25,6 +26,7 @@ import { ExerciseDataView } from "@/components/clients/training/exercise-data/ex
 import {
   DEFAULT_FOCUS,
   isJourneySubtab,
+  isMetricTab,
   toMetricTab,
   type JourneySubtab,
   type LogRow,
@@ -41,6 +43,14 @@ type MetricsTabContentProps = {
   onTabChange?: (tab: ClientTab, extraParams?: Record<string, string>) => void;
 };
 
+/**
+ * The Journey tab: the pane bar, the pane on screen, and the dialogs every pane
+ * shares. It reads NOTHING itself — each pane reads its own data, so only the
+ * pane on screen loads (Physique: the measurements, the goal and the blocks;
+ * Wellness: the check-in history, the coach's entries and the blocks;
+ * Training: its exercise reads; Blocks: the blocks and their plans). Log
+ * measurement sits on every pane, its metric list the fixed catalog.
+ */
 export const MetricsTabContent = ({
   client,
   onClientUpdated,
@@ -73,9 +83,10 @@ export const MetricsTabContent = ({
   // The selected metric is Journey's second single-owner param, ?metric= —
   // the subject the hero, the chart and the log all describe (CONVENTIONS §7:
   // a selected record lives in the URL and nowhere else). Read unconditionally
-  // so a deep link resolves on the first render, and validated below against
-  // the pane's own list, so an unknown value or the other pane's metric
-  // derives to the pane default with no state.
+  // so a deep link resolves on the first render, and validated against the
+  // pane's own metrics — the fixed catalog, so no read is waited on — so an
+  // unknown value or the other pane's metric derives to the pane default with
+  // no state.
   const metricParam = searchParams.get("metric");
   const setMetric = (id: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -84,6 +95,11 @@ export const MetricsTabContent = ({
     // pane in one step however many metrics were viewed.
     router.replace(`?${params.toString()}`, { scroll: false });
   };
+  const paneMetrics = tab === "body" ? BODY_METRIC_DEFINITIONS : WELLNESS_METRIC_DEFINITIONS;
+  const focusedMetricId =
+    metricParam != null && paneMetrics.some((def) => def.id === metricParam)
+      ? metricParam
+      : DEFAULT_FOCUS[tab];
 
   const [range, setRange] = useState<30 | 60 | 90 | "all">(30);
   const [logOpen, setLogOpen] = useState(false);
@@ -91,11 +107,26 @@ export const MetricsTabContent = ({
   // plan time); the checkbox lives in the chart card's legend slot.
   const [showBlocks, setShowBlocks] = useState(true);
 
-  const { metricsByTab, logRowsByTab, isLoading, isError, logMeasurement } =
-    useMergedMetrics(client, onClientUpdated);
-  // Shares the SWR cache with the Blocks pane — one read serves both.
-  const { blocks } = useClientBlocks(client.id);
-  const blockBands = useMemo(() => shapeBlockBandIdentity(blocks), [blocks]);
+  // The dialog lists every metric of both panes, from the catalog: opening it
+  // loads nothing, on any pane.
+  const { preference } = useUnits();
+  const logMetrics = useMemo(
+    () =>
+      METRIC_DEFINITIONS.map((def) => ({
+        id: def.id,
+        name: def.name,
+        tab: def.category,
+        unit: def.getUnit(preference),
+      })),
+    [preference]
+  );
+  // The pane on screen is refreshed in place by the save; a store no pane on
+  // screen shows is cleared (use-log-measurement.ts).
+  const logMeasurement = useLogMeasurement(
+    client.id,
+    isMetricTab(pane) ? pane : null,
+    onClientUpdated
+  );
 
   // The log's three row actions: Edit and Remove open a dialog, Restore is one
   // click (the removed row already says what it is). The dialogs toast their
@@ -121,12 +152,20 @@ export const MetricsTabContent = ({
     }
   };
 
-  const metrics = metricsByTab[tab];
-  const focusedMetric =
-    metrics.find((m) => m.id === metricParam) ??
-    metrics.find((m) => m.id === DEFAULT_FOCUS[tab]) ??
-    metrics[0] ??
-    null;
+  const metricPaneProps = {
+    clientId: client.id,
+    focusedMetricId,
+    onSelectMetric: setMetric,
+    range,
+    onRangeChange: setRange,
+    showBlocks,
+    onToggleBlocks: setShowBlocks,
+    onLogFirst: () => setLogOpen(true),
+    onEditReading: editing.show,
+    onRemoveReading: removing.show,
+    onRestoreReading: (row: LogRow) => void restoreReading(row),
+    pendingRowId: restoringId,
+  };
 
   return (
     <div>
@@ -143,59 +182,17 @@ export const MetricsTabContent = ({
         />
       ) : pane === "training" ? (
         <ExerciseDataView clientId={client.id} />
-      ) : isError ? (
-        <p className="py-12 text-center text-[13px] text-[#93b0b4]">
-          Failed to load metrics.
-        </p>
-      ) : isLoading ? (
-        <div>
-          <div className="mb-4">
-            <MetricHero metric={null} metrics={[]} onSelectMetric={() => {}} />
-          </div>
-          <div className="mb-4 grid grid-cols-3 gap-[10px]">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-[88px] rounded-[6px]" />
-            ))}
-          </div>
-          <Skeleton className="h-[380px] w-full rounded-[6px]" />
-        </div>
-      ) : focusedMetric ? (
-        <>
-          <div className="mb-4">
-            <MetricHero
-              metric={focusedMetric}
-              metrics={metrics}
-              onSelectMetric={setMetric}
-            />
-          </div>
-          <MetricProgressionSection
-            metric={focusedMetric}
-            range={range}
-            onRangeChange={setRange}
-            onLogFirst={() => setLogOpen(true)}
-            blockBands={blockBands}
-            showBlocks={showBlocks}
-            onToggleBlocks={setShowBlocks}
-          />
-          {/* The key remounts the log on every switch — metric ids are unique
-              across both panes — so its page returns to 1 with no effect. */}
-          <MeasurementLogSection
-            key={focusedMetric.id}
-            metric={focusedMetric}
-            rows={logRowsByTab[tab]}
-            onEditReading={editing.show}
-            onRemoveReading={removing.show}
-            onRestoreReading={(row) => void restoreReading(row)}
-            pendingRowId={restoringId}
-          />
-        </>
-      ) : null}
+      ) : pane === "wellness" ? (
+        <WellnessPane {...metricPaneProps} />
+      ) : (
+        <PhysiquePane client={client} {...metricPaneProps} />
+      )}
 
       <LogMeasurementDialog
         open={logOpen}
         onOpenChange={setLogOpen}
-        metrics={[...metricsByTab.body, ...metricsByTab.wellness]}
-        initialMetricId={focusedMetric?.id ?? DEFAULT_FOCUS[tab]}
+        metrics={logMetrics}
+        initialMetricId={focusedMetricId}
         onSubmit={logMeasurement}
       />
       {/* Keyed by the opening: each open mounts the card fresh on its reading,
