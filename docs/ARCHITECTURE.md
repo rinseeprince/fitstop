@@ -690,28 +690,30 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   the viewer's unit), the point key it reads — the chart marker's own where the column has a chart
   twin, so the RPE lens and the RPE column read one value — how its cell reads (the logged-workout
   table's grammar in the viewer's units; a Time cell the fastest time with its distance beside it,
-  muted; Sets "3/3", or the count alone with no prescription) and its sort pair. Every cell is a value
-  the kernel put on the point, one rule per measure, warm-ups counting toward none: the top set's
-  load, reps, RPE and RIR — with no loaded set, the highest RPE and the lowest RIR logged; the e1RM
-  and the volume; the most reps in a set with no load; the total distance and the total calories;
-  the fastest time, pace and split; the highest watts, cadence, stroke rate, resistance, HR zone,
-  heart rate and % FTP; the longest hold; the average rest taken; sets done over sets prescribed.
-  Tempo is text and the read carries no text, so it has no column. The table reads the progression
-  the chart already holds and pages it in memory — no read of its own.
+  muted; Sets "3/3", or the count alone with no prescription) and which way its heading sorts first.
+  Every cell is a value the kernel put on the point, one rule per measure, warm-ups counting toward
+  none: the top set's load, reps, RPE and RIR — with no loaded set, the highest RPE and the lowest
+  RIR logged; the e1RM and the volume; the most reps in a set with no load; the total distance and
+  the total calories; the fastest time, pace and split; the highest watts, cadence, stroke rate,
+  resistance, HR zone, heart rate and % FTP; the longest hold; the average rest taken; sets done over
+  sets prescribed. Tempo is text and the read carries no text, so it has no column. The table reads
+  the progression the chart already holds and pages it in memory — no read of its own.
 - **The table's rail** — Sessions, on the coach's view a `SectionLabel` carrying the Columns menu
   (`session-columns-menu.tsx`: every recorded column but Date, grouped Strength, Endurance and
-  Framework, each ticked on and off, the menu open across ticks), the sort as the rail dropdown
-  (`RailDropdown`: Newest first, Oldest first, then a pair per shown column, its lead word first —
-  Heaviest and Lightest load, Fastest and Slowest pace; never a header click) and the history tables'
-  pager's chevrons alone (`PagerArrows`), ten sessions a page, with no count — the session window on
-  the rail above already says how many (owner, 2026-09-21). A session with no value in the sorted
-  column goes last, newest first; a sort whose column is ticked off or leaves the window shows as
-  Newest first, and returns with the column; while the sessions load the pick stands. On the
-  client's view the rail is a heading like Personal records with the sort and the chevrons and no
-  Columns menu: every recorded column shows. The view — the columns ticked, the sort, the page — is
-  local, never the address: the host keys the table by the exercise, so another pick starts it on
-  every column, Newest first, page 1; the window keys its page, so a new window starts on page 1 with
-  its columns and sort kept; a lens switch touches none of it.
+  Framework, each ticked on and off, the menu open across ticks) and the history tables' pager's
+  chevrons alone (`PagerArrows`), ten sessions a page, with no count — the session window on the rail
+  above already says how many (owner, 2026-09-21). **The column headings sort the table** (owner,
+  2026-09-21; `SortHeading`): a heading's first click sorts by its column the way it leads —
+  heaviest, most, fastest, longest, highest, newest first (`nextSessionSort`) — a second click the
+  other way; the sorted heading is teal with an arrow and carries `aria-sort`, and every heading's
+  title words what a click will do ("Lightest load first"). One sort at a time: ties go newest first,
+  a session with no value in the sorted column goes last, and a sort whose column is ticked off or
+  leaves the window shows as Newest first and returns with the column. On the client's view the
+  rail is a heading like Personal records with the chevrons alone and no Columns menu — its headings
+  sort the same way — and every recorded column shows. The view — the columns ticked, the sort, the
+  page — is local, never the address: the host keys the table by the exercise, so another pick starts
+  it on every column, Newest first, page 1; the window keys its page, so a new window starts on page 1
+  with its columns and sort kept; a lens switch touches none of it.
 - **PRs are the type's bests, every kind the logs carry.** `get_exercise_prs` returns typed rows
   (`ExercisePR`, `kind` ∈ `BEST_KINDS`): `rep_max` — the heaviest weight per rep count, as before;
   `best_reps` — the most reps in a set logged with no load; `best_time` — the fastest time per

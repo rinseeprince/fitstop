@@ -233,7 +233,8 @@ describe("PerformanceView", () => {
     ]);
     expect(within(sessions).getByRole("heading", { name: "Sessions" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Columns for the sessions table" })).toBeNull();
-    expect(within(sessions).getByRole("button", { name: /Newest first/ })).toBeInTheDocument();
+    // The headings sort, newest first until one is clicked
+    expect(within(sessions).getByRole("columnheader", { name: "Date" })).toHaveAttribute("aria-sort", "descending");
     // The arrows alone: the window above already says how many
     expect(within(sessions).queryByText(/Showing/)).toBeNull();
     expect(within(sessions).getByRole("button", { name: "Next page" })).toBeDisabled();
@@ -265,8 +266,9 @@ describe("PerformanceView — lenses by type", () => {
     });
     render(<PerformanceView />);
 
-    expect(screen.getByRole("button", { name: "Pace" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Distance" })).toBeInTheDocument();
+    // A lens is a pressed-or-not button; the Sessions table's sorting headings share its words
+    expect(screen.getByRole("button", { name: "Pace", pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Distance", pressed: false })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Compliance" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Weight" })).toBeNull();
     expect(screen.getByText("Pace over time")).toBeInTheDocument();

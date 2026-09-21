@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -12,9 +13,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { PagerArrows } from "@/components/programs/shared/divider-pager";
-import { RailDropdown } from "@/components/programs/shared/rail-dropdown";
 import { cn } from "@/lib/utils";
 import {
+  FOCUS_RING,
+  LABEL_CLASS,
   MONO_CELL_CLASS,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
@@ -27,11 +29,10 @@ import {
   effectiveSessionSort,
   formatSessionCell,
   formatSessionDate,
+  nextSessionSort,
   sessionColumnHeading,
   sessionColumnsIn,
   sessionSortLabel,
-  sessionSortOptions,
-  sessionSortValue,
   sortSessions,
   type SessionColumn,
   type SessionSort,
@@ -47,7 +48,9 @@ import { SessionsLoadError } from "./sessions-load-error";
 // them in memory: the chart already holds every session in the window.
 //
 // Its rail pages with the arrows alone: the session window on the rail above
-// already says how many sessions there are (owner, 2026-09-21).
+// already says how many sessions there are. Its column headings sort it — a
+// click sorts by the column in the direction it leads with, a second click the
+// other way (owner, 2026-09-21); one sort, its ties newest first.
 //
 // Its view — the columns ticked, the sort, the page — is local, never the
 // address. The host keys the table by the exercise, so another exercise starts
@@ -121,9 +124,8 @@ function SessionsPages({
   const recorded = useMemo(() => sessionColumnsIn(points ?? []), [points]);
   const shown =
     audience === "coach" ? recorded.filter((column) => !hidden.has(column)) : recorded;
-  const shownSort = effectiveSessionSort(sort, shown, pending);
+  const shownSort = effectiveSessionSort(sort, shown);
   const rows = useMemo(() => sortSessions(points ?? [], shownSort), [points, shownSort]);
-  const sortOptions = sessionSortOptions(shown);
 
   // A refresh that shrank the window can't leave the page past its end
   const pageCount = Math.ceil(rows.length / HISTORY_PAGE_SIZE);
@@ -131,10 +133,8 @@ function SessionsPages({
   const pageRows = rows.slice(shownPage * HISTORY_PAGE_SIZE, (shownPage + 1) * HISTORY_PAGE_SIZE);
 
   // One click, one render: the sort and the first page land together
-  const handleSort = (value: string) => {
-    const option = sortOptions.find((o) => o.value === value);
-    if (!option) return;
-    onSortChange(option.sort);
+  const handleSort = (column: "date" | SessionColumn) => {
+    onSortChange(nextSessionSort(shownSort, column));
     setPage(0);
   };
 
@@ -148,13 +148,6 @@ function SessionsPages({
           disabled={!pending && recorded.length === 0}
         />
       )}
-      <RailDropdown
-        label={sessionSortLabel(shownSort)}
-        options={sortOptions}
-        value={sessionSortValue(shownSort)}
-        onChange={handleSort}
-        pairs
-      />
       {rows.length > 0 && (
         <PagerArrows page={shownPage} pageCount={pageCount} onPageChange={setPage} />
       )}
@@ -183,9 +176,13 @@ function SessionsPages({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className={PINNED_CELL}>Date</TableHead>
+                <SortHeading column="date" sort={shownSort} onSort={handleSort} className={PINNED_CELL}>
+                  Date
+                </SortHeading>
                 {shown.map((column) => (
-                  <TableHead key={column}>{sessionColumnHeading(column, preference)}</TableHead>
+                  <SortHeading key={column} column={column} sort={shownSort} onSort={handleSort}>
+                    {sessionColumnHeading(column, preference)}
+                  </SortHeading>
                 ))}
               </TableRow>
             </TableHeader>
@@ -221,6 +218,50 @@ function SessionsPages({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * A column heading that sorts the table: the heading's own words as a button,
+ * the sorted one teal with an arrow (down = high to low), its state in
+ * aria-sort, and in its title what a click does ("Lightest load first").
+ */
+function SortHeading({
+  column,
+  sort,
+  onSort,
+  className,
+  children,
+}: {
+  column: "date" | SessionColumn;
+  sort: SessionSort;
+  onSort: (column: "date" | SessionColumn) => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const active = sort.column === column;
+  const Arrow = sort.order === "desc" ? ArrowDown : ArrowUp;
+  return (
+    <TableHead
+      className={className}
+      aria-sort={active ? (sort.order === "desc" ? "descending" : "ascending") : "none"}
+    >
+      <button
+        type="button"
+        title={sessionSortLabel(nextSessionSort(sort, column))}
+        onClick={() => onSort(column)}
+        className={cn(
+          // The heading's own label type, which a button doesn't inherit
+          LABEL_CLASS,
+          "inline-flex items-center gap-1 rounded-[4px] transition-colors hover:text-[#0d9488]",
+          active && "text-[#0d9488]",
+          FOCUS_RING,
+        )}
+      >
+        {children}
+        {active && <Arrow className="h-3 w-3" strokeWidth={1.5} aria-hidden />}
+      </button>
+    </TableHead>
   );
 }
 

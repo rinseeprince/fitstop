@@ -204,9 +204,11 @@ describe("ExerciseDataView", () => {
 
     render(<ExerciseDataView clientId="client-1" />);
 
-    // The lens row lives in the hero — every option visible, active pressed
+    // The lens row lives in the hero — every option visible, active pressed.
+    // A lens is a pressed-or-not button; the Sessions table's sorting headings
+    // (an "RPE" among them) are plain buttons.
     for (const label of ["Weight", "e1RM", "Volume", "RPE", "Compliance", "PRs"]) {
-      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: label, pressed: label === "Weight" })).toBeInTheDocument();
     }
     expect(screen.getByRole("button", { name: "Weight" })).toHaveAttribute(
       "aria-pressed",
@@ -395,8 +397,7 @@ describe("ExerciseDataView — the Sessions table", () => {
   it("keeps its sort, columns and page through a lens switch", async () => {
     const user = userEvent.setup();
     render(<ExerciseDataView clientId="client-1" />);
-    await user.click(screen.getByRole("button", { name: /Newest first/ }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Heaviest load" }));
+    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
     await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "Volume" }));
     await user.keyboard("{Escape}");
@@ -404,7 +405,7 @@ describe("ExerciseDataView — the Sessions table", () => {
     await user.click(screen.getByRole("button", { name: "PRs" }));
     await user.click(screen.getByRole("button", { name: "e1RM" }));
 
-    expect(screen.getByRole("button", { name: /Heaviest load/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Load (kg)" })).toHaveAttribute("aria-sort", "descending");
     expect(firstLoads()).toEqual(["90", "85", "80"]);
     expect(screen.queryByRole("columnheader", { name: "Volume (kg)" })).toBeNull();
   });
@@ -412,8 +413,7 @@ describe("ExerciseDataView — the Sessions table", () => {
   it("starts fresh when another exercise is picked", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<ExerciseDataView clientId="client-1" />);
-    await user.click(screen.getByRole("button", { name: /Newest first/ }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Heaviest load" }));
+    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
     await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "Volume" }));
     await user.keyboard("{Escape}");
@@ -423,7 +423,8 @@ describe("ExerciseDataView — the Sessions table", () => {
     mockSearchParams.set("exerciseName", "Squat");
     rerender(<ExerciseDataView clientId="client-1" />);
 
-    expect(screen.getByRole("button", { name: /Newest first/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Date" })).toHaveAttribute("aria-sort", "descending");
+    expect(screen.getByRole("columnheader", { name: "Load (kg)" })).toHaveAttribute("aria-sort", "none");
     expect(screen.getByRole("columnheader", { name: "Volume (kg)" })).toBeInTheDocument();
     expect(firstLoads()).toEqual(["85", "90", "80"]);
   });

@@ -48,6 +48,9 @@ const rowDates = () => bodyRows().map((row) => cellsOf(row)[0]);
 
 const headings = () => screen.getAllByRole("columnheader", ALL).map((th) => th.textContent);
 
+/** A heading's sort state, as a screen reader hears it. */
+const sortOf = (name: string) => screen.getByRole("columnheader", { name, ...ALL }).getAttribute("aria-sort");
+
 function renderTable(overrides: Partial<Parameters<typeof ExerciseSessionsTable>[0]> = {}) {
   const props = {
     points: benchSessions(),
@@ -101,37 +104,57 @@ describe("ExerciseSessionsTable", () => {
     expect(screen.queryByText(/Showing/)).toBeNull();
   });
 
-  it("sorts from the rail's dropdown, back to page 1, and names the sort on the trigger", async () => {
+  it("sorts from any heading — the first click the way the column leads, a second click the other way — back to page 1", async () => {
     const user = userEvent.setup();
     renderTable();
+    // No sort picker on the rail: the headings sort
+    expect(screen.queryByRole("button", { name: /Newest first/ })).toBeNull();
+    expect(sortOf("Date")).toBe("descending");
+    expect(sortOf("Load (kg)")).toBe("none");
     await user.click(screen.getByRole("button", { name: "Next page" }));
 
-    await user.click(screen.getByRole("button", { name: /Newest first/ }));
-    const options = screen.getAllByRole("menuitemcheckbox").map((o) => o.textContent);
-    expect(options).toEqual([
-      "Newest first", "Oldest first",
-      "Heaviest load", "Lightest load",
-      "Most reps", "Fewest reps",
-      "Highest RPE", "Lowest RPE",
-      "Highest RIR", "Lowest RIR",
-      "Highest e1RM", "Lowest e1RM",
-      "Highest volume", "Lowest volume",
-      "Most sets", "Fewest sets",
-    ]);
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Heaviest load" }));
-
-    // One click: the trigger, the rows and the page land together
-    expect(screen.getByRole("button", { name: /Heaviest load/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
+    // One click: the rows, the heading's arrow and the page land together
+    expect(sortOf("Load (kg)")).toBe("descending");
+    expect(sortOf("Date")).toBe("none");
     expect(bodyRows()).toHaveLength(10);
     expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
     expect(bodyRows().slice(0, 3).map((row) => cellsOf(row)[1])).toEqual(["105", "102.5", "100"]);
+
+    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
+    expect(sortOf("Load (kg)")).toBe("ascending");
+    expect(bodyRows().slice(0, 2).map((row) => cellsOf(row)[1])).toEqual(["60", "80"]);
+
+    await user.click(screen.getByRole("button", { name: "Date" }));
+    expect(sortOf("Date")).toBe("descending");
+    expect(rowDates()[0]).toBe("Aug 12, 2026");
+    await user.click(screen.getByRole("button", { name: "Date" }));
+    expect(sortOf("Date")).toBe("ascending");
+    expect(rowDates()[0]).toBe("Aug 1, 2026");
   });
 
-  it("has no clickable headers", () => {
+  it("says in each heading's title what a click will do", async () => {
+    const user = userEvent.setup();
     renderTable();
-    for (const th of screen.getAllByRole("columnheader")) {
-      expect(within(th).queryByRole("button")).toBeNull();
-    }
+    expect(screen.getByRole("button", { name: "Load (kg)" })).toHaveAttribute("title", "Heaviest load first");
+    expect(screen.getByRole("button", { name: "Date" })).toHaveAttribute("title", "Oldest first");
+    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
+    expect(screen.getByRole("button", { name: "Load (kg)" })).toHaveAttribute("title", "Lightest load first");
+    expect(screen.getByRole("button", { name: "Date" })).toHaveAttribute("title", "Newest first");
+  });
+
+  it("sorts a pace fastest first on its first click", async () => {
+    const user = userEvent.setup();
+    renderTable({
+      points: [
+        session(1, [{ distanceMeters: 5000, paceSecondsPerKm: 314 }]),
+        session(2, [{ distanceMeters: 5000, paceSecondsPerKm: 301 }]),
+        session(3, [{ distanceMeters: 5000, paceSecondsPerKm: 308 }]),
+      ],
+    });
+    await user.click(screen.getByRole("button", { name: "Pace" }));
+    expect(sortOf("Pace")).toBe("ascending");
+    expect(bodyRows().map((row) => cellsOf(row)[2])).toEqual(["5:01 /km", "5:08 /km", "5:14 /km"]);
   });
 
   it("ticks a column off from the Columns menu at once, the menu staying open", async () => {
@@ -158,25 +181,26 @@ describe("ExerciseSessionsTable", () => {
   it("falls back to Newest first when the sorted column is ticked off, and returns to it when ticked back on", async () => {
     const user = userEvent.setup();
     renderTable();
-    await user.click(screen.getByRole("button", { name: /Newest first/ }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Lightest load" }));
-    expect(rowDates()[0]).toBe("Aug 12, 2026"); // 60 kg
+    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
+    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
+    expect(rowDates()[0]).toBe("Aug 12, 2026"); // 60 kg, lightest first
 
     await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "Load" }));
     // In the same render as the tick, the menu still open
-    expect(screen.getByRole("button", { name: /Newest first/, ...ALL })).toBeInTheDocument();
+    expect(sortOf("Date")).toBe("descending");
     expect(rowDates()[1]).toBe("Aug 11, 2026");
 
     await user.click(screen.getByRole("menuitemcheckbox", { name: "Load" }));
-    expect(screen.getByRole("button", { name: /Lightest load/, ...ALL })).toBeInTheDocument();
+    expect(sortOf("Load (kg)")).toBe("ascending");
+    expect(sortOf("Date")).toBe("none");
   });
 
   it("starts a new window on page 1, keeping its columns and its sort", async () => {
     const user = userEvent.setup();
     const { rerender, props } = renderTable();
-    await user.click(screen.getByRole("button", { name: /Newest first/ }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Oldest first" }));
+    await user.click(screen.getByRole("button", { name: "Date" }));
+    expect(sortOf("Date")).toBe("ascending");
     await user.click(screen.getByRole("button", { name: "Columns for the sessions table" }));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "Volume" }));
     await user.keyboard("{Escape}");
@@ -187,22 +211,24 @@ describe("ExerciseSessionsTable", () => {
     rerender(<ExerciseSessionsTable {...props} points={more} windowKey="24" />);
     expect(bodyRows()).toHaveLength(10);
     expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Oldest first/ })).toBeInTheDocument();
+    expect(sortOf("Date")).toBe("ascending");
     expect(headings()).not.toContain("Volume (kg)");
     expect(rowDates()[0]).toBe("Aug 1, 2026");
   });
 
-  it("keeps the picked sort on its trigger while the sessions load", async () => {
+  it("keeps the picked sort through a new window's load", async () => {
     const user = userEvent.setup();
     const { rerender, props } = renderTable();
-    await user.click(screen.getByRole("button", { name: /Newest first/ }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Heaviest load" }));
+    await user.click(screen.getByRole("button", { name: "Load (kg)" }));
 
     rerender(<ExerciseSessionsTable {...props} points={undefined} windowKey="24" />);
-    expect(screen.getByRole("button", { name: /Heaviest load/ })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "Date" })).toBeNull();
     // No arrows until there are rows to page
     expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+
+    rerender(<ExerciseSessionsTable {...props} windowKey="24" />);
+    expect(sortOf("Load (kg)")).toBe("descending");
+    expect(bodyRows().slice(0, 1).map((row) => cellsOf(row)[1])).toEqual(["105"]);
   });
 
   it("says a failed read failed, with Try again", async () => {
@@ -235,7 +261,9 @@ describe("ExerciseSessionsTable", () => {
     expect(screen.getByRole("heading", { name: "Sessions" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Columns for the sessions table" })).toBeNull();
     expect(headings()).toEqual(["Date", "Load (kg)", "Reps", "RPE", "RIR", "e1RM (kg)", "Volume (kg)", "Sets"]);
-    expect(screen.getByRole("button", { name: /Newest first/ })).toBeInTheDocument();
+    // The same heading sort as the coach's
+    expect(sortOf("Date")).toBe("descending");
+    expect(screen.getByRole("button", { name: "Reps" })).toHaveAttribute("title", "Most reps first");
     expect(screen.getByRole("button", { name: "Next page" })).toBeEnabled();
     expect(screen.queryByText(/Showing/)).toBeNull();
   });

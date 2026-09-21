@@ -64,7 +64,7 @@ type SessionColumnSpec = {
   /** A second value read beside the first, muted: the fastest time's distance. */
   aside?: MarkerValueKey;
   readout: ColumnReadout;
-  /** The sort pair's words, for the higher and the lower value, and which is offered first. */
+  /** The sort's words for the higher and the lower value first, and which a heading's first click sorts by. */
   higher: string;
   lower: string;
   leads: "higher" | "lower";
@@ -175,48 +175,30 @@ export type SessionSort = { column: "date" | SessionColumn; order: "asc" | "desc
 
 export const DEFAULT_SESSION_SORT: SessionSort = { column: "date", order: "desc" };
 
-type SessionSortOption = { value: string; label: string; sort: SessionSort };
-
-export const sessionSortValue = (sort: SessionSort): string => `${sort.column}:${sort.order}`;
-
-/** A sort's words: "Newest first", "Heaviest load", "Fastest pace". */
+/** A sort's words: "Newest first", "Heaviest load first", "Fastest pace first". */
 export function sessionSortLabel(sort: SessionSort): string {
   if (sort.column === "date") return sort.order === "desc" ? "Newest first" : "Oldest first";
   const spec = SESSION_COLUMN_SPECS[sort.column];
-  return `${sort.order === "desc" ? spec.higher : spec.lower} ${spec.noun}`;
+  return `${sort.order === "desc" ? spec.higher : spec.lower} ${spec.noun} first`;
 }
 
 /**
- * The sort pairs for the shown columns: Newest first and Oldest first, then each
- * column's pair, the word it leads with first — Heaviest and Lightest load,
- * Fastest and Slowest pace.
+ * What a click on a column heading sorts by (owner, 2026-09-21): another
+ * column, in the direction it leads with — heaviest, most, fastest, longest,
+ * highest, newest first; the column already sorted, the other way.
  */
-export function sessionSortOptions(columns: readonly SessionColumn[]): SessionSortOption[] {
-  const option = (sort: SessionSort): SessionSortOption => ({
-    value: sessionSortValue(sort),
-    label: sessionSortLabel(sort),
-    sort,
-  });
-  const options = [option({ column: "date", order: "desc" }), option({ column: "date", order: "asc" })];
-  for (const column of columns) {
-    const higher = option({ column, order: "desc" });
-    const lower = option({ column, order: "asc" });
-    options.push(...(SESSION_COLUMN_SPECS[column].leads === "higher" ? [higher, lower] : [lower, higher]));
-  }
-  return options;
+export function nextSessionSort(current: SessionSort, column: "date" | SessionColumn): SessionSort {
+  if (current.column === column) return { column, order: current.order === "desc" ? "asc" : "desc" };
+  if (column === "date") return DEFAULT_SESSION_SORT;
+  return { column, order: SESSION_COLUMN_SPECS[column].leads === "higher" ? "desc" : "asc" };
 }
 
 /**
  * The sort the table shows: the one picked while its column is shown, else
- * Newest first — it returns when the column does. While the sessions are
- * pending nothing is known about the columns, so the pick stands.
+ * Newest first — it returns when the column does.
  */
-export function effectiveSessionSort(
-  picked: SessionSort,
-  shown: readonly SessionColumn[],
-  pending: boolean,
-): SessionSort {
-  if (pending || picked.column === "date" || shown.includes(picked.column)) return picked;
+export function effectiveSessionSort(picked: SessionSort, shown: readonly SessionColumn[]): SessionSort {
+  if (picked.column === "date" || shown.includes(picked.column)) return picked;
   return DEFAULT_SESSION_SORT;
 }
 

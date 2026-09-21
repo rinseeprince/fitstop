@@ -553,11 +553,12 @@ above already says how many sessions there are.
   unit — "Load (kg)", "e1RM (lbs)"; distances "5 km" / "800 m" (miles and yards for an imperial
   viewer); times as clocks; pace "4:45 /km" or "/mi"; split "1:52.3 /500m"; HR zone "Z3"; the other
   numbers bare under their heading.
-- **Sort:** a picker offering "Newest first", "Oldest first", then each shown column's pair, the first
-  word listed first. A point with no value in the sorted column sits last, newest first among them;
-  ties sort newest first. No header sorts.
+- **Sort:** tap a column heading to sort by it — the first tap the way the column leads (the first word
+  of its pair below: heaviest, fastest, most, longest, highest; Date newest first), a second tap the
+  other way — and show which heading is sorted and which way. One sort at a time: ties sort newest
+  first, and a point with no value in the sorted column sits last, newest first among them.
 
-| Column | Point key | The session's value | Sort pair |
+| Column | Point key | The session's value | Sort (first tap / second tap) |
 |---|---|---|---|
 | Load | `topSetWeight` | the top set's weight (the heaviest working set) | Heaviest / Lightest load |
 | Reps | `topSetReps` | the top set's reps | Most / Fewest reps |

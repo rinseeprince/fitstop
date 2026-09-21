@@ -10,10 +10,10 @@ import {
   effectiveSessionSort,
   formatSessionCell,
   formatSessionDate,
+  nextSessionSort,
   sessionColumnHeading,
   sessionColumnsIn,
   sessionSortLabel,
-  sessionSortOptions,
   sortSessions,
   type SessionColumn,
 } from "./exercise-session-columns";
@@ -166,26 +166,28 @@ describe("headings and cells", () => {
 });
 
 describe("the sort", () => {
-  it("offers Newest and Oldest first, then each shown column's pair, its lead word first", () => {
-    expect(sessionSortOptions(["load", "pace", "sets"]).map((o) => o.label)).toEqual([
-      "Newest first",
-      "Oldest first",
-      "Heaviest load",
-      "Lightest load",
-      "Fastest pace",
-      "Slowest pace",
-      "Most sets",
-      "Fewest sets",
-    ]);
+  it("sorts a heading's first click the way its column leads, and a second click the other way", () => {
+    expect(nextSessionSort(DEFAULT_SESSION_SORT, "load")).toEqual({ column: "load", order: "desc" });
+    expect(nextSessionSort({ column: "load", order: "desc" }, "load")).toEqual({ column: "load", order: "asc" });
+    expect(nextSessionSort({ column: "load", order: "asc" }, "load")).toEqual({ column: "load", order: "desc" });
+    // Fastest first is the lowest pace, split and time
+    expect(nextSessionSort({ column: "load", order: "desc" }, "pace")).toEqual({ column: "pace", order: "asc" });
+    expect(nextSessionSort(DEFAULT_SESSION_SORT, "time")).toEqual({ column: "time", order: "asc" });
+    // The date leads newest first, then flips
+    expect(nextSessionSort({ column: "pace", order: "asc" }, "date")).toEqual(DEFAULT_SESSION_SORT);
+    expect(nextSessionSort(DEFAULT_SESSION_SORT, "date")).toEqual({ column: "date", order: "asc" });
   });
 
-  it("words every pair with the owner's words", () => {
+  it("words every sort with the owner's words", () => {
     const words = SESSION_COLUMNS.map((column) => [sessionSortLabel({ column, order: "desc" }), sessionSortLabel({ column, order: "asc" })]);
-    expect(words).toContainEqual(["Longest distance", "Shortest distance"]);
-    expect(words).toContainEqual(["Slowest time", "Fastest time"]);
-    expect(words).toContainEqual(["Highest % FTP", "Lowest % FTP"]);
-    expect(words).toContainEqual(["Most bodyweight reps", "Fewest bodyweight reps"]);
-    expect(words).toContainEqual(["Longest rest", "Shortest rest"]);
+    expect(words).toContainEqual(["Heaviest load first", "Lightest load first"]);
+    expect(words).toContainEqual(["Longest distance first", "Shortest distance first"]);
+    expect(words).toContainEqual(["Slowest time first", "Fastest time first"]);
+    expect(words).toContainEqual(["Highest % FTP first", "Lowest % FTP first"]);
+    expect(words).toContainEqual(["Most bodyweight reps first", "Fewest bodyweight reps first"]);
+    expect(words).toContainEqual(["Longest rest first", "Shortest rest first"]);
+    expect(sessionSortLabel(DEFAULT_SESSION_SORT)).toBe("Newest first");
+    expect(sessionSortLabel({ column: "date", order: "asc" })).toBe("Oldest first");
   });
 
   it("sorts by date, newest first by default", () => {
@@ -204,8 +206,8 @@ describe("the sort", () => {
       session("2026-09-02", [{ paceSecondsPerKm: 301 }]),
       session("2026-09-03", [{ paceSecondsPerKm: 308 }]),
     ];
-    const fastest = sessionSortOptions(["pace"]).find((o) => o.label === "Fastest pace")!;
-    expect(sortSessions(runs, fastest.sort).map((r) => r.bestPaceSecondsPerKm)).toEqual([301, 308, 314]);
+    const fastest = nextSessionSort(DEFAULT_SESSION_SORT, "pace");
+    expect(sortSessions(runs, fastest).map((r) => r.bestPaceSecondsPerKm)).toEqual([301, 308, 314]);
   });
 
   it("puts a session with no value in the sorted column last either way, newest first among them", () => {
@@ -226,12 +228,11 @@ describe("the sort", () => {
     expect(sortSessions(rows, { column: "load", order: "desc" }).map((r) => r.date)).toEqual(["2026-09-08", "2026-09-04", "2026-09-01"]);
   });
 
-  it("shows the picked sort while its column shows, Newest first otherwise, and keeps the pick while the sessions load", () => {
+  it("shows the picked sort while its column shows, Newest first otherwise", () => {
     const heaviest = { column: "load", order: "desc" } as const;
-    expect(effectiveSessionSort(heaviest, ["load", "reps"], false)).toBe(heaviest);
-    expect(effectiveSessionSort(heaviest, ["reps"], false)).toBe(DEFAULT_SESSION_SORT);
-    expect(effectiveSessionSort(heaviest, [], true)).toBe(heaviest);
+    expect(effectiveSessionSort(heaviest, ["load", "reps"])).toBe(heaviest);
+    expect(effectiveSessionSort(heaviest, ["reps"])).toBe(DEFAULT_SESSION_SORT);
     const oldest = { column: "date", order: "asc" } as const;
-    expect(effectiveSessionSort(oldest, [], false)).toBe(oldest);
+    expect(effectiveSessionSort(oldest, [])).toBe(oldest);
   });
 });

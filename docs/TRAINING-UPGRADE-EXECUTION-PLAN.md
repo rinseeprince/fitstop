@@ -257,14 +257,15 @@ commit's plan.
     prescribed. The coach's RPE chart lens reads the same RPE as the table, so an RPE logged on a run,
     a hold or a bodyweight set reaches both.
   - *The table's rail (16a).* The table sits on its own rail, Sessions, which carries a Columns menu
-    (the builder's column-selector recipe without presets, each column ticked on and off), the sort as
-    the design system's rail dropdown — one pair per shown column: heaviest and lightest, most and
-    fewest, fastest and slowest, longest and shortest, highest and lowest, newest and oldest; never
-    click-to-sort headers — and the history tables' pager, its arrows alone: no "Showing X of Y",
-    since the session window above already says how many (owner, 2026-09-21, after 16a shipped).
-    Switching the lens changes only what sits
-    above the table: its columns and its sort stay. Column visibility and the sort are the view's, not
-    the address's, and reset when another exercise is picked.
+    (the builder's column-selector recipe without presets, each column ticked on and off) and the
+    history tables' pager, its arrows alone: no "Showing X of Y", since the session window above
+    already says how many (owner, 2026-09-21, after 16a shipped). The column headings sort the table
+    (owner, 2026-09-21, after 16a shipped — replacing a sort picker on the rail): a heading's first
+    click sorts by its column the way the column leads — heaviest, most, fastest, longest, highest,
+    newest first — and a second click the other way; one sort at a time, its ties newest first.
+    Switching the lens changes only what sits above the table: its columns and its sort stay. Column
+    visibility and the sort are the view's, not the address's, and reset when another exercise is
+    picked.
   - *The window (16a).* The session window (8/12/24/All) governs the chart and the table together and
     stays live on every lens; on the PRs lens it governs the table alone, and the PRs rail says the
     cards are all-time.
@@ -1227,7 +1228,7 @@ the column rules a chart follows are `utils/exercise-progress-markers.ts` and
 `utils/exercise-session-markers.ts` (migration 188; `docs/ARCHITECTURE.md` → "Exercise progress:
 charts and PRs"). *The owner's amendments after the smoke (2026-09-21) are commits 16a and 16b.*
 
-### Commit 16a — A sessions table beneath every chart
+### Commit 16a — A sessions table beneath every chart — SHIPPED 2026-09-21
 
 ```text
 Implement commit 16a of 22 — A sessions table beneath every chart — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
