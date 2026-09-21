@@ -550,8 +550,10 @@ failed `prs` read leaves the rows without stars.
 - **Date**, then **Sets** — the point's `sets` in coach shorthand, in order, joined by " · ": a set with
   a load and reps reads `load × reps` (`102.5 × 8`, the load's unit in the heading — "Sets (kg)" —
   when any set in the window carries a load); reps alone `12`; a load with a distance `60 × 40 m` (a
-  carry); a distance alone `5 km in 24:10`, and a run of sets of one distance with no load as one —
-  `6 × 800 m: 2:52 · 2:50 · 2:48` (or `2 × 400 m` with no times); a time alone `1:30`. It doesn't sort.
+  carry); a distance with no load `10 km in 52:00` — but a session whose only set it is reads the
+  distance alone, `5 km`, its time being the Time figure — and a run of sets of one distance with no
+  load as one — `6 × 800 m: 2:52 · 2:50 · 2:48` (or `2 × 400 m` with no times); a time alone `1:30`.
+  It doesn't sort.
 - **Then the figures of the exercise's type**, the first one the main figure:
 
 | `exerciseType` | Figures (point key) |

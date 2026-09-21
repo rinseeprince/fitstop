@@ -257,9 +257,10 @@ commit's plan.
     they do, and how did it measure. Each row has:
     - *Sets* — the session's working sets in coach shorthand, in order, warm-ups left out: `100 × 8 ·
       102.5 × 8 · 105 × 6` for loaded reps (the load's unit in the heading), `12 · 11 · 10` for reps
-      alone, `60 × 40 m` for a carry, `5 km in 24:10` for one piece and `6 × 800 m: 2:52 · 2:50 · …`
-      for repeats of one distance, `1:30 · 1:20` for holds. Nothing is picked or summarised, and it
-      does not sort.
+      alone, `60 × 40 m` for a carry, `5 km` for a session of one piece — its distance alone, its
+      time being the Time figure (owner, 2026-09-21, after 16a-2 shipped) — `10 km in 52:00` for a
+      piece among other sets and `6 × 800 m: 2:52 · 2:50 · …` for repeats of one distance, `1:30 ·
+      1:20` for holds. Nothing is picked or summarised, and it does not sort.
     - *The figures* — a fixed few numbers for the whole session, by the exercise's type, the main one
       first; each sorts. Strength: e1RM (the best estimate across the working sets), Top set (the
       heaviest set, load × reps), Volume, RPE. Bodyweight: Best set (the most reps in one set), Total

@@ -149,8 +149,9 @@ describe("the sets in shorthand", () => {
     expect(formatSessionSets([set({ durationSeconds: 90 }), set({ durationSeconds: 80 })], "metric")).toBe("1:30 · 1:20");
   });
 
-  it("reads one piece with its time and repeats of one distance as one", () => {
-    expect(formatSessionSets([set({ distanceMeters: 5000, durationSeconds: 1450 })], "metric")).toBe("5 km in 24:10");
+  it("reads a session of one piece as its distance alone, a piece among others with its time, and repeats of one distance as one", () => {
+    // The time of a one-piece session is its Time figure (owner, 2026-09-21)
+    expect(formatSessionSets([set({ distanceMeters: 5000, durationSeconds: 1450 })], "metric")).toBe("5 km");
     expect(
       formatSessionSets([172, 170, 168].map((durationSeconds) => set({ distanceMeters: 800, durationSeconds })), "metric"),
     ).toBe("3 × 800 m: 2:52 · 2:50 · 2:48");
@@ -175,7 +176,10 @@ describe("the sets in shorthand", () => {
 
   it("reads loads and distances in the viewer's units", () => {
     expect(formatSessionSets([set({ weight: 100, reps: 5 })], "imperial")).toBe("220 × 5");
-    expect(formatSessionSets([set({ distanceMeters: 1609.344, durationSeconds: 480 })], "imperial")).toBe("1 mi in 8:00");
+    expect(formatSessionSets([set({ distanceMeters: 1609.344, durationSeconds: 480 })], "imperial")).toBe("1 mi");
+    expect(
+      formatSessionSets([set({ distanceMeters: 1609.344, durationSeconds: 480 }), set({ distanceMeters: 400, durationSeconds: 75 })], "imperial"),
+    ).toBe("1 mi in 8:00 · 437 yd in 1:15");
   });
 
   it("names the load's unit in the heading only when the window's sets carry one", () => {

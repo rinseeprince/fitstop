@@ -169,9 +169,11 @@ const readsInShorthand = (set: ExerciseSessionSet): boolean =>
 
 /**
  * The session's working sets in coach shorthand, in order: `100 × 8 · 102.5 ×
- * 8`, `12 · 11 · 10`, `60 × 40 m`, `1:30 · 1:20`. A piece of distance reads with
- * its time — `5 km in 24:10` — and a run of pieces of one distance as one:
- * `6 × 800 m: 2:52 · 2:50 · 2:48`. Empty when no set logged any of them.
+ * 8`, `12 · 11 · 10`, `60 × 40 m`, `1:30 · 1:20`. A session of one piece of
+ * distance reads its distance alone — `5 km`, its time in the Time figure
+ * (owner, 2026-09-21); among other sets a piece reads with its time — `10 km in
+ * 52:00` — and a run of pieces of one distance as one: `6 × 800 m: 2:52 · 2:50`.
+ * Empty when no set logged any of them.
  */
 export function formatSessionSets(logged: readonly ExerciseSessionSet[], viewer: UnitSystem): string {
   const sets = logged.filter(readsInShorthand);
@@ -198,7 +200,8 @@ export function formatSessionSets(logged: readonly ExerciseSessionSet[], viewer:
       piece.durationSeconds == null ? [] : [formatDuration(piece.durationSeconds)],
     );
     if (pieces.length === 1) {
-      parts.push(times.length > 0 ? `${distance} in ${times[0]}` : distance);
+      const alone = sets.length === 1;
+      parts.push(times.length > 0 && !alone ? `${distance} in ${times[0]}` : distance);
     } else {
       const repeats = `${pieces.length} × ${distance}`;
       parts.push(times.length > 0 ? `${repeats}: ${times.join(" · ")}` : repeats);
