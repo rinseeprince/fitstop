@@ -191,6 +191,22 @@ describe("offeredMarkers", () => {
     expect(offeredMarkers("strength", [sled], "client")).toEqual(["weight", "e1rm", "volume", "distance", "time"]);
   });
 
+  it("offers a rate only where the type measures one: pace on Endurance, split on Erg, never on a carry", () => {
+    const session = (sets: Partial<MarkerSet>[]) =>
+      point(aggregateSessionMarkers(sets.map((s) => ({ ...markerSet(), ...s }))));
+    // Any time over a distance gives both rates
+    const timed = session([{ distanceMeters: 2000, durationSeconds: 480 }]);
+    expect(timed.averagePaceSecondsPerKm).toBe(240);
+    expect(timed.averageSplitSecondsPer500m).toBe(120);
+    expect(offeredMarkers("endurance", [timed], "coach")).toContain("pace");
+    expect(offeredMarkers("endurance", [timed], "coach")).not.toContain("split");
+    expect(offeredMarkers("erg", [timed], "coach")).toContain("split");
+    expect(offeredMarkers("erg", [timed], "coach")).not.toContain("pace");
+    const carry = session([{ weight: 64, distanceMeters: 40, durationSeconds: 35 }]);
+    expect(offeredMarkers("carry_sled", [carry], "coach")).not.toContain("pace");
+    expect(offeredMarkers("carry_sled", [carry], "coach")).not.toContain("split");
+  });
+
   it("reads a value on any session in the window", () => {
     expect(hasMarkerValue("pace", [point(), point({ averagePaceSecondsPerKm: 280 })])).toBe(true);
     expect(hasMarkerValue("pace", [point(), point()])).toBe(false);

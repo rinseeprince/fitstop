@@ -257,10 +257,18 @@ commit's plan.
     they do, and how did it measure. Each row has:
     - *Sets* — the session's working sets in coach shorthand, in order, warm-ups left out: `100 × 8 ·
       102.5 × 8 · 105 × 6` for loaded reps (the load's unit in the heading), `12 · 11 · 10` for reps
-      alone, `60 × 40 m` for a carry, `5 km` for a session of one piece — its distance alone, its
-      time being the Time figure (owner, 2026-09-21, after 16a-2 shipped) — `10 km in 52:00` for a
-      piece among other sets and `6 × 800 m: 2:52 · 2:50 · …` for repeats of one distance, `1:30 ·
-      1:20` for holds. Nothing is picked or summarised, and it does not sort.
+      alone, `60 × 40 m` for a carry, `3 × 1 km` or `64 × 3 × 40 m` for a set's reps on a distance
+      (repeats), `5 km` for a session of one piece — its distance alone, its time being the Time
+      figure (owner, 2026-09-21, after 16a-2 shipped) — `10 km in 52:00` for a piece among other
+      sets and `6 × 800 m: 2:52 · 2:50 · …` for a run of pieces of one distance, `1:30 · 1:20` for
+      holds. Nothing is picked or summarised, and it does not sort.
+    - *Repeats and times (owner, 2026-09-21, after 16a-2 shipped)* — reps on a set with a distance
+      or a time are repeats: 3 reps of 1 km is 3 km, 3 reps of 30 s is 1:30, a time or pace typed on
+      it is per rep. A set's time is its typed time, else its pace or split over its distance, so a
+      session logged with paces alone still has a Time, and its Pace is its time over its distance;
+      a typed time wins over a typed pace, and nothing typed is ever changed or filled in the boxes.
+      The chart's Distance, Time, Pace and Split read the same numbers; a rate shows only where the
+      type measures one — pace on Endurance, split on Erg.
     - *The figures* — a fixed few numbers for the whole session, by the exercise's type, the main one
       first; each sorts. Strength: e1RM (the best estimate across the working sets), Top set (the
       heaviest set, load × reps), Volume, RPE. Bodyweight: Best set (the most reps in one set), Total

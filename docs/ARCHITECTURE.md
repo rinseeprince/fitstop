@@ -635,9 +635,13 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   weighted set never competes with a bodyweight one; a time logged WITH a distance is a timed
   distance, where the fastest counts for the best times; a time logged with NO distance is a hold,
   where the longest counts; an endurance session reads as a whole — its distance and its time added
-  up (Distance, Time), and, where it logged a pace or a split, the average over them, its time over
-  its distance (so a run has no split and an erg piece no pace), with the average watts and stroke
-  rate; RPE is the top set's, and in a session with no loaded set — no top set — the highest RPE
+  up (Distance, Time), and its time over its distance as the average pace and split, with the average
+  watts and stroke rate. **Reps on a set with a distance or a time are repeats** — 3 reps of 1 km is
+  3 km, 3 reps of 30 s is 1:30 (owner, 2026-09-21) — and **a set's time is its typed time, else its
+  pace or split over its distance**, so a session logged with paces alone still has a time and a
+  typed time wins over a typed pace; nothing typed is changed. Any time over a distance gives both
+  rates, so a rate is offered only where the type measures one — pace on Endurance, split on Erg,
+  never on a carry or anything else. RPE is the top set's, and in a session with no loaded set — no top set — the highest RPE
   logged. So a weighted set on a Bodyweight exercise offers Weight, e1RM and Volume after Best set
   reps; a plank typed Strength offers Longest time and Time after Strength's five; a run, a hold or
   a bodyweight set whose sets recorded an RPE offers the coach RPE after the type's own.
@@ -649,8 +653,9 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   (`topSetWeight`, `topSetReps`, `estimatedOneRepMax`, `totalVolume`, `rpe` — the top set's, or with
   no loaded set the highest logged — the compliance pair), the top set's distance and time (a carry),
   the most reps in a set with no load and every set's reps added up (`bestSetReps`, `totalReps`), the
-  session's distance and time added up (`totalDistanceMeters`, `totalDurationSeconds`), the average
-  pace and split where it logged them (`averagePaceSecondsPerKm`, `averageSplitSecondsPer500m`), the
+  session's distance and time added up over every repeat (`totalDistanceMeters`,
+  `totalDurationSeconds`), the average pace and split over them (`averagePaceSecondsPerKm`,
+  `averageSplitSecondsPer500m`), the
   average stroke rate and watts, the highest HR zone and the longest hold. `get_exercise_progression_window`
   returns every numeric measure of a logged set (`utils/exercise-progress-markers.test.ts` reads the
   migration against `SET_LOG_MEASURES`), the service hands the kernel every one of them by that
@@ -690,9 +695,10 @@ three functions (`services/exercise-analytics-service.ts`, over the three SQL fu
   row is a whole session, so it reads the way a coach reads one, never the builder's per-set columns:
   newest first, the date, then **Sets** — the session's working sets in coach shorthand, in order
   (`formatSessionSets`: `100 × 8 · 102.5 × 8` for loaded reps with the load's unit in the heading,
-  `12 · 11 · 10` for reps alone, `60 × 40 m` for a carry, `5 km` for a session of one piece — its
-  time is the Time figure — `10 km in 52:00` for a piece among other sets and `6 × 800 m: 2:52 ·
-  2:50 · 2:48` for repeats of one distance, `1:30 · 1:20` for holds) — then a fixed
+  `12 · 11 · 10` for reps alone, `60 × 40 m` for a carry, reps on a distance or a time as repeats —
+  `3 × 1 km`, `64 × 3 × 40 m`, `3 × 0:30` — `5 km` for a session of one piece (its time is the Time
+  figure), `10 km in 52:00` for a piece among other sets and `6 × 800 m: 2:52 · 2:50 · 2:48` for a
+  run of pieces of one distance, `1:30 · 1:20` for holds) — then a fixed
   few **figures** by the exercise's type, the main one first (`EXERCISE_TYPE_FIGURES`,
   `utils/exercise-session-figures.ts`): Strength — e1RM, Top set (the heaviest set, load × reps),
   Volume, RPE; Bodyweight — Best set, Total reps, RPE; Endurance — Pace (the average), Distance, Time

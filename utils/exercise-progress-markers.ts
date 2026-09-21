@@ -15,7 +15,8 @@ import type { ExerciseType } from "./exercise-types";
 // load is a bodyweight set, a time with a distance is a timed distance, a time
 // with no distance is a hold, and RPE is the top set's or, with no loaded set,
 // the highest logged — so a run's RPE reaches the chart. An endurance session
-// plots as a whole: its distance and time added up, the average pace, split and
+// plots as a whole: its distance and time added up, every repeat counted (reps
+// on a set with a distance or a time are repeats), the average pace, split and
 // watts over them. RPE and Compliance are the coach's lenses and are never
 // offered to the client. The Sessions table's figures read the same values
 // (utils/exercise-session-figures.ts), so a point and its row always match.
@@ -124,6 +125,9 @@ export function markerLens(type: ExerciseType, marker: ProgressMarker): Progress
   return lead ? { ...PROGRESS_MARKER_SPECS[marker], ...lead } : PROGRESS_MARKER_SPECS[marker];
 }
 
+/** The two markers that read one rate — time over distance — in two units. */
+const RATE_MARKERS: ReadonlySet<ProgressMarker> = new Set(["pace", "split"]);
+
 /** Whether any session in the window has a value for the marker. */
 export function hasMarkerValue(
   marker: ProgressMarker,
@@ -138,8 +142,11 @@ type MarkerAudience = "coach" | "client";
 /**
  * The lenses an exercise offers: its type's leads, always, then every other
  * marker a session in the window has a value for — a chart follows what was
- * actually logged when that differs from the type. The client never sees the
- * coach's lenses.
+ * actually logged when that differs from the type — but for pace and split:
+ * any time over a distance gives both (a set's time is worked out from its pace
+ * or split where none was typed), so a rate shows only where the type measures
+ * one, as its lead — pace on Endurance, split on Erg — and never follows on a
+ * carry, a sled or anything else. The client never sees the coach's lenses.
  */
 export function offeredMarkers(
   type: ExerciseType,
@@ -148,7 +155,7 @@ export function offeredMarkers(
 ): ProgressMarker[] {
   const leads = EXERCISE_TYPE_MARKERS[type].map((l) => l.key);
   const followers = PROGRESS_MARKERS.filter(
-    (marker) => !leads.includes(marker) && hasMarkerValue(marker, points),
+    (marker) => !leads.includes(marker) && !RATE_MARKERS.has(marker) && hasMarkerValue(marker, points),
   );
   return [...leads, ...followers].filter(
     (marker) => audience === "coach" || !PROGRESS_MARKER_SPECS[marker].coachOnly,

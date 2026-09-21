@@ -168,6 +168,25 @@ describe("the sets in shorthand", () => {
     expect(formatSessionSets([set({ distanceMeters: 400 }), set({ distanceMeters: 400 })], "metric")).toBe("2 × 400 m");
   });
 
+  it("reads reps on a distance or a time as repeats (owner, 2026-09-21)", () => {
+    expect(
+      formatSessionSets([1000, 800, 600, 400].map((distanceMeters) => set({ reps: 3, distanceMeters })), "metric"),
+    ).toBe("3 × 1 km · 3 × 800 m · 3 × 600 m · 3 × 400 m");
+    // One set of repeats reads its repeats, even alone
+    expect(formatSessionSets([set({ reps: 5, distanceMeters: 500, durationSeconds: 110 })], "metric")).toBe("5 × 500 m");
+    expect(formatSessionSets([set({ weight: 64, reps: 3, distanceMeters: 40 })], "metric")).toBe("64 × 3 × 40 m");
+    expect(formatSessionSets([set({ reps: 3, durationSeconds: 30 })], "metric")).toBe("3 × 0:30");
+    // A lift's reps stay its reps, whatever time it logged; one rep is one piece
+    expect(formatSessionSets([set({ weight: 100, reps: 5, durationSeconds: 40 })], "metric")).toBe("100 × 5");
+    expect(formatSessionSets([set({ weight: 64, reps: 3 })], "metric")).toBe("64 × 3");
+    expect(
+      formatSessionSets(
+        [set({ reps: 1, distanceMeters: 800, durationSeconds: 170 }), set({ reps: 1, distanceMeters: 800, durationSeconds: 168 })],
+        "metric",
+      ),
+    ).toBe("2 × 800 m: 2:50 · 2:48");
+  });
+
   it("leaves out a set that logged none of load, reps, distance or time, and says nothing when none did", () => {
     expect(formatSessionSets([set({}), set({ weight: 100, reps: 5 })], "metric")).toBe("100 × 5");
     expect(formatSessionSets([set({}), set({})], "metric")).toBe("");

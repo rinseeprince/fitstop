@@ -114,7 +114,7 @@ describe("aggregateSessionMarkers", () => {
     expect(values.topSetReps).toBe(20);
   });
 
-  it("reads an endurance session as a whole: its distance and time added up, the average pace over them", () => {
+  it("reads an endurance session as a whole: its distance and time added up, the average rate over them", () => {
     // 6 × 800 m in 2:52, 2:50, 2:48, 2:55, 2:51, 2:53 — 4.8 km in 17:09
     const times = [172, 170, 168, 175, 171, 173];
     const values = aggregateSessionMarkers(
@@ -124,35 +124,58 @@ describe("aggregateSessionMarkers", () => {
     expect(values.totalDurationSeconds).toBe(1029);
     // 1029 s over 4.8 km, to the second — not the pace typed on any set
     expect(values.averagePaceSecondsPerKm).toBe(214);
-    // A run logs no split, so it has none
-    expect(values.averageSplitSecondsPer500m).toBeNull();
-  });
-
-  it("reads an erg session's average split the same way, and no pace", () => {
-    // 1029 s over 9.6 × 500 m, to a tenth
-    const values = aggregateSessionMarkers(
-      [172, 170, 168, 175, 171, 173].map((durationSeconds) =>
-        set({ distanceMeters: 800, durationSeconds, splitSecondsPer500m: 100 }),
-      ),
-    );
+    // The same rate per 500 m, to a tenth: the chart offers each type one of the two
     expect(values.averageSplitSecondsPer500m).toBe(107.2);
-    expect(values.averagePaceSecondsPerKm).toBeNull();
   });
 
-  it("averages only over the sets that logged a distance and a time, and falls back on the paces typed", () => {
+  it("counts reps on a set with a distance or a time as repeats (owner, 2026-09-21)", () => {
+    // 3 × 1 km, 3 × 800 m, 3 × 600 m, 3 × 400 m at the paces typed, no time typed
     const values = aggregateSessionMarkers([
-      set({ distanceMeters: 5000, durationSeconds: 1450, paceSecondsPerKm: 291 }),
-      set({ distanceMeters: 400 }),
+      set({ reps: 3, distanceMeters: 1000, paceSecondsPerKm: 270 }),
+      set({ reps: 3, distanceMeters: 800, paceSecondsPerKm: 255 }),
+      set({ reps: 3, distanceMeters: 600, paceSecondsPerKm: 240 }),
+      set({ reps: 3, distanceMeters: 400, paceSecondsPerKm: 225 }),
     ]);
-    expect(values.totalDistanceMeters).toBe(5400);
-    expect(values.averagePaceSecondsPerKm).toBe(290);
+    expect(values.totalDistanceMeters).toBe(8400);
+    // Each set's time from its pace over its distance, once per rep: 3 × (4:30 + 3:24 + 2:24 + 1:30)
+    expect(values.totalDurationSeconds).toBe(2124);
+    // 35:24 over 8.4 km — every metre counted, not the four paces' plain mean (4:08)
+    expect(values.averagePaceSecondsPerKm).toBe(253);
 
-    const typedOnly = aggregateSessionMarkers([
-      set({ distanceMeters: 1000, paceSecondsPerKm: 300, splitSecondsPer500m: 120 }),
-      set({ distanceMeters: 1000, paceSecondsPerKm: 281, splitSecondsPer500m: 112.5 }),
+    // A typed time is per rep too, and a hold's reps are repeats of its time
+    const intervals = aggregateSessionMarkers([set({ reps: 5, distanceMeters: 500, durationSeconds: 110 })]);
+    expect(intervals.totalDistanceMeters).toBe(2500);
+    expect(intervals.totalDurationSeconds).toBe(550);
+    expect(intervals.averageSplitSecondsPer500m).toBe(110);
+    const holds = aggregateSessionMarkers([set({ reps: 3, durationSeconds: 30 })]);
+    expect(holds.totalDurationSeconds).toBe(90);
+    expect(holds.longestHoldSeconds).toBe(30);
+    // A lift's reps stay its reps: nothing to multiply
+    expect(aggregateSessionMarkers([set({ reps: 5, weight: 100 })]).totalDurationSeconds).toBeNull();
+  });
+
+  it("uses the time typed over the pace typed, and a split over its distance where no pace was", () => {
+    const both = aggregateSessionMarkers([set({ distanceMeters: 5000, durationSeconds: 1450, paceSecondsPerKm: 300 })]);
+    expect(both.totalDurationSeconds).toBe(1450);
+    expect(both.averagePaceSecondsPerKm).toBe(290);
+
+    const erg = aggregateSessionMarkers([
+      set({ distanceMeters: 2000, splitSecondsPer500m: 120 }),
+      set({ distanceMeters: 1000, splitSecondsPer500m: 114 }),
     ]);
-    expect(typedOnly.averagePaceSecondsPerKm).toBe(291);
-    expect(typedOnly.averageSplitSecondsPer500m).toBe(116.3);
+    // 8:00 + 3:48 over 3 km
+    expect(erg.totalDurationSeconds).toBe(708);
+    expect(erg.averageSplitSecondsPer500m).toBe(118);
+  });
+
+  it("falls back on the rates typed, once per rep, where no set has a distance with a time", () => {
+    const values = aggregateSessionMarkers([
+      set({ durationSeconds: 1200, paceSecondsPerKm: 300 }),
+      set({ reps: 3, durationSeconds: 60, paceSecondsPerKm: 240 }),
+    ]);
+    // (300 + 3 × 240) / 4
+    expect(values.averagePaceSecondsPerKm).toBe(255);
+    expect(values.totalDurationSeconds).toBe(1380);
     expect(aggregateSessionMarkers([set({ reps: 10 })]).averagePaceSecondsPerKm).toBeNull();
   });
 

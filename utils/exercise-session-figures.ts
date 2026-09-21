@@ -151,15 +151,29 @@ export function formatSessionFigure(
 
 // --- The sets ----------------------------------------------------------------
 
-/** One set in coach shorthand: `102.5 × 8`, `12`, `60 × 40 m`, `1:30`, a load alone. */
+/** A set's reps when they are repeats of a distance or a time: 3 reps of 1 km (owner, 2026-09-21). */
+const repeatsOf = (set: ExerciseSessionSet): number | null =>
+  set.reps != null && set.reps > 1 && (set.distanceMeters != null || set.durationSeconds != null)
+    ? set.reps
+    : null;
+
+/** One set in coach shorthand: `102.5 × 8`, `12`, `3 × 1 km`, `64 × 3 × 40 m`, `3 × 0:30`, `1:30`. */
 function formatSet(set: ExerciseSessionSet, viewer: UnitSystem): string {
   const load = hasLoad(set) ? loadNumber(set.weight as number, viewer) : null;
+  const times = repeatsOf(set);
   if (set.distanceMeters != null) {
     const distance = formatDistance(set.distanceMeters, viewer);
-    return load ? `${load} × ${distance}` : distance;
+    const piece = times ? `${times} × ${distance}` : distance;
+    return load ? `${load} × ${piece}` : piece;
   }
-  if (set.reps != null) return load ? `${load} × ${set.reps}` : String(set.reps);
-  if (set.durationSeconds != null) return formatDuration(set.durationSeconds);
+  // A lift's reps are its reps, whatever time it logged
+  if (set.reps != null && (load || set.durationSeconds == null)) {
+    return load ? `${load} × ${set.reps}` : String(set.reps);
+  }
+  if (set.durationSeconds != null) {
+    const time = formatDuration(set.durationSeconds);
+    return times ? `${times} × ${time}` : time;
+  }
   return load as string;
 }
 
@@ -167,13 +181,18 @@ function formatSet(set: ExerciseSessionSet, viewer: UnitSystem): string {
 const readsInShorthand = (set: ExerciseSessionSet): boolean =>
   hasLoad(set) || set.reps != null || set.distanceMeters != null || set.durationSeconds != null;
 
+/** One piece of distance, done once, with no load: what a run of equal pieces groups. */
+const isSinglePiece = (set: ExerciseSessionSet): boolean =>
+  set.distanceMeters != null && !hasLoad(set) && repeatsOf(set) == null;
+
 /**
  * The session's working sets in coach shorthand, in order: `100 × 8 · 102.5 ×
- * 8`, `12 · 11 · 10`, `60 × 40 m`, `1:30 · 1:20`. A session of one piece of
- * distance reads its distance alone — `5 km`, its time in the Time figure
- * (owner, 2026-09-21); among other sets a piece reads with its time — `10 km in
- * 52:00` — and a run of pieces of one distance as one: `6 × 800 m: 2:52 · 2:50`.
- * Empty when no set logged any of them.
+ * 8`, `12 · 11 · 10`, `60 × 40 m`, `1:30 · 1:20`. A set's reps on a distance or
+ * a time are repeats — `3 × 1 km`, `64 × 3 × 40 m` (owner, 2026-09-21). A
+ * session of one piece of distance reads its distance alone — `5 km`, its time
+ * in the Time figure (owner, 2026-09-21); among other sets a piece done once
+ * reads with its time — `10 km in 52:00` — and a run of such pieces of one
+ * distance as one: `6 × 800 m: 2:52 · 2:50`. Empty when no set logged any of them.
  */
 export function formatSessionSets(logged: readonly ExerciseSessionSet[], viewer: UnitSystem): string {
   const sets = logged.filter(readsInShorthand);
@@ -181,7 +200,7 @@ export function formatSessionSets(logged: readonly ExerciseSessionSet[], viewer:
   let i = 0;
   while (i < sets.length) {
     const set = sets[i];
-    if (set.distanceMeters == null || hasLoad(set)) {
+    if (!isSinglePiece(set)) {
       parts.push(formatSet(set, viewer));
       i += 1;
       continue;
@@ -189,13 +208,13 @@ export function formatSessionSets(logged: readonly ExerciseSessionSet[], viewer:
     let end = i + 1;
     while (
       end < sets.length &&
-      sets[end].distanceMeters === set.distanceMeters &&
-      !hasLoad(sets[end])
+      isSinglePiece(sets[end]) &&
+      sets[end].distanceMeters === set.distanceMeters
     ) {
       end += 1;
     }
     const pieces = sets.slice(i, end);
-    const distance = formatDistance(set.distanceMeters, viewer);
+    const distance = formatDistance(set.distanceMeters as number, viewer);
     const times = pieces.flatMap((piece) =>
       piece.durationSeconds == null ? [] : [formatDuration(piece.durationSeconds)],
     );
@@ -203,8 +222,8 @@ export function formatSessionSets(logged: readonly ExerciseSessionSet[], viewer:
       const alone = sets.length === 1;
       parts.push(times.length > 0 && !alone ? `${distance} in ${times[0]}` : distance);
     } else {
-      const repeats = `${pieces.length} × ${distance}`;
-      parts.push(times.length > 0 ? `${repeats}: ${times.join(" · ")}` : repeats);
+      const repeated = `${pieces.length} × ${distance}`;
+      parts.push(times.length > 0 ? `${repeated}: ${times.join(" · ")}` : repeated);
     }
     i = end;
   }
