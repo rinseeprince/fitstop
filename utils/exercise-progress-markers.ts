@@ -175,10 +175,9 @@ export function effectiveMarker(
 // --- Bests --------------------------------------------------------------------
 
 /**
- * The PR kinds, mirrored by exercise_records (migration 191), which
- * get_exercise_prs reads, and by ExerciseBest. An Endurance or Erg exercise's
- * best times are at race distances (utils/race-distances.ts), every other
- * type's at the distance logged.
+ * The PR kinds, mirrored by get_exercise_prs (migration 192) and ExerciseBest.
+ * An Endurance or Erg exercise's best times are at race distances
+ * (utils/race-distances.ts), every other type's at the distance logged.
  */
 export const BEST_KINDS = ["rep_max", "best_reps", "best_time", "heaviest_carry", "longest_hold"] as const;
 

@@ -3,7 +3,6 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PerformanceView } from "./performance-view";
 import type {
-  ExerciseBestsRow,
   ExerciseListItem,
   ExerciseProgressionPoint,
   ExercisePR,
@@ -73,33 +72,15 @@ function makePoint(overrides: Partial<ExerciseProgressionPoint> = {}): ExerciseP
 function makePR(overrides: Partial<Extract<ExercisePR, { kind: "rep_max" }>> = {}): ExercisePR {
   return { kind: "rep_max", reps: 5, weight: 100, date: "2026-05-15T00:00:00Z", sessionLogId: "sl-1", isRecent: false, ...overrides };
 }
-function makeBests(overrides: Partial<ExerciseBestsRow> = {}): ExerciseBestsRow {
-  return {
-    exerciseId: "ex-1",
-    name: "Bench Press",
-    exerciseType: "strength",
-    sessionCount: 12,
-    lastLoggedDate: "2026-05-15T00:00:00Z",
-    heaviestLoad: 100,
-    bestEstimatedOneRepMax: 116.7,
-    bestSetReps: null,
-    bestTime: null,
-    heaviestCarry: null,
-    longestHoldSeconds: null,
-    ...overrides,
-  };
-}
 
 function setupSWR(options: {
   list?: ExerciseListItem[];
-  bests?: ExerciseBestsRow[];
   progression?: ExerciseProgressionPoint[];
   prs?: ExercisePR[];
 }) {
   mockUseSWR.mockImplementation((url: string | null) => {
     if (url === null) return { data: undefined, isLoading: false, error: null };
     if (url.includes("metric=list")) return { data: { success: true, data: options.list ?? [] }, isLoading: false, error: null };
-    if (url.includes("metric=bests")) return { data: { success: true, data: options.bests ?? [] }, isLoading: false, error: null };
     if (url.includes("metric=progression")) return { data: { success: true, data: options.progression ?? [] }, isLoading: false, error: null };
     if (url.includes("metric=prs")) return { data: { success: true, data: options.prs ?? [] }, isLoading: false, error: null };
     return { data: undefined, isLoading: false, error: null };
@@ -127,53 +108,35 @@ describe("PerformanceView", () => {
     vi.clearAllMocks();
     mockSearchParams.delete("exerciseId");
     mockSearchParams.delete("exerciseName");
-    mockSearchParams.delete("tab");
   });
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("opens on All exercises when none is picked: every exercise's bests, no chart, no lenses, no window", () => {
-    setupSWR({
-      list: [makeListItem()],
-      bests: [makeBests(), makeBests({ exerciseId: "run", name: "Running", exerciseType: "endurance", heaviestLoad: null, bestEstimatedOneRepMax: null, bestTime: { race: "10k", durationSeconds: 2640 } })],
-    });
+  it("prompts to pick an exercise when none is selected", () => {
+    setupSWR({ list: [makeListItem()] });
     render(<PerformanceView />);
-
-    expect(screen.getByRole("combobox")).toHaveTextContent("All exercises");
-    expect(screen.getByRole("heading", { level: 2, name: "Exercises" })).toBeInTheDocument();
-    expect(screen.getByText("10 km · 44:00")).toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "Metric" })).toBeNull();
-    expect(screen.queryByRole("group", { name: "Sessions" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Personal Records" })).toBeNull();
-    expect(screen.queryByText(/Pick an exercise above/i)).toBeNull();
-    expect(progressionUrls()).toEqual([]);
+    expect(screen.getByText(/Pick an exercise above/i)).toBeInTheDocument();
   });
 
-  it("reads the pick from the address alone: All exercises is one replace taking the exercise out", async () => {
+  it("a pick writes the address and nothing else; the view follows the address, not the click", async () => {
     const user = userEvent.setup();
-    selectExercise();
-    mockSearchParams.set("tab", "performance");
-    setupSWR({ list: [makeListItem()], progression: [makePoint()], bests: [makeBests()] });
-    render(<PerformanceView />);
+    setupSWR({ list: [makeListItem()], progression: [makePoint()] });
+    const { rerender } = render(<PerformanceView />);
 
     await user.click(screen.getByRole("combobox"));
-    await user.click(screen.getByRole("option", { name: "All exercises" }));
+    await user.click(screen.getByRole("option", { name: /Bench Press/ }));
 
     expect(mockReplace).toHaveBeenCalledTimes(1);
-    expect(mockReplace).toHaveBeenCalledWith("?tab=performance", { scroll: false });
-    // Nothing moves until the address does: the exercise's own view is still up
+    expect(mockReplace).toHaveBeenCalledWith("?exerciseId=ex-1&exerciseName=Bench+Press", { scroll: false });
+    // One owner: nothing is picked until the address says so
+    expect(screen.getByText(/Pick an exercise above/i)).toBeInTheDocument();
+    expect(progressionUrls()).toEqual([]);
+
+    selectExercise();
+    rerender(<PerformanceView />);
+    expect(screen.queryByText(/Pick an exercise above/i)).toBeNull();
     expect(screen.getByRole("heading", { name: "Personal Records" })).toBeInTheDocument();
-  });
-
-  it("opens an exercise from its row of All exercises, in one replace", async () => {
-    const user = userEvent.setup();
-    setupSWR({ list: [makeListItem()], bests: [makeBests({ exerciseId: "run", name: "Running", exerciseType: "endurance" })] });
-    render(<PerformanceView />);
-
-    await user.click(screen.getByText("Running"));
-    expect(mockReplace).toHaveBeenCalledTimes(1);
-    expect(mockReplace).toHaveBeenCalledWith("?exerciseId=run&exerciseName=Running", { scroll: false });
   });
 
   it("renders the weight chart once an exercise is selected", () => {

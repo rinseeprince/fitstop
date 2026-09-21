@@ -13,7 +13,6 @@ vi.mock("@/lib/require-coach-auth", () => ({
 }));
 
 vi.mock("@/services/exercise-analytics-service", () => ({
-  getClientExerciseBests: vi.fn().mockResolvedValue([]),
   getClientExerciseList: vi.fn().mockResolvedValue([]),
   getExerciseProgressionSeries: vi.fn().mockResolvedValue([]),
   getExercisePRs: vi.fn().mockResolvedValue([]),
@@ -21,7 +20,6 @@ vi.mock("@/services/exercise-analytics-service", () => ({
 
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import {
-  getClientExerciseBests,
   getClientExerciseList,
   getExerciseProgressionSeries,
   getExercisePRs,
@@ -260,48 +258,6 @@ describe("GET /api/clients/[id]/training/exercise-history", () => {
       startDate: "2026-02-01",
       endDate: "2026-04-30",
     });
-  });
-
-  it("returns 200 with metric=bests: every exercise's bests, all-time, no exercise asked for", async () => {
-    const mockData = [
-      {
-        exerciseId: "ex-1",
-        name: "Running",
-        exerciseType: "endurance" as const,
-        sessionCount: 13,
-        lastLoggedDate: "2026-09-21T00:00:00+00:00",
-        heaviestLoad: null,
-        bestEstimatedOneRepMax: null,
-        bestSetReps: null,
-        bestTime: { race: "5k" as const, durationSeconds: 1205 },
-        heaviestCarry: null,
-        longestHoldSeconds: null,
-      },
-    ];
-    vi.mocked(getClientExerciseBests).mockResolvedValue(mockData);
-
-    const res = await GET(
-      makeRequest(`${BASE_URL}?metric=bests&startDate=2026-02-01&endDate=2026-04-30`),
-      makeParams()
-    );
-    const body = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(body).toEqual({ success: true, data: mockData });
-    expect(res.headers.get("Cache-Control")).toBe("no-store");
-    // The date window is the list's and the progression's; bests stay all-time
-    expect(getClientExerciseBests).toHaveBeenCalledWith(CLIENT_ID);
-  });
-
-  it("returns 404 for metric=bests on a client the coach does not own, reading nothing", async () => {
-    vi.mocked(requireCoachOwnsClient).mockResolvedValue({
-      authorized: false,
-      response: new Response(JSON.stringify({ success: false, error: "Client not found" }), { status: 404 }),
-    } as never);
-
-    const res = await GET(makeRequest(`${BASE_URL}?metric=bests`), makeParams());
-    expect(res.status).toBe(404);
-    expect(getClientExerciseBests).not.toHaveBeenCalled();
   });
 
   it("ignores the date window for metric=prs (PRs stay all-time)", async () => {

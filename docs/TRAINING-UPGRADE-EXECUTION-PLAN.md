@@ -29,9 +29,9 @@ When this plan is done:
   heart rate, power, % FTP) — starting from a preset set by the exercise's type: Strength,
   Bodyweight, Endurance, Erg, Carry & sled or Holds.
 - **Clients log all of it**, including group scores: AMRAP rounds and For time finish times.
-- **Progress charts show each exercise's own markers** with a table of its sessions beneath, one
-  table lists every exercise's bests, endurance and erg PRs are race distances, and
-  duplicate-with-progression can progress endurance targets.
+- **Progress charts show each exercise's own markers** with a table of its sessions beneath,
+  endurance and erg PRs are race distances, and duplicate-with-progression can progress endurance
+  targets.
 - **Programs can be periodised** into named, coloured phases (Foundation, Deload, Taper…) shown as
   tabs in the builder, colouring the coach's calendar and the client's program, and named in the
   client's header.
@@ -301,20 +301,15 @@ commit's plan.
   - *The client (16a).* The client's Performance view has the same shape: the chart, then the same
     Sessions table, then Personal records.
   - *No new data (16a-2).* The progression read already carries every set; no migration.
-  - *All exercises (16b).* The exercise picker gains "All exercises": one row per exercise the client
-    has logged, with its type, sessions logged, last logged and its bests — heaviest load, best
-    estimated 1RM, most reps in a bodyweight set, best time at its longest race distance, heaviest
-    carry, longest hold, empty where the type never logs it — sortable by any of them and by name,
-    type, sessions and last logged, with the same pager, in both views. Picking it
-    shows that table under the hero, with no chart and no lenses. One SQL function computes every
-    exercise's bests in one pass, bounded by the exercises logged, so the page costs one round trip
-    however many exercises there are. Answered at 16b's plan (owner, 2026-09-21): it is what both
-    views open on with no exercise picked — the pane with no exercise in its address, so the "Select
-    an exercise" prompt goes; a row opens its exercise, as a pick does; the pager carries the
-    history tables' count ("Showing 10 of 23 exercises"), since no window above says how many; and
-    every view of an exercise — its chart, its Sessions table, its PRs, its row — reads the logs the
-    picker counts for it: the exercise done, never one it replaced, and a name typed never a catalog
-    exercise's of the same name.
+  - *All exercises — removed (owner, 2026-09-21, at 16b's smoke: "I do not like the all exercises
+    part of the commit. I think we should remove/revert that. I think previous state was better.").*
+    There is no table of every exercise's bests: the picker lists the exercises alone, and with none
+    picked both views ask for one ("Select an exercise to view progression data." for the coach,
+    "Pick an exercise above to see how you're progressing." for the client). Don't rebuild it.
+  - *One exercise, one set of logs (16b; owner, 2026-09-21, at 16b's plan).* Every view of an
+    exercise — its chart, its Sessions table, its PRs — reads the logs the picker counts for it: the
+    exercise done, never one it replaced, and a name typed never a catalog exercise's of the same
+    name.
   - *Race-distance PRs (16b).* An Endurance exercise's PRs are its best times at the race distances:
     400 m, 800 m, 1 km, 1600 m, 1 mile, 5 km, 10 km, half marathon, marathon, 50 km, 100 km. An Erg
     exercise's are the erg distances: 500 m, 1 km, 2 km, 5 km, 6 km, 10 km, half marathon, marathon.
@@ -573,7 +568,7 @@ anything you rely on.
 | 16 | Progress charts by exercise type | Charts show each type's markers |
 | 16a | A sessions table beneath every chart | Every chart has a table of its sessions beneath it |
 | 16a-2 | The sessions table, as a coach reads it | Each row shows the session's sets and its figures |
-| 16b | Race-distance PRs and every exercise's bests | Endurance PRs are race distances; one table lists every best |
+| 16b | Race-distance PRs and every exercise's bests | Endurance PRs are race distances |
 | 17 | Endurance progression | Duplicate-with-progression moves endurance targets |
 | 18 | Phases: the structure | Programs carry phases; nothing looks different |
 | 19 | Phases in the builder | Phase tabs in the builder |
@@ -1332,6 +1327,10 @@ RULES: §4.4 — closed, including its 2026-09-21 amendment. Include a frame tes
 
 NOT IN THIS COMMIT: nothing of commits 16a and 16a-2 is reopened.
 ```
+
+*Removed by the owner at the smoke (2026-09-21):* the All exercises table (§4.4) — migration 192 drops
+its read. The race-distance PRs, the star by the record's session, the Overview's race rows and the
+one identity stay.
 
 ### Commit 17 — Endurance progression
 

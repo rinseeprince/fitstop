@@ -15,14 +15,3 @@ export function calculateEpleyE1RM(
   if (reps === 1) return weight;
   return weight * (1 + reps / 30);
 }
-
-/**
- * The estimated 1RM a coach reads: Epley, to a tenth. The Sessions table's
- * e1RM (the best of a session's lifts) and the All exercises table's Best e1RM
- * (the best of an exercise's rep maxes, get_client_exercise_bests) are this
- * one number, so the two tables never read one set two ways.
- */
-export function estimateOneRepMax(weight: number, reps: number): number | null {
-  const e1rm = calculateEpleyE1RM(weight, reps);
-  return e1rm == null ? null : Math.round(e1rm * 10) / 10;
-}

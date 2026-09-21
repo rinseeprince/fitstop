@@ -579,28 +579,3 @@ export type ExercisePR = ExerciseBest & {
   /** Set within the last 28 days. */
   isRecent: boolean;
 };
-
-/**
- * One exercise the client has logged with its bests — a row of the All
- * exercises table (get_client_exercise_bests, migration 191). The bests are its
- * records summarised, so a row and the exercise's PR cards never disagree:
- * the heaviest of its rep maxes, the best estimated 1RM they give, its best
- * bodyweight set, its record at the longest race distance it holds one at,
- * its heaviest carry with the distance, its longest hold — null where it has
- * none. Canonical units: kilograms, metres, seconds.
- */
-export type ExerciseBestsRow = {
-  exerciseId: string | null;
-  name: string;
-  exerciseType: ExerciseType;
-  /** The sessions it was logged in. */
-  sessionCount: number;
-  /** The latest of them — a day stamp, like a progression point's date. */
-  lastLoggedDate: string;
-  heaviestLoad: number | null;
-  bestEstimatedOneRepMax: number | null;
-  bestSetReps: number | null;
-  bestTime: { race: RaceDistance; durationSeconds: number } | null;
-  heaviestCarry: { weight: number; distanceMeters: number } | null;
-  longestHoldSeconds: number | null;
-};

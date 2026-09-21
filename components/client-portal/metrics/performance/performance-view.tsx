@@ -7,7 +7,6 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise-trend-chart";
 import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
 import { ExerciseSessionsTable } from "@/components/training/exercise-data/exercise-sessions-table";
-import { AllExercisesTable } from "@/components/training/exercise-data/all-exercises-table";
 import { ExercisePicker } from "./exercise-picker";
 import {
   PerformanceControls,
@@ -24,7 +23,6 @@ import {
 } from "@/utils/exercise-progress-markers";
 import { DEFAULT_EXERCISE_TYPE } from "@/utils/exercise-types";
 import type {
-  ExerciseBestsRow,
   ExerciseListItem,
   ExerciseProgressionPoint,
   ExercisePR,
@@ -37,10 +35,9 @@ const SWR_CONFIG = {
   dedupingInterval: 2000,
 };
 
-// Client performance category: All exercises — every exercise's bests in one
-// table — or one exercise: its type's markers, the table of its sessions and
-// its personal records. Reuses the neutral chart, the two tables and the PR
-// viz; a session's row opens the workout it was, an exercise's row opens it.
+// Client performance category: pick an exercise, see its type's markers, the
+// table of its sessions and its personal records. Reuses the neutral chart,
+// Sessions table and PR viz; a session's row opens the workout it was.
 //
 // No weightUnit prop: it threaded a mapper constant down from metrics-hub, so
 // the client always saw kilograms whatever their preference. ExercisePrView and
@@ -50,7 +47,7 @@ export function PerformanceView() {
   const router = useRouter();
 
   // The exercise picked lives in the address alone (CONVENTIONS section 7):
-  // derived every render, written by the pick; none is All exercises
+  // derived every render, written by the pick
   const selectedExerciseId = searchParams.get("exerciseId");
   const selectedExerciseName = searchParams.get("exerciseName");
   // The lens picked; the one shown derives from it and what the exercise offers
@@ -66,22 +63,6 @@ export function PerformanceView() {
     ...SWR_CONFIG,
     onError: (err) => console.error("Failed to load exercise list:", err),
   });
-
-  // Every exercise's bests — read only while All exercises is shown
-  const {
-    data: bestsData,
-    error: bestsError,
-    isLoading: bestsLoading,
-    mutate: mutateBests,
-  } = useSWR<{
-    success: boolean;
-    data: ExerciseBestsRow[];
-  }>(hasExercise ? null : clientExerciseHistoryKey({ metric: "bests" }), swrFetcher, {
-    ...SWR_CONFIG,
-    onError: (err) => console.error("Failed to load every exercise's bests:", err),
-  });
-  // Failed with nothing in hand and no retry in flight
-  const bestsFailed = bestsError != null && bestsData === undefined && !bestsLoading;
 
   const progressionUrl = hasExercise
     ? clientExerciseHistoryKey({
@@ -158,20 +139,12 @@ export function PerformanceView() {
     label: markerLens(exerciseType, marker).label,
   }));
 
-  // A pick is one replace and nothing else — from the picker, or a row of All exercises
-  const handleExerciseSelect = (exercise: Pick<ExerciseListItem, "exerciseId" | "name">) => {
+  // A pick is one replace and nothing else
+  const handleExerciseSelect = (exercise: ExerciseListItem) => {
     const params = new URLSearchParams(searchParams.toString());
     if (exercise.exerciseId) params.set("exerciseId", exercise.exerciseId);
     else params.delete("exerciseId");
     params.set("exerciseName", exercise.name);
-    router.replace(`?${params.toString()}`, { scroll: false });
-  };
-
-  // All exercises: the same one replace, the exercise taken out of the address
-  const handleSelectAll = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("exerciseId");
-    params.delete("exerciseName");
     router.replace(`?${params.toString()}`, { scroll: false });
   };
 
@@ -183,18 +156,12 @@ export function PerformanceView() {
         selectedExerciseId={selectedExerciseId}
         selectedExerciseName={selectedExerciseName}
         onSelect={handleExerciseSelect}
-        onSelectAll={handleSelectAll}
       />
 
       {!hasExercise ? (
-        // Every exercise's bests under the picker — no chart, no lenses, no window
-        <AllExercisesTable
-          audience="client"
-          rows={bestsData?.data}
-          isError={bestsFailed}
-          onRetry={() => void mutateBests()}
-          onOpenExercise={handleExerciseSelect}
-        />
+        <p className="py-12 text-center text-[13px] text-[#93b0b4]">
+          Pick an exercise above to see how you&apos;re progressing.
+        </p>
       ) : (
         <>
           <PerformanceControls

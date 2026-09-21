@@ -1,6 +1,6 @@
 import type { ExerciseProgressionPoint, ExerciseSessionSet } from "@/types/training";
 import type { LoggedActuals } from "./set-log-measures";
-import { estimateOneRepMax } from "./exercise-analytics-helpers";
+import { calculateEpleyE1RM } from "./exercise-analytics-helpers";
 
 // One session's values from its logged sets — the per-set math behind every
 // progression point (services/exercise-analytics-service.ts): the chart
@@ -11,7 +11,7 @@ import { estimateOneRepMax } from "./exercise-analytics-helpers";
 // session's are the session's own — its distance and time added up, every
 // repeat counted, and the average pace and split over them. Reps on a set with
 // a distance or a time are repeats, never a rep count, so such a set makes no
-// best set, e1RM, volume or rep total — exercise_records (migration 191) reads
+// best set, e1RM, volume or rep total — get_exercise_prs (migration 192) reads
 // the records off the same sets, a set's time the same way. Warm-ups count
 // toward nothing here; failure and drop sets count like working sets.
 
@@ -175,7 +175,7 @@ export function aggregateSessionMarkers(sets: readonly MarkerSet[]): SessionMark
   for (const s of working.filter(isLift)) {
     if (s.reps == null) continue;
     totalVolume = (totalVolume ?? 0) + s.reps * (s.weight as number);
-    const e1rm = estimateOneRepMax(s.weight as number, s.reps);
+    const e1rm = calculateEpleyE1RM(s.weight as number, s.reps);
     if (e1rm != null && (estimatedOneRepMax == null || e1rm > estimatedOneRepMax)) {
       estimatedOneRepMax = e1rm;
     }
@@ -208,7 +208,7 @@ export function aggregateSessionMarkers(sets: readonly MarkerSet[]): SessionMark
     // The top set's, even when it recorded none; with no loaded set in the
     // session there is no top set, and the hardest effort logged stands in
     rpe: topSet ? topSet.rpe : highest(recorded(working, (s) => s.rpe)),
-    estimatedOneRepMax,
+    estimatedOneRepMax: estimatedOneRepMax != null ? round1(estimatedOneRepMax) : null,
     totalVolume,
     bestSetReps: bestReps?.reps ?? null,
     // Every set's reps, but a set's repeats are not reps

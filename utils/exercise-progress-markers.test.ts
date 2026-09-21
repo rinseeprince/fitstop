@@ -309,8 +309,8 @@ describe("the progression window, as the latest migration defines it, mirrors th
   });
 });
 
-describe("exercise_records, as the latest migration defines it", () => {
-  const body = latestFunction("exercise_records");
+describe("get_exercise_prs, as the latest migration defines it", () => {
+  const body = latestFunction("get_exercise_prs");
 
   it("computes every best kind and no other", () => {
     const literals = [...body.matchAll(/'([a-z_]+)'::TEXT AS kind/g)].map((m) => m[1]);

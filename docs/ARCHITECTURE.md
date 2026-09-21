@@ -601,7 +601,7 @@ inversion: **the PRESCRIPTION drives the row list, not the log.**
 - `exercise_logs.training_exercise_id` is SET NULL on delete (nullable). History preserved via `prescribed_exercise_snapshot` JSONB — the exercise's prescription as logged: its compact columns, `set_specs`, `prescribed_fields`, its place in its group (`order_index`) and the group it sat in (`group`: its id, its place in the session, its format and every setting). `services/training-log-service.test.ts` pins both key sets
 - Snapshots are written at completion time and backfilled for existing data
 - `set_logs` holds per-set actuals — **one real column per measure a coach can prescribe** (migration 090 for `reps`, `weight`, `rpe`; migration 184 for `rir`, `tempo`, `distance_meters`, `duration_seconds`, `pace_seconds_per_km`, `split_seconds_per_500m`, `calories`, `cadence`, `stroke_rate`, `resistance`, `heart_rate_zone`, `heart_rate`, `power`, `ftp_percent` and `rest_seconds`, the rest the client actually took). Every one nullable, in its canonical unit (CONVENTIONS §20), CHECKed to its target's limit and scaled to its resolution. `SET_LOG_MEASURES` (`utils/set-log-measures.ts`) is the one table of them — keyed by the prescribed column, so Load's actual is `weight` and Rest's is `rest_seconds` — and the migration test, the wire schema, the log writer, the row mapper (`SetLog` carries every one, by wire key), the client's boxes, the coach's logged-workout table and the check-in AI's exercise lines derive from it. Replaces the legacy scalar aggregates `actual_sets`/`actual_reps`(csv)/`actual_weight` that lived on `exercise_logs` before 090. ON DELETE CASCADE from `exercise_logs`.
-- `set_logs.set_type` (migrations 119 and 187) — `TEXT NOT NULL DEFAULT 'working' CHECK (set_type IN ('warmup','working','drop','failure'))`: the four set types, defined once as `SET_TYPES` in `utils/exercise-set-specs.ts`, which the CHECK mirrors (`utils/exercise-set-specs.test.ts` reads the migration). A set taken to failure has one type, `failure`; "AMRAP" names a group format and nothing else (owner, 2026-09-19), so no set type, stored or sent, spells it. The per-set type of a logged set. It is **coach-prescribed** (seeded from the prescription's `set_specs` at log time), not client-chosen — the log schema accepts-but-ignores any of the four from the client and refuses any other word, and the writer seeds each row from the prescription snapshot's per-set specs. Warm-up / drop / failure rows are written today. The analytics functions (`get_exercise_progression_window` returns it; `exercise_records`, which the PRs and every exercise's bests read, filters on it — migrations 120, 188 and 191) exclude warm-up sets from every chart marker, from compliance and from the PRs; `services/exercise-analytics-service.ts` hands a session's non-warmup sets to the marker kernel (`utils/exercise-session-markers.ts`) and reads the prescribed working-set count from the snapshot's `set_specs` (see "Exercise progress: charts and PRs").
+- `set_logs.set_type` (migrations 119 and 187) — `TEXT NOT NULL DEFAULT 'working' CHECK (set_type IN ('warmup','working','drop','failure'))`: the four set types, defined once as `SET_TYPES` in `utils/exercise-set-specs.ts`, which the CHECK mirrors (`utils/exercise-set-specs.test.ts` reads the migration). A set taken to failure has one type, `failure`; "AMRAP" names a group format and nothing else (owner, 2026-09-19), so no set type, stored or sent, spells it. The per-set type of a logged set. It is **coach-prescribed** (seeded from the prescription's `set_specs` at log time), not client-chosen — the log schema accepts-but-ignores any of the four from the client and refuses any other word, and the writer seeds each row from the prescription snapshot's per-set specs. Warm-up / drop / failure rows are written today. The analytics functions (`get_exercise_progression_window` returns it; `get_exercise_prs` filters on it — migrations 120, 191 and 192) exclude warm-up sets from every chart marker, from compliance and from the PRs; `services/exercise-analytics-service.ts` hands a session's non-warmup sets to the marker kernel (`utils/exercise-session-markers.ts`) and reads the prescribed working-set count from the snapshot's `set_specs` (see "Exercise progress: charts and PRs").
 - `exercise_logs.exercise_id` (added in 090) is a nullable FK to the global `exercises` catalog. Populated when the client picked an exercise from the typeahead picker (Add unplanned, Swap). NULL for prescribed-without-swap (catalog identity is reachable via `training_exercise_id → training_exercises.exercise_id`) and for freehand entries.
 - `exercise_logs.performed_name` (added in 090) is the canonical display name for the logged exercise. Differs from `prescribed_exercise_snapshot.name` when the client swapped a prescribed exercise or added a freehand unplanned one. Display rule: `performed_name ?? prescribed_exercise_snapshot?.name ?? "Unknown exercise"`. This is the per-**exercise** swap (Session 1.5), independent of the per-**session** swap above.
 - Session-level status: the log WRITE stamps `training_events.status = 'completed'` in the same statement as the link, whatever the quality, so the two cannot drift. There is no quality→status map and nothing to invert — every screen reads the quality off the log (see "How a workout reads"). **Where the quality itself comes from:** It is **server-derived** whenever the payload carries `exercises`: `deriveCompletionQuality` (`utils/completion-quality.ts`) counts the sets the client sent against the session's own prescription and **ignores any client-supplied value**. `full` means every prescribed WORKING set on EVERY exercise (each exercise judged against its own prescription, so a surplus on one cannot mask a deficit on another); anything short of that is `partial`, a save whose only ticks landed on warm-ups included — warm-ups are excluded from both halves of the ratio, and the save would have been refused if the client had recorded nothing at all. A group that takes a score joins the same verdict (`ScoredGroup`): an AMRAP is complete once scored, a For time once finished, and a capped or unscored one makes the workout `partial`; its exercises' rows are left out, and an EMOM's count like a circuit's (see "Workout logging"). The denominator therefore needs a read of its own (`loadSessionPrescription`), because an exercise the client never touched is absent from the payload entirely and must still count against them. A payload with **no** `exercises` — the check-in's fill-gap row, and any RN quick path — still uses the client's explicit `completionQuality`, and that is the only case where it is honoured.
@@ -610,20 +610,21 @@ inversion: **the PRESCRIPTION drives the row list, not the log.**
 
 Each exercise's progress chart shows the markers that matter for its type, a table of its sessions
 sits beneath it, and its PRs are its type's bests — an Endurance or Erg exercise's best times at race
-distances — and one table lists every exercise's bests (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md
-section 4.4). The coach's Journey → Training pane (`ExerciseDataView`) and the client's Performance
-view (`performance-view.tsx`) read the same four metrics — `GET /api/clients/[id]/training/exercise-history`
-and `GET /api/client/training/exercise-history`, `metric=list | bests | progression | prs` — through the
-same four functions (`services/exercise-analytics-service.ts`, over the SQL functions of migrations
-188 and 191), so a coach and a client see one exercise the same way.
+distances (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section 4.4). The coach's Journey → Training pane
+(`ExerciseDataView`) and the client's Performance view (`performance-view.tsx`) read the same three
+metrics — `GET /api/clients/[id]/training/exercise-history` and `GET /api/client/training/exercise-history`,
+`metric=list | progression | prs` — through the same three functions (`services/exercise-analytics-service.ts`,
+over the SQL functions of migrations 191 and 192), so a coach and a client see one exercise the same
+way. Both read the exercise picked from the address alone (`exerciseId`, else `exerciseName`;
+CONVENTIONS §7): a pick is one replace, and the view follows the address.
 
 - **One exercise, one set of logs.** Which exercise a logged exercise belongs to is
   `exercise_log_identity` (migration 191): the catalog exercise done, else the one prescribed, else
-  the name typed. The exercise list (`client_exercises`, under `get_client_exercise_list`), the
-  progression window, the records and every exercise's bests all read it, so an exercise's chart,
-  its Sessions table, its PRs and its row of All exercises read exactly the logs the picker counts
-  for it — a swapped exercise's sets are the exercise done's, never the one it replaced, and a
-  freehand name's view holds its own logs, not a catalog exercise's of the same name.
+  the name typed. The exercise list (`get_client_exercise_list`), the progression window and the
+  records (`get_exercise_prs`) all read it, so an exercise's chart, its Sessions table and its PRs
+  read exactly the logs the picker counts for it — a swapped exercise's sets are the exercise done's,
+  never the one it replaced, and a freehand name's view holds its own logs, not a catalog exercise's
+  of the same name.
 
 - **One table names the markers** — `PROGRESS_MARKER_SPECS` in `utils/exercise-progress-markers.ts`,
   the sibling of the column presets: for each of the twelve, its lens word, its chart words, the
@@ -744,28 +745,27 @@ same four functions (`services/exercise-analytics-service.ts`, over the SQL func
   address: the host keys the table by the exercise, so another pick starts it Newest first on page 1;
   the window keys its page, so a new window starts on page 1 with its sort kept; a lens switch
   touches neither.
-- **PRs are the type's bests, every kind the logs carry.** `exercise_records` (migration 191) is the
-  one statement of them, for every exercise of a client or for one, and `get_exercise_prs` returns
-  one exercise's: typed rows (`ExercisePR`, `kind` ∈ `BEST_KINDS`), each with the session that set
-  it (`sessionLogId`): `rep_max` — the heaviest weight per rep count, over lifts; `best_reps` — the
-  most reps in a set logged with no load — both skipping a set with a distance or a duration, whose
-  reps are repeats (migration 190), so a run of 3 × 1 km makes no best set and a carry of 3 × 40 m no
-  rep max; `best_time` — the fastest time at each distance; `heaviest_carry` — the heaviest load per
-  distance as logged; `longest_hold` — the longest set logged with no distance. **An Endurance or
-  Erg exercise's best times are at race distances** (owner, 2026-09-21; `utils/race-distances.ts`,
-  the one table, which the function carries row for row and `utils/race-distances.test.ts` holds it
-  to): 400 m, 800 m, 1 km, 1600 m, 1 mile, 5 km, 10 km, half marathon, marathon, 50 km and 100 km for
+- **PRs are the type's bests, every kind the logs carry.** `get_exercise_prs` (migration 192) returns
+  them as typed rows (`ExercisePR`, `kind` ∈ `BEST_KINDS`), each with the session that set it
+  (`sessionLogId`): `rep_max` — the heaviest weight per rep count, over lifts; `best_reps` — the most
+  reps in a set logged with no load — both skipping a set with a distance or a duration, whose reps
+  are repeats (migration 190), so a run of 3 × 1 km makes no best set and a carry of 3 × 40 m no rep
+  max; `best_time` — the fastest time at each distance; `heaviest_carry` — the heaviest load per
+  distance as logged; `longest_hold` — the longest set logged with no distance. **An Endurance or Erg
+  exercise's best times are at race distances** (owner, 2026-09-21; `utils/race-distances.ts`, the one
+  table, which the function carries row for row and `utils/race-distances.test.ts` holds it to):
+  400 m, 800 m, 1 km, 1600 m, 1 mile, 5 km, 10 km, half marathon, marathon, 50 km and 100 km for
   Endurance; 500 m, 1 km, 2 km, 5 km, 6 km, 10 km, half marathon and marathon for Erg. A set counts
   for a race when it is within half a percent of it — 5.02 km and 3.1 mi are both 5 km — and for the
   nearer of two that close (1600 m and the mile are 9 m apart); a set at no race distance earns no
   best time, since no time is estimated (it still reads in the Sessions table). Such a row carries its
   `race` and the race's own length as `distanceMeters`; every other type's best times, and every
   type's carries, are per exact logged distance, with no race. A set's time is the Sessions table's:
-  its typed time, else its pace or split over its distance (owner, 2026-09-21), so a run logged with
-  a pace alone can hold a record. All-time, warm-ups excluded, first-achieved on a tie, bounded: reps
-  are CHECKed to 100 buckets, the two per-distance kinds keep the 50 shortest distances per exercise,
-  the two single bests one row each. The PR grid (`exercise-pr-view.tsx` — the coach's PRs lens and
-  the client's Personal records) lists the type's own kinds first, then the rest as logged
+  its typed time, else its pace or split over its distance (owner, 2026-09-21), so a run logged with a
+  pace alone can hold a record. All-time, warm-ups excluded, first-achieved on a tie, bounded: reps
+  are CHECKed to 100 buckets, the two per-distance kinds keep the 50 shortest distances, the two
+  single bests one row each. The PR grid (`exercise-pr-view.tsx` — the coach's PRs lens and the
+  client's Personal records) lists the type's own kinds first, then the rest as logged
   (`orderedBestKinds`), a heading over each kind when there is more than one and the plain grid when
   there is one, "New" within 28 days, a race card labelled by the race's name — the same for every
   viewer: an imperial client's 5 km is "5 km", never "3.1 mi" (`describeRecord`) — and an empty state
@@ -783,36 +783,15 @@ same four functions (`services/exercise-analytics-service.ts`, over the SQL func
   "Running · 5 km in 20:10, was 20:45", "Running · Half marathon in 1:32:10, was 1:35:00", "Pull Up
   · 15 reps, was 12", "Farmers Carry · 40 m with 64 kg, was 60 kg", "Plank · 2:00, was 1:45", and a
   lift as it always did.
-- **Every exercise's bests, in one table** — All exercises, the exercise picker's first row in both
-  views and what the pane shows with no exercise in its address (owner, 2026-09-21): one row per
-  exercise the client has logged (`get_client_exercise_bests`, migration 191 — the exercise list's
-  rows and `exercise_records` summarised, in one round trip bounded by the exercises logged), with
-  its type, the sessions it was logged in, the day of the latest, and its bests, each a summary of
-  its records so a row never disagrees with its PR cards: the heaviest of its rep maxes, the best
-  estimated 1RM they give (Epley, `estimateOneRepMax` — the Sessions table's e1RM), its best
-  bodyweight set, its record at the longest race distance it holds one at, named ("Half marathon ·
-  1:32:10" — Endurance and Erg only), its heaviest carry with the distance ("70 × 40 m"), its longest
-  hold; a dash where it has none (`ExerciseBestsRow`; `utils/exercise-bests-table.ts`, the one table
-  of the columns). The table (`all-exercises-table.tsx`, shared by both views) sits under the hero with
-  no chart, no lenses, no KPIs and no session window — the hero reads "All exercises" and loses its
-  lens row. Every heading sorts, the Sessions table's way (`SortHeading`, shared): the first click
-  the way the column leads — name and type A to Z, most sessions, newest, heaviest, highest, most,
-  fastest, longest — a second the other way, one sort, ties by name, blanks last; it opens on most
-  sessions first, the picker's order. Ten a page with the history tables' count ("Showing 10 of 23
-  exercises"), since no window above says how many. A row opens its exercise — the same one replace as
-  a pick. The pick is the address alone: All exercises removes `exerciseId` and `exerciseName` in one
-  replace, and the client's Performance view reads its pick from the address like the coach's. The
-  bests are read only while the table is shown; its sort and page are local and start fresh each
-  time it mounts.
-- **Nothing is stored for any of this.** Every marker, every cell of the Sessions table, every
-  record and every exercise's bests are computed when asked from the logged sets' real columns,
-  inside the functions, bounded as above; there is no per-session marker table, no bests table, no
-  race table and no chart kind on the exercise row — the type decides what leads and which races a
-  best time is kept at, and the logged columns decide the rest at read.
+- **Nothing is stored for any of this.** Every marker, every cell of the Sessions table and every
+  record is computed when asked from the logged sets' real columns, inside the functions, bounded as
+  above; there is no per-session marker table, no bests table, no race table and no chart kind on the
+  exercise row — the type decides what leads and which races a best time is kept at, and the logged
+  columns decide the rest at read.
 - **The reads' keys** are built in `hooks/use-exercise-history.ts` alone. The coach's sit inside the
   training area (`useInvalidateTrainingData` reaches them); the client's workout save and Clear log
-  drop the client's (`useInvalidateClientExerciseHistory`), since a logged set is what the charts,
-  the PRs and every exercise's bests are built from.
+  drop the client's (`useInvalidateClientExerciseHistory`), since a logged set is what the charts and
+  the PRs are built from.
 
 ---
 
@@ -1143,7 +1122,7 @@ A type-level guard in the module fails the build if a seventh view is added with
 | Tab | Component | Description |
 |-----|-----------|-------------|
 | Overview | `ClientOverviewTab` | Seven sections, top to bottom: identity row · status band (whole-journey chart ∥ four structural cells) · Needs attention + Since your last visit · Current plan · Adherence (three dot rails) · Daily wellness (five cards) · Coach notes. Every editable fact lives in the details sheet, not on the page. See "Coach client Overview" below |
-| Metrics (**labelled "Journey"**) | `MetricsTabContent` | Four panes via `?journey=` — **Physique** (the hero's switcher selects ONE metric, carried as `?metric=`, and the hero, the progression chart and the measurement log all describe it: the chart over the measurement log's day-values, the log listing ONE ROW PER READING of the selected metric — newest day first, within a day the most recently written first, each with its source, its note and its change against the previous day's standing value, a removed reading muted with who removed it and when; its pager counting that metric's readings ("Showing 10 of 12 weight entries") and its empty state naming it; all from `GET …/measurement-series`: the day-values, the derived baseline, the start date, the readings list, readings before the start under "Before start". Three hover-revealed row actions — Edit reading and Remove reading on any live reading (Remove behind the destructive confirm), Restore reading on a removed one — see "client_measurements table" rule 8), **Wellness** (the same hero, chart and log over the merged check-in weekly averages ⊕ coach-logged `client_metric_entries`), **Training** (`ExerciseDataView`, moved here from the Training tab in Session 7.1 — analytics live in Journey, prescription stays on its own tab: All exercises — every exercise's bests in one table, what the pane opens on — or an exercise's chart by its type's markers, the table of its sessions beneath it, and its PRs, see "Exercise progress: charts and PRs"), and **Blocks** (`client_phases`; see "Journey blocks"). **Each pane loads only what it shows**: `MetricsTabContent` reads nothing itself, and each pane calls its own reads — Physique the measurement series, the goal and the blocks (the chart's bands; `usePhysiqueMetrics`, `PhysiquePane`), Wellness the check-in history, the coach's wellness entries and the blocks (`useWellnessMetrics`, `WellnessPane`), Training its exercise reads, Blocks the blocks and their facts — so a pane's data loads when the pane first opens (`metrics-tab-content.fetch.test.tsx` records the reads each pane requests). **"Log measurement" sits on every pane**: its dialog lists the twelve metrics from the catalog (`METRIC_DEFINITIONS`), so opening it reads nothing, and opens on the pane's selected metric — Weight from Training and Blocks. A physique key appends to the log, a wellness key upserts an entry (`useLogMeasurement`); the pane on screen is refreshed IN PLACE — the dialog spins until the new reading is on it — and a store no pane on screen shows is CLEARED (CONVENTIONS §7), so the next Physique or Wellness view, or the Overview for a body measurement, opens on its loading state and never on the old reading. `JourneySubtab` is deliberately WIDER than `MetricTab`: Training and Blocks key none of the metric shapes (`DEFAULT_FOCUS`) and are mapped onto `"body"` by `toMetricTab()`, a whitelist so the next pane is safe without editing it; `isMetricTab()` says whether a metric pane is on screen |
+| Metrics (**labelled "Journey"**) | `MetricsTabContent` | Four panes via `?journey=` — **Physique** (the hero's switcher selects ONE metric, carried as `?metric=`, and the hero, the progression chart and the measurement log all describe it: the chart over the measurement log's day-values, the log listing ONE ROW PER READING of the selected metric — newest day first, within a day the most recently written first, each with its source, its note and its change against the previous day's standing value, a removed reading muted with who removed it and when; its pager counting that metric's readings ("Showing 10 of 12 weight entries") and its empty state naming it; all from `GET …/measurement-series`: the day-values, the derived baseline, the start date, the readings list, readings before the start under "Before start". Three hover-revealed row actions — Edit reading and Remove reading on any live reading (Remove behind the destructive confirm), Restore reading on a removed one — see "client_measurements table" rule 8), **Wellness** (the same hero, chart and log over the merged check-in weekly averages ⊕ coach-logged `client_metric_entries`), **Training** (`ExerciseDataView`, moved here from the Training tab in Session 7.1 — analytics live in Journey, prescription stays on its own tab: an exercise's chart by its type's markers, the table of its sessions beneath it, and its PRs, see "Exercise progress: charts and PRs"), and **Blocks** (`client_phases`; see "Journey blocks"). **Each pane loads only what it shows**: `MetricsTabContent` reads nothing itself, and each pane calls its own reads — Physique the measurement series, the goal and the blocks (the chart's bands; `usePhysiqueMetrics`, `PhysiquePane`), Wellness the check-in history, the coach's wellness entries and the blocks (`useWellnessMetrics`, `WellnessPane`), Training its exercise reads, Blocks the blocks and their facts — so a pane's data loads when the pane first opens (`metrics-tab-content.fetch.test.tsx` records the reads each pane requests). **"Log measurement" sits on every pane**: its dialog lists the twelve metrics from the catalog (`METRIC_DEFINITIONS`), so opening it reads nothing, and opens on the pane's selected metric — Weight from Training and Blocks. A physique key appends to the log, a wellness key upserts an entry (`useLogMeasurement`); the pane on screen is refreshed IN PLACE — the dialog spins until the new reading is on it — and a store no pane on screen shows is CLEARED (CONVENTIONS §7), so the next Physique or Wellness view, or the Overview for a body measurement, opens on its loading state and never on the old reading. `JourneySubtab` is deliberately WIDER than `MetricTab`: Training and Blocks key none of the metric shapes (`DEFAULT_FOCUS`) and are mapped onto `"body"` by `toMetricTab()`, a whitelist so the next pane is safe without editing it; `isMetricTab()` says whether a metric pane is on screen |
 | Training Plan | `TrainingPlanCard` → `TrainingPlanBuilder` (Data / Plans) | Calendar + hero. **Exercise analytics moved to Journey → Training** (Session 7.1) — do not hunt for an Exercise Data pane here; the history table's exercise drill-down now crosses tabs to it. "Apply program" opens the program list, a place of its own (`?apply=1`); a pick replaces it with the client editor, a place of its own (`?editor=<savedPlanId>`), the shared `/dashboard/programs` builder in `client-draft` mode; "Edit plan" (the hero, and a block card's "edit plan") opens the same builder in `placed-plan` mode over the plan as it is on the calendar, a place of its own (`?plan=<planId>`; see "Edit plan"). (The plan-history list below the calendar was removed with the dead `training_plan_history` read chain — the table has had no writer since P7.) |
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |

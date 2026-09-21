@@ -2,7 +2,7 @@ import type { ExerciseBest, ExercisePR, ExerciseProgressionPoint } from "@/types
 import { raceName } from "./race-distances";
 import { formatDistance, formatDuration, formatLoad, type UnitSystem } from "./unit-conversions";
 
-// An exercise's records (get_exercise_prs, migration 191) as a coach and a
+// An exercise's records (get_exercise_prs, migration 192) as a coach and a
 // client read them: the PR cards' words, and which session holds each record —
 // the star on a row of the Sessions table, beside the words of the card it
 // names (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md section 4.4).

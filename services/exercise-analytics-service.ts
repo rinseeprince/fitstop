@@ -4,7 +4,6 @@ import { countWorkingSets } from "@/utils/exercise-set-specs";
 import { toExerciseType } from "@/utils/exercise-types";
 import { isBestKind } from "@/utils/exercise-progress-markers";
 import { isRaceDistance } from "@/utils/race-distances";
-import { estimateOneRepMax } from "@/utils/exercise-analytics-helpers";
 import { LOGGED_MEASURES, SET_LOG_MEASURES } from "@/utils/set-log-measures";
 import {
   aggregateSessionMarkers,
@@ -13,14 +12,13 @@ import {
 import type { Database } from "@/types/database";
 import type {
   ExerciseBest,
-  ExerciseBestsRow,
   ExerciseListItem,
   ExerciseProgressionPoint,
   ExercisePR,
 } from "@/types/training";
 
 // ---------------------------------------------------------------------------
-// Public API — backed by SQL RPCs (migrations 094 to 191). Which exercise a log
+// Public API — backed by SQL RPCs (migrations 094 to 192). Which exercise a log
 // belongs to (exercise_log_identity), windowing and the records live in
 // Postgres; a session's values — its chart markers, its working sets and the
 // figures of its Sessions table row — are computed in JS over the bounded RPC
@@ -30,8 +28,6 @@ import type {
 
 type ProgressionRow =
   Database["public"]["Functions"]["get_exercise_progression_window"]["Returns"][number];
-
-type BestsRow = Database["public"]["Functions"]["get_client_exercise_bests"]["Returns"][number];
 
 /** A PR is "recent" for this long after the day it was set. */
 const PR_RECENT_DAYS = 28;
@@ -283,54 +279,4 @@ export async function getExercisePRs(
     });
   }
   return records;
-}
-
-/**
- * One exercise's bests as the All exercises table reads them. The records are
- * summarised in SQL; the estimated 1RM is worked out here, from the rep max
- * that gives the best one, by the function the Sessions table's e1RM uses.
- */
-function bestsRowFromRow(row: BestsRow): ExerciseBestsRow {
-  const e1rmWeight = toNumber(row.best_e1rm_weight);
-  const bestTimeSeconds = toNumber(row.best_time_seconds);
-  const carryWeight = toNumber(row.heaviest_carry_weight);
-  const carryDistance = toNumber(row.heaviest_carry_distance_meters);
-  return {
-    exerciseId: row.exercise_id ?? null,
-    name: row.name ?? "Unknown exercise",
-    // The catalog row's type; a freehand name has no row and reads as Strength
-    exerciseType: toExerciseType(row.exercise_type),
-    sessionCount: Number(row.session_count),
-    lastLoggedDate: row.last_logged_date,
-    heaviestLoad: toNumber(row.heaviest_load),
-    bestEstimatedOneRepMax:
-      e1rmWeight != null && row.best_e1rm_reps != null
-        ? estimateOneRepMax(e1rmWeight, row.best_e1rm_reps)
-        : null,
-    bestSetReps: row.best_reps ?? null,
-    bestTime:
-      isRaceDistance(row.best_time_race) && bestTimeSeconds != null
-        ? { race: row.best_time_race, durationSeconds: bestTimeSeconds }
-        : null,
-    heaviestCarry:
-      carryWeight != null && carryDistance != null
-        ? { weight: carryWeight, distanceMeters: carryDistance }
-        : null,
-    longestHoldSeconds: toNumber(row.longest_hold_seconds),
-  };
-}
-
-/**
- * Every exercise the client has logged with its bests, one row each, in one
- * round trip bounded by the exercises logged (get_client_exercise_bests,
- * migration 191), most sessions first.
- */
-export async function getClientExerciseBests(clientId: string): Promise<ExerciseBestsRow[]> {
-  const { data, error } = await supabaseAdmin.rpc("get_client_exercise_bests", {
-    p_client_id: clientId,
-  });
-  if (error) {
-    throw new Error(`Failed to fetch exercise bests: ${error.message}`);
-  }
-  return (data ?? []).map(bestsRowFromRow);
 }

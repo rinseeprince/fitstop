@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock supabase-admin before importing the service. The service talks to
-// Postgres RPCs (migrations 094 to 191); per-test we mock supabaseAdmin.rpc to
+// Postgres RPCs (migrations 094 to 192); per-test we mock supabaseAdmin.rpc to
 // return the windowed row shape the RPCs produce.
 //
 // Test-layer boundary: the identity, windowing and the records' SQL are
@@ -10,8 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // utils/race-distances.test.ts. The per-session marker math is
 // utils/exercise-session-markers.test.ts. These tests cover the JS mapper: RPC
 // arguments, grouping by session, the prescribed snapshot, the set-row mapping
-// into the kernel, the records' kinds, races, sessions and isRecent, and every
-// exercise's bests.
+// into the kernel, and the records' kinds, races, sessions and isRecent.
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: {
     rpc: vi.fn(),
@@ -21,7 +20,6 @@ vi.mock("./supabase-admin", () => ({
 
 import { supabaseAdmin } from "./supabase-admin";
 import {
-  getClientExerciseBests,
   getClientExerciseList,
   getExerciseProgressionSeries,
   getExercisePRs,
@@ -416,99 +414,5 @@ describe("getExercisePRs", () => {
   it("throws on RPC error", async () => {
     mockRpc.mockResolvedValueOnce({ data: null, error: { message: "boom" } } as never);
     await expect(getExercisePRs(CLIENT_ID, { exerciseId: EXERCISE_ID })).rejects.toThrow("Failed to fetch exercise PRs: boom");
-  });
-});
-
-// =============================================================================
-// getClientExerciseBests
-// =============================================================================
-
-describe("getClientExerciseBests", () => {
-  /** One exercise's row of get_client_exercise_bests: nothing but its facts unless the case says so. */
-  const bestsRow = (overrides: Record<string, unknown> = {}) => ({
-    exercise_id: EXERCISE_ID,
-    name: "Barbell Bench Press",
-    exercise_type: "strength",
-    session_count: 18,
-    last_logged_date: "2026-09-20T00:00:00+00:00",
-    heaviest_load: null,
-    best_e1rm_weight: null,
-    best_e1rm_reps: null,
-    best_reps: null,
-    best_time_race: null,
-    best_time_seconds: null,
-    heaviest_carry_weight: null,
-    heaviest_carry_distance_meters: null,
-    longest_hold_seconds: null,
-    ...overrides,
-  });
-
-  it("asks for the client's every exercise in one call", async () => {
-    mockRpcResolve([]);
-    expect(await getClientExerciseBests(CLIENT_ID)).toEqual([]);
-    expect(mockRpc).toHaveBeenCalledTimes(1);
-    expect(mockRpc).toHaveBeenCalledWith("get_client_exercise_bests", { p_client_id: CLIENT_ID });
-  });
-
-  it("maps each exercise's bests, working out its e1RM as the Sessions table does", async () => {
-    mockRpcResolve([
-      bestsRow({ heaviest_load: "110.00", best_e1rm_weight: "102.50", best_e1rm_reps: 8 }),
-      bestsRow({
-        exercise_id: "run",
-        name: "Running",
-        exercise_type: "endurance",
-        session_count: 13,
-        best_time_race: "half_marathon",
-        best_time_seconds: "5530.00000",
-      }),
-      bestsRow({
-        exercise_id: "carry",
-        name: "Farmer Carry",
-        exercise_type: "carry_sled",
-        heaviest_carry_weight: "70.00",
-        heaviest_carry_distance_meters: "40.00",
-      }),
-      bestsRow({ exercise_id: null, name: "Wall sit", exercise_type: null, best_reps: 12, longest_hold_seconds: "95.0" }),
-    ]);
-    expect(await getClientExerciseBests(CLIENT_ID)).toEqual([
-      {
-        exerciseId: EXERCISE_ID,
-        name: "Barbell Bench Press",
-        exerciseType: "strength",
-        sessionCount: 18,
-        lastLoggedDate: "2026-09-20T00:00:00+00:00",
-        heaviestLoad: 110,
-        // Epley: 102.5 x (1 + 8/30), to a tenth
-        bestEstimatedOneRepMax: 129.8,
-        bestSetReps: null,
-        bestTime: null,
-        heaviestCarry: null,
-        longestHoldSeconds: null,
-      },
-      expect.objectContaining({
-        exerciseId: "run",
-        exerciseType: "endurance",
-        bestTime: { race: "half_marathon", durationSeconds: 5530 },
-        heaviestLoad: null,
-        bestEstimatedOneRepMax: null,
-      }),
-      expect.objectContaining({ exerciseType: "carry_sled", heaviestCarry: { weight: 70, distanceMeters: 40 } }),
-      // A freehand name has no catalog row and reads as Strength
-      expect.objectContaining({ exerciseId: null, exerciseType: "strength", bestSetReps: 12, longestHoldSeconds: 95 }),
-    ]);
-  });
-
-  it("reads a single's e1RM as its weight, and an unknown race as no best time", async () => {
-    mockRpcResolve([
-      bestsRow({ best_e1rm_weight: "140", best_e1rm_reps: 1, best_time_race: "15k", best_time_seconds: "3600" }),
-    ]);
-    const [row] = await getClientExerciseBests(CLIENT_ID);
-    expect(row.bestEstimatedOneRepMax).toBe(140);
-    expect(row.bestTime).toBeNull();
-  });
-
-  it("throws on RPC error", async () => {
-    mockRpc.mockResolvedValueOnce({ data: null, error: { message: "boom" } } as never);
-    await expect(getClientExerciseBests(CLIENT_ID)).rejects.toThrow("Failed to fetch exercise bests: boom");
   });
 });

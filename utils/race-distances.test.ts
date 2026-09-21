@@ -13,15 +13,15 @@ import { EXERCISE_TYPES } from "./exercise-types";
 
 const MIGRATIONS = join(process.cwd(), "supabase/migrations");
 
-/** exercise_records as the database runs it: its body in the last migration that defines it. */
+/** get_exercise_prs as the database runs it: its body in the last migration that defines it. */
 function latestRecordsFunction(): string {
   const defining = readdirSync(MIGRATIONS)
     .filter((file) => file.endsWith(".sql"))
     .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
     .map((file) => readFileSync(join(MIGRATIONS, file), "utf8"))
-    .filter((sql) => sql.includes("CREATE OR REPLACE FUNCTION exercise_records("));
+    .filter((sql) => sql.includes("CREATE OR REPLACE FUNCTION get_exercise_prs("));
   const sql = defining[defining.length - 1];
-  const start = sql.indexOf("CREATE OR REPLACE FUNCTION exercise_records(");
+  const start = sql.indexOf("CREATE OR REPLACE FUNCTION get_exercise_prs(");
   return sql.slice(start, sql.indexOf("$$;", start));
 }
 
@@ -87,7 +87,7 @@ describe("the race distances", () => {
   });
 });
 
-describe("exercise_records, as the latest migration defines it", () => {
+describe("get_exercise_prs, as the latest migration defines it", () => {
   const body = latestRecordsFunction();
 
   it("buckets by this table, row for row", () => {

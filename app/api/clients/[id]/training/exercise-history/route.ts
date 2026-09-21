@@ -3,13 +3,12 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { EXERCISE_HISTORY_MAX_SESSIONS } from "@/lib/training-constants";
 import {
-  getClientExerciseBests,
   getClientExerciseList,
   getExerciseProgressionSeries,
   getExercisePRs,
 } from "@/services/exercise-analytics-service";
 
-const VALID_METRICS = new Set(["list", "bests", "progression", "prs"]);
+const VALID_METRICS = new Set(["list", "progression", "prs"]);
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(
@@ -30,14 +29,13 @@ export async function GET(
 
     if (!metric || !VALID_METRICS.has(metric)) {
       return NextResponse.json(
-        { success: false, error: "metric query param is required (list | bests | progression | prs)" },
+        { success: false, error: "metric query param is required (list | progression | prs)" },
         { status: 400 }
       );
     }
 
     // Optional date window (Session 7.7) — applies to list + progression, ignored
-    // for bests and prs (records stay all-time). Drives the coach metrics-tab
-    // time-scope charts.
+    // for prs (PRs stay all-time). Drives the coach metrics-tab time-scope charts.
     const startDate = searchParams.get("startDate") ?? undefined;
     const endDate = searchParams.get("endDate") ?? undefined;
     for (const [name, value] of [
@@ -54,15 +52,6 @@ export async function GET(
 
     if (metric === "list") {
       const data = await getClientExerciseList(clientId, { startDate, endDate });
-      return NextResponse.json(
-        { success: true, data },
-        { status: 200, headers: { "Cache-Control": "no-store" } }
-      );
-    }
-
-    // Every exercise the client has logged with its bests: one read, all-time
-    if (metric === "bests") {
-      const data = await getClientExerciseBests(clientId);
       return NextResponse.json(
         { success: true, data },
         { status: 200, headers: { "Cache-Control": "no-store" } }

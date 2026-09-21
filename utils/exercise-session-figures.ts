@@ -113,8 +113,8 @@ export function formatSessionDate(iso: string): string {
   return format(dayFromUtcStamp(iso), "MMM d, yyyy");
 }
 
-/** A load as a bare number under a heading naming its unit; a read-only load snaps like every other (CONVENTIONS section 20). */
-export const formatLoadNumber = (kg: number, viewer: UnitSystem): string =>
+// A read-only load snaps like every other (CONVENTIONS section 20)
+const loadNumber = (kg: number, viewer: UnitSystem): string =>
   formatLoad(kg, viewer).value.toLocaleString();
 
 /** One figure of a session, in the viewer's units; null when the session has none. */
@@ -128,12 +128,12 @@ export function formatSessionFigure(
   if (value == null) return null;
   switch (spec.readout) {
     case "load":
-      return formatLoadNumber(value, viewer);
+      return loadNumber(value, viewer);
     // The heaviest set, its reps with it
     case "top_set":
       return point.topSetReps == null
-        ? formatLoadNumber(value, viewer)
-        : `${formatLoadNumber(value, viewer)} × ${point.topSetReps}`;
+        ? loadNumber(value, viewer)
+        : `${loadNumber(value, viewer)} × ${point.topSetReps}`;
     case "count":
       return value.toLocaleString();
     case "distance":
@@ -159,7 +159,7 @@ const repeatsOf = (set: ExerciseSessionSet): number | null =>
 
 /** One set in coach shorthand: `102.5 × 8`, `12`, `3 × 1 km`, `64 × 3 × 40 m`, `3 × 0:30`, `1:30`. */
 function formatSet(set: ExerciseSessionSet, viewer: UnitSystem): string {
-  const load = hasLoad(set) ? formatLoadNumber(set.weight as number, viewer) : null;
+  const load = hasLoad(set) ? loadNumber(set.weight as number, viewer) : null;
   const times = repeatsOf(set);
   if (set.distanceMeters != null) {
     const distance = formatDistance(set.distanceMeters, viewer);

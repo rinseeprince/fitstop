@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -14,6 +15,8 @@ import { SectionLabel } from "@/components/programs/shared/section-label";
 import { PagerArrows } from "@/components/programs/shared/divider-pager";
 import { cn } from "@/lib/utils";
 import {
+  FOCUS_RING,
+  LABEL_CLASS,
   MONO_CELL_CLASS,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
@@ -38,7 +41,6 @@ import {
   type SessionSort,
 } from "@/utils/exercise-session-figures";
 import { SessionsLoadError } from "./sessions-load-error";
-import { SortHeading } from "./sort-heading";
 
 // The table of an exercise's logged sessions beneath its chart — the coach's
 // exercise data view and the client's Performance view alike
@@ -157,24 +159,12 @@ function SessionsPages({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <SortHeading
-                  column="date"
-                  sort={sort}
-                  onSort={handleSort}
-                  title={sessionSortLabel(nextSessionSort(sort, "date"))}
-                  className={PINNED_CELL}
-                >
+                <SortHeading column="date" sort={sort} onSort={handleSort} className={PINNED_CELL}>
                   Date
                 </SortHeading>
                 <TableHead>{sessionSetsHeading(points ?? [], preference)}</TableHead>
                 {figures.map((figure) => (
-                  <SortHeading
-                    key={figure}
-                    column={figure}
-                    sort={sort}
-                    onSort={handleSort}
-                    title={sessionSortLabel(nextSessionSort(sort, figure))}
-                  >
+                  <SortHeading key={figure} column={figure} sort={sort} onSort={handleSort}>
                     {sessionFigureHeading(figure, preference)}
                   </SortHeading>
                 ))}
@@ -233,6 +223,50 @@ function SessionsPages({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * A heading that sorts the table: the heading's own words as a button, the
+ * sorted one teal with an arrow (down = high to low), its state in aria-sort,
+ * and in its title what a click does ("Lowest e1RM first").
+ */
+function SortHeading({
+  column,
+  sort,
+  onSort,
+  className,
+  children,
+}: {
+  column: "date" | SessionFigure;
+  sort: SessionSort;
+  onSort: (column: "date" | SessionFigure) => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const active = sort.column === column;
+  const Arrow = sort.order === "desc" ? ArrowDown : ArrowUp;
+  return (
+    <TableHead
+      className={className}
+      aria-sort={active ? (sort.order === "desc" ? "descending" : "ascending") : "none"}
+    >
+      <button
+        type="button"
+        title={sessionSortLabel(nextSessionSort(sort, column))}
+        onClick={() => onSort(column)}
+        className={cn(
+          // The heading's own label type, which a button doesn't inherit
+          LABEL_CLASS,
+          "inline-flex items-center gap-1 rounded-[4px] transition-colors hover:text-[#0d9488]",
+          active && "text-[#0d9488]",
+          FOCUS_RING,
+        )}
+      >
+        {children}
+        {active && <Arrow className="h-3 w-3" strokeWidth={1.5} aria-hidden />}
+      </button>
+    </TableHead>
   );
 }
 

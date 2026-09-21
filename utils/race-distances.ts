@@ -8,7 +8,7 @@ import type { ExerciseType } from "./exercise-types";
 // keeps its best times per exact logged distance. The lists are rules of the
 // exercise type: nothing is stored for them.
 //
-// The matching runs in the database. exercise_records (migration 191) is the
+// The matching runs in the database. get_exercise_prs (migration 192) is the
 // one statement of it and carries this table row for row, which
 // utils/race-distances.test.ts holds it to; a record at a race names it by its
 // key, and here is the race's name for every screen that reads one.
