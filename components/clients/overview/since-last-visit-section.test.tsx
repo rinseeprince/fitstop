@@ -3,6 +3,7 @@ import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { SinceLastVisitSection } from "./since-last-visit-section";
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import type { ActivityItem } from "@/types/coach-brief";
 
 // Required, not optional: units-context imports auth-context, which constructs
@@ -202,6 +203,33 @@ describe("SinceLastVisitSection", () => {
 
     await user.click(screen.getByRole("button", { name: /mark seen/i }));
     expect(onMarkSeen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a row's detail line", () => {
+  it("reads in one font, numbers included — it is a line of prose; only the time beside it is mono (owner, 2026-09-21)", () => {
+    const at = "2026-06-02T08:00:00Z";
+    const activity: ActivityItem[] = [
+      { type: "measurement", at, metricKey: "weight", value: 82.4, previousValue: 83 },
+      { type: "pr", at, exerciseName: "Farmers Carry", kind: "carry", distanceMeters: 40, weight: 64, previousBest: 60 },
+      { type: "session_completed", at, sessionName: "Lower A", exerciseCount: 6 },
+    ];
+    const { container } = render(
+      <SinceLastVisitSection lastViewedAt="2026-06-01T00:00:00Z" activity={activity} {...NOOP} />
+    );
+
+    for (const text of [
+      "82.4 kg · -0.6 from last",
+      "Farmers Carry · 40 m with 64 kg, was 60 kg",
+      "Lower A · 6 exercises",
+    ]) {
+      // One run of text in the line's own face: no number set apart inside it
+      const line = screen.getByText(text);
+      expect(line.querySelector("span")).toBeNull();
+      expect(line.classList.contains(MONO)).toBe(false);
+    }
+    // The one mono element per row is the time on its right
+    expect(container.querySelectorAll(`.${MONO}`)).toHaveLength(activity.length);
   });
 });
 

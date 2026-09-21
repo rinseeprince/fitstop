@@ -174,6 +174,7 @@ Recipes elsewhere in this doc describe **rendered pixels**; where a recipe names
 - ✅ `Removes Push Day on Sun, Aug 2 from the calendar.` (all sans; "Push Day" may be `font-semibold`)
 - ❌ `Removes Push Day on `<code>Sun, Aug 2</code>` from the calendar.` (mono date mid-sentence reads as broken kerning)
 - ✅ A card meta line `Wed, Jul 22` in `MONO_LABEL_CLASS` — that's standalone data, not a sentence.
+- ✅ A line that weaves words and numbers is a sentence too — the Overview's "Since your last visit" rows, `Farmer Carry · 40 m with 70 kg, was 64 kg`, `Repeats smoke · 3 exercises`: all Instrument Sans, numbers included; the standalone time beside it (`28m ago`) stays mono. Two faces in one run of text set a sans space (about a third the width of a mono one) beside mono spaces, so the line reads glued in one place and gapped in the next (owner, 2026-09-21).
 
 ### Type scale (px → role)
 

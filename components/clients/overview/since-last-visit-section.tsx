@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 import { METRIC_DEFINITIONS } from "@/components/clients/metrics/hooks/use-metrics-data";
 import {
   LABEL_CLASS,
-  MONO,
   MONO_META_CLASS,
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
@@ -73,70 +72,33 @@ function toViewer(metricKey: string, value: number, viewer: UnitSystem): number 
  * barbell load, so formatLoad — it snaps to something you can actually put on
  * a bar; a distance and a time read the way the client's boxes read them.
  */
-function PrDetail({
-  item,
-  viewer,
-}: {
-  item: Extract<ActivityItem, { type: "pr" }>;
-  viewer: UnitSystem;
-}) {
+function prDetail(item: Extract<ActivityItem, { type: "pr" }>, viewer: UnitSystem): string {
   const load = (kg: number) => {
     const shown = formatLoad(kg, viewer);
     return `${shown.value} ${shown.unit}`;
   };
   switch (item.kind) {
     case "load":
-      return (
-        <>
-          <Mono>{load(item.weight)}</Mono>
-          {", was "}
-          <Mono>{load(item.previousBest)}</Mono>
-        </>
-      );
+      return `${load(item.weight)}, was ${load(item.previousBest)}`;
     case "reps":
-      return (
-        <>
-          <Mono>{item.reps} reps</Mono>
-          {", was "}
-          <Mono>{item.previousBest}</Mono>
-        </>
-      );
+      return `${item.reps} reps, was ${item.previousBest}`;
     case "time":
-      return (
-        <>
-          <Mono>{formatDistance(item.distanceMeters, viewer)}</Mono>
-          {" in "}
-          <Mono>{formatDuration(item.durationSeconds)}</Mono>
-          {", was "}
-          <Mono>{formatDuration(item.previousBest)}</Mono>
-        </>
-      );
+      return `${formatDistance(item.distanceMeters, viewer)} in ${formatDuration(item.durationSeconds)}, was ${formatDuration(item.previousBest)}`;
     case "carry":
-      return (
-        <>
-          <Mono>{formatDistance(item.distanceMeters, viewer)}</Mono>
-          {" with "}
-          <Mono>{load(item.weight)}</Mono>
-          {", was "}
-          <Mono>{load(item.previousBest)}</Mono>
-        </>
-      );
+      return `${formatDistance(item.distanceMeters, viewer)} with ${load(item.weight)}, was ${load(item.previousBest)}`;
     case "hold":
-      return (
-        <>
-          <Mono>{formatDuration(item.durationSeconds)}</Mono>
-          {", was "}
-          <Mono>{formatDuration(item.previousBest)}</Mono>
-        </>
-      );
+      return `${formatDuration(item.durationSeconds)}, was ${formatDuration(item.previousBest)}`;
   }
 }
 
-function Mono({ children }: { children: ReactNode }) {
-  return <span className={MONO}>{children}</span>;
-}
-
-/** One feed row's icon, headline and detail line. */
+/**
+ * One feed row's icon, headline and detail line. The detail line weaves names,
+ * words and numbers into one line of prose, so it reads in the body font
+ * throughout — a number set in the mono face inside it put two faces' spaces
+ * side by side, the sans ones a third the width of the mono ones, and the line
+ * read glued in one place and gapped in the next (owner, 2026-09-21;
+ * docs/newdesignsystem.md → "Prose vs data").
+ */
 function describe(
   item: ActivityItem,
   viewer: UnitSystem,
@@ -157,21 +119,10 @@ function describe(
       return {
         icon: <Ruler className="h-4 w-4" strokeWidth={1.5} />,
         title: `${metricName(item.metricKey)} logged`,
-        detail: (
-          <>
-            <Mono>{value}</Mono>
-            {delta !== null && (
-              <>
-                {" · "}
-                <Mono>
-                  {delta > 0 ? "+" : ""}
-                  {delta.toFixed(1)}
-                </Mono>
-                {" from last"}
-              </>
-            )}
-          </>
-        ),
+        detail:
+          delta === null
+            ? value
+            : `${value} · ${delta > 0 ? "+" : ""}${delta.toFixed(1)} from last`,
       };
     }
 
@@ -179,26 +130,14 @@ function describe(
       return {
         icon: <Trophy className="h-4 w-4" strokeWidth={1.5} />,
         title: "New personal record",
-        detail: (
-          <>
-            {item.exerciseName}
-            {" · "}
-            <PrDetail item={item} viewer={viewer} />
-          </>
-        ),
+        detail: `${item.exerciseName} · ${prDetail(item, viewer)}`,
       };
 
     case "session_completed":
       return {
         icon: <Dumbbell className="h-4 w-4" strokeWidth={1.5} />,
         title: "Session completed",
-        detail: (
-          <>
-            {item.sessionName}
-            {" · "}
-            <Mono>{pluralize(item.exerciseCount, "exercise")}</Mono>
-          </>
-        ),
+        detail: `${item.sessionName} · ${pluralize(item.exerciseCount, "exercise")}`,
       };
   }
 }
