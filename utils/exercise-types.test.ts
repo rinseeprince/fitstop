@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -13,18 +13,33 @@ import { DEFAULT_PRESCRIBED_FIELDS } from "./prescribed-fields";
 
 // The type list is defined once in code and mirrored by migration 185's
 // CHECK; the global catalog's classification is written twice — the
-// migration's name lists for a live catalog, the seed CSV's Type column for a
-// fresh one — and must be the same classification. These tests read both
-// files, so neither can drift from the code or from each other silently.
-const MIGRATION = readFileSync(
-  join(process.cwd(), "supabase/migrations/185_exercise_types.sql"),
-  "utf8",
-);
+// migrations' name lists for a live catalog (185's, then 189's for the
+// exercises done with bodyweight alone), the seed CSV's Type column for a
+// fresh one — and must be the same classification. These tests read the
+// files, so none can drift from the code or from the others silently.
+const MIGRATIONS = join(process.cwd(), "supabase/migrations");
+const MIGRATION = readFileSync(join(MIGRATIONS, "185_exercise_types.sql"), "utf8");
 const CSV = readFileSync(join(process.cwd(), "scripts/data/exercises.csv"), "utf8");
+
+/** Every migration that sets a global exercise's type, in the order they run. */
+const CLASSIFYING = readdirSync(MIGRATIONS)
+  .filter((file) => file.endsWith(".sql"))
+  .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+  .map((file) => readFileSync(join(MIGRATIONS, file), "utf8"))
+  .filter((sql) => sql.includes("SET exercise_type"));
 
 /** The quoted names of one `ARRAY[ … ]` literal, SQL's doubled quotes undone. */
 const sqlNames = (literal: string): string[] =>
   [...literal.matchAll(/'((?:[^']|'')*)'/g)].map((m) => m[1].replace(/''/g, "'"));
+
+/** Each name list the migrations set a type by, in the order they run. */
+const nameLists = CLASSIFYING.flatMap((sql) =>
+  [
+    ...sql.matchAll(
+      /SET exercise_type = '(\w+)'\s+WHERE coach_id IS NULL AND lower\(name\) = ANY \(ARRAY\[([^\]]+)\]::TEXT\[\]\)/g,
+    ),
+  ].map((m) => ({ type: m[1], names: sqlNames(m[2]) })),
+);
 
 /** One CSV line's cells; a quoted cell may hold commas (the aliases). */
 function csvCells(line: string): string[] {
@@ -47,6 +62,7 @@ const header = csvCells(csvLines[0]);
 const rows = csvLines.slice(1).map(csvCells);
 const nameOf = (row: string[]) => row[header.indexOf("Name")];
 const typeOf = (row: string[]) => row[header.indexOf("Type")];
+const equipmentOf = (row: string[]) => row[header.indexOf("Equipment")];
 
 describe("the types and migration 185 agree", () => {
   it("names six distinct types, each labelled, Strength the default", () => {
@@ -91,7 +107,7 @@ describe("the types and migration 185 agree", () => {
   });
 });
 
-describe("the seed CSV and migration 185 classify the catalog identically", () => {
+describe("the seed CSV and the migrations classify the catalog identically", () => {
   it("every CSV row carries a known type, under a Type header", () => {
     expect(header).toContain("Type");
     expect(rows.length).toBeGreaterThan(1500);
@@ -106,24 +122,39 @@ describe("the seed CSV and migration 185 classify the catalog identically", () =
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("the migration's name lists are exactly the CSV's non-Strength rows, type for type", () => {
-    const updates = [
-      ...MIGRATION.matchAll(
-        /SET exercise_type = '(\w+)'\s+WHERE coach_id IS NULL AND lower\(name\) = ANY \(ARRAY\[([^\]]+)\]::TEXT\[\]\)/g,
-      ),
-    ];
-    const listed = new Map(updates.map((m) => [m[1], sqlNames(m[2])]));
-    expect([...listed.keys()].sort()).toEqual(
-      EXERCISE_TYPES.filter((type) => type !== "strength").sort(),
-    );
-    for (const [type, names] of listed) {
+  it("every type a migration sets on a global exercise is set by a list of CSV names", () => {
+    const statements = CLASSIFYING.join("\n").match(/SET exercise_type/g) ?? [];
+    expect(nameLists).toHaveLength(statements.length);
+    const csvNames = new Set(rows.map((row) => nameOf(row).toLowerCase()));
+    for (const { type, names } of nameLists) {
+      expect(isExerciseType(type)).toBe(true);
+      expect(new Set(names).size).toBe(names.length);
+      expect(names.filter((name) => !csvNames.has(name))).toEqual([]);
+    }
+  });
+
+  it("the migrations' name lists, run in order, leave exactly the CSV's non-Strength rows on each type", () => {
+    const typed = new Map<string, string>();
+    for (const { type, names } of nameLists) for (const name of names) typed.set(name, type);
+    for (const type of EXERCISE_TYPES.filter((t) => t !== "strength")) {
+      const byMigrations = [...typed].filter(([, t]) => t === type).map(([name]) => name).sort();
       const inCsv = rows
         .filter((row) => typeOf(row) === type)
         .map((row) => nameOf(row).toLowerCase())
         .sort();
-      expect([...names].sort()).toEqual(inCsv);
-      expect(new Set(names).size).toBe(names.length);
+      expect(byMigrations).toEqual(inCsv);
     }
+  });
+
+  it("an exercise done with bodyweight alone is never Strength unless it is a weighted variant (owner, 2026-09-21)", () => {
+    const strength = rows
+      .filter((row) => equipmentOf(row) === "bodyweight" && typeOf(row) === "strength")
+      .map(nameOf);
+    expect(strength.filter((name) => !/weighted/i.test(name))).toEqual([]);
+    for (const name of ["Pull Up", "Chin Up", "Push Up", "Dip", "Pistol Squat", "Burpee"]) {
+      expect(typeOf(rows.find((row) => nameOf(row) === name)!)).toBe("bodyweight");
+    }
+    expect(typeOf(rows.find((row) => nameOf(row) === "Couch Stretch")!)).toBe("holds");
   });
 
   it("Burpee Broad Jump is in the CSV as Bodyweight and inserted by the migration", () => {

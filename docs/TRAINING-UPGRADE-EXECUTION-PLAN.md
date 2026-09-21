@@ -210,8 +210,12 @@ commit's plan.
   free-text Category (compound, isolation, cardio, plyometric) stays separate: "Compounds only" in
   duplicate-with-progression reads it.
 - **Classifying the catalog:** compound and isolation become Strength by rule, except carries/sleds
-  and holds, which are picked out by name. The cardio and plyometric exercises are classified by hand
-  with the owner's review. "Burpee Broad Jump", the one HYROX station missing, is added.
+  and holds, which are picked out by name, and the exercises done with bodyweight alone — pull-ups,
+  push-ups, dips, pistol squats, burpees — which are Bodyweight; of those, a "Weighted" variant stays
+  Strength and a static stretch is Holds (owner, 2026-09-21, after 16a shipped: the first rule
+  ignored the equipment and typed 225 of them Strength). The cardio and plyometric exercises are
+  classified by hand with the owner's review. "Burpee Broad Jump", the one HYROX station missing, is
+  added.
 - **Coach-made exercises** start as Strength and get a Type field in the exercise form.
 - **Client inputs follow the columns — one box per column (owner, 2026-09-18).** Each ticked column
   is one box: the coach's target as its hint, the client types what they did. No column adds, fills
@@ -1139,6 +1143,10 @@ and weighted jumps are Strength (a load is part of the prescription). The name l
 The Exercises tab shows the type on each card, with no filter; the client catalog reads carry it.
 PROD's catalog was empty when this shipped: the migration adds the column and Burpee Broad Jump
 there, and the seed script writes the types when the catalog is seeded.*
+
+*Amended by the owner 2026-09-21 (§4.4): the exercises done with bodyweight alone are Bodyweight — a
+"Weighted" variant stays Strength, a static stretch is Holds. Migration 189 moves them, and the CSV
+moves with it.*
 
 ### Commit 14 — Timed groups: scores and client logging — SHIPPED 2026-09-19
 

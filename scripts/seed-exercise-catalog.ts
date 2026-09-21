@@ -10,7 +10,7 @@
  * exercise starts on; a row with any other value fails the whole seed.
  *
  * Idempotent - safe to re-run. Skips duplicates: an existing row keeps its
- * type, which migration 185 classifies on a live catalog.
+ * type, which migrations 185 and 189 classify on a live catalog.
  */
 import { config } from "dotenv";
 import { resolve } from "path";

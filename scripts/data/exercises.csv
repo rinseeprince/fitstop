@@ -4,7 +4,7 @@ Name,Muscle Group,Equipment,Category,Aliases,Type
 1.5 Rep Dumbbell Bench Press,chest,dumbbell,compound,One and a Half Rep DB Bench,strength
 1.5 Rep Dumbbell Fly,chest,dumbbell,isolation,One and Half DB Fly,strength
 Alternating Dumbbell Bench Press,chest,dumbbell,compound,"Alternating DB Bench, Alt DB Bench Press",strength
-Archer Push Up,chest,bodyweight,compound,Archer Push-Up,strength
+Archer Push Up,chest,bodyweight,compound,Archer Push-Up,bodyweight
 Around the World,chest,dumbbell,isolation,DB Around the World,strength
 Band Chest Fly,chest,band,isolation,"Resistance Band Fly, Band Fly, Band Flye",strength
 Band Chest Fly Incline,chest,band,isolation,Incline Band Fly,strength
@@ -39,11 +39,11 @@ Decline Dumbbell Bench Press,chest,dumbbell,compound,"Decline DB Bench, Decline 
 Decline Dumbbell Fly,chest,dumbbell,isolation,"Decline DB Fly, Decline DB Flye",strength
 Decline Dumbbell Pullover,chest,dumbbell,isolation,Decline DB Pullover,strength
 Decline Machine Chest Press,chest,machine,compound,Decline Machine Press,strength
-Decline Push Up,chest,bodyweight,compound,"Decline Push-Up, Feet Elevated Push Up",strength
-Deficit Push Up,chest,bodyweight,compound,"Deficit Push-Up, Deep Push Up",strength
-Diamond Push Up,chest,bodyweight,compound,"Diamond Push-Up, Close Grip Push Up, Triangle Push Up",strength
-Dip,chest,bodyweight,compound,"Chest Dip, Parallel Bar Dip, Dips, Bar Dip",strength
-Doorway Chest Stretch,chest,bodyweight,isolation,Chest Stretch,strength
+Decline Push Up,chest,bodyweight,compound,"Decline Push-Up, Feet Elevated Push Up",bodyweight
+Deficit Push Up,chest,bodyweight,compound,"Deficit Push-Up, Deep Push Up",bodyweight
+Diamond Push Up,chest,bodyweight,compound,"Diamond Push-Up, Close Grip Push Up, Triangle Push Up",bodyweight
+Dip,chest,bodyweight,compound,"Chest Dip, Parallel Bar Dip, Dips, Bar Dip",bodyweight
+Doorway Chest Stretch,chest,bodyweight,isolation,Chest Stretch,holds
 Dumbbell Bench Press,chest,dumbbell,compound,"DB Bench Press, DB Bench, Dumbbell Flat Bench, Flat DB Press, DB Flat Press, Dumbbell Flat Press",strength
 Dumbbell Floor Fly,chest,dumbbell,isolation,DB Floor Fly,strength
 Dumbbell Floor Press,chest,dumbbell,compound,DB Floor Press,strength
@@ -54,7 +54,7 @@ Dumbbell Pullover,chest,dumbbell,isolation,"DB Pullover, Cross Bench Pullover",s
 Dumbbell Pullover to Press,chest,dumbbell,compound,DB Pullover Press,strength
 Dumbbell Squeeze Press,chest,dumbbell,compound,"DB Squeeze Press, Hex Press, Crush Press",strength
 Eccentric Dumbbell Fly,chest,dumbbell,isolation,Negative DB Fly,strength
-Eccentric Push Up,chest,bodyweight,compound,"Negative Push Up, Slow Push Up",strength
+Eccentric Push Up,chest,bodyweight,compound,"Negative Push Up, Slow Push Up",bodyweight
 Explosive Push Up,chest,bodyweight,plyometric,Power Push Up,bodyweight
 Floor Press,chest,barbell,compound,"BB Floor Press, Barbell Floor Press",strength
 Football Bar Bench Press,chest,barbell,compound,"Swiss Bar Bench, Neutral Grip BB Bench",strength
@@ -73,7 +73,7 @@ Incline Dumbbell Fly to Press,chest,dumbbell,compound,Incline DB Fly Press,stren
 Incline Dumbbell Pullover,chest,dumbbell,isolation,Incline DB Pullover,strength
 Incline Machine Chest Press,chest,machine,compound,"Incline Machine Press, Incline Chest Press Machine",strength
 Incline Neutral Grip Dumbbell Press,chest,dumbbell,compound,Incline Hammer Grip DB Press,strength
-Incline Push Up,chest,bodyweight,compound,"Incline Push-Up, Incline Pushup, Elevated Push Up",strength
+Incline Push Up,chest,bodyweight,compound,"Incline Push-Up, Incline Pushup, Elevated Push Up",bodyweight
 Incline Push Up on Smith Machine,chest,machine,compound,Smith Machine Incline Push Up,strength
 Incline Single Arm Cable Fly,chest,cable,isolation,One Arm Incline Cable Fly,strength
 Incline Smith Machine Bench Press,chest,machine,compound,Incline Smith Bench,strength
@@ -98,9 +98,9 @@ Machine Dip,chest,machine,compound,"Assisted Dip Machine, Dip Machine",strength
 Medicine Ball Push Up,chest,other,compound,Med Ball Push Up,strength
 Mid Cable Crossover,chest,cable,isolation,Mid Height Cable Cross,strength
 Neutral Grip Dumbbell Bench Press,chest,dumbbell,compound,"Neutral Grip DB Bench, Hammer Grip DB Bench",strength
-Parallette Push Up,chest,bodyweight,compound,P-Bar Push Up,strength
+Parallette Push Up,chest,bodyweight,compound,P-Bar Push Up,bodyweight
 Pause Cable Fly,chest,cable,isolation,Paused Cable Fly,strength
-Pause Dip,chest,bodyweight,compound,Paused Dip,strength
+Pause Dip,chest,bodyweight,compound,Paused Dip,bodyweight
 Pause Dumbbell Bench Press,chest,dumbbell,compound,Paused DB Bench,strength
 Pause Incline Barbell Press,chest,barbell,compound,Paused Incline BB Press,strength
 Pause Pec Deck,chest,machine,isolation,Paused Pec Deck,strength
@@ -108,21 +108,21 @@ Paused Bench Press,chest,barbell,compound,"Paused BB Bench, Pause Bench, Tempo B
 Pec Deck,chest,machine,isolation,"Pec Deck Fly, Pec Deck Machine, Machine Fly, Machine Flye, Butterfly Machine",strength
 Pec Deck Drop Set,chest,machine,isolation,Drop Set Pec Deck,strength
 Pin Press,chest,barbell,compound,"Rack Press, Dead Bench Press",strength
-Planche Lean,chest,bodyweight,compound,Planche Push Up Lean,strength
+Planche Lean,chest,bodyweight,compound,Planche Push Up Lean,bodyweight
 Plate Loaded Chest Press,chest,machine,compound,"Hammer Strength Chest Press, Plate Loaded Bench Press",strength
 Plate Loaded Decline Chest Press,chest,machine,compound,Hammer Strength Decline Press,strength
 Plate Loaded Decline Press,chest,machine,compound,Hammer Strength Decline,strength
 Plate Loaded Incline Chest Press,chest,machine,compound,Hammer Strength Incline Press,strength
 Plate Loaded Incline Press,chest,machine,compound,Hammer Strength Incline,strength
 Plate Press,chest,other,isolation,"Plate Squeeze, Plate Pinch Press",strength
-Push Up,chest,bodyweight,compound,"Push-Up, Pushup, Press Up, Press-Up",strength
+Push Up,chest,bodyweight,compound,"Push-Up, Pushup, Press Up, Press-Up",bodyweight
 Rest Pause Bench Press,chest,barbell,compound,RP Bench,strength
 Reverse Band Bench Press,chest,barbell,compound,Band Assisted Bench Press,strength
 Reverse Grip Bench Press,chest,barbell,compound,"Reverse Grip BB Bench, Supinated Grip Bench",strength
-Ring Dip,chest,bodyweight,compound,Gymnastics Ring Dip,strength
+Ring Dip,chest,bodyweight,compound,Gymnastics Ring Dip,bodyweight
 Ring Dip to Support Hold,chest,bodyweight,compound,Ring Dip Hold,holds
-Ring Fly,chest,bodyweight,isolation,Gymnastics Ring Fly,strength
-Ring Push Up,chest,bodyweight,compound,"Ring Push-Up, Gymnastics Ring Push Up",strength
+Ring Fly,chest,bodyweight,isolation,Gymnastics Ring Fly,bodyweight
+Ring Push Up,chest,bodyweight,compound,"Ring Push-Up, Gymnastics Ring Push Up",bodyweight
 Ring Support Hold,chest,bodyweight,isolation,Gymnastics Ring Hold,holds
 Single Arm Cable Chest Press,chest,cable,compound,One Arm Cable Press,strength
 Single Arm Cable Fly,chest,cable,isolation,"Single Arm Cable Flye, One Arm Cable Fly",strength
@@ -134,32 +134,32 @@ Smith Machine Decline Bench Press,chest,machine,compound,Smith Decline Bench,str
 Smith Machine Floor Press,chest,machine,compound,Smith Floor Press,strength
 Smith Machine Incline Bench Press,chest,machine,compound,"Smith Incline Bench, Smith Machine Incline Press",strength
 Speed Bench Press,chest,barbell,compound,Dynamic Effort Bench,strength
-Spiderman Push Up,chest,bodyweight,compound,Spider-Man Push Up,strength
+Spiderman Push Up,chest,bodyweight,compound,Spider-Man Push Up,bodyweight
 Spoto Press,chest,barbell,compound,Spoto Bench Press,strength
-Staggered Push Up,chest,bodyweight,compound,Offset Push Up,strength
+Staggered Push Up,chest,bodyweight,compound,Offset Push Up,bodyweight
 Standing Cable Chest Press,chest,cable,compound,Standing Cable Press,strength
 Standing Cable Fly,chest,cable,isolation,Standing Cable Flye,strength
 Standing Single Arm Cable Press,chest,cable,compound,One Arm Standing Cable Press,strength
 Svend Press,chest,other,isolation,Plate Squeeze Press,strength
-Tempo Dip,chest,bodyweight,compound,Slow Dip,strength
+Tempo Dip,chest,bodyweight,compound,Slow Dip,bodyweight
 Tempo Dumbbell Bench Press,chest,dumbbell,compound,"Slow DB Bench Press, Tempo DB Bench",strength
 Tempo Incline DB Press,chest,dumbbell,compound,Slow Incline DB Press,strength
-Tempo Push Up,chest,bodyweight,compound,Slow Push Up,strength
+Tempo Push Up,chest,bodyweight,compound,Slow Push Up,bodyweight
 Trap Bar Floor Press,chest,barbell,compound,Hex Bar Floor Press,strength
-TRX Chest Press,chest,bodyweight,compound,Suspension Chest Press,strength
-TRX Fly,chest,bodyweight,isolation,Suspension Fly,strength
-TRX Push Up,chest,bodyweight,compound,Suspension Push Up,strength
+TRX Chest Press,chest,bodyweight,compound,Suspension Chest Press,bodyweight
+TRX Fly,chest,bodyweight,isolation,Suspension Fly,bodyweight
+TRX Push Up,chest,bodyweight,compound,Suspension Push Up,bodyweight
 Tuck Planche,chest,bodyweight,compound,Tuck Planche Hold,holds
 Weighted Dip,chest,bodyweight,compound,"Weighted Chest Dip, Weighted Dips",strength
 Weighted Push Up,chest,bodyweight,compound,Weighted Push-Up,strength
 Wide Grip Bench Press,chest,barbell,compound,"Wide Grip BB Bench, Wide Bench Press",strength
-Wide Grip Push Up,chest,bodyweight,compound,"Wide Push-Up, Wide Push Up",strength
+Wide Grip Push Up,chest,bodyweight,compound,"Wide Push-Up, Wide Push Up",bodyweight
 Wide Push Up on Medicine Ball,chest,other,compound,Med Ball Wide Push Up,strength
 1.5 Rep Cable Row,back,cable,compound,One and Half Cable Row,strength
 1.5 Rep Lat Pulldown,back,cable,compound,One and Half Pulldown,strength
 1.5 Rep RDL,back,barbell,compound,One and Half RDL,strength
 American Kettlebell Swing,back,kettlebell,compound,American KB Swing,strength
-Archer Pull Up,back,bodyweight,compound,Archer Pull-Up,strength
+Archer Pull Up,back,bodyweight,compound,Archer Pull-Up,bodyweight
 Assisted Pull Up Machine,back,machine,compound,"Assisted Pull Up, Gravitron, Pull Up Assist Machine",strength
 Axle Bar Row,back,barbell,compound,Axle Row,strength
 Back Lever Hold,back,bodyweight,isolation,Back Lever,holds
@@ -181,7 +181,7 @@ Barbell Row,back,barbell,compound,"BB Row, Bent Over Row, Bent Over BB Row, Barb
 Barbell Row to Chest,back,barbell,compound,Chest Row,strength
 Barbell Shrug,back,barbell,isolation,"BB Shrug, Shrug, Barbell Shoulder Shrug",strength
 Barbell Upright Row to Shrug,back,barbell,compound,Upright Row Shrug Combo,strength
-Behind Neck Pull Up,back,bodyweight,compound,Behind the Neck Pull Up,strength
+Behind Neck Pull Up,back,bodyweight,compound,Behind the Neck Pull Up,bodyweight
 Behind the Back Barbell Shrug,back,barbell,isolation,Behind Back Shrug,strength
 Behind the Neck Lat Pulldown,back,cable,compound,Behind Neck Pulldown,strength
 Block Sumo Deadlift,back,barbell,compound,Sumo Block Pull,strength
@@ -202,15 +202,15 @@ Chest Supported Machine Row,back,machine,compound,Chest Supported Row Machine,st
 Chest Supported Row Machine,back,machine,compound,Supported Row Machine,strength
 Chest Supported T-Bar Row,back,barbell,compound,Chest Supported T Bar Row,strength
 Chest Supported T-Bar Row Neutral,back,barbell,compound,Neutral T-Bar Row,strength
-Child's Pose,back,bodyweight,isolation,Childs Pose,strength
-Chin Up,back,bodyweight,compound,"Chin-Up, Chinup, Supinated Pull Up",strength
+Child's Pose,back,bodyweight,isolation,Childs Pose,holds
+Chin Up,back,bodyweight,compound,"Chin-Up, Chinup, Supinated Pull Up",bodyweight
 Clean Grip Deadlift,back,barbell,compound,Clean Deadlift,strength
 Close Grip Cable Row,back,cable,compound,"V-Bar Cable Row, V Bar Row",strength
 Close Grip Cable Row V-Handle,back,cable,compound,V-Handle Close Row,strength
-Close Grip Chin Up,back,bodyweight,compound,Narrow Chin Up,strength
+Close Grip Chin Up,back,bodyweight,compound,Narrow Chin Up,bodyweight
 Close Grip Lat Pulldown,back,cable,compound,"Close Grip Pulldown, Narrow Grip Pulldown, V-Bar Pulldown, V Bar Lat Pulldown",strength
-Close Grip Pull Up,back,bodyweight,compound,"Close Grip Pull-Up, Narrow Grip Pull Up",strength
-Commando Pull Up,back,bodyweight,compound,Commando Pull-Up,strength
+Close Grip Pull Up,back,bodyweight,compound,"Close Grip Pull-Up, Narrow Grip Pull Up",bodyweight
+Commando Pull Up,back,bodyweight,compound,Commando Pull-Up,bodyweight
 Conventional Deadlift,back,barbell,compound,"Deadlift, BB Deadlift, Barbell Deadlift, DL",strength
 D-Handle Cable Row,back,cable,compound,D Handle Row,strength
 Deficit Barbell Row,back,barbell,compound,Deficit BB Row,strength
@@ -229,14 +229,14 @@ Dumbbell Seal Row,back,dumbbell,compound,DB Seal Row,strength
 Dumbbell Shrug,back,dumbbell,isolation,"DB Shrug, Shoulder Shrug",strength
 Dumbbell Shrug to Row,back,dumbbell,compound,Shrug to Row,strength
 Dumbbell Sumo Deadlift,back,dumbbell,compound,Sumo DB DL,strength
-Eccentric Chin Up,back,bodyweight,compound,Negative Chin Up,strength
-Eccentric Pull Up,back,bodyweight,compound,Negative Pull Up,strength
+Eccentric Chin Up,back,bodyweight,compound,Negative Chin Up,bodyweight
+Eccentric Pull Up,back,bodyweight,compound,Negative Pull Up,bodyweight
 Face Pull,back,cable,compound,"Cable Face Pull, Rope Face Pull",strength
 Farmer Carry Shrug,back,dumbbell,isolation,Farmer Walk Shrug,strength
 Foam Roll Lats,back,other,isolation,Lat Foam Roll,strength
 Foam Roll Thoracic,back,other,isolation,T-Spine Foam Roll,strength
 Front Lever Hold,back,bodyweight,compound,Front Lever,holds
-Front Lever Row,back,bodyweight,compound,FL Row,strength
+Front Lever Row,back,bodyweight,compound,FL Row,bodyweight
 Good Morning,back,barbell,compound,"BB Good Morning, Barbell Good Morning",strength
 Gorilla Row,back,kettlebell,compound,KB Gorilla Row,strength
 Half Kneeling Cable Row,back,cable,compound,Kneeling Cable Row,strength
@@ -244,11 +244,11 @@ Half Kneeling Single Arm Pulldown,back,cable,compound,Kneeling One Arm Pulldown,
 Halting Deadlift,back,barbell,compound,Halting DL,strength
 Helms Row,back,dumbbell,compound,Prone Incline DB Row,strength
 High Cable Row,back,cable,compound,Cable High Row,strength
-Hyperextension,back,bodyweight,isolation,"Back Extension, Hyper Extension, 45 Degree Back Extension, Roman Chair Extension",strength
-Hyperextension with Rotation,back,bodyweight,isolation,Twisting Hyperextension,strength
+Hyperextension,back,bodyweight,isolation,"Back Extension, Hyper Extension, 45 Degree Back Extension, Roman Chair Extension",bodyweight
+Hyperextension with Rotation,back,bodyweight,isolation,Twisting Hyperextension,bodyweight
 Incline DB Shrug,back,dumbbell,isolation,Incline Dumbbell Shrug,strength
 Incline Lever Row Machine,back,machine,compound,Lever Incline Row,strength
-Inverted Row,back,bodyweight,compound,"Body Row, Bodyweight Row, Australian Pull Up, Ring Row",strength
+Inverted Row,back,bodyweight,compound,"Body Row, Bodyweight Row, Australian Pull Up, Ring Row",bodyweight
 Iso Hold Pull Up,back,bodyweight,compound,Static Hold Pull Up,holds
 Iso Lateral Lat Pulldown Machine,back,machine,compound,ISO Lat Pulldown,strength
 Iso Lateral Row Machine,back,machine,compound,ISO Lateral Row,strength
@@ -261,7 +261,7 @@ Kettlebell Row,back,kettlebell,compound,"KB Row, Single Arm KB Row",strength
 Kettlebell Swing,back,kettlebell,compound,"KB Swing, Russian Kettlebell Swing, Russian KB Swing, Two Hand KB Swing",strength
 Kneeling Cable Pulldown,back,cable,compound,Kneeling Pulldown,strength
 Kroc Row,back,dumbbell,compound,"Heavy DB Row, Kroc Dumbbell Row",strength
-L-Sit Pull Up,back,bodyweight,compound,L Sit Pull Up,strength
+L-Sit Pull Up,back,bodyweight,compound,L Sit Pull Up,bodyweight
 Landmine Deadlift,back,barbell,compound,Landmine DL,strength
 Landmine Romanian Deadlift,back,barbell,compound,Landmine RDL,strength
 Landmine Row Single Arm,back,barbell,compound,One Arm Landmine Row,strength
@@ -283,11 +283,11 @@ Machine Shrug,back,machine,isolation,Machine Shoulder Shrug,strength
 Meadows Row,back,barbell,compound,"Landmine Meadows Row, One Arm Landmine Row",strength
 Meadows Row Dumbbell,back,dumbbell,compound,DB Meadows Row,strength
 Meadows Shrug,back,barbell,isolation,Landmine Shrug,strength
-Mixed Grip Pull Up,back,bodyweight,compound,Alternating Grip Pull Up,strength
-Muscle Up,back,bodyweight,compound,"Bar Muscle Up, Bar Muscle-Up",strength
+Mixed Grip Pull Up,back,bodyweight,compound,Alternating Grip Pull Up,bodyweight
+Muscle Up,back,bodyweight,compound,"Bar Muscle Up, Bar Muscle-Up",bodyweight
 Neutral Grip DB Row,back,dumbbell,compound,Hammer Grip DB Row,strength
 Neutral Grip Lat Pulldown,back,cable,compound,"Neutral Grip Pulldown, Hammer Grip Pulldown",strength
-Neutral Grip Pull Up,back,bodyweight,compound,"Neutral Grip Pullup, Hammer Grip Pull Up",strength
+Neutral Grip Pull Up,back,bodyweight,compound,"Neutral Grip Pullup, Hammer Grip Pull Up",bodyweight
 Pause at Knee Deadlift,back,barbell,compound,Pause Below Knee DL,strength
 Pause Barbell Row,back,barbell,compound,Paused BB Row,strength
 Pause DB Row,back,dumbbell,compound,Paused Dumbbell Row,strength
@@ -308,7 +308,7 @@ Power Shrug,back,barbell,compound,Explosive Shrug,strength
 Pronated Cable Row,back,cable,compound,Overhand Cable Row,strength
 Pronated Lat Pulldown,back,cable,compound,Overhand Pulldown,strength
 Prone Trap Raise,back,dumbbell,isolation,"Prone Y Raise, Y Raise",strength
-Pull Up,back,bodyweight,compound,"Pull-Up, Pullup, Strict Pull Up",strength
+Pull Up,back,bodyweight,compound,"Pull-Up, Pullup, Strict Pull Up",bodyweight
 Rack Pull,back,barbell,compound,"Rack Deadlift, Block Pull",strength
 Rack Pull Above Knee,back,barbell,compound,Above Knee Rack Pull,strength
 Rack Pull Below Knee,back,barbell,compound,Below Knee Rack Pull,strength
@@ -317,18 +317,18 @@ Reverse Band Deadlift,back,barbell,compound,Band Assisted Deadlift,strength
 Reverse Grip Lat Pulldown,back,cable,compound,"Underhand Lat Pulldown, Supinated Pulldown, Reverse Grip Pulldown",strength
 Reverse Grip Machine Row,back,machine,compound,Underhand Machine Row,strength
 Reverse Hyperextension,back,machine,isolation,"Reverse Hyper, Rev Hyper",strength
-Ring Archer Pull Up,back,bodyweight,compound,Ring Archer,strength
-Ring Face Pull,back,bodyweight,compound,Ring Face Pull Exercise,strength
-Ring Muscle Up,back,bodyweight,compound,Gymnastics Ring Muscle Up,strength
+Ring Archer Pull Up,back,bodyweight,compound,Ring Archer,bodyweight
+Ring Face Pull,back,bodyweight,compound,Ring Face Pull Exercise,bodyweight
+Ring Muscle Up,back,bodyweight,compound,Gymnastics Ring Muscle Up,bodyweight
 Romanian Deadlift,back,barbell,compound,"RDL, BB RDL, Barbell RDL, Barbell Romanian Deadlift, Stiff Leg Deadlift",strength
 Rope Cable Row,back,cable,compound,Rope Seated Row,strength
 Safety Bar Good Morning,back,barbell,compound,SSB Good Morning,strength
 Sandbag Deadlift,back,other,compound,Sand Bag Deadlift,strength
 Sandbag Row,back,other,compound,Sand Bag Row,strength
-Scapular Pull Up,back,bodyweight,isolation,"Scap Pull Up, Scapula Pull Up",strength
+Scapular Pull Up,back,bodyweight,isolation,"Scap Pull Up, Scapula Pull Up",bodyweight
 Seal Row,back,barbell,compound,"Bench Supported Row, Prone Row",strength
 Seated Dumbbell Shrug,back,dumbbell,isolation,Seated DB Shrug,strength
-Seated Forward Fold,back,bodyweight,isolation,Hamstring Stretch Seated,strength
+Seated Forward Fold,back,bodyweight,isolation,Hamstring Stretch Seated,holds
 Seated Good Morning,back,barbell,compound,Seated BB Good Morning,strength
 Single Arm Barbell Row,back,barbell,compound,One Arm BB Row,strength
 Single Arm Cable Row,back,cable,compound,"One Arm Cable Row, Unilateral Cable Row",strength
@@ -339,7 +339,7 @@ Single Arm Machine Row,back,machine,compound,One Arm Machine Row,strength
 Single Leg Deadlift Barbell,back,barbell,compound,"BB Single Leg Deadlift, Single Leg BB DL",strength
 Single Leg Deadlift to Row,back,dumbbell,compound,SL RDL to Row,strength
 Single Leg Romanian Deadlift,back,dumbbell,compound,"Single Leg RDL, SL RDL, One Leg RDL, Unilateral RDL",strength
-Skin the Cat,back,bodyweight,compound,Skin the Cat Rings,strength
+Skin the Cat,back,bodyweight,compound,Skin the Cat Rings,bodyweight
 Smith Machine Deadlift,back,machine,compound,Smith Deadlift,strength
 Smith Machine Row,back,machine,compound,Smith Machine Bent Over Row,strength
 Smith Machine Shrug,back,machine,isolation,Smith Shrug,strength
@@ -359,20 +359,20 @@ Supinated Cable Row,back,cable,compound,Underhand Cable Row,strength
 Supinated Lat Pulldown,back,cable,compound,Underhand Pulldown,strength
 T-Bar Row,back,barbell,compound,"T Bar Row, TBar Row, Landmine Row",strength
 Tempo Cable Row,back,cable,compound,Slow Cable Row,strength
-Tempo Chin Up,back,bodyweight,compound,Slow Chin Up,strength
+Tempo Chin Up,back,bodyweight,compound,Slow Chin Up,bodyweight
 Tempo Deadlift,back,barbell,compound,Slow Deadlift,strength
-Tempo Pull Up,back,bodyweight,compound,Slow Pull Up,strength
-Thoracic Spine Rotation,back,bodyweight,isolation,T-Spine Rotation,strength
-Towel Row,back,bodyweight,compound,Towel Grip Row,strength
+Tempo Pull Up,back,bodyweight,compound,Slow Pull Up,bodyweight
+Thoracic Spine Rotation,back,bodyweight,isolation,T-Spine Rotation,bodyweight
+Towel Row,back,bodyweight,compound,Towel Grip Row,bodyweight
 Trap Bar Bent Over Row,back,barbell,compound,Hex Bar Bent Row,strength
 Trap Bar Deadlift,back,barbell,compound,"Hex Bar Deadlift, Trap Bar DL",strength
 Trap Bar Romanian Deadlift,back,barbell,compound,Hex Bar RDL,strength
 Trap Bar Row,back,barbell,compound,Hex Bar Row,strength
 Trap Bar Shrug,back,barbell,isolation,Hex Bar Shrug,strength
-TRX Row,back,bodyweight,compound,"Suspension Row, TRX Inverted Row",strength
+TRX Row,back,bodyweight,compound,"Suspension Row, TRX Inverted Row",bodyweight
 Tuck Front Lever,back,bodyweight,compound,Tuck FL,holds
 Underhand Barbell Row,back,barbell,compound,"Reverse Grip BB Row, Supinated BB Row, Yates Row",strength
-Wall Lat Stretch,back,bodyweight,isolation,Lat Wall Stretch,strength
+Wall Lat Stretch,back,bodyweight,isolation,Lat Wall Stretch,holds
 Weighted Chin Up,back,bodyweight,compound,Weighted Chin-Up,strength
 Weighted Chin Up Pause,back,bodyweight,compound,Paused Weighted Chin Up,strength
 Weighted Good Morning,back,dumbbell,compound,Dumbbell Good Morning Back,strength
@@ -380,10 +380,10 @@ Weighted Hyperextension,back,bodyweight,isolation,Weighted Back Extension,streng
 Weighted Pull Up,back,bodyweight,compound,"Weighted Pull-Up, Weighted Pullup",strength
 Wide Grip Cable Row,back,cable,compound,"Wide Grip Seated Row, Wide Row",strength
 Wide Grip Cable Row Overhand,back,cable,compound,Overhand Wide Row,strength
-Wide Grip Chin Up,back,bodyweight,compound,Wide Chin Up,strength
+Wide Grip Chin Up,back,bodyweight,compound,Wide Chin Up,bodyweight
 Wide Grip Lat Pulldown Behind Neck,back,cable,compound,BTN Wide Pulldown,strength
-Wide Grip Pull Up,back,bodyweight,compound,"Wide Pull Up, Wide Grip Pull-Up",strength
-Wide Grip Pull Up Behind Neck,back,bodyweight,compound,BTN Wide Pull Up,strength
+Wide Grip Pull Up,back,bodyweight,compound,"Wide Pull Up, Wide Grip Pull-Up",bodyweight
+Wide Grip Pull Up Behind Neck,back,bodyweight,compound,BTN Wide Pull Up,bodyweight
 Wide Grip T-Bar Row,back,barbell,compound,Wide T-Bar Row,strength
 Zercher Good Morning,back,barbell,compound,Zercher GM,strength
 1.5 Rep Dumbbell Press,shoulders,dumbbell,compound,One and Half DB Press,strength
@@ -443,7 +443,7 @@ Cable Y Raise,shoulders,cable,isolation,Y Raise Cable,strength
 Cable Y-T-W Raise,shoulders,cable,isolation,Cable YTW,strength
 Chain Overhead Press,shoulders,barbell,compound,OHP with Chains,strength
 Circus Dumbbell Press,shoulders,dumbbell,compound,Circus DB Press,strength
-Cross Body Shoulder Stretch,shoulders,bodyweight,isolation,Cross Body Stretch,strength
+Cross Body Shoulder Stretch,shoulders,bodyweight,isolation,Cross Body Stretch,holds
 Cuban Press,shoulders,dumbbell,compound,Cuban Rotation,strength
 Dumbbell 6-Way Raise,shoulders,dumbbell,isolation,"6 Way Shoulder Raise, DB 6 Way",strength
 Dumbbell External Rotation,shoulders,dumbbell,isolation,"DB External Rotation, Side Lying External Rotation",strength
@@ -470,8 +470,8 @@ Half Kneeling Cable External Rotation,shoulders,cable,isolation,Kneeling Cable E
 Half Kneeling Dumbbell Press,shoulders,dumbbell,compound,Kneeling DB Press,strength
 Half Kneeling Landmine Press,shoulders,barbell,compound,Kneeling Landmine Press,strength
 Handstand Hold,shoulders,bodyweight,isolation,"Handstand, Wall Handstand",holds
-Handstand Push Up,shoulders,bodyweight,compound,"HSPU, Handstand Press, Wall Handstand Push Up",strength
-Hindu Push Up,shoulders,bodyweight,compound,Dive Bomber Push Up,strength
+Handstand Push Up,shoulders,bodyweight,compound,"HSPU, Handstand Press, Wall Handstand Push Up",bodyweight
+Hindu Push Up,shoulders,bodyweight,compound,Dive Bomber Push Up,bodyweight
 Incline Dumbbell Rear Delt Fly,shoulders,dumbbell,isolation,"Incline Rear Delt Fly, Incline Reverse Fly",strength
 Incline Lateral Raise,shoulders,dumbbell,isolation,Incline DB Lateral Raise,strength
 Incline Prone Rear Delt Fly,shoulders,dumbbell,isolation,Incline Prone Reverse Fly,strength
@@ -513,7 +513,7 @@ Neutral Grip Dumbbell Press,shoulders,dumbbell,compound,"Hammer Grip DB Press, N
 Overhead Press,shoulders,barbell,compound,"OHP, BB OHP, Barbell Overhead Press, Strict Press, Military Press, Standing Press, Barbell Press, BB Press",strength
 Partial Rep Lateral Raise,shoulders,dumbbell,isolation,Partial Lateral Raise,strength
 Pause Overhead Press,shoulders,barbell,compound,Paused OHP,strength
-Pike Push Up,shoulders,bodyweight,compound,"Pike Press, Pike Push-Up",strength
+Pike Push Up,shoulders,bodyweight,compound,"Pike Press, Pike Push-Up",bodyweight
 Plate Front Raise,shoulders,other,isolation,Plate Raise,strength
 Plate Front Raise to Overhead,shoulders,other,compound,Plate Raise Overhead,strength
 Plate Halo,shoulders,other,isolation,"Halo, Weight Plate Halo",strength
@@ -531,20 +531,20 @@ Push Press,shoulders,barbell,compound,"BB Push Press, Barbell Push Press",streng
 Push Press Dumbbell,shoulders,dumbbell,compound,DB Push Press Shoulder,strength
 Reverse Pec Deck,shoulders,machine,isolation,Reverse Machine Fly,strength
 Sandbag Press,shoulders,other,compound,Sand Bag Overhead Press,strength
-Scapular Push Up,shoulders,bodyweight,isolation,"Scap Push Up, Scapula Push Up",strength
+Scapular Push Up,shoulders,bodyweight,isolation,"Scap Push Up, Scapula Push Up",bodyweight
 Seated Arnold Press,shoulders,dumbbell,compound,Seated Arnold,strength
 Seated Barbell Overhead Press,shoulders,barbell,compound,"Seated OHP, Seated BB Press, Seated Military Press",strength
 Seated Behind Neck Press,shoulders,barbell,compound,Seated BTN Press,strength
 Seated Lateral Raise,shoulders,dumbbell,isolation,Seated DB Lateral Raise,strength
 Seated Rear Delt Fly,shoulders,dumbbell,isolation,"Seated Reverse Fly, Seated Bent Over Fly",strength
 Shoulder Dislocate,shoulders,other,isolation,"Band Shoulder Dislocate, PVC Dislocate, Pass Through",strength
-Side Lying Windmill,shoulders,bodyweight,isolation,Floor Windmill,strength
+Side Lying Windmill,shoulders,bodyweight,isolation,Floor Windmill,bodyweight
 Side Press,shoulders,kettlebell,compound,KB Side Press,strength
 Single Arm Dumbbell Press,shoulders,dumbbell,compound,"One Arm DB Press, Single Arm DB Shoulder Press, Unilateral DB Press",strength
 Single Arm Kettlebell Press,shoulders,kettlebell,compound,"One Arm KB Press, Single Arm KB Press",strength
 Single Arm Machine Lateral Raise,shoulders,machine,isolation,One Arm Machine Lat Raise,strength
 Single Arm Machine Press,shoulders,machine,compound,One Arm Machine Shoulder Press,strength
-Sleeper Stretch,shoulders,bodyweight,isolation,Side Lying Shoulder Stretch,strength
+Sleeper Stretch,shoulders,bodyweight,isolation,Side Lying Shoulder Stretch,holds
 Smith Machine Shoulder Press,shoulders,machine,compound,"Smith Machine OHP, Smith Shoulder Press",strength
 Smith Machine Upright Row,shoulders,machine,compound,Smith Upright Row,strength
 Snatch Grip Push Press,shoulders,barbell,compound,Wide Grip Push Press,strength
@@ -556,12 +556,12 @@ Standing Rear Delt Fly,shoulders,dumbbell,isolation,Standing Reverse Fly,strengt
 Tempo Lateral Raise,shoulders,dumbbell,isolation,Slow Lateral Raise,strength
 Trap 3 Raise,shoulders,dumbbell,isolation,"Trap Three Raise, DB Trap 3",strength
 Trap Bar Overhead Press,shoulders,barbell,compound,Hex Bar Press,strength
-TRX Face Pull,shoulders,bodyweight,compound,Suspension Face Pull,strength
-TRX W Raise,shoulders,bodyweight,isolation,Suspension W Raise,strength
-TRX Y Raise,shoulders,bodyweight,isolation,Suspension Y Raise,strength
+TRX Face Pull,shoulders,bodyweight,compound,Suspension Face Pull,bodyweight
+TRX W Raise,shoulders,bodyweight,isolation,Suspension W Raise,bodyweight
+TRX Y Raise,shoulders,bodyweight,isolation,Suspension Y Raise,bodyweight
 Viking Press,shoulders,machine,compound,Landmine Viking Press,strength
-Wall Slide,shoulders,bodyweight,isolation,"Wall Angel, Wall Slides",strength
-Wall Walk,shoulders,bodyweight,compound,Wall Walk Handstand,strength
+Wall Slide,shoulders,bodyweight,isolation,"Wall Angel, Wall Slides",bodyweight
+Wall Walk,shoulders,bodyweight,compound,Wall Walk Handstand,bodyweight
 Wide Grip Upright Row,shoulders,barbell,compound,Wide Upright Row,strength
 Z Press,shoulders,barbell,compound,Seated Floor Press Overhead,strength
 1.25 Rep Squat,legs,barbell,compound,One and Quarter Squat,strength
@@ -570,9 +570,9 @@ Z Press,shoulders,barbell,compound,Seated Floor Press Overhead,strength
 1.5 Rep Leg Curl,legs,machine,isolation,One and Half Leg Curl,strength
 1.5 Rep Leg Extension,legs,machine,isolation,One and Half Leg Extension,strength
 1.5 Rep Squat,legs,barbell,compound,One and Half Squat,strength
-90/90 Hip Stretch,legs,bodyweight,isolation,"90-90 Stretch, Shin Box Stretch",strength
+90/90 Hip Stretch,legs,bodyweight,isolation,"90-90 Stretch, Shin Box Stretch",holds
 Adductor Squeeze,legs,other,isolation,Ball Squeeze Adductor,strength
-ATG Lunge,legs,bodyweight,compound,Knees Over Toes Lunge,strength
+ATG Lunge,legs,bodyweight,compound,Knees Over Toes Lunge,bodyweight
 ATG Split Squat,legs,dumbbell,compound,Knees Over Toes Split Squat,strength
 Band Good Morning,legs,band,compound,Banded Good Morning,strength
 Band Hip Abduction,legs,band,isolation,"Banded Abduction, Clamshell Band",strength
@@ -617,14 +617,14 @@ Barbell Walking Lunge,legs,barbell,compound,BB Walking Lunge,strength
 Belt Squat,legs,machine,compound,"Belt Squat Machine, Pit Shark Squat",strength
 Belt Squat Lunge,legs,machine,compound,Belt Squat Walking Lunge,strength
 Belt Squat March,legs,machine,compound,Belt Squat Marching,strength
-Bodyweight Calf Raise,legs,bodyweight,isolation,BW Calf Raise,strength
-Bodyweight Hip Thrust Single Leg Elevated,legs,bodyweight,compound,Elevated SL Hip Thrust,strength
-Bodyweight Squat,legs,bodyweight,compound,"Air Squat, BW Squat, Squat Bodyweight",strength
-Box Pistol Squat,legs,bodyweight,compound,Assisted Pistol Squat,strength
+Bodyweight Calf Raise,legs,bodyweight,isolation,BW Calf Raise,bodyweight
+Bodyweight Hip Thrust Single Leg Elevated,legs,bodyweight,compound,Elevated SL Hip Thrust,bodyweight
+Bodyweight Squat,legs,bodyweight,compound,"Air Squat, BW Squat, Squat Bodyweight",bodyweight
+Box Pistol Squat,legs,bodyweight,compound,Assisted Pistol Squat,bodyweight
 Box Squat,legs,barbell,compound,"BB Box Squat, Barbell Box Squat",strength
 Buffalo Bar Squat,legs,barbell,compound,Buffalo Bar Back Squat,strength
 Bulgarian Split Squat,legs,dumbbell,compound,"BSS, DB Bulgarian Split Squat, Rear Foot Elevated Split Squat, RFESS",strength
-Butterfly Stretch,legs,bodyweight,isolation,Seated Butterfly,strength
+Butterfly Stretch,legs,bodyweight,isolation,Seated Butterfly,holds
 Cable Calf Raise,legs,cable,isolation,Standing Cable Calf Raise,strength
 Cable Goblet Squat,legs,cable,compound,Cable Front Squat Goblet,strength
 Cable Goblet Squat Hold,legs,cable,compound,Cable Goblet ISO Hold,holds
@@ -649,17 +649,17 @@ Clamshell,legs,band,isolation,"Banded Clamshell, Clamshell Exercise",strength
 Close Stance Hack Squat,legs,machine,compound,Narrow Hack Squat,strength
 Cluster Set Squat,legs,barbell,compound,Cluster Squat,strength
 Copenhagen Plank,legs,bodyweight,isolation,Copenhagen Adductor,holds
-Cossack Squat,legs,bodyweight,compound,Side Lunge Squat,strength
-Couch Stretch,legs,bodyweight,isolation,Wall Quad Stretch,strength
+Cossack Squat,legs,bodyweight,compound,Side Lunge Squat,bodyweight
+Couch Stretch,legs,bodyweight,isolation,Wall Quad Stretch,holds
 Curtsy Lunge,legs,dumbbell,compound,"DB Curtsy Lunge, Crossover Lunge",strength
-Curtsy Lunge to Lateral Lunge,legs,bodyweight,compound,Curtsy to Lateral Lunge,strength
+Curtsy Lunge to Lateral Lunge,legs,bodyweight,compound,Curtsy to Lateral Lunge,bodyweight
 Cyclist Squat,legs,barbell,compound,"Heel Elevated Squat, Quad Squat",strength
 DB Cossack Squat,legs,dumbbell,compound,Dumbbell Cossack Squat,strength
 DB Single Leg Calf Raise,legs,dumbbell,isolation,Single Leg DB Calf Raise,strength
 Deep Squat Hold,legs,bodyweight,isolation,"Squat Hold, Third World Squat",holds
 Deficit Reverse Lunge,legs,dumbbell,compound,DB Deficit Reverse Lunge,strength
 Donkey Calf Raise,legs,machine,isolation,Donkey Calf Machine,strength
-Donkey Kick,legs,bodyweight,isolation,Glute Donkey Kick,strength
+Donkey Kick,legs,bodyweight,isolation,Glute Donkey Kick,bodyweight
 Double Kettlebell Squat,legs,kettlebell,compound,Double KB Squat,strength
 Dumbbell Calf Raise,legs,dumbbell,isolation,"DB Calf Raise, Single Leg DB Calf Raise",strength
 Dumbbell Cyclist Squat,legs,dumbbell,compound,DB Heel Elevated Squat,strength
@@ -669,28 +669,28 @@ Dumbbell Leg Curl,legs,dumbbell,isolation,"DB Leg Curl, DB Hamstring Curl",stren
 Dumbbell Lunge,legs,dumbbell,compound,"DB Lunge, DB Forward Lunge, Dumbbell Forward Lunge",strength
 Dumbbell Squat,legs,dumbbell,compound,DB Squat,strength
 Dumbbell Stiff Leg Deadlift,legs,dumbbell,compound,"DB SLDL, DB Stiff Leg Deadlift",strength
-Eccentric Calf Raise,legs,bodyweight,isolation,Negative Calf Raise,strength
-Eccentric Hamstring Slide,legs,bodyweight,isolation,Hamstring Slide Eccentric,strength
+Eccentric Calf Raise,legs,bodyweight,isolation,Negative Calf Raise,bodyweight
+Eccentric Hamstring Slide,legs,bodyweight,isolation,Hamstring Slide Eccentric,bodyweight
 Eccentric Leg Extension,legs,machine,isolation,Negative Leg Extension,strength
 Eccentric Lying Leg Curl,legs,machine,isolation,Negative Leg Curl,strength
-Eccentric Nordic Curl,legs,bodyweight,isolation,Negative Nordic Curl,strength
+Eccentric Nordic Curl,legs,bodyweight,isolation,Negative Nordic Curl,bodyweight
 Eccentric Seated Leg Curl,legs,machine,isolation,Negative Seated Leg Curl,strength
-Elephant Walk,legs,bodyweight,isolation,Hamstring Walk,strength
-Elevated Heel Squat Bodyweight,legs,bodyweight,compound,BW Heel Elevated Squat,strength
-Fire Hydrant,legs,bodyweight,isolation,Fire Hydrant Exercise,strength
+Elephant Walk,legs,bodyweight,isolation,Hamstring Walk,bodyweight
+Elevated Heel Squat Bodyweight,legs,bodyweight,compound,BW Heel Elevated Squat,bodyweight
+Fire Hydrant,legs,bodyweight,isolation,Fire Hydrant Exercise,bodyweight
 Foam Roll Glutes,legs,other,isolation,Glute Foam Roll,strength
 Foam Roll IT Band,legs,other,isolation,IT Band Foam Roll,strength
 Foam Roll Quads,legs,other,isolation,Quad Foam Roll,strength
-Frog Pump,legs,bodyweight,isolation,Frog Glute Bridge,strength
-Frog Stretch,legs,bodyweight,isolation,Frog Pose,strength
+Frog Pump,legs,bodyweight,isolation,Frog Glute Bridge,bodyweight
+Frog Stretch,legs,bodyweight,isolation,Frog Pose,holds
 Front Foot Elevated Split Squat,legs,dumbbell,compound,"FFE Split Squat, Deficit Split Squat",strength
 Front Rack Kettlebell Squat,legs,kettlebell,compound,Double KB Front Rack Squat,strength
 GHR with Band,legs,band,compound,Banded GHR,strength
-Glute Bridge,legs,bodyweight,compound,"BW Glute Bridge, Bodyweight Glute Bridge",strength
-Glute Bridge March,legs,bodyweight,compound,Marching Glute Bridge,strength
+Glute Bridge,legs,bodyweight,compound,"BW Glute Bridge, Bodyweight Glute Bridge",bodyweight
+Glute Bridge March,legs,bodyweight,compound,Marching Glute Bridge,bodyweight
 Glute Drive Machine,legs,machine,compound,Glute Drive,strength
-Glute Focused Back Extension,legs,bodyweight,isolation,45 Degree Glute Extension,strength
-Glute Ham Raise,legs,bodyweight,compound,"GHR, GH Raise, Glute Hamstring Raise, Glute Ham Developer",strength
+Glute Focused Back Extension,legs,bodyweight,isolation,45 Degree Glute Extension,bodyweight
+Glute Ham Raise,legs,bodyweight,compound,"GHR, GH Raise, Glute Hamstring Raise, Glute Ham Developer",bodyweight
 Goblet Box Squat,legs,dumbbell,compound,DB Goblet Box Squat,strength
 Goblet Squat,legs,dumbbell,compound,"DB Goblet Squat, Dumbbell Goblet Squat",strength
 Hack Squat Calf Raise,legs,machine,isolation,Calf Raise Hack Squat,strength
@@ -699,16 +699,16 @@ Hack Squat Machine Close,legs,machine,compound,Close Stance Machine Hack,strengt
 Hatfield Squat,legs,barbell,compound,Hatfield SSB Squat,strength
 Heel Elevated Back Squat,legs,barbell,compound,Back Squat Heel Raised,strength
 Heel Elevated Goblet Squat,legs,dumbbell,compound,Elevated Heel Goblet Squat,strength
-High Box Step Up,legs,bodyweight,compound,High Step Up BW,strength
+High Box Step Up,legs,bodyweight,compound,High Step Up BW,bodyweight
 High Foot Leg Press,legs,machine,compound,High Foot Placement Leg Press,strength
 High Step Up,legs,dumbbell,compound,Tall Step Up,strength
-Hip 90/90 Switch,legs,bodyweight,isolation,Shin Box Switch,strength
+Hip 90/90 Switch,legs,bodyweight,isolation,Shin Box Switch,bodyweight
 Hip Abduction Machine,legs,machine,isolation,"Abductor Machine, Seated Abduction, Hip Abductor",strength
 Hip Adduction Machine,legs,machine,isolation,"Adductor Machine, Seated Adduction, Hip Adductor, Inner Thigh Machine",strength
-Hip Airplane,legs,bodyweight,isolation,Standing Hip Rotation,strength
+Hip Airplane,legs,bodyweight,isolation,Standing Hip Rotation,bodyweight
 Hip Circle Squat,legs,band,compound,Banded Hip Circle Squat,strength
 Hip Circle Warmup,legs,band,isolation,Hip Circle Activation,strength
-Hip Flexor Stretch,legs,bodyweight,isolation,"Kneeling Hip Flexor Stretch, Lunge Stretch",strength
+Hip Flexor Stretch,legs,bodyweight,isolation,"Kneeling Hip Flexor Stretch, Lunge Stretch",holds
 Hip Thrust,legs,barbell,compound,"BB Hip Thrust, Barbell Hip Thrust, Barbell Glute Bridge",strength
 Hip Thrust Machine Pause,legs,machine,compound,Paused Machine Hip Thrust,strength
 Horizontal Leg Press,legs,machine,compound,Seated Leg Press,strength
@@ -727,14 +727,14 @@ Kettlebell Split Squat,legs,kettlebell,compound,KB Split Squat,strength
 Kettlebell Step Up,legs,kettlebell,compound,KB Step Up,strength
 Kettlebell Sumo Squat,legs,kettlebell,compound,KB Sumo Squat,strength
 Kettlebell Swing to Squat,legs,kettlebell,compound,KB Swing Squat,strength
-KOT Squat,legs,bodyweight,compound,"Knees Over Toes Squat, Full ROM Squat",strength
+KOT Squat,legs,bodyweight,compound,"Knees Over Toes Squat, Full ROM Squat",bodyweight
 Lacrosse Ball Glute,legs,other,isolation,Glute Ball Release,strength
 Landmine Reverse Lunge,legs,barbell,compound,Landmine Lunge,strength
 Landmine Squat,legs,barbell,compound,Landmine Goblet Squat,strength
 Lateral Band Walk,legs,band,compound,"Banded Lateral Walk, Side Band Walk",strength
 Lateral Lunge,legs,dumbbell,compound,"Side Lunge, DB Lateral Lunge",strength
-Lateral Lunge to Balance,legs,bodyweight,compound,Side Lunge Balance,strength
-Lateral Squat,legs,bodyweight,compound,Side Squat,strength
+Lateral Lunge to Balance,legs,bodyweight,compound,Side Lunge Balance,bodyweight
+Lateral Squat,legs,bodyweight,compound,Side Squat,bodyweight
 Lateral Step Up,legs,dumbbell,compound,Side Step Up,strength
 Leg Curl Drop Set,legs,machine,isolation,Drop Set Leg Curl,strength
 Leg Extension,legs,machine,isolation,"Leg Ext, Quad Extension, Machine Leg Extension, Knee Extension",strength
@@ -750,7 +750,7 @@ Lever Leg Extension,legs,machine,isolation,Machine Lever Leg Ext,strength
 Lever Lying Leg Curl,legs,machine,isolation,Machine Prone Curl,strength
 Lever Seated Calf Raise,legs,machine,isolation,Machine Seated Calf Lever,strength
 Low Bar Squat,legs,barbell,compound,Low Bar Back Squat,strength
-Lunge,legs,bodyweight,compound,"Forward Lunge, BW Lunge, Bodyweight Lunge",strength
+Lunge,legs,bodyweight,compound,"Forward Lunge, BW Lunge, Bodyweight Lunge",bodyweight
 Lying Leg Curl,legs,machine,isolation,"Leg Curl, Hamstring Curl, Lying Hamstring Curl, Prone Leg Curl",strength
 Machine Abduction with Lean,legs,machine,isolation,Leaning Abduction Machine,strength
 Machine Abductor Pause,legs,machine,isolation,Paused Abductor Machine,strength
@@ -766,15 +766,15 @@ Monster Walk,legs,band,compound,"Banded Monster Walk, Band Walk",strength
 Myo Rep Leg Curl,legs,machine,isolation,Myo Reps Leg Curl,strength
 Myo Rep Leg Extension,legs,machine,isolation,Myo Reps Leg Extension,strength
 Narrow Stance Leg Press,legs,machine,compound,Close Stance Leg Press,strength
-Natural Glute Ham Raise,legs,bodyweight,compound,Natural GHR,strength
-Nordic Hamstring Curl,legs,bodyweight,isolation,"Nordic Curl, Nordics, Nordic Ham Curl, NHC",strength
+Natural Glute Ham Raise,legs,bodyweight,compound,Natural GHR,bodyweight
+Nordic Hamstring Curl,legs,bodyweight,isolation,"Nordic Curl, Nordics, Nordic Ham Curl, NHC",bodyweight
 Overhead Band Squat,legs,band,compound,Band Overhead Squat,strength
 Overhead Lunge,legs,dumbbell,compound,DB Overhead Lunge,strength
 Overhead Squat,legs,barbell,compound,"OHS, BB Overhead Squat",strength
-Overhead Squat Bodyweight,legs,bodyweight,compound,BW Overhead Squat,strength
+Overhead Squat Bodyweight,legs,bodyweight,compound,BW Overhead Squat,bodyweight
 Overhead Squat Dumbbell,legs,dumbbell,compound,DB Overhead Squat,strength
 Overhead Squat from Snatch,legs,barbell,compound,Snatch to Overhead Squat,strength
-Pancake Stretch,legs,bodyweight,isolation,Seated Straddle Stretch,strength
+Pancake Stretch,legs,bodyweight,isolation,Seated Straddle Stretch,holds
 Partial Rep Leg Extension,legs,machine,isolation,Partial Leg Extension,strength
 Pause Bulgarian Split Squat,legs,dumbbell,compound,Paused BSS,strength
 Pause Front Squat,legs,barbell,compound,Paused Front Squat,strength
@@ -784,26 +784,26 @@ Pause Squat,legs,barbell,compound,"Paused Squat, Pause Back Squat",strength
 Pendulum Kickback,legs,machine,isolation,Pendulum Glute Kickback,strength
 Pendulum Squat,legs,machine,compound,Pendulum Squat Machine,strength
 Pendulum Squat Close Stance,legs,machine,compound,Narrow Pendulum Squat,strength
-Peterson Step Down,legs,bodyweight,isolation,Poliquin Step Down,strength
-Pigeon Stretch,legs,bodyweight,isolation,"Pigeon Pose, Hip Pigeon Stretch",strength
+Peterson Step Down,legs,bodyweight,isolation,Poliquin Step Down,bodyweight
+Pigeon Stretch,legs,bodyweight,isolation,"Pigeon Pose, Hip Pigeon Stretch",holds
 Pin Squat,legs,barbell,compound,Anderson Squat,strength
-Pistol Squat,legs,bodyweight,compound,"Single Leg Squat, One Leg Squat",strength
+Pistol Squat,legs,bodyweight,compound,"Single Leg Squat, One Leg Squat",bodyweight
 Plate Loaded Leg Press,legs,machine,compound,Plate Loaded Leg Press Machine,strength
 Poliquin Step Up,legs,dumbbell,isolation,Peterson Step Up,strength
-Prisoner Squat,legs,bodyweight,compound,Hands Behind Head Squat,strength
+Prisoner Squat,legs,bodyweight,compound,Hands Behind Head Squat,bodyweight
 Prone Dumbbell Hamstring Curl,legs,dumbbell,isolation,Prone DB Hamstring Curl,strength
-Quadruped Hip Circle,legs,bodyweight,isolation,All Fours Hip Circle,strength
-Quadruped Rock Back,legs,bodyweight,isolation,Quad Rock Back,strength
-Razor Curl,legs,bodyweight,isolation,GHR Razor Curl,strength
-Rear Foot Elevated Hip Thrust,legs,bodyweight,compound,Elevated Hip Thrust,strength
+Quadruped Hip Circle,legs,bodyweight,isolation,All Fours Hip Circle,bodyweight
+Quadruped Rock Back,legs,bodyweight,isolation,Quad Rock Back,bodyweight
+Razor Curl,legs,bodyweight,isolation,GHR Razor Curl,bodyweight
+Rear Foot Elevated Hip Thrust,legs,bodyweight,compound,Elevated Hip Thrust,bodyweight
 Rest Pause Squat,legs,barbell,compound,RP Squat,strength
 Reverse Band Squat,legs,barbell,compound,Band Assisted Squat,strength
 Reverse Hyper Single Leg,legs,machine,isolation,One Leg Reverse Hyper,strength
 Reverse Lunge,legs,dumbbell,compound,"DB Reverse Lunge, Dumbbell Reverse Lunge",strength
-Reverse Lunge to Knee Drive,legs,bodyweight,compound,Lunge Knee Drive,strength
-Reverse Nordic Curl,legs,bodyweight,isolation,Reverse Nordic,strength
+Reverse Lunge to Knee Drive,legs,bodyweight,compound,Lunge Knee Drive,bodyweight
+Reverse Nordic Curl,legs,bodyweight,isolation,Reverse Nordic,bodyweight
 Reverse Nordic with Band,legs,band,isolation,Banded Reverse Nordic,strength
-Reverse Sissy Squat,legs,bodyweight,isolation,Reverse Sissy,strength
+Reverse Sissy Squat,legs,bodyweight,isolation,Reverse Sissy,bodyweight
 Reverse Sled Drag Walk,legs,other,compound,Backward Sled Drag,carry_sled
 Safety Bar Squat,legs,barbell,compound,"SSB Squat, Safety Squat Bar Squat",strength
 Sandbag Lunge,legs,other,compound,Sand Bag Lunge,strength
@@ -814,29 +814,29 @@ Seated Calf Raise Barbell,legs,barbell,isolation,BB Seated Calf Raise Legs,stren
 Seated Calf Raise Dumbbell,legs,dumbbell,isolation,DB Seated Calf Raise,strength
 Seated Leg Curl,legs,machine,isolation,"Seated Hamstring Curl, Machine Seated Leg Curl",strength
 Seated Machine Calf Raise ISO,legs,machine,isolation,ISO Machine Calf Raise,strength
-Shrimp Squat,legs,bodyweight,compound,Single Leg Shrimp Squat,strength
-Side Lying Hip Abduction,legs,bodyweight,isolation,"Side Lying Leg Raise, Side Hip Raise",strength
-Single Leg Box Squat,legs,bodyweight,compound,One Leg Box Squat,strength
+Shrimp Squat,legs,bodyweight,compound,Single Leg Shrimp Squat,bodyweight
+Side Lying Hip Abduction,legs,bodyweight,isolation,"Side Lying Leg Raise, Side Hip Raise",bodyweight
+Single Leg Box Squat,legs,bodyweight,compound,One Leg Box Squat,bodyweight
 Single Leg Cable Kickback,legs,cable,isolation,One Leg Cable Kickback,strength
 Single Leg Cable RDL,legs,cable,compound,One Leg Cable RDL,strength
-Single Leg Calf Raise,legs,bodyweight,isolation,"One Leg Calf Raise, SL Calf Raise",strength
+Single Leg Calf Raise,legs,bodyweight,isolation,"One Leg Calf Raise, SL Calf Raise",bodyweight
 Single Leg Extension,legs,machine,isolation,"One Leg Extension, Unilateral Leg Extension",strength
-Single Leg Glute Bridge,legs,bodyweight,compound,"SL Glute Bridge, One Leg Glute Bridge",strength
-Single Leg Hip Thrust,legs,bodyweight,compound,"One Leg Hip Thrust, SL Hip Thrust",strength
+Single Leg Glute Bridge,legs,bodyweight,compound,"SL Glute Bridge, One Leg Glute Bridge",bodyweight
+Single Leg Hip Thrust,legs,bodyweight,compound,"One Leg Hip Thrust, SL Hip Thrust",bodyweight
 Single Leg Hip Thrust Dumbbell,legs,dumbbell,compound,DB Single Leg Hip Thrust,strength
 Single Leg Leg Press,legs,machine,compound,"One Leg Leg Press, Unilateral Leg Press",strength
 Single Leg Lying Leg Curl,legs,machine,isolation,One Leg Lying Curl,strength
 Single Leg Seated Leg Curl,legs,machine,isolation,One Leg Seated Curl,strength
-Single Leg Soleus Raise,legs,bodyweight,isolation,One Leg Soleus Raise,strength
-Sissy Squat,legs,bodyweight,isolation,Sissy Squat Machine,strength
+Single Leg Soleus Raise,legs,bodyweight,isolation,One Leg Soleus Raise,bodyweight
+Sissy Squat,legs,bodyweight,isolation,Sissy Squat Machine,bodyweight
 Sissy Squat Machine Weighted,legs,machine,isolation,Weighted Machine Sissy,strength
 Sissy Squat Weighted,legs,other,isolation,Weighted Sissy Squat,strength
 Sissy Squat with Band,legs,band,isolation,Banded Sissy Squat,strength
 Sled Drag,legs,other,compound,Sled Backward Drag,carry_sled
 Sled Pull,legs,other,compound,Prowler Pull,carry_sled
 Sled Push,legs,other,compound,Prowler Push,carry_sled
-Slider Body Curl,legs,bodyweight,isolation,Slider Leg Curl BW,strength
-Sliding Leg Curl,legs,bodyweight,isolation,Slider Hamstring Curl,strength
+Slider Body Curl,legs,bodyweight,isolation,Slider Leg Curl BW,bodyweight
+Sliding Leg Curl,legs,bodyweight,isolation,Slider Hamstring Curl,bodyweight
 Smith Machine Bulgarian Split Squat,legs,machine,compound,Smith BSS,strength
 Smith Machine Calf Raise,legs,machine,isolation,Smith Calf Raise,strength
 Smith Machine Calf Raise Seated,legs,machine,isolation,Seated Smith Calf Raise,strength
@@ -847,7 +847,7 @@ Smith Machine Lunge,legs,machine,compound,Smith Lunge,strength
 Smith Machine Reverse Lunge,legs,machine,compound,Smith Reverse Lunge,strength
 Smith Machine Split Squat,legs,machine,compound,Smith Split Squat,strength
 Smith Machine Squat,legs,machine,compound,Smith Squat,strength
-Soleus Raise,legs,bodyweight,isolation,"Seated Soleus Raise, Bent Knee Calf Raise",strength
+Soleus Raise,legs,bodyweight,isolation,"Seated Soleus Raise, Bent Knee Calf Raise",bodyweight
 Spanish Squat,legs,band,isolation,Banded Spanish Squat,strength
 Speed Squat,legs,barbell,compound,Dynamic Effort Squat,strength
 Split Squat,legs,dumbbell,compound,"DB Split Squat, Static Lunge",strength
@@ -856,7 +856,7 @@ Stability Ball Leg Curl,legs,other,isolation,"Swiss Ball Leg Curl, Ball Hamstrin
 Standing Band Leg Curl,legs,band,isolation,Banded Standing Leg Curl,strength
 Standing Calf Raise,legs,machine,isolation,"Calf Raise, Machine Calf Raise, Standing Calf Machine",strength
 Standing Calf Raise Dumbbell,legs,dumbbell,isolation,Standing DB Calf Raise,strength
-Standing Hamstring Stretch,legs,bodyweight,isolation,Standing Toe Touch,strength
+Standing Hamstring Stretch,legs,bodyweight,isolation,Standing Toe Touch,holds
 Standing Leg Curl,legs,machine,isolation,"Standing Hamstring Curl, Single Leg Curl",strength
 Standing Machine Calf Raise ISO,legs,machine,isolation,ISO Standing Calf Machine,strength
 Standing Single Leg Curl Band,legs,band,isolation,Banded Standing Curl Single Leg,strength
@@ -865,18 +865,18 @@ Step Up to Knee Drive,legs,dumbbell,compound,Step Up Knee Drive,strength
 Stiff Leg Deadlift,legs,barbell,compound,"SLDL, Straight Leg Deadlift",strength
 Sumo Leg Press,legs,machine,compound,Wide Foot Leg Press,strength
 Sumo Squat,legs,dumbbell,compound,"DB Sumo Squat, Plie Squat, Sumo Dumbbell Squat",strength
-Sumo Stance Calf Raise,legs,bodyweight,isolation,Wide Stance Calf Raise,strength
+Sumo Stance Calf Raise,legs,bodyweight,isolation,Wide Stance Calf Raise,bodyweight
 Sumo Walk,legs,band,compound,Banded Sumo Walk,strength
 Tempo Front Squat,legs,barbell,compound,Slow Front Squat,strength
 Tempo Hip Thrust,legs,barbell,compound,Slow Hip Thrust,strength
 Tempo Squat,legs,barbell,compound,"Tempo Back Squat, Slow Squat",strength
-Tibialis Raise,legs,bodyweight,isolation,"Tib Raise, Tibialis Anterior Raise",strength
-Tibialis Raise Seated,legs,bodyweight,isolation,Seated Tib Raise,strength
+Tibialis Raise,legs,bodyweight,isolation,"Tib Raise, Tibialis Anterior Raise",bodyweight
+Tibialis Raise Seated,legs,bodyweight,isolation,Seated Tib Raise,bodyweight
 Trap Bar Jump,legs,barbell,plyometric,Hex Bar Jump Squat,strength
 Trap Bar Lunge,legs,barbell,compound,Hex Bar Lunge,strength
-TRX Hamstring Curl,legs,bodyweight,isolation,Suspension Hamstring Curl,strength
-TRX Lunge,legs,bodyweight,compound,Suspension Lunge,strength
-TRX Single Leg Squat,legs,bodyweight,compound,Suspension Pistol Squat,strength
+TRX Hamstring Curl,legs,bodyweight,isolation,Suspension Hamstring Curl,bodyweight
+TRX Lunge,legs,bodyweight,compound,Suspension Lunge,bodyweight
+TRX Single Leg Squat,legs,bodyweight,compound,Suspension Pistol Squat,bodyweight
 V Squat,legs,machine,compound,V Squat Machine,strength
 Walking Lunge,legs,dumbbell,compound,"DB Walking Lunge, Dumbbell Walking Lunge",strength
 Walking Lunge Overhead Barbell,legs,barbell,compound,Overhead BB Walking Lunge,strength
@@ -917,8 +917,8 @@ Bayesian Curl,arms,cable,isolation,"Behind Body Cable Curl, Bayesian Cable Curl"
 Behind the Back Wrist Curl,arms,barbell,isolation,Behind Back Wrist Curl,strength
 Bench Dip Weighted,arms,bodyweight,compound,Weighted Bench Dip Arms,strength
 Bicep Curl Drop Set,arms,dumbbell,isolation,Drop Set DB Curl,strength
-Bodyweight Dip Narrow Grip,arms,bodyweight,compound,Narrow Dip,strength
-Bodyweight Tricep Extension,arms,bodyweight,isolation,"BW Tricep Extension, Bodyweight Skull Crusher",strength
+Bodyweight Dip Narrow Grip,arms,bodyweight,compound,Narrow Dip,bodyweight
+Bodyweight Tricep Extension,arms,bodyweight,isolation,"BW Tricep Extension, Bodyweight Skull Crusher",bodyweight
 Cable Bicep Curl 21s,arms,cable,isolation,Cable 21s,strength
 Cable Concentration Curl,arms,cable,isolation,Single Arm Concentration Cable Curl,strength
 Cable Concentration Curl Low,arms,cable,isolation,Low Cable Concentration Curl,strength
@@ -940,7 +940,7 @@ Cable Wrist Curl,arms,cable,isolation,Cable Wrist Flexion,strength
 California Press,arms,barbell,compound,Hybrid Press,strength
 Cheat Curl,arms,barbell,isolation,BB Cheat Curl,strength
 Close Grip Barbell Curl,arms,barbell,isolation,"Narrow Grip BB Curl, Close Grip EZ Bar Curl",strength
-Close Grip Push Up on Bench,arms,bodyweight,compound,Bench Close Grip Push Up,strength
+Close Grip Push Up on Bench,arms,bodyweight,compound,Bench Close Grip Push Up,bodyweight
 Concentration Curl,arms,dumbbell,isolation,"DB Concentration Curl, Seated Concentration Curl",strength
 Cross Body Cable Curl,arms,cable,isolation,Cross Body Cable Bicep Curl,strength
 Cross Body Cable Extension,arms,cable,isolation,Cross Body Pushdown,strength
@@ -1027,8 +1027,8 @@ Reverse Grip Cable Curl,arms,cable,isolation,Reverse Cable Curl Arms,strength
 Reverse Grip Pushdown,arms,cable,isolation,"Reverse Grip Tricep Pushdown, Underhand Pushdown",strength
 Reverse Grip Skull Crusher,arms,barbell,isolation,Supinated Skull Crusher,strength
 Reverse Wrist Curl,arms,barbell,isolation,"BB Reverse Wrist Curl, Wrist Extension",strength
-Ring Bicep Curl,arms,bodyweight,isolation,Gymnastics Ring Curl,strength
-Ring Tricep Extension,arms,bodyweight,isolation,Ring Skull Crusher,strength
+Ring Bicep Curl,arms,bodyweight,isolation,Gymnastics Ring Curl,bodyweight
+Ring Tricep Extension,arms,bodyweight,isolation,Ring Skull Crusher,bodyweight
 Rolling Dumbbell Tricep Extension,arms,dumbbell,isolation,Rolling DB Extension,strength
 Rope Overhead Extension Standing,arms,cable,isolation,Standing Rope Overhead Extension,strength
 Scott Curl Dumbbell,arms,dumbbell,isolation,DB Scott Curl,strength
@@ -1053,11 +1053,11 @@ Standing Overhead Cable Curl,arms,cable,isolation,Overhead Cable Bicep Curl,stre
 Straight Bar Pushdown,arms,cable,isolation,"V-Bar Pushdown, Bar Pushdown, Straight Bar Tricep Pushdown",strength
 Tall Kneeling Cable Extension,arms,cable,isolation,Kneeling Cable Tricep Extension,strength
 Tempo Skull Crusher,arms,barbell,isolation,Slow Skull Crusher,strength
-Towel Pull Up,arms,bodyweight,compound,Towel Grip Pull Up,strength
-Tricep Dip,arms,bodyweight,compound,"Bench Dip, Dip for Triceps",strength
+Towel Pull Up,arms,bodyweight,compound,Towel Grip Pull Up,bodyweight
+Tricep Dip,arms,bodyweight,compound,"Bench Dip, Dip for Triceps",bodyweight
 Tricep Pushdown Drop Set,arms,cable,isolation,Drop Set Pushdown,strength
-TRX Bicep Curl,arms,bodyweight,isolation,Suspension Curl,strength
-TRX Tricep Extension,arms,bodyweight,isolation,Suspension Tricep Extension,strength
+TRX Bicep Curl,arms,bodyweight,isolation,Suspension Curl,bodyweight
+TRX Tricep Extension,arms,bodyweight,isolation,Suspension Tricep Extension,bodyweight
 Two Arm Dumbbell Overhead Extension,arms,dumbbell,isolation,"Two Arm DB Tricep Extension, Two Arm Overhead Extension",strength
 V-Bar Pushdown,arms,cable,isolation,V Bar Tricep Pushdown,strength
 Waiter Curl,arms,dumbbell,isolation,DB Waiter Curl,strength
@@ -1066,25 +1066,25 @@ Wide Grip Barbell Curl,arms,barbell,isolation,Wide Grip BB Curl,strength
 Wrist Roller,arms,other,isolation,Forearm Roller,strength
 Zottman Curl,arms,dumbbell,isolation,DB Zottman Curl,strength
 Ab Bench Crunch,core,machine,isolation,Decline Ab Crunch,strength
-Ab Bicycle,core,bodyweight,isolation,Bicycle Abs,strength
+Ab Bicycle,core,bodyweight,isolation,Bicycle Abs,bodyweight
 Ab Crunch on Cable Machine,core,cable,isolation,Standing Cable Ab Crunch,strength
 Ab Rollout,core,other,isolation,"Ab Wheel Rollout, Ab Wheel, Ab Roller, Barbell Rollout",strength
 Ab Wheel from Knees,core,other,isolation,Kneeling Ab Wheel Rollout,strength
 Ab Wheel Standing,core,other,isolation,Full Ab Wheel Rollout,strength
-Alternating V-Up,core,bodyweight,isolation,Alt V Up,strength
+Alternating V-Up,core,bodyweight,isolation,Alt V Up,bodyweight
 Band Crunch,core,band,isolation,Resistance Band Crunch,strength
 Band Dead Bug,core,band,isolation,Banded Dead Bug,strength
 Band Neck Side Flexion,core,band,isolation,Banded Neck Lateral Flexion,strength
 Band Pallof Press,core,band,isolation,Banded Pallof Press,strength
 Banded Pallof Walk,core,band,isolation,Pallof Walk,strength
 Barbell Rollout from Feet,core,barbell,isolation,Standing Barbell Rollout,strength
-Bear Crawl,core,bodyweight,compound,Bear Crawl Exercise,strength
-Bicycle Crunch,core,bodyweight,isolation,"Bicycle Crunches, Air Bike",strength
-Bicycle V-Up,core,bodyweight,isolation,Bicycle V Up,strength
-Bird Dog,core,bodyweight,isolation,Bird Dogs,strength
-Bird Dog to Push Up,core,bodyweight,compound,Bird Dog Push Up,strength
+Bear Crawl,core,bodyweight,compound,Bear Crawl Exercise,bodyweight
+Bicycle Crunch,core,bodyweight,isolation,"Bicycle Crunches, Air Bike",bodyweight
+Bicycle V-Up,core,bodyweight,isolation,Bicycle V Up,bodyweight
+Bird Dog,core,bodyweight,isolation,Bird Dogs,bodyweight
+Bird Dog to Push Up,core,bodyweight,compound,Bird Dog Push Up,bodyweight
 Birddog Row,core,dumbbell,compound,Bird Dog DB Row,strength
-Body Saw Plank,core,bodyweight,isolation,Body Saw,strength
+Body Saw Plank,core,bodyweight,isolation,Body Saw,bodyweight
 Bottoms Up Carry,core,kettlebell,compound,KB Bottoms Up Carry,carry_sled
 Cable Crunch,core,cable,isolation,"Kneeling Cable Crunch, Rope Crunch",strength
 Cable Lift,core,cable,compound,Cable Chop Low to High,strength
@@ -1097,30 +1097,30 @@ Cable Russian Twist,core,cable,isolation,Cable Twist,strength
 Cable Side Bend,core,cable,isolation,Cable Lateral Flexion,strength
 Cable Woodchop Half Kneeling,core,cable,compound,Kneeling Woodchop,strength
 Captain's Chair Leg Raise,core,machine,isolation,Roman Chair Leg Raise,strength
-Cat Cow,core,bodyweight,isolation,"Cat-Cow, Cat Cow Stretch",strength
-Copenhagen Plank Raise,core,bodyweight,isolation,Copenhagen Raise,strength
+Cat Cow,core,bodyweight,isolation,"Cat-Cow, Cat Cow Stretch",bodyweight
+Copenhagen Plank Raise,core,bodyweight,isolation,Copenhagen Raise,bodyweight
 Copenhagen Side Plank,core,bodyweight,isolation,Copenhagen Plank Oblique,holds
-Crab Walk,core,bodyweight,compound,Crab Walk Exercise,strength
-Cross Body Mountain Climber,core,bodyweight,compound,Cross Mountain Climber,strength
-Crunch,core,bodyweight,isolation,"Crunches, Ab Crunch, Basic Crunch",strength
-Dead Bug,core,bodyweight,isolation,Dead Bugs,strength
-Dead Bug March,core,bodyweight,isolation,Marching Dead Bug,strength
+Crab Walk,core,bodyweight,compound,Crab Walk Exercise,bodyweight
+Cross Body Mountain Climber,core,bodyweight,compound,Cross Mountain Climber,bodyweight
+Crunch,core,bodyweight,isolation,"Crunches, Ab Crunch, Basic Crunch",bodyweight
+Dead Bug,core,bodyweight,isolation,Dead Bugs,bodyweight
+Dead Bug March,core,bodyweight,isolation,Marching Dead Bug,bodyweight
 Dead Bug Press,core,dumbbell,isolation,DB Dead Bug Press,strength
 Dead Bug Pullover,core,dumbbell,isolation,DB Dead Bug Pullover,strength
 Dead Bug with Ball,core,other,isolation,Medicine Ball Dead Bug,strength
-Decline Bench Leg Raise,core,bodyweight,isolation,Decline Leg Raise,strength
-Decline Crunch,core,bodyweight,isolation,"Decline Sit Up, Decline Crunch",strength
+Decline Bench Leg Raise,core,bodyweight,isolation,Decline Leg Raise,bodyweight
+Decline Crunch,core,bodyweight,isolation,"Decline Sit Up, Decline Crunch",bodyweight
 Decline Plank,core,bodyweight,isolation,Feet Elevated Plank,holds
-Decline Reverse Crunch,core,bodyweight,isolation,Decline Reverse Crunch BW,strength
+Decline Reverse Crunch,core,bodyweight,isolation,Decline Reverse Crunch BW,bodyweight
 Double KB Front Rack Carry,core,kettlebell,compound,Double Rack Carry,carry_sled
-Dragon Flag,core,bodyweight,isolation,Bruce Lee Dragon Flag,strength
-Dragon Flag Negative,core,bodyweight,isolation,Eccentric Dragon Flag,strength
+Dragon Flag,core,bodyweight,isolation,Bruce Lee Dragon Flag,bodyweight
+Dragon Flag Negative,core,bodyweight,isolation,Eccentric Dragon Flag,bodyweight
 Dumbbell Russian Twist,core,dumbbell,isolation,DB Russian Twist,strength
 Dumbbell Waiter Walk,core,dumbbell,compound,DB Waiter Carry,carry_sled
 Dumbbell Woodchop,core,dumbbell,compound,DB Woodchop,strength
 Farmer Carry,core,dumbbell,compound,Farmer Walk Core,carry_sled
 Farmer Walk Pause,core,dumbbell,compound,Farmer Carry Pause,carry_sled
-Flutter Kick,core,bodyweight,isolation,Flutter Kicks,strength
+Flutter Kick,core,bodyweight,isolation,Flutter Kicks,bodyweight
 Four Way Neck Machine,core,machine,isolation,Neck Machine,strength
 GHD Hip Extension,core,machine,isolation,GHD Back Extension,strength
 GHD Sit Up,core,machine,isolation,"GHD Situp, Glute Ham Sit Up",strength
@@ -1128,22 +1128,22 @@ Half Kneeling Cable Chop,core,cable,compound,Kneeling Cable Chop,strength
 Half Kneeling Cable Lift,core,cable,compound,Kneeling Cable Lift,strength
 Half Kneeling Pallof Press,core,cable,isolation,Kneeling Pallof Press,strength
 Half Turkish Get Up,core,kettlebell,compound,Half TGU,strength
-Hanging Garhammer Raise,core,bodyweight,isolation,Garhammer Raise,strength
-Hanging Knee Raise,core,bodyweight,isolation,"Hanging Knee Raise, Knee Raise Hanging",strength
+Hanging Garhammer Raise,core,bodyweight,isolation,Garhammer Raise,bodyweight
+Hanging Knee Raise,core,bodyweight,isolation,"Hanging Knee Raise, Knee Raise Hanging",bodyweight
 Hanging L-Sit,core,bodyweight,isolation,Bar L-Sit,holds
-Hanging Leg Raise,core,bodyweight,isolation,"Hanging Leg Raise, Straight Leg Raise Hanging",strength
-Hanging Oblique Knee Raise,core,bodyweight,isolation,Hanging Side Knee Raise,strength
+Hanging Leg Raise,core,bodyweight,isolation,"Hanging Leg Raise, Straight Leg Raise Hanging",bodyweight
+Hanging Oblique Knee Raise,core,bodyweight,isolation,Hanging Side Knee Raise,bodyweight
 Hanging Tuck,core,bodyweight,isolation,Hanging Tuck Hold,holds
-Hanging Windshield Wiper,core,bodyweight,isolation,Hanging Wipers,strength
-Hanging Windshield Wiper Straight Leg,core,bodyweight,isolation,Straight Leg Wipers,strength
+Hanging Windshield Wiper,core,bodyweight,isolation,Hanging Wipers,bodyweight
+Hanging Windshield Wiper Straight Leg,core,bodyweight,isolation,Straight Leg Wipers,bodyweight
 Heavy Bag Work,core,other,compound,Boxing Bag,strength
-Heel Touch,core,bodyweight,isolation,"Heel Touches, Alternate Heel Touch",strength
+Heel Touch,core,bodyweight,isolation,"Heel Touches, Alternate Heel Touch",bodyweight
 High to Low Woodchop,core,cable,compound,High to Low Cable Chop,strength
-Hollow Body Flutter Kick,core,bodyweight,isolation,Hollow Body Kicks,strength
+Hollow Body Flutter Kick,core,bodyweight,isolation,Hollow Body Kicks,bodyweight
 Hollow Body Hold,core,bodyweight,isolation,"Hollow Hold, Dish Hold",holds
-Hollow Body Rock,core,bodyweight,isolation,Hollow Rock,strength
-Inchworm,core,bodyweight,compound,Inch Worm,strength
-Incline Bench Reverse Crunch,core,bodyweight,isolation,Incline Reverse Crunch,strength
+Hollow Body Rock,core,bodyweight,isolation,Hollow Rock,bodyweight
+Inchworm,core,bodyweight,compound,Inch Worm,bodyweight
+Incline Bench Reverse Crunch,core,bodyweight,isolation,Incline Reverse Crunch,bodyweight
 Iron Neck 360,core,other,isolation,Iron Neck Rotation,strength
 Kettlebell Bottoms Up Walk,core,kettlebell,compound,KB Bottoms Up Walk,carry_sled
 Kettlebell Horn Walk,core,kettlebell,compound,KB Horn Carry,carry_sled
@@ -1156,10 +1156,10 @@ Landmine Anti Rotation,core,barbell,isolation,Landmine Anti-Rotation,strength
 Landmine Anti-Rotation Press,core,barbell,compound,Landmine Anti Rotation,strength
 Landmine Rotation,core,barbell,compound,"Landmine Russian Twist, Landmine Twist",strength
 Lateral Medicine Ball Throw,core,other,plyometric,Side Med Ball Throw,strength
-Leg Raise,core,bodyweight,isolation,"Lying Leg Raise, Flat Leg Raise, Supine Leg Raise",strength
+Leg Raise,core,bodyweight,isolation,"Lying Leg Raise, Flat Leg Raise, Supine Leg Raise",bodyweight
 Long Lever Plank,core,bodyweight,isolation,Extended Plank,holds
 Low to High Woodchop,core,cable,compound,Low to High Cable Chop,strength
-Lying Side Crunch,core,bodyweight,isolation,Side Lying Crunch,strength
+Lying Side Crunch,core,bodyweight,isolation,Side Lying Crunch,bodyweight
 Machine Crunch,core,machine,isolation,"Ab Crunch Machine, Ab Machine",strength
 Medicine Ball Crunch,core,other,isolation,Med Ball Crunch,strength
 Medicine Ball Side Slam,core,other,compound,Med Ball Side Slam,strength
@@ -1167,10 +1167,10 @@ Medicine Ball Slam,core,other,compound,"Med Ball Slam, Ball Slam",strength
 Medicine Ball Throw,core,other,plyometric,"Med Ball Throw, Medicine Ball Chest Pass",strength
 Medicine Ball V-Up,core,other,isolation,Med Ball V Up,strength
 Medicine Ball Woodchop,core,other,compound,Med Ball Chop,strength
-Mountain Climber,core,bodyweight,compound,Mountain Climbers,strength
+Mountain Climber,core,bodyweight,compound,Mountain Climbers,bodyweight
 Neck Curl,core,other,isolation,"Neck Flexion, Weighted Neck Curl",strength
 Neck Extension,core,other,isolation,Neck Extension Weighted,strength
-Oblique Crunch,core,bodyweight,isolation,Side Crunch,strength
+Oblique Crunch,core,bodyweight,isolation,Side Crunch,bodyweight
 Offset Carry,core,kettlebell,compound,"Uneven Carry, Mixed Carry",carry_sled
 Overhead Carry,core,dumbbell,compound,"Waiter Walk, Overhead Walk",carry_sled
 Overhead Medicine Ball Slam,core,other,compound,Overhead Slam,strength
@@ -1179,39 +1179,39 @@ Pallof Lunge,core,cable,compound,Anti Rotation Lunge,strength
 Pallof Press,core,cable,isolation,"Cable Pallof Press, Anti-Rotation Press",strength
 Pallof Press Rotation,core,cable,isolation,Pallof Twist,strength
 Pallof Squat,core,cable,compound,Anti Rotation Squat,strength
-Pike Walk Out,core,bodyweight,compound,Pike Walkout,strength
+Pike Walk Out,core,bodyweight,compound,Pike Walkout,bodyweight
 Plank,core,bodyweight,isolation,"Front Plank, Forearm Plank, Prone Plank",holds
 Plank Pull Through,core,dumbbell,compound,Plank DB Pull Through,strength
 Plank Row,core,dumbbell,compound,Plank DB Row,strength
-Plank to Downward Dog,core,bodyweight,isolation,Plank Pike,strength
-Plank to Push Up,core,bodyweight,compound,Up Down Plank,strength
-Plank to Side Plank,core,bodyweight,isolation,Rotating Plank,strength
-Plank with Shoulder Tap,core,bodyweight,isolation,Shoulder Tap Plank,strength
+Plank to Downward Dog,core,bodyweight,isolation,Plank Pike,bodyweight
+Plank to Push Up,core,bodyweight,compound,Up Down Plank,bodyweight
+Plank to Side Plank,core,bodyweight,isolation,Rotating Plank,bodyweight
+Plank with Shoulder Tap,core,bodyweight,isolation,Shoulder Tap Plank,bodyweight
 Plate Sit Up,core,other,isolation,Weighted Plate Sit Up,strength
 Racked Carry,core,kettlebell,compound,KB Rack Carry,carry_sled
-Reverse Crunch,core,bodyweight,isolation,Reverse Crunches,strength
-Reverse Crunch on Bench,core,bodyweight,isolation,Bench Reverse Crunch,strength
+Reverse Crunch,core,bodyweight,isolation,Reverse Crunches,bodyweight
+Reverse Crunch on Bench,core,bodyweight,isolation,Bench Reverse Crunch,bodyweight
 Reverse Crunch with Band,core,band,isolation,Banded Reverse Crunch,strength
 Reverse Plank,core,bodyweight,isolation,Supine Plank,holds
 Ring L-Sit,core,bodyweight,isolation,Gymnastics Ring L Sit,holds
 RKC Plank,core,bodyweight,isolation,Hard Style Plank,holds
-Rocking Plank,core,bodyweight,isolation,Plank Rock,strength
+Rocking Plank,core,bodyweight,isolation,Plank Rock,bodyweight
 Rotational Medicine Ball Slam,core,other,compound,Rotational Slam,strength
 Russian Twist,core,other,isolation,"Seated Russian Twist, Medicine Ball Russian Twist",strength
-Scissor Kick,core,bodyweight,isolation,Scissor Kicks,strength
+Scissor Kick,core,bodyweight,isolation,Scissor Kicks,bodyweight
 Side Bend,core,dumbbell,isolation,"DB Side Bend, Dumbbell Side Bend, Lateral Flexion",strength
 Side Plank,core,bodyweight,isolation,"Lateral Plank, Side Bridge",holds
-Side Plank Dip,core,bodyweight,isolation,Side Plank Hip Dip,strength
-Side Plank Reach Through,core,bodyweight,isolation,Side Plank Thread Needle,strength
+Side Plank Dip,core,bodyweight,isolation,Side Plank Hip Dip,bodyweight
+Side Plank Reach Through,core,bodyweight,isolation,Side Plank Thread Needle,bodyweight
 Side Plank Star,core,bodyweight,isolation,Star Side Plank,holds
 Single Arm Farmer Carry,core,kettlebell,compound,KB Suitcase Carry,carry_sled
 Single Arm Overhead Carry,core,kettlebell,compound,OH KB Carry,carry_sled
 Single Arm Overhead Walk,core,kettlebell,compound,Overhead KB Walk,carry_sled
 Single Arm Plank,core,bodyweight,isolation,One Arm Plank,holds
 Single Leg Plank,core,bodyweight,isolation,One Leg Plank,holds
-Sit Up,core,bodyweight,isolation,"Sit-Up, Situp",strength
+Sit Up,core,bodyweight,isolation,"Sit-Up, Situp",bodyweight
 Sledgehammer Slam,core,other,compound,Tire Sledgehammer,strength
-Slow Mountain Climber,core,bodyweight,compound,Controlled Mountain Climber,strength
+Slow Mountain Climber,core,bodyweight,compound,Controlled Mountain Climber,bodyweight
 Stability Ball Crunch,core,other,isolation,Swiss Ball Crunch,strength
 Stability Ball Knee Tuck,core,other,compound,Swiss Ball Tuck,strength
 Stability Ball Pike,core,other,compound,Swiss Ball Pike,strength
@@ -1219,25 +1219,25 @@ Stability Ball Rollout,core,other,isolation,Swiss Ball Rollout,strength
 Standing Ab Rollout,core,other,isolation,Standing Ab Wheel,strength
 Standing Cable Crunch,core,cable,isolation,Cable Standing Crunch,strength
 Standing Cable Rotation,core,cable,compound,Cable Rotation,strength
-Standing Oblique Crunch,core,bodyweight,isolation,Standing Side Crunch,strength
+Standing Oblique Crunch,core,bodyweight,isolation,Standing Side Crunch,bodyweight
 Star Plank,core,bodyweight,isolation,Extended Arm Plank,holds
 Stir the Pot,core,other,isolation,Stability Ball Stir the Pot,strength
 Suitcase Carry,core,dumbbell,compound,"Single Arm Farmer Walk, Suitcase Walk",carry_sled
-Supine Spinal Twist,core,bodyweight,isolation,Lying Twist Stretch,strength
+Supine Spinal Twist,core,bodyweight,isolation,Lying Twist Stretch,holds
 Swiss Ball Dead Bug,core,other,isolation,Stability Ball Dead Bug,strength
 Swiss Ball Pass,core,other,isolation,Stability Ball Pass,strength
 Swiss Ball Plank,core,other,isolation,Stability Ball Plank,holds
 Swiss Ball Side Crunch,core,other,isolation,Stability Ball Oblique Crunch,strength
-Tall Plank Shoulder Tap,core,bodyweight,isolation,Push Up Shoulder Tap,strength
-Toe Touch,core,bodyweight,isolation,"Toe Touches, V-Up Toe Touch",strength
-Toes to Bar,core,bodyweight,isolation,"T2B, Toes-to-Bar",strength
-TRX Fallout,core,bodyweight,isolation,Suspension Fallout,strength
-TRX Knee Tuck,core,bodyweight,compound,Suspension Knee Tuck,strength
-TRX Pike,core,bodyweight,compound,Suspension Pike,strength
+Tall Plank Shoulder Tap,core,bodyweight,isolation,Push Up Shoulder Tap,bodyweight
+Toe Touch,core,bodyweight,isolation,"Toe Touches, V-Up Toe Touch",bodyweight
+Toes to Bar,core,bodyweight,isolation,"T2B, Toes-to-Bar",bodyweight
+TRX Fallout,core,bodyweight,isolation,Suspension Fallout,bodyweight
+TRX Knee Tuck,core,bodyweight,compound,Suspension Knee Tuck,bodyweight
+TRX Pike,core,bodyweight,compound,Suspension Pike,bodyweight
 TRX Plank,core,bodyweight,isolation,Suspension Plank,holds
 TRX Side Plank,core,bodyweight,isolation,Suspension Side Plank,holds
 Turkish Get Up,core,kettlebell,compound,"TGU, KB Turkish Get Up, Kettlebell Get Up",strength
-V-Up,core,bodyweight,isolation,"V Up, V-Sit Up, Jackknife",strength
+V-Up,core,bodyweight,isolation,"V Up, V-Sit Up, Jackknife",bodyweight
 V-Up with Medicine Ball,core,other,isolation,Med Ball V-Up,strength
 Weighted Bird Dog,core,dumbbell,isolation,DB Bird Dog,strength
 Weighted Crunch,core,other,isolation,Plate Crunch,strength
@@ -1249,7 +1249,7 @@ Weighted Russian Twist,core,dumbbell,isolation,DB Russian Twist Core,strength
 Weighted Side Plank,core,dumbbell,isolation,DB Side Plank,holds
 Weighted Sit Up,core,other,isolation,"Plate Sit Up, DB Sit Up",strength
 Windmill Barbell,core,barbell,compound,BB Windmill,strength
-Windshield Wiper,core,bodyweight,isolation,"Hanging Windshield Wiper, Lying Windshield Wiper",strength
+Windshield Wiper,core,bodyweight,isolation,"Hanging Windshield Wiper, Lying Windshield Wiper",bodyweight
 Woodchop,core,cable,compound,"Cable Woodchop, Wood Chop, Cable Chop",strength
 A Skip,full_body,bodyweight,cardio,A Skips,endurance
 Airdyne Sprint,full_body,machine,cardio,Airdyne Max Effort,erg
@@ -1286,7 +1286,7 @@ Battle Rope Lateral Whip,full_body,other,compound,Lateral Battle Rope,strength
 Battle Rope Slam,full_body,other,compound,"Battle Ropes, Battle Rope Waves",strength
 Bear Complex,full_body,barbell,compound,Barbell Bear Complex,strength
 Bear Complex Single Set,full_body,barbell,compound,Bear Complex Set,strength
-Bear Crawl to Push Up,full_body,bodyweight,compound,Bear Crawl Push Up,strength
+Bear Crawl to Push Up,full_body,bodyweight,compound,Bear Crawl Push Up,bodyweight
 Behind Neck Jerk,full_body,barbell,compound,BTN Jerk,strength
 Bent Press,full_body,kettlebell,compound,KB Bent Press,strength
 Bike Erg Sprint,full_body,machine,cardio,Bike Erg,erg
@@ -1295,15 +1295,15 @@ Bounding,full_body,bodyweight,plyometric,Power Bounding,bodyweight
 Box Jump,full_body,bodyweight,plyometric,"Box Jumps, Plyo Box Jump",bodyweight
 Box Jump Over,full_body,bodyweight,plyometric,Box Jump Overs,bodyweight
 Box Jump Weighted,full_body,dumbbell,plyometric,Weighted Box Jump,strength
-Box Step Up,full_body,bodyweight,compound,Step Up Bodyweight,strength
+Box Step Up,full_body,bodyweight,compound,Step Up Bodyweight,bodyweight
 Broad Jump,full_body,bodyweight,plyometric,"Standing Long Jump, Standing Broad Jump",bodyweight
-Burpee,full_body,bodyweight,compound,Burpees,strength
+Burpee,full_body,bodyweight,compound,Burpees,bodyweight
 Burpee Box Jump,full_body,bodyweight,plyometric,Burpee Box Jump Over,bodyweight
 Burpee Broad Jump,full_body,bodyweight,plyometric,"Burpee Broad Jumps, Burpee Long Jump",bodyweight
-Burpee Pull Up,full_body,bodyweight,compound,Burpee to Pull Up,strength
+Burpee Pull Up,full_body,bodyweight,compound,Burpee to Pull Up,bodyweight
 Butt Kicks,full_body,bodyweight,cardio,Butt Kick Run,endurance
 Car Push,full_body,other,compound,Vehicle Push,strength
-Cindy WOD,full_body,bodyweight,compound,Cindy Bodyweight,strength
+Cindy WOD,full_body,bodyweight,compound,Cindy Bodyweight,bodyweight
 Circus Dumbbell Clean and Press,full_body,other,compound,Circus DB,strength
 Clap Pull Up,full_body,bodyweight,plyometric,Plyometric Pull Up,bodyweight
 Clean and Front Squat,full_body,barbell,compound,Squat Clean,strength
@@ -1314,7 +1314,7 @@ Clean Pull,full_body,barbell,compound,BB Clean Pull,strength
 Cluster Set Clean,full_body,barbell,compound,Cluster Clean,strength
 Conan's Wheel,full_body,other,compound,Conan Wheel Walk,carry_sled
 Cone Drill,full_body,other,cardio,Agility Cones,endurance
-Crawl,full_body,bodyweight,compound,"Army Crawl, Commando Crawl",strength
+Crawl,full_body,bodyweight,compound,"Army Crawl, Commando Crawl",bodyweight
 Cross Country Skiing Machine,full_body,machine,cardio,Nordic Track,endurance
 Cycling,full_body,other,cardio,"Outdoor Cycling, Road Cycling, Bike Ride",endurance
 D-Ball Clean,full_body,other,compound,D Ball Clean,strength
@@ -1345,7 +1345,7 @@ Dumbbell Power Snatch,full_body,dumbbell,compound,DB Power Snatch,strength
 Dumbbell Snatch,full_body,dumbbell,compound,"DB Snatch, One Arm DB Snatch",strength
 Dumbbell Thruster,full_body,dumbbell,compound,DB Thruster,strength
 Elliptical,full_body,machine,cardio,"Elliptical Trainer, Cross Trainer",endurance
-EMOM Burpees,full_body,bodyweight,compound,Every Minute Burpees,strength
+EMOM Burpees,full_body,bodyweight,compound,Every Minute Burpees,bodyweight
 Farmers Walk Heavy,full_body,other,compound,Heavy Farmer Carry,carry_sled
 Frame Carry,full_body,other,compound,Frame Walk,carry_sled
 Fran WOD,full_body,barbell,compound,Fran Thruster Pullup,strength
@@ -1355,7 +1355,7 @@ Goblet Squat to Press,full_body,dumbbell,compound,Goblet Squat Press,strength
 Grace WOD,full_body,barbell,compound,Clean and Jerk Grace,strength
 Half Snatch Kettlebell,full_body,kettlebell,compound,KB Half Snatch,strength
 Hand Over Hand Sled Pull,full_body,other,compound,Rope Sled Pull,carry_sled
-Handstand Walk,full_body,bodyweight,compound,HS Walk,strength
+Handstand Walk,full_body,bodyweight,compound,HS Walk,bodyweight
 Hang Clean,full_body,barbell,compound,"Hang Power Clean, BB Hang Clean",strength
 Hang Clean and Jerk,full_body,barbell,compound,Hang C&J,strength
 Hang Muscle Snatch,full_body,barbell,compound,Muscle Snatch from Hang,strength
@@ -1370,7 +1370,7 @@ Hiking,full_body,bodyweight,cardio,Trail Hiking,endurance
 Hill Sprint,full_body,bodyweight,cardio,"Hill Sprints, Incline Sprint",endurance
 Hurdle Hop,full_body,bodyweight,plyometric,Hurdle Jump,bodyweight
 Husafell Stone Carry,full_body,other,compound,Husafell Carry,carry_sled
-Inchworm to Push Up,full_body,bodyweight,compound,Inchworm Push Up,strength
+Inchworm to Push Up,full_body,bodyweight,compound,Inchworm Push Up,bodyweight
 Incline Treadmill Run,full_body,machine,cardio,Treadmill Incline Run,endurance
 Isabel WOD,full_body,barbell,compound,Snatch Isabel,strength
 Jacob's Ladder,full_body,machine,cardio,Jacobs Ladder,endurance
@@ -1410,7 +1410,7 @@ Medicine Ball Overhead Lunge,full_body,other,compound,Med Ball OH Lunge,strength
 Medicine Ball Overhead Throw,full_body,other,plyometric,Med Ball Overhead Toss,strength
 Medicine Ball Rotational Throw,full_body,other,plyometric,Rotational Med Ball Throw,strength
 Mixed Implement Carry,full_body,kettlebell,compound,Asymmetric Carry,carry_sled
-Murph WOD,full_body,bodyweight,compound,Murph Workout,strength
+Murph WOD,full_body,bodyweight,compound,Murph Workout,bodyweight
 Muscle Clean,full_body,barbell,compound,BB Muscle Clean,strength
 Muscle Snatch,full_body,barbell,compound,BB Muscle Snatch,strength
 Muscle Snatch Dumbbell,full_body,dumbbell,compound,DB Muscle Snatch,strength
@@ -1433,8 +1433,8 @@ Prowler Push Heavy,full_body,other,compound,Heavy Sled Push,carry_sled
 Push Jerk,full_body,barbell,compound,BB Push Jerk,strength
 Push Up to Renegade Row,full_body,dumbbell,compound,Push Up Row,strength
 RDL to Upright Row,full_body,barbell,compound,RDL Upright Row,strength
-Ring Row,full_body,bodyweight,compound,Gymnastics Ring Row,strength
-Rope Climb,full_body,bodyweight,compound,Rope Climb Exercise,strength
+Ring Row,full_body,bodyweight,compound,Gymnastics Ring Row,bodyweight
+Rope Climb,full_body,bodyweight,compound,Rope Climb Exercise,bodyweight
 Rower Intervals,full_body,machine,cardio,"Rowing Intervals, Row Intervals",erg
 Rowing Machine,full_body,machine,cardio,"Rower, Erg, Indoor Rowing, Rowing Erg, Concept 2 Row",erg
 Rowing Machine Sprint,full_body,machine,cardio,Rowing Max Effort,erg
@@ -1471,7 +1471,7 @@ Snatch from Blocks,full_body,barbell,compound,Block Snatch,strength
 Snatch High Pull,full_body,barbell,compound,Snatch Pull,strength
 Split Clean,full_body,barbell,compound,Clean to Split,strength
 Split Jerk,full_body,barbell,compound,BB Split Jerk,strength
-Sprawl,full_body,bodyweight,compound,Sprawl Exercise,strength
+Sprawl,full_body,bodyweight,compound,Sprawl Exercise,bodyweight
 Sprint,full_body,bodyweight,cardio,"Running Sprint, Sprints",endurance
 Squat Jerk,full_body,barbell,compound,BB Squat Jerk,strength
 Squat Jump,full_body,bodyweight,plyometric,"Jump Squat, Squat Jumps, Jumping Squat",bodyweight
@@ -1505,7 +1505,7 @@ Vertical Jump,full_body,bodyweight,plyometric,Max Vertical Jump,bodyweight
 Wall Ball,full_body,other,compound,"Wall Ball Shot, Wall Balls",strength
 Weighted Vest Run,full_body,other,cardio,Ruck Run,endurance
 Weighted Vest Walk,full_body,other,cardio,"Rucking, Ruck Walk",endurance
-World's Greatest Stretch,full_body,bodyweight,compound,"Worlds Greatest Stretch, WGS",strength
+World's Greatest Stretch,full_body,bodyweight,compound,"Worlds Greatest Stretch, WGS",bodyweight
 Yoke Walk,full_body,other,compound,Yoke Carry,carry_sled
 Yoke Walk Heavy,full_body,other,compound,Heavy Yoke,carry_sled
 Zercher Carry,full_body,barbell,compound,Zercher Walk,carry_sled
