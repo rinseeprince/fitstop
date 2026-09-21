@@ -248,42 +248,61 @@ commit's plan.
   that differs from the type.
 - **Every chart has a table of its sessions beneath it, and endurance PRs are race distances (owner,
   2026-09-21, after commit 16's smoke; commits 16a–16b):**
-  - *The Sessions table (16a).* Every exercise's progress view shows a table of its logged sessions
-    beneath whatever the hero shows: the chart of every lens, and the PR cards on the PRs lens.
-    Sessions is not a lens, and every type keeps its chart lenses. The table has one row per logged
-    session in the window, newest first, and one column per measure the exercise's sessions carry; a
-    column nothing in the window recorded does not appear. A row holds the session's value per column,
-    by one rule per measure: the top set's weight, reps, RPE, RIR and tempo — in a session with no
-    loaded set, the highest RPE and the lowest RIR logged; the estimated 1RM and the volume; the most
-    reps in a bodyweight set; the total distance and the total calories; the fastest pace, split and
-    time, the time with its distance beside it; the highest watts, cadence, stroke rate, resistance,
-    heart rate, HR zone and % FTP; the longest hold; the average rest taken; sets done over sets
-    prescribed. The coach's RPE chart lens reads the same RPE as the table, so an RPE logged on a run,
-    a hold or a bodyweight set reaches both.
-  - *The table's rail (16a).* The table sits on its own rail, Sessions, which carries a Columns menu
-    (the builder's column-selector recipe without presets, each column ticked on and off) and the
-    history tables' pager, its arrows alone: no "Showing X of Y", since the session window above
-    already says how many (owner, 2026-09-21, after 16a shipped). The column headings sort the table
-    (owner, 2026-09-21, after 16a shipped — replacing a sort picker on the rail): a heading's first
-    click sorts by its column the way the column leads — heaviest, most, fastest, longest, highest,
-    newest first — and a second click the other way; one sort at a time, its ties newest first.
-    Switching the lens changes only what sits above the table: its columns and its sort stay. Column
-    visibility and the sort are the view's, not the address's, and reset when another exercise is
-    picked.
+  - *The Sessions table — what a row shows (owner, 2026-09-21, after 16a shipped; commit 16a-2).*
+    A row is a whole session, and the builder's columns describe one set, so the table does not use
+    them: 16a's one column per measure, its Columns menu and its invented columns (Bodyweight reps,
+    Time, Hold, Sets) are gone. Every exercise's progress view shows the table beneath whatever the
+    hero shows — the chart of every lens, and the PR cards on the PRs lens — one row per logged
+    session in the window, newest first, and a row answers what a coach asks of a session: what did
+    they do, was it better than last time, and was it what was prescribed. Each row has:
+    - *Sets* — the session's working sets in coach shorthand, in order, warm-ups left out: `100 × 8 ·
+      102.5 × 8 · 105 × 6` for loaded reps (the load's unit in the heading), `12 · 11 · 10` for reps
+      alone, `60 × 40 m` for a carry, `5 km in 24:10` for one piece and `6 × 800 m: 2:52 · 2:50 · …`
+      for repeats of one distance, `1:30 · 1:20` for holds. Nothing is picked or summarised, and it
+      does not sort.
+    - *The figures* — a fixed few numbers for the whole session, by the exercise's type, the main one
+      first; each sorts. Strength: e1RM (the best estimate across the working sets), Top set (the
+      heaviest set, load × reps), Volume, RPE. Bodyweight: Best set (the most reps in one set), Total
+      reps, RPE. Endurance: Pace (the session's average — total time over total distance), Distance
+      and Time (the session's totals), HR zone (the highest logged). Erg: Split (the average),
+      Distance, Time, Stroke rate and Watts (the averages). Carry & sled: Load (the heaviest),
+      Distance, Time (the totals). Holds: Longest hold, Total time, RPE. RPE is the top set's, or with
+      no weight logged the highest, as the RPE lens reads it. Where the chart plots a figure, it is
+      the same number.
+    - *Change* — the main figure against the previous session in the window, green when better and
+      red when worse; for Endurance, Erg and Carry & sled against the previous session of the same
+      total distance (within half a percent), since a 5 km pace against an interval day's means
+      nothing. The oldest session, or one with no earlier match, shows none.
+    - *Target* — a tick when every working set was within every target the coach set; otherwise
+      amber, naming what missed and on how many sets ("Reps below on 1 of 3"), by the judgement the
+      workout log uses. Blank when nothing was prescribed.
+    - *PR* — a star on a session that holds one of the records the PR cards show, the record named
+      in its tooltip.
+    - *The row opens the workout* — the coach's opens the session log (set by set, target over
+      actual, the client's notes), the client's opens their own workout. Anything else logged —
+      tempo, RIR, cadence, rest — is there.
+  - *The chart (16a-2).* Endurance's Pace and Time, Erg's Split and Watts, and Carry & sled's Time
+    plot the session's average or total, so a chart point and its row always match; Distance already
+    was the total.
+  - *The table's rail (16a).* The rail, Sessions, carries the history tables' pager, its arrows alone:
+    no "Showing X of Y", since the session window above already says how many (owner, 2026-09-21,
+    after 16a shipped). The headings sort the table (owner, 2026-09-21, after 16a shipped — replacing
+    a sort picker on the rail): a heading's first click sorts the way its figure leads — highest
+    e1RM, fastest pace, longest hold, newest first — and a second click the other way; one sort at a
+    time, its ties newest first. Switching the lens leaves the table as it is; the sort is the
+    view's, not the address's, and resets when another exercise is picked.
   - *The window (16a).* The session window (8/12/24/All) governs the chart and the table together and
     stays live on every lens; on the PRs lens it governs the table alone, and the PRs rail says the
     cards are all-time.
-  - *The client (16a).* The client's Performance view has the same shape: the chart, then the Sessions
-    table with every measured column, the same sort and pager and no Columns menu, then Personal
-    records.
-  - *No new data (16a).* The table reads the progression points the chart already reads, which carry
-    every measure but tempo: tempo is text and the read returns numbers. Tempo joins the table in 16b,
-    whose migration adds it to the read.
+  - *The client (16a).* The client's Performance view has the same shape: the chart, then the same
+    Sessions table, then Personal records.
+  - *No new data (16a-2).* The progression read already carries every set and the prescription it
+    was logged against; no migration.
   - *All exercises (16b).* The exercise picker gains "All exercises": one row per exercise the client
     has logged, with its type, sessions logged, last logged and its bests — heaviest load, best
     estimated 1RM, most reps in a bodyweight set, best time at its longest race distance, heaviest
     carry, longest hold, empty where the type never logs it — sortable by any of them and by name,
-    type, sessions and last logged, with the same Columns menu and pager, in both views. Picking it
+    type, sessions and last logged, with the same pager, in both views. Picking it
     shows that table under the hero, with no chart and no lenses. One SQL function computes every
     exercise's bests in one pass, bounded by the exercises logged, so the page costs one round trip
     however many exercises there are.
@@ -541,6 +560,7 @@ anything you rely on.
 | 15 | Timed groups in the builder, and their completion | Coaches prescribe timed groups |
 | 16 | Progress charts by exercise type | Charts show each type's markers |
 | 16a | A sessions table beneath every chart | Every chart has a table of its sessions beneath it |
+| 16a-2 | The sessions table, as a coach reads it | Each row shows the session's sets, its figures, the change and the target |
 | 16b | Race-distance PRs and every exercise's bests | Endurance PRs are race distances; one table lists every best |
 | 17 | Endurance progression | Duplicate-with-progression moves endurance targets |
 | 18 | Phases: the structure | Programs carry phases; nothing looks different |
@@ -1259,6 +1279,28 @@ RULES: §4.4 — closed, including its 2026-09-21 amendment. Include a frame tes
 NOT IN THIS COMMIT: race-distance PRs, the All exercises table and the Tempo column (commit 16b).
 ```
 
+### Commit 16a-2 — The sessions table, as a coach reads it
+
+```text
+Implement commit 16a-2 — The sessions table, as a coach reads it — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
+
+Before anything else, read the plan's §1–§5 (skip the other commits' prompts), then CONVENTIONS.md and docs/ARCHITECTURE.md in full, then docs/newdesignsystem.md and CLIENT-APP-REFERENCE.md. Work the way §2 says: ARCHITECTURE.md describes today's product, so where this commit changes a shape it describes, follow the plan and rewrite that part of the doc. Plan first, with plain sentences, and wait for my go.
+
+WHAT WE'RE BUILDING
+Each row of the Sessions table reads a session the way a coach reads it: what they did, whether it was better than last time, and whether it was what was prescribed.
+
+WHEN THIS COMMIT IS DONE
+- A row shows the session's working sets in coach shorthand, its type's figures with the main one first, the change in the main figure, the target result and a PR star, per §4.4; a row opens that workout.
+- 16a's one column per measure, its Columns menu and its invented columns are gone; the headings sort the figures.
+- The chart's endurance, erg and carry lines plot the same session numbers as the rows.
+- The client's Performance view has the same table; its rows open the client's own workout.
+- No migration: the progression read already carries every set and the prescription it was logged against. CLIENT-APP-REFERENCE.md carries the row's shape and the shorthand, since the React Native app is the real client; docs/newdesignsystem.md's sessions-table recipe is rewritten.
+
+RULES: §4.4 — closed, including its 2026-09-21 amendments. Include a frame test for a lens switch with the table beneath, a heading sort and a row opening its workout (§2).
+
+NOT IN THIS COMMIT: race-distance PRs and the All exercises table (commit 16b).
+```
+
 ### Commit 16b — Race-distance PRs and every exercise's bests
 
 ```text
@@ -1271,13 +1313,12 @@ Endurance and erg PRs are race distances, and one table lists every exercise's b
 
 WHEN THIS COMMIT IS DONE
 - An Endurance exercise's PRs are its best times at the race distances §4.4 lists and an Erg exercise's at the erg distances, a set matched within half a percent; carries stay per exact distance; no time is estimated. The coach's PRs lens, the client's Personal records and the Overview's "New personal record" all use the same buckets.
-- The exercise picker offers "All exercises" in both views: one row per exercise the client has logged with its type, sessions, last logged and its bests, sortable by any column, with commit 16a's Columns menu and pager. Picking it shows that table under the hero, with no chart and no lenses.
-- The Sessions table gains its Tempo column, the top set's, the progression read returning tempo.
+- The exercise picker offers "All exercises" in both views: one row per exercise the client has logged with its type, sessions, last logged and its bests, sortable by any column, with the Sessions table's pager. Picking it shows that table under the hero, with no chart and no lenses.
 - The bests come from one SQL function in one round trip, bounded by the exercises logged, like the existing progression and PR functions; the migration pushes to DEV only. CLIENT-APP-REFERENCE.md carries the new shapes, since the React Native app is the real client.
 
 RULES: §4.4 — closed, including its 2026-09-21 amendment. Include a frame test for the All exercises pick (§2).
 
-NOT IN THIS COMMIT: nothing of commit 16a is reopened.
+NOT IN THIS COMMIT: nothing of commits 16a and 16a-2 is reopened.
 ```
 
 ### Commit 17 — Endurance progression
