@@ -26,10 +26,6 @@ vi.mock("@/services/today-service", () => ({
   getCoachTodayString: vi.fn().mockResolvedValue("2026-09-02"),
 }));
 
-vi.mock("@/services/client-goals-service", () => ({
-  updateGoals: vi.fn().mockResolvedValue({}),
-}));
-
 vi.mock("@/services/client-energy-service", () => ({
   recalculateClientEnergy: vi.fn(),
 }));
@@ -37,7 +33,6 @@ vi.mock("@/services/client-energy-service", () => ({
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { appendMeasurements } from "@/services/measurements-service";
 import { getCoachTodayString } from "@/services/today-service";
-import { updateGoals } from "@/services/client-goals-service";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
 
 const mockParams = { params: Promise.resolve({ id: "client-1" }) };
@@ -227,53 +222,6 @@ describe("PUT /api/clients/[id]/metrics", () => {
     });
   });
 
-  describe("Session 0's goal-clobber fix is undisturbed", () => {
-    it("still dual-writes goals through updateGoals", async () => {
-      await PUT(
-        request({ goalWeight: 75, goalBodyFatPercentage: 12 }),
-        mockParams
-      );
-
-      expect(updateGoals).toHaveBeenCalledWith(
-        "client-1",
-        { goalWeight: 75, goalBodyFatPercentage: 12 },
-        "coach-1"
-      );
-    });
-
-    it("does not call updateGoals when no goal field is present", async () => {
-      await PUT(request({ currentWeight: 82 }), mockParams);
-
-      expect(updateGoals).not.toHaveBeenCalled();
-    });
-
-    it("a goal-only body appends no reading and touches no energy", async () => {
-      await PUT(request({ goalWeight: 75 }), mockParams);
-
-      expect(appendMeasurements).not.toHaveBeenCalled();
-      expect(recalculateClientEnergy).not.toHaveBeenCalled();
-    });
-
-    // Task 0b.2 — updateGoals owns both goal stores.
-    it("writes no goal column to clients itself", async () => {
-      await PUT(request({ goalWeight: 75, goalBodyFatPercentage: 12 }), mockParams);
-
-      expect(query.update).not.toHaveBeenCalled();
-      for (const call of query.update.mock.calls) {
-        expect(call[0]).not.toHaveProperty("goal_weight");
-        expect(call[0]).not.toHaveProperty("goal_body_fat_percentage");
-      }
-    });
-
-    it("a failed goal write no longer returns success", async () => {
-      vi.mocked(updateGoals).mockRejectedValueOnce(new Error("goal insert failed"));
-
-      const response = await PUT(request({ goalWeight: 75 }), mockParams);
-
-      expect(response.status).toBe(500);
-    });
-  });
-
   describe("auth and validation", () => {
     it("401s without a coach", async () => {
       const { getAuthenticatedCoachId } = await import("@/lib/auth-helpers");
@@ -290,6 +238,17 @@ describe("PUT /api/clients/[id]/metrics", () => {
       const res = await PUT(request({ tdee: 99999 }), mockParams);
 
       expect(res.status).toBe(400);
+      expect(recalculateClientEnergy).not.toHaveBeenCalled();
+    });
+
+    it("400s a body carrying a goal target, writing nothing — a goal is set through the goals routes", async () => {
+      for (const body of [{ goalWeight: 75 }, { currentWeight: 83, goalBodyFatPercentage: 12 }]) {
+        const res = await PUT(request(body), mockParams);
+        expect(res.status).toBe(400);
+      }
+
+      expect(supabaseAdmin.from).not.toHaveBeenCalled();
+      expect(appendMeasurements).not.toHaveBeenCalled();
       expect(recalculateClientEnergy).not.toHaveBeenCalled();
     });
 

@@ -10,29 +10,34 @@ vi.mock("@/lib/require-coach-auth", () => ({
 }));
 
 vi.mock("@/services/client-goals-service", () => ({
-  getGoalsHistory: vi.fn(),
+  getPastGoals: vi.fn(),
 }));
 
 import { GET } from "./route";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import { getGoalsHistory } from "@/services/client-goals-service";
+import { getPastGoals } from "@/services/client-goals-service";
 
 const mockParams = { params: Promise.resolve({ id: "client-1" }) };
 
 const request = () =>
   new NextRequest("http://localhost:3000/api/clients/client-1/goals/history");
 
-const superseded = {
+const pastGoal = {
   id: "goal-0",
   clientId: "client-1",
-  goalWeight: 88,
-  goalDeadline: "2026-06-01",
+  name: "Lose weight",
+  type: "lose_weight",
+  targetWeight: 88,
+  targetBodyFatPercentage: null,
+  description: null,
+  startsOn: "2026-01-05",
+  source: "coach",
   setBy: "coach-1",
-  effectiveFrom: "2026-01-01T00:00:00Z",
-  supersededAt: "2026-07-14T00:00:00Z",
-  createdAt: "2026-01-01T00:00:00Z",
-  updatedAt: "2026-07-14T00:00:00Z",
+  createdAt: "2026-01-05T09:00:00Z",
+  updatedAt: "2026-01-05T09:00:00Z",
+  deadline: "2026-06-01",
+  endsOn: "2026-07-13",
 };
 
 describe("GET /api/clients/[id]/goals/history", () => {
@@ -43,23 +48,21 @@ describe("GET /api/clients/[id]/goals/history", () => {
       authorized: true,
       coachId: "coach-1",
     } as never);
-    vi.mocked(getGoalsHistory).mockResolvedValue([superseded] as never);
+    vi.mocked(getPastGoals).mockResolvedValue([pastGoal] as never);
   });
 
-  it("returns the superseded versions as a flat array", async () => {
+  it("returns the past goals as a flat array", async () => {
     const response = await GET(request(), mockParams);
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].goalWeight).toBe(88);
-    // A sibling route, NOT the old `{ current, history }` switch — the flat
-    // shape is the whole reason it exists.
-    expect(body.data).not.toHaveProperty("current");
+    expect(body.data[0]).toMatchObject({ targetWeight: 88, endsOn: "2026-07-13" });
+    expect(getPastGoals).toHaveBeenCalledWith("client-1");
   });
 
-  it("is no-store: a goal edit must not be served a cached history", async () => {
+  it("is no-store: a goal change must not be served a cached history", async () => {
     const response = await GET(request(), mockParams);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
@@ -73,7 +76,7 @@ describe("GET /api/clients/[id]/goals/history", () => {
     const response = await GET(request(), mockParams);
 
     expect(response.status).toBe(404);
-    expect(getGoalsHistory).not.toHaveBeenCalled();
+    expect(getPastGoals).not.toHaveBeenCalled();
   });
 
   it("rate limits before authorizing", async () => {
@@ -88,7 +91,7 @@ describe("GET /api/clients/[id]/goals/history", () => {
   });
 
   it("returns a generic 500 without leaking the raw error", async () => {
-    vi.mocked(getGoalsHistory).mockRejectedValue(new Error("relation does not exist"));
+    vi.mocked(getPastGoals).mockRejectedValue(new Error("relation does not exist"));
 
     const response = await GET(request(), mockParams);
     const body = await response.json();

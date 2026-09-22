@@ -1,13 +1,10 @@
-import { getCurrentGoals } from "@/services/client-goals-service";
+import { getGoalForDate } from "@/services/client-goals-service";
 import { getClientTodayString } from "@/services/today-service";
-import {
-  resolveEffectiveGoal,
-  toClientGoalInput,
-} from "@/lib/goals/resolve-effective-goal";
+import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
 import type { ActivityLevel, Client } from "@/types/check-in";
 import { toActivityLevel } from "@/services/client-energy-calc";
-import type { ClientGoal } from "@/types/client-goals";
+import type { GoalOnDay } from "@/types/client-goals";
 
 /**
  * The inputs `generateNutritionPlan` needs, resolved once and shared by BOTH
@@ -67,10 +64,14 @@ export type NutritionCalcInputs =
  * already-fetched `client` so it cannot be used to reach a client the caller
  * has not authorized.
  *
+ * The goal is the one in force on the client's today, with that day's
+ * deadline: no goal, no weight target or no deadline is maintenance.
+ *
  * `prefetched` exists so a caller that already resolved these can hand them in
  * rather than paying for them twice: the coach GET already computes the client's
- * today and reads the current goals for its drift check, and without this the
- * route would issue both queries a second time.
+ * today and reads the goal in force on it for its drift check, and without this
+ * the route would issue both queries a second time. A prefetched goal must be
+ * the one in force on the prefetched today.
  *
  * Throws only on genuine DB failures (the underlying services throw). It never
  * throws for a client who is simply missing data — that is `status:
@@ -80,14 +81,12 @@ export type NutritionCalcInputs =
 export async function resolveNutritionCalcInputs(
   clientId: string,
   client: Client,
-  prefetched?: { today?: string; currentGoals?: ClientGoal | null }
+  prefetched?: { today?: string; goal?: GoalOnDay | null }
 ): Promise<NutritionCalcInputs> {
-  const [today, currentGoals] = await Promise.all([
-    prefetched?.today ?? getClientTodayString(clientId),
-    prefetched?.currentGoals !== undefined
-      ? Promise.resolve(prefetched.currentGoals)
-      : getCurrentGoals(clientId),
-  ]);
+  // The goal waits on today: which goal is in force depends on the day.
+  const today = prefetched?.today ?? (await getClientTodayString(clientId));
+  const goal =
+    prefetched?.goal !== undefined ? prefetched.goal : await getGoalForDate(clientId, today);
 
   // The client object carries both inputs from their single owners. WEIGHT is
   // the newest reading in the measurement log, of any source
@@ -113,12 +112,9 @@ export async function resolveNutritionCalcInputs(
     return { status: "incomplete", missing: validation.errors, today };
   }
 
-  // The long-term client goal drives, and the deadline comes from this single
-  // scope — never from a request body. No unit normalization happens anywhere
-  // any more: goal weights are stored in kilograms (migration 141).
-  const effective = resolveEffectiveGoal({
-    clientGoal: toClientGoalInput(currentGoals, client),
-  });
+  // The weight target and the deadline come from ONE goal — the one in force
+  // on the client's today — never from a request body. Kilograms, as stored.
+  const effective = resolveEffectiveGoal(goal);
 
   return {
     status: "ready",

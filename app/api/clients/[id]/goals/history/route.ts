@@ -1,21 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import { getGoalsHistory } from "@/services/client-goals-service";
+import { getPastGoals } from "@/services/client-goals-service";
 
 /**
- * The client's superseded goal versions, newest first.
- *
- * A SIBLING of `GET …/goals` rather than a `?history=true` flag on it. That flag
- * existed and switched the response's `data` between `ClientGoal | null` and
- * `{ current, history }` — unreachable in the running app, but three typed
- * readers assumed the former (`hooks/use-client-goals.ts`, the Metrics page, and
- * the drawer editor since deleted), so flipping it on would have broken them
- * silently. A separate route is additive and breaks no reader; the flag is gone.
- *
- * The response carries ONLY superseded versions — the live goal comes from the
- * sibling GET, and returning it in both is what made the old branch report the
- * current goal twice.
+ * The client's past goals, newest first and bounded: each goal that ended
+ * before today's began, with its last day and the deadline it ended with.
+ * Today's goal and the planned ones come from the sibling `GET …/goals`.
  */
 export async function GET(
   request: NextRequest,
@@ -30,7 +21,7 @@ export async function GET(
     const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
-    const history = await getGoalsHistory(clientId);
+    const history = await getPastGoals(clientId);
 
     return NextResponse.json(
       { success: true, data: history },

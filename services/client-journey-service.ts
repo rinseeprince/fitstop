@@ -1,5 +1,5 @@
 import { listBlocks } from "./client-blocks-service";
-import { getCurrentGoals } from "./client-goals-service";
+import { getGoalForDate } from "./client-goals-service";
 import { getMeasurementSeries } from "./measurements-service";
 import { listNutritionPlanNotesInRange } from "./nutrition-plan-service";
 import { decorateBlocks } from "@/lib/blocks/block-derivations";
@@ -12,7 +12,9 @@ import type { ClientJourney, ClientJourneyBlock } from "@/types/client-journey";
  * The client-facing journey read (Session 4): the client's unarchived blocks,
  * decorated exactly like the coach GET — "the client app simply shows the
  * client what the coach sees" (owner, 2026-08-12) — plus the goal and the
- * newest weight for the "to go" line.
+ * newest weight for the "to go" line. The goal is the one in force on the
+ * client's today, with that day's deadline — the same goal every client wire
+ * carries (`getGoalForDate`, services/client-goals-service.ts).
  *
  * The weight is the measurement log's day-values (rule 2, the same read the
  * coach Journey and the Overview chart make), and both audiences anchor on
@@ -35,23 +37,14 @@ export const getClientJourney = async (
   clientId: string,
   clientToday: string
 ): Promise<ClientJourney> => {
-  const [allBlocks, currentGoals] = await Promise.all([
+  const [allBlocks, goalToday] = await Promise.all([
     listBlocks(clientId),
-    getCurrentGoals(clientId),
+    getGoalForDate(clientId, clientToday),
   ]);
 
-  // Owner decision 2026-08-12: this endpoint reads client_goals through
-  // resolveEffectiveGoal and exposes the deadline — scoped to this endpoint
-  // only; the clients.* mirror reads elsewhere are unchanged.
-  const effective = resolveEffectiveGoal({
-    clientGoal: currentGoals
-      ? {
-          goalWeight: currentGoals.goalWeight ?? null,
-          goalBodyFatPercentage: currentGoals.goalBodyFatPercentage ?? null,
-          deadline: currentGoals.goalDeadline ?? null,
-        }
-      : null,
-  });
+  // The weight target and the deadline of the goal in force on the client's
+  // today, from one goal; no goal, or no weight target, ships a null weight.
+  const effective = resolveEffectiveGoal(goalToday);
   const goal = {
     weightKg: effective.goalWeightKg,
     deadline: effective.deadline,

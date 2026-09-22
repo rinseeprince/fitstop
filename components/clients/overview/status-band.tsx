@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { goalState } from "@/lib/goals/goal-state";
+import { goalDirection, type GoalMetric, type GoalType } from "@/lib/goals/goal-types";
 import { containsDigit } from "@/components/clients/metrics/metrics-format";
 import { deadlineRemaining, formatDateOnlyShort } from "./overview-format";
 import { InlineMono } from "./overview-primitives";
@@ -14,6 +15,7 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { Client } from "@/types/check-in";
+import type { CurrentGoal } from "@/types/client-goals";
 import type { MeasurementSeries } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { TextSkeleton } from "@/components/text-skeleton";
@@ -36,22 +38,28 @@ import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 type StatusBandProps = {
   client: Client;
   /**
-   * The goal driving this client now, resolved from `client_goals` by the tab.
-   * Both targets come from here, never from the `clients` mirror on `client`.
+   * The goal in force on the client's today, resolved by the tab: both targets
+   * and the deadline the cells show.
    */
   goal: EffectiveGoal;
+  /**
+   * Where that goal's progress runs from: its type, which decides the direction
+   * it is approached in, and the client's readings on its start day (kg, %).
+   * The goal chips measure from here. null = no goal in force.
+   */
+  goalStart: Pick<CurrentGoal, "type" | "startReadings"> | null;
   /**
    * The progression chart, mounted by the tab so the band stays presentational
    * and the chart's own SWR read stays out of it.
    */
   chart: ReactNode;
   /**
-   * The measurement journey the tab fetched for the chart. Every reading
-   * figure the band shows — current and start weight and body fat, in the
-   * Since-start pill and the goal chips — comes from HERE, never from the
+   * The measurement journey the tab fetched for the chart. The "now" of every
+   * figure — the goal chips and the Since-start pill — and the pill's start
+   * (the baseline, the client's origin) come from HERE, never from the
    * page-level client record: the record revalidates only on coach-side
    * writes, so a check-in the client submits reached the chart on the next
-   * visit and the pill only on a full reload. One read for the four figures.
+   * visit and the pill only on a full reload.
    */
   series: MeasurementSeries | null;
   onOpenMetrics: () => void;
@@ -90,28 +98,40 @@ function formatDelta(current?: number, start?: number): string | null {
 }
 
 /**
- * Goal chip copy. `goalState` reports reached / beyond / gap; "under" vs "over"
- * needs the direction of travel, which only the caller's start value knows.
+ * Goal chip copy. `goalState` reports reached / beyond / gap, judged in the
+ * direction the goal is approached: the goal type's where it decides one, else
+ * the side of the goal's start reading the target sits on (`goalDirection`).
+ * "Under" vs "over" follows that same direction, so a goal with none — no type
+ * direction and no start reading — can only read reached or to go.
+ *
+ * `start`, `current` and `goal` in one unit, any unit: converting never moves a
+ * reading to the other side of its target, so the direction holds.
  */
-function goalChip(
-  start: number | undefined,
-  current: number | undefined,
-  goal: number | undefined,
-  unit: string
-): { text: string; tone: ChipTone } | null {
-  const state = goalState({
-    start: start ?? null,
-    current: current ?? null,
-    goal: goal ?? null,
-  });
+function goalChip({
+  type,
+  metric,
+  start,
+  current,
+  goal,
+  unit,
+}: {
+  type: GoalType | undefined;
+  metric: GoalMetric;
+  start: number | undefined;
+  current: number | undefined;
+  goal: number | undefined;
+  unit: string;
+}): { text: string; tone: ChipTone } | null {
+  if (goal == null) return null;
+  const direction = goalDirection(type, metric, goal, start);
+  const state = goalState({ start: start ?? null, current: current ?? null, goal, direction });
   if (!state) return null;
 
   if (state.state === "reached") return { text: "Goal reached", tone: "positive" };
 
   const amount = `${state.amount.toFixed(1)}${unit === "%" ? "%" : ` ${unit}`}`;
   if (state.state === "beyond") {
-    const isLossGoal = start != null && goal != null && goal < start;
-    return { text: `${amount} ${isLossGoal ? "under" : "over"} goal`, tone: "positive" };
+    return { text: `${amount} ${direction < 0 ? "under" : "over"} goal`, tone: "positive" };
   }
   return { text: `${amount} to go`, tone: "warning" };
 }
@@ -213,6 +233,7 @@ function BandCell({
 export function StatusBand({
   client,
   goal,
+  goalStart,
   chart,
   series,
   onOpenMetrics,
@@ -225,22 +246,37 @@ export function StatusBand({
     v == null ? undefined : formatWeight(v, preference).value;
   const weightUnit = formatWeight(0, preference).unit;
 
-  const startWeight = kg(baselineOf(series, "weight"));
+  const baselineWeight = kg(baselineOf(series, "weight"));
   const currentWeight = kg(newestOf(series, "weight"));
-  const startBodyFat = baselineOf(series, "bodyFat");
+  const baselineBodyFat = baselineOf(series, "bodyFat");
   const currentBodyFat = newestOf(series, "bodyFat");
   const goalWeight = kg(goal.goalWeightKg);
   const goalBodyFat = goal.goalBodyFatPercentage ?? undefined;
 
-  const weightChip = goalChip(startWeight, currentWeight, goalWeight, weightUnit);
-  const bfChip = goalChip(startBodyFat, currentBodyFat, goalBodyFat, "%");
+  // The chips measure from the goal's start, the pill from the client's.
+  const weightChip = goalChip({
+    type: goalStart?.type,
+    metric: "weight",
+    start: kg(goalStart?.startReadings.weight),
+    current: currentWeight,
+    goal: goalWeight,
+    unit: weightUnit,
+  });
+  const bfChip = goalChip({
+    type: goalStart?.type,
+    metric: "bodyFat",
+    start: goalStart?.startReadings.bodyFat ?? undefined,
+    current: currentBodyFat,
+    goal: goalBodyFat,
+    unit: "%",
+  });
   // The chips need both reads; the deadline cell only the goal.
   const chipPending = goalPending || seriesPending;
 
   // Deltas between the DISPLAYED values, so the footer reconciles with the
   // numbers the chart shows.
-  const weightDelta = formatDelta(currentWeight, startWeight);
-  const bfDelta = formatDelta(currentBodyFat, startBodyFat);
+  const weightDelta = formatDelta(currentWeight, baselineWeight);
+  const bfDelta = formatDelta(currentBodyFat, baselineBodyFat);
   const sinceStart = [
     weightDelta && `${weightDelta}${weightUnit}`,
     bfDelta && `${bfDelta}%`,

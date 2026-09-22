@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
 import { IdentityRow } from "./identity-row";
 import { useClientProfileEdit } from "./use-client-profile-edit";
-import type { ClientGoal } from "@/types/client-goals";
+import type { GoalOnDay } from "@/types/client-goals";
 import type { Client } from "@/types/check-in";
 import type { UnitSystem } from "@/utils/unit-conversions";
 
@@ -52,7 +52,7 @@ function makeClient(overrides: Partial<Client> = {}): Client {
  * the identity row's pencil; the Client rail that used to carry it went with
  * the Overview shell rebuild.
  */
-function Harness({ client, goal }: { client: Client; goal: ClientGoal | null }) {
+function Harness({ client, goal }: { client: Client; goal: GoalOnDay | null }) {
   const edit = useClientProfileEdit(client, vi.fn(), goal);
   return (
     <>
@@ -83,21 +83,27 @@ function confirmCancel() {
     .getByRole("button", { name: /^cancel$/i });
 }
 
-function makeGoal(overrides: Partial<ClientGoal> = {}): ClientGoal {
+/** The goal in force on the client's today, as the goals read returns it. */
+function makeGoal(overrides: Partial<GoalOnDay> = {}): GoalOnDay {
   return {
     id: "goal-1",
     clientId: "client-1",
-    goalWeight: 82,
-    goalDeadline: "2026-12-01",
+    name: "Lose weight",
+    type: "lose_weight",
+    targetWeight: 82,
+    targetBodyFatPercentage: null,
+    description: null,
+    startsOn: "2026-01-01",
+    source: "coach",
     setBy: "coach-1",
-    effectiveFrom: "2026-01-01T00:00:00Z",
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    deadline: "2026-12-01",
     ...overrides,
   };
 }
 
-async function openEditor(client = makeClient(), goal: ClientGoal | null = makeGoal()) {
+async function openEditor(client = makeClient(), goal: GoalOnDay | null = makeGoal()) {
   render(<Harness client={client} goal={goal} />);
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: /edit client details/i }));
@@ -476,10 +482,17 @@ describe("the client details sheet", () => {
 
   // Task 0b.4 — the goal is edited here now, not in the nutrition drawer.
   describe("the goal", () => {
-    // THE load-bearing one. `updateGoals` supersedes-and-inserts on EVERY call
-    // with no change detection of its own, so calling it unconditionally would
-    // mint a new client_goals version and an audit event every time a coach
-    // edited a phone number (invariant 7).
+    it("seeds its three boxes from the goal in force", async () => {
+      await openEditor(makeClient(), makeGoal({ targetBodyFatPercentage: 19.5 }));
+
+      expect(screen.getByLabelText("Goal weight")).toHaveValue("82");
+      expect(screen.getByLabelText("Goal body fat percentage")).toHaveValue("19.5");
+      expect(screen.getByLabelText("Goal deadline")).toHaveValue("2026-12-01");
+    });
+
+    // THE load-bearing one. A goal PUT whose targets differ from the goal in
+    // force makes a new goal from today, and one for a client with no goal
+    // creates one — so a save that never touched the goal must not send it.
     it("is not written at all when nothing about it changed", async () => {
       const fetchSpy = mockFetchOk();
       const user = await openEditor();
@@ -515,9 +528,8 @@ describe("the client details sheet", () => {
       expect(goalPut(fetchSpy)).toEqual({ goalDeadline: null });
     });
 
-    // Native bounds, so the impossible days are unclickable rather than offered
-    // and then rejected. The route refuses a past deadline; today is the floor,
-    // and nothing composes into it.
+    // Native bounds: the sheet sets a deadline from today on, so earlier days
+    // are unclickable. Today is the floor, and nothing composes into it.
     it("greys out days before today on the deadline", async () => {
       await openEditor();
 

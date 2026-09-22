@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useLogMeasurement } from "./use-log-measurement";
 import { useMetricEntries } from "@/hooks/use-metric-entries";
 import { useMeasurementSeries } from "@/hooks/use-measurement-series";
+import { useClientGoals } from "@/hooks/use-client-goals";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { MetricTab } from "../metrics-view-types";
 
@@ -18,6 +19,9 @@ vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
 const CLIENT_ID = "client-1";
 const ENTRIES_KEY = `/api/clients/${CLIENT_ID}/metric-entries`;
 const SERIES_KEY = `/api/clients/${CLIENT_ID}/measurement-series`;
+const GOALS_KEY = `/api/clients/${CLIENT_ID}/goals`;
+const GOALS_OLD = { success: true, data: { current: { id: "goal-7", startReadings: { weight: 91.4 } }, planned: [] } };
+const GOALS_NEW = { success: true, data: { current: { id: "goal-7", startReadings: { weight: 89.3 } }, planned: [] } };
 
 const OLD = { success: true, data: [{ id: "e-1", value: 3 }] };
 const NEW = { success: true, data: [{ id: "e-1", value: 3 }, { id: "e-2", value: 4 }] };
@@ -62,6 +66,7 @@ beforeEach(() => {
   answers = {
     [ENTRIES_KEY]: () => Promise.resolve(OLD),
     [SERIES_KEY]: () => Promise.resolve(OLD),
+    [GOALS_KEY]: () => Promise.resolve(GOALS_OLD),
   };
   vi.mocked(swrFetcher).mockImplementation((url: string) => {
     reads.push(url);
@@ -164,5 +169,62 @@ describe("useLogMeasurement — the client record", () => {
     await expect(result.current(input("weight"))).rejects.toThrow("Entry date cannot be in the future");
     expect(onClientUpdated).not.toHaveBeenCalled();
     expect(reads).toEqual([]);
+  });
+});
+
+describe("useLogMeasurement — the goals read", () => {
+  // A goal's progress runs from the reading on its start day, which the goals
+  // read carries: a weight or body fat may move it, a girth or a score never.
+  const useGoalsReader = () => {
+    const { current, isLoading } = useClientGoals(CLIENT_ID);
+    return { data: current ?? undefined, isLoading };
+  };
+
+  it("refreshes it in place when the Physique pane is on screen", async () => {
+    const wrapper = wrapperFor(new Map());
+    const { result } = renderHook(
+      () => ({ shown: useGoalsReader(), log: useLogMeasurement(CLIENT_ID, "body") }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.shown.data).toBeDefined());
+    const refetch = deferred<unknown>();
+    answers[GOALS_KEY] = () => refetch.promise;
+    let save!: Promise<void>;
+    act(() => {
+      save = result.current.log(input("weight"));
+    });
+    await waitFor(() => expect(reads.filter((url) => url === GOALS_KEY)).toHaveLength(2));
+    expect(result.current.shown.data).toEqual(GOALS_OLD.data.current);
+    await act(async () => {
+      refetch.resolve(GOALS_NEW);
+      await save;
+    });
+    expect(result.current.shown.data).toEqual(GOALS_NEW.data.current);
+  });
+
+  it("clears it when no goals reader is on screen, so the Overview opens loading, never on the old start", async () => {
+    const cache: Cache = new Map();
+    const wrapper = wrapperFor(cache);
+    const first = renderHook(() => useGoalsReader(), { wrapper });
+    await waitFor(() => expect(first.result.current.data).toBeDefined());
+    first.unmount();
+
+    const { result } = renderHook(() => useLogMeasurement(CLIENT_ID, null), { wrapper });
+    await act(() => result.current(input("weight")));
+
+    answers[GOALS_KEY] = () => deferred<unknown>().promise;
+    const next = renderHook(() => useGoalsReader(), { wrapper });
+    expect(next.result.current).toEqual({ data: undefined, isLoading: true });
+  });
+
+  it("leaves it alone for a score", async () => {
+    const wrapper = wrapperFor(new Map());
+    const { result } = renderHook(
+      () => ({ shown: useGoalsReader(), log: useLogMeasurement(CLIENT_ID, "body") }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.shown.data).toBeDefined());
+    await act(() => result.current.log(input("mood")));
+    expect(reads.filter((url) => url === GOALS_KEY)).toHaveLength(1);
   });
 });

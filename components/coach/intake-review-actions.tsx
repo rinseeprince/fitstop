@@ -10,6 +10,7 @@ import { useIntakePanel } from "@/contexts/intake-panel-context"
 import { useClient } from "@/hooks/use-check-in-data"
 import { hasStartWeight } from "@/lib/client-profile-completeness"
 import { postIntakeAction } from "@/lib/intake-actions"
+import { useInvalidateClientGoals } from "@/hooks/use-client-goals"
 import type { IntakeStatus, ClientIntake } from "@/types/client-intake"
 
 type IntakeReviewActionsProps = {
@@ -26,6 +27,7 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
   const [synced, setSynced] = useState(false)
   const router = useRouter()
   const { mutate } = useSWRConfig()
+  const invalidateGoals = useInvalidateClientGoals()
   const { openPanel, openMinimized, updateIntake, panel } = useIntakePanel()
   // The DURABLE answer to "have the metrics landed", off the client record.
   // `synced` below is this session's press and only drives the button's own
@@ -47,11 +49,16 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
     try {
       const result = await postIntakeAction(clientId, "sync-metrics")
       const fields: string[] = result.data?.syncedFields ?? []
+      const notes: string[] = result.data?.notes ?? []
       setSynced(true)
+      // The sync may have set the client's first goal, which the client page
+      // this navigates to reads.
+      void invalidateGoals(clientId)
       toast.success("Metrics synced", {
-        description: fields.length > 0
-          ? `Synced: ${fields.join(", ")}`
-          : "No new fields to sync",
+        description: [
+          fields.length > 0 ? `Synced: ${fields.join(", ")}.` : "No new fields to sync.",
+          ...notes,
+        ].join(" "),
       })
       // Pin intake minimized and navigate to client page
       if (intake && clientName) {

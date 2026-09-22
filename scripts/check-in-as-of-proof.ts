@@ -12,24 +12,26 @@
  *   A  Sam Kalepa's 31 May check-in — real DEV history. Its stamped weight is
  *      80; two coach entries dated the same day were written in September (the
  *      day's standing value is 72) and today's reading is 85. It is older than
- *      every goal version. So: the strip's reading is the stamped 80, not 72
- *      and not 85; the page shows no goal and `goalIsCurrent` is false; the
+ *      every goal. So: the strip's reading is the stamped 80, not 72 and not
+ *      85; the page shows no goal and `goalIsCurrent` is false; the nutrition
  *      version covering 31 May is a legacy `archived` row, so no base weight.
  *
  *   B  A throwaway client under the owner's coach row, deleted at the end:
- *      version 1 → check-in B inside it → version 2 → check-in C inside that.
- *      B reads version 1, its deadline and days remaining from B's day, with
- *      the flag false; C reads version 2 with the flag true. C's stamped
- *      weight is above every earlier one, so the trend for B reads "losing"
- *      only while the read stops at B — drop the bound and it flips. Two
- *      earlier check-ins, A (stamped) and W (weightless), predate version 1
- *      and read no goal; W's reading is the coach entry before its day, not
- *      the removed one dated a day later. Two nutrition versions prove the
- *      base weight follows the check-in's day.
+ *      goal 1 from two days ago → check-in B yesterday, inside it → goal 2
+ *      from today → check-in C today, inside that. B reads goal 1, its
+ *      deadline and days remaining from B's day, and its progress from the
+ *      reading on goal 1's start day, with the flag false; C reads goal 2 with
+ *      the flag true. C's stamped weight is above every earlier one, so the
+ *      trend for B reads "losing" only while the read stops at B — drop the
+ *      bound and it flips. Two earlier check-ins, A (stamped) and W
+ *      (weightless), predate goal 1 and read no goal; W's reading is the coach
+ *      entry before its day, not the removed one dated a day later. Two
+ *      nutrition versions prove the base weight follows the check-in's day: B
+ *      and W read the first, C the second.
  *
- * Every fixture number is distinct. The throwaway's readings and goal versions
- * go with the client (ON DELETE CASCADE); its check-ins are deleted first,
- * since `check_ins.client_id` is TEXT with no foreign key.
+ * Every fixture number is distinct. The throwaway's readings and goals go with
+ * the client (ON DELETE CASCADE); its check-ins are deleted first, since
+ * `check_ins.client_id` is TEXT with no foreign key.
  */
 import "./env-bootstrap";
 
@@ -38,7 +40,8 @@ import { createClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { appendMeasurements } from "@/services/measurements-service";
 import { voidMeasurement } from "@/services/measurement-edits-service";
-import { updateGoals } from "@/services/client-goals-service";
+import { addGoal } from "@/services/client-goal-writes-service";
+import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { addDaysToDateString, differenceInDays, getTodayDateStringInTimezone } from "@/lib/date-helpers";
 
 const BASE = process.env.WIRE_PROOF_BASE ?? "http://localhost:3000";
@@ -164,19 +167,30 @@ async function currentValue(clientId: string, metric: "weight" | "bodyFat"): Pro
   return data?.value == null ? undefined : Number(data.value);
 }
 
-/** The goal version in force at an instant, from the raw rows, in JS. */
-async function versionInForce(clientId: string, at: string) {
+/**
+ * The goal in force on a day — the latest to start on or before it — with
+ * that day's deadline — the newest entry on or before it — from the raw rows,
+ * in JS.
+ */
+async function goalInForce(clientId: string, day: string) {
   const { data, error } = await supabaseAdmin
     .from("client_goals")
-    .select("id, goal_weight, goal_deadline, effective_from, superseded_at")
+    .select("id, target_weight, starts_on, client_goal_deadlines(effective_on, deadline)")
     .eq("client_id", clientId);
   if (error) throw new Error(error.message);
-  const atMs = new Date(at).getTime();
-  return (data ?? []).find(
-    (row) =>
-      new Date(row.effective_from).getTime() <= atMs &&
-      (row.superseded_at == null || new Date(row.superseded_at).getTime() > atMs)
-  );
+  const [goal] = (data ?? [])
+    .filter((row) => row.starts_on <= day)
+    .sort((a, b) => (a.starts_on < b.starts_on ? 1 : -1));
+  if (!goal) return undefined;
+  const [entry] = (goal.client_goal_deadlines ?? [])
+    .filter((row) => row.effective_on <= day)
+    .sort((a, b) => (a.effective_on < b.effective_on ? 1 : -1));
+  return {
+    id: goal.id,
+    targetWeight: goal.target_weight == null ? undefined : Number(goal.target_weight),
+    startsOn: goal.starts_on,
+    deadline: entry?.deadline ?? undefined,
+  };
 }
 
 async function coveringVersion(clientId: string, day: string) {
@@ -193,8 +207,6 @@ async function coveringVersion(clientId: string, day: string) {
   if (error) throw new Error(error.message);
   return data;
 }
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main(): Promise<void> {
   const { data: coach, error: coachError } = await supabaseAdmin
@@ -234,7 +246,7 @@ async function main(): Promise<void> {
   const dayWeights = await readingsOnOrBefore(SAM, "weight", mayDay);
   const dayValue = dayWeights.find((r) => r.recorded_on === mayDay);
   const nowWeight = await currentValue(SAM, "weight");
-  const versionThen = await versionInForce(SAM, may.createdAt);
+  const goalThen = await goalInForce(SAM, mayDay);
   const planThen = await coveringVersion(SAM, mayDay);
 
   const a = await comparisonOf(coachSession, may.id);
@@ -252,14 +264,14 @@ async function main(): Promise<void> {
     a.body.comparison.client.currentBodyFatPercentage
   );
   check(
-    "no goal version was in force on 31 May, and the page shows no goal — goalIsCurrent false, no rows, no goal on the wire",
-    versionThen === undefined &&
+    "no goal was in force on 31 May, and the page shows no goal — goalIsCurrent false, no rows, no goal on the wire",
+    goalThen === undefined &&
       a.body.goalProgress.goalIsCurrent === false &&
       a.body.goalProgress.weight === undefined &&
       a.body.goalProgress.bodyFat === undefined &&
       a.body.goalProgress.deadline === undefined &&
       a.body.comparison.client.goalWeight === undefined,
-    { versionThen, goalProgress: a.body.goalProgress, goalWeight: a.body.comparison.client.goalWeight }
+    { goalThen, goalProgress: a.body.goalProgress, goalWeight: a.body.comparison.client.goalWeight }
   );
   check(
     "the nutrition version covering 31 May is not an active one (legacy archived), so the wire carries no base weight",
@@ -274,9 +286,13 @@ async function main(): Promise<void> {
   );
 
   // ---------------------------------------------------------------------------
-  console.info("B. A throwaway client: two goal versions, four check-ins, two nutrition versions");
+  console.info("B. A throwaway client: two goals, four check-ins, two nutrition versions");
   const stamp = Date.now();
-  const today = getTodayDateStringInTimezone("UTC");
+  // A real zone, not the 'UTC' sentinel the server resolves through the
+  // coach's zone: the goals are days on the client's calendar, and this proof
+  // and the server must read the same calendar.
+  const zone = "Europe/London";
+  const today = getTodayDateStringInTimezone(zone);
   const d = (offset: number) => addDaysToDateString(today, offset);
   const { data: created, error: clientError } = await supabaseAdmin
     .from("clients")
@@ -287,7 +303,7 @@ async function main(): Promise<void> {
       active: true,
       user_id: null,
       start_date: d(-14),
-      timezone: "UTC",
+      timezone: zone,
       onboarding_status: "active",
       height: 175,
       gender: "female",
@@ -311,7 +327,7 @@ async function main(): Promise<void> {
   };
 
   try {
-    // The readings before version 1: the baseline (intake, D-14), A's stamped
+    // The readings before goal 1: the baseline (intake, D-14), A's stamped
     // 86 (D-7), a coach entry 85 (D-5), and a coach entry 83 (D-4) removed.
     await appendMeasurements({ clientId: C, source: "intake", recordedOn: d(-14), values: { weight: 90 } });
     await insertCheckIn({ id: A_ID, created_at: `${d(-7)}T12:00:00+00:00`, period_start: d(-13), period_end: d(-7) });
@@ -343,50 +359,102 @@ async function main(): Promise<void> {
     ] as never);
     if (planError) throw new Error(`nutrition_plans insert failed: ${planError.message}`);
 
-    // Version 1, then B inside it, then version 2, then C inside that.
-    const v1 = await updateGoals(C, { goalWeight: 80, goalDeadline: d(30) }, coach.id);
-    await sleep(1500);
-    const bAt = new Date().toISOString();
-    await insertCheckIn({ id: B_ID, created_at: bAt, period_start: d(-2), period_end: today });
-    await appendMeasurements({ clientId: C, source: "check_in", sourceId: B_ID, recordedOn: today, measuredAt: bAt, values: { weight: 84 } });
-    await sleep(1500);
-    const v2 = await updateGoals(C, { goalWeight: 75, goalDeadline: d(60) }, coach.id);
-    await sleep(1500);
+    // Goal 1 from D-2, then B inside it (D-1), then goal 2 from today, then C
+    // inside that. Each goal is set on its own start day, handed to the
+    // function as its today: it refuses a start before the today it is given.
+    const goal1Starts = d(-2);
+    const goal1 = await addGoal({
+      clientId: C,
+      today: goal1Starts,
+      startsOn: goal1Starts,
+      source: "coach",
+      setBy: coach.id,
+      type: "lose_weight",
+      name: GOAL_TYPE_SETTINGS.lose_weight.name,
+      targetWeight: 80,
+      targetBodyFatPercentage: null,
+      description: null,
+      deadline: d(30),
+    });
+    const bDay = d(-1);
+    const bAt = `${bDay}T12:00:00+00:00`;
+    await insertCheckIn({ id: B_ID, created_at: bAt, period_start: d(-2), period_end: bDay });
+    await appendMeasurements({ clientId: C, source: "check_in", sourceId: B_ID, recordedOn: bDay, measuredAt: bAt, values: { weight: 84 } });
+    const goal2 = await addGoal({
+      clientId: C,
+      today,
+      startsOn: today,
+      source: "coach",
+      setBy: coach.id,
+      type: "lose_weight",
+      name: GOAL_TYPE_SETTINGS.lose_weight.name,
+      targetWeight: 75,
+      targetBodyFatPercentage: null,
+      description: null,
+      deadline: d(60),
+    });
     const cAt = new Date().toISOString();
     await insertCheckIn({ id: C_ID, created_at: cAt, period_start: d(1), period_end: d(7) });
     await appendMeasurements({ clientId: C, source: "check_in", sourceId: C_ID, recordedOn: today, measuredAt: cAt, values: { weight: 91 } });
 
-    check("setup: version 1 is superseded and version 2 is live", v1.id !== v2.id && (await versionInForce(C, cAt))?.id === v2.id && (await versionInForce(C, bAt))?.id === v1.id, { v1: v1.id, v2: v2.id });
+    const goalOnB = await goalInForce(C, bDay);
+    const goalOnC = await goalInForce(C, today);
+    check(
+      "setup: goal 1 is in force on B's day and goal 2 on C's, today",
+      goal1 !== goal2 && goalOnB?.id === goal1 && goalOnC?.id === goal2,
+      { goal1, goal2, goalOnB, goalOnC }
+    );
     const nowC = await currentValue(C, "weight");
     check("setup: the Overview's 'now' for the throwaway is C's 91 — the reading written last today", nowC === 91, nowC);
+    const [startThen] = await readingsOnOrBefore(C, "weight", goal1Starts);
 
-    console.info("B1. Check-in B, inside version 1");
+    console.info("B1. Check-in B, inside goal 1");
     const b = await comparisonOf(coachSession, B_ID);
     check("→ 200", b.status === 200, b.status);
-    check("the goal is version 1's 80 with its deadline, not the live 75", b.body.goalProgress.weight?.goal === 80 && b.body.goalProgress.deadline?.date === d(30) && b.body.comparison.client.goalWeight === 80, { goal: b.body.goalProgress.weight?.goal, deadline: b.body.goalProgress.deadline });
-    check("days remaining are counted from B's day", b.body.goalProgress.deadline?.daysRemaining === differenceInDays(new Date(`${d(30)}T00:00:00`), new Date(`${today}T00:00:00`)), b.body.goalProgress.deadline);
-    check("goalIsCurrent is false — version 1 has been replaced", b.body.goalProgress.goalIsCurrent === false, b.body.goalProgress.goalIsCurrent);
+    check(
+      `the goal is goal 1's ${goalOnB?.targetWeight} with its deadline ${goalOnB?.deadline}, not goal 2's ${goalOnC?.targetWeight}`,
+      b.body.goalProgress.weight?.goal === goalOnB?.targetWeight &&
+        b.body.goalProgress.deadline?.date === goalOnB?.deadline &&
+        b.body.comparison.client.goalWeight === goalOnB?.targetWeight,
+      { goal: b.body.goalProgress.weight?.goal, deadline: b.body.goalProgress.deadline }
+    );
+    check(
+      "days remaining are counted from B's day",
+      b.body.goalProgress.deadline?.daysRemaining ===
+        differenceInDays(new Date(`${goalOnB?.deadline}T00:00:00`), new Date(`${bDay}T00:00:00`)),
+      b.body.goalProgress.deadline
+    );
+    check("goalIsCurrent is false — goal 1 has been replaced", b.body.goalProgress.goalIsCurrent === false, b.body.goalProgress.goalIsCurrent);
     check("the position is B's own stamped 84, not today's 91", b.body.goalProgress.weight?.position?.current === 84 && b.body.comparison.client.currentWeight === 84, b.body.goalProgress.weight?.position);
-    check("the start is the baseline as of the start date (90)", b.body.goalProgress.weight?.startingWeight === 90, b.body.goalProgress.weight?.startingWeight);
+    check(
+      `the start is the reading on goal 1's start day (${startThen?.value}) — the coach entry before it, not the removed 83 and not the baseline 90`,
+      Number(startThen?.value) === 85 && b.body.goalProgress.weight?.startingWeight === Number(startThen?.value),
+      { wire: b.body.goalProgress.weight?.startingWeight, expected: startThen }
+    );
     check("the trend stops at B: 86 → 84 reads losing, towards 80 — with C's later 91 in the set it would read gaining", b.body.goalProgress.weight?.position?.isOnTrack === true, b.body.goalProgress.weight?.position);
-    check("the drift note reads the version covering B's day: base 82, effective today", b.body.comparison.client.nutritionPlanBaseWeightKg === 82 && b.body.comparison.client.nutritionPlanEffectiveDate === today, b.body.comparison.client);
+    check("the drift note reads the version covering B's day: base 87", b.body.comparison.client.nutritionPlanBaseWeightKg === 87 && b.body.comparison.client.nutritionPlanEffectiveDate === d(-30), b.body.comparison.client);
 
-    console.info("B2. Check-in C, inside the live version 2");
+    console.info("B2. Check-in C, inside the current goal 2");
     const c = await comparisonOf(coachSession, C_ID);
     check("→ 200", c.status === 200, c.status);
-    check("the goal is version 2's 75 with its deadline", c.body.goalProgress.weight?.goal === 75 && c.body.goalProgress.deadline?.date === d(60), { goal: c.body.goalProgress.weight?.goal, deadline: c.body.goalProgress.deadline });
-    check("goalIsCurrent is true — the version judged is the live one", c.body.goalProgress.goalIsCurrent === true, c.body.goalProgress.goalIsCurrent);
+    check(
+      `the goal is goal 2's ${goalOnC?.targetWeight} with its deadline ${goalOnC?.deadline}`,
+      c.body.goalProgress.weight?.goal === goalOnC?.targetWeight && c.body.goalProgress.deadline?.date === goalOnC?.deadline,
+      { goal: c.body.goalProgress.weight?.goal, deadline: c.body.goalProgress.deadline }
+    );
+    check("goalIsCurrent is true — the goal judged is the one in force today", c.body.goalProgress.goalIsCurrent === true, c.body.goalProgress.goalIsCurrent);
     check("the position is C's stamped 91", c.body.goalProgress.weight?.position?.current === 91, c.body.goalProgress.weight?.position);
+    check("the drift note reads the version covering C's day: base 82, effective today", c.body.comparison.client.nutritionPlanBaseWeightKg === 82 && c.body.comparison.client.nutritionPlanEffectiveDate === today, c.body.comparison.client);
 
-    console.info("B3. Check-in W, weightless, before any version");
+    console.info("B3. Check-in W, weightless, before any goal");
     const expectedW = (await readingsOnOrBefore(C, "weight", d(-3)))[0];
     const w = await comparisonOf(coachSession, W_ID);
     check("→ 200", w.status === 200, w.status);
     check("the reading then is the coach entry before its day (85) — not the removed 83 dated a day later, not A's older 86, not the later rows", w.body.comparison.client.currentWeight === 85 && Number(expectedW?.value) === 85, { wire: w.body.comparison.client.currentWeight, expected: expectedW });
-    check("no version was in force then: no goal on the page", w.body.goalProgress.goalIsCurrent === false && w.body.goalProgress.weight === undefined, w.body.goalProgress);
+    check("no goal was in force then: no goal on the page", (await goalInForce(C, d(-3))) === undefined && w.body.goalProgress.goalIsCurrent === false && w.body.goalProgress.weight === undefined, w.body.goalProgress);
     check("the drift note reads the version covering W's day: base 87", w.body.comparison.client.nutritionPlanBaseWeightKg === 87 && w.body.comparison.client.nutritionPlanEffectiveDate === d(-30), w.body.comparison.client);
 
-    console.info("B4. Check-in A, stamped, before any version");
+    console.info("B4. Check-in A, stamped, before any goal");
     const aa = await comparisonOf(coachSession, A_ID);
     check("→ 200 and the reading then is A's own stamped 86", aa.status === 200 && aa.body.comparison.client.currentWeight === 86, aa.body.comparison.client);
     check("no goal on the page", aa.body.goalProgress.goalIsCurrent === false && aa.body.goalProgress.weight === undefined, aa.body.goalProgress);
@@ -394,8 +462,6 @@ async function main(): Promise<void> {
     console.info("Teardown");
     const { error: ciError } = await supabaseAdmin.from("check_ins").delete().eq("client_id", String(C));
     if (ciError) console.error(`  check-ins not deleted: ${ciError.message}`);
-    const { error: goalError } = await supabaseAdmin.from("client_goals").delete().eq("client_id", C);
-    if (goalError) console.error(`  goal versions not deleted: ${goalError.message}`);
     const { error: planError } = await supabaseAdmin.from("nutrition_plans").delete().eq("client_id", C);
     if (planError) console.error(`  nutrition versions not deleted: ${planError.message}`);
     const { error: auditError } = await supabaseAdmin.from("audit_logs").delete().eq("client_id", C);
@@ -407,6 +473,11 @@ async function main(): Promise<void> {
       .select("id", { count: "exact", head: true })
       .eq("client_id", C);
     check("the throwaway readings went with the client", count === 0, count);
+    const { count: goalCount } = await supabaseAdmin
+      .from("client_goals")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", C);
+    check("the throwaway goals went with the client", goalCount === 0, goalCount);
   }
 
   if (failures > 0) {

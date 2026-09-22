@@ -26,13 +26,10 @@ import {
   getNextFutureNutritionPlan,
 } from "@/services/nutrition-plan-service";
 import { BlocksUnreadableError } from "@/services/client-blocks-service";
-import { getCurrentGoals } from "@/services/client-goals-service";
+import { getGoalForDate } from "@/services/client-goals-service";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import { captureApiError } from "@/lib/error-handler";
-import {
-  resolveEffectiveGoal,
-  toClientGoalInput,
-} from "@/lib/goals/resolve-effective-goal";
+import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { detectGoalDrift } from "@/lib/goals/detect-goal-drift";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
@@ -80,9 +77,9 @@ export async function GET(
     // alongside the plan-role reads because none depends on another, and it
     // must be resolved BEFORE the no-plan early return — the tab's training
     // section is independent of whether a nutrition plan exists.
-    // `getCurrentGoals` is hoisted into this batch from below: the drift check
-    // needs it AND the calc-input resolver needs it, so fetching it once here
-    // costs one query instead of two and removes a sequential hop.
+    // The goal in force on the client's today rides in this batch: the drift
+    // check needs it AND the calc-input resolver needs it, so reading it once
+    // here costs one query instead of two and removes a sequential hop.
     //
     // THREE PLAN ROLES (versions placed by date, migration 166):
     //   covering  → what governs TODAY: "Active since" + hasCurrentTargets.
@@ -95,14 +92,14 @@ export async function GET(
     // The old todayEvent probe is retired: the covering ROW answers "is
     // anything running" directly (events before a queued change belong to the
     // still-covering old version).
-    const [covering, latestPlan, nextFuture, activePlan, nextPlan, currentGoals] =
+    const [covering, latestPlan, nextFuture, activePlan, nextPlan, goal] =
       await Promise.all([
         getNutritionPlanForDate(clientId, clientToday),
         getLatestNutritionPlan(clientId),
         getNextFutureNutritionPlan(clientId, clientToday),
         getTrainingPlanSummaryForDate(clientId, clientToday),
         getNextFutureTrainingPlan(clientId, clientToday),
-        getCurrentGoals(clientId),
+        getGoalForDate(clientId, clientToday),
       ]);
     const hasTrainingPlan = Boolean(activePlan ?? nextPlan);
 
@@ -137,7 +134,7 @@ export async function GET(
     // The POST does its own strict resolution, so Generate still behaves.
     const calcInputs = await resolveNutritionCalcInputs(clientId, client, {
       today: clientToday,
-      currentGoals,
+      goal,
     }).catch((err) => {
       captureApiError(err, { action: "nutrition-calc-inputs", clientId });
       return null;
@@ -161,13 +158,12 @@ export async function GET(
     // Per-day targets are computed per date from the covering version; the
     // client portal builds its own date-accurate targets in client-portal-service.
 
-    // Goal-drift flag (Session 7.8): does the goal that drives the client NOW
-    // (effective-goal resolver) differ from the snapshot this active plan was
-    // built against? Surfaced as "Goal changed — regenerate", distinct from the
-    // weight-delta banner (which compares current weight vs the plan base weight).
-    const effectiveGoal = resolveEffectiveGoal({
-      clientGoal: toClientGoalInput(currentGoals, client),
-    });
+    // Goal-drift flag (Session 7.8): does the goal in force on the client's
+    // today — its weight target and that day's deadline — differ from the
+    // snapshot this active plan was built against? Surfaced as "Goal changed —
+    // regenerate", distinct from the weight-delta banner (which compares current
+    // weight vs the plan base weight).
+    const effectiveGoal = resolveEffectiveGoal(goal);
     // Drift compares against the version the drawer will actually seed and
     // overwrite (latest ?? covering) — comparing anything else would flag or
     // clear the banner against numbers Generate does not touch.

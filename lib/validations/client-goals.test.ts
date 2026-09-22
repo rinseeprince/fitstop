@@ -1,76 +1,93 @@
 import { describe, it, expect } from "vitest";
-import { updateGoalsSchema } from "./client-goals";
+import {
+  addGoalSchema,
+  editGoalSchema,
+  goalDeadlineSchema,
+  renameGoalSchema,
+  restoreGoalSchema,
+  updateGoalsSchema,
+} from "./client-goals";
 
-// Session 7.8: the goal deadline must persist + be clearable. Session 7.86 made
-// the schema format-only — the "not in the past" bound moved to the route, where
-// it's judged against the coach's local today (see goals/route.test.ts). A
-// server-clock bound in the schema would reject an east-of-UTC coach's own today.
-describe("updateGoalsSchema", () => {
-  it("accepts a future goal deadline", () => {
-    const result = updateGoalsSchema.safeParse({ goalDeadline: "2099-12-31" });
-    expect(result.success).toBe(true);
+describe("addGoalSchema", () => {
+  it("takes a type alone — every target, the name and the day are optional", () => {
+    expect(addGoalSchema.safeParse({ type: "general_fitness" }).success).toBe(true);
   });
 
-  it("accepts a well-formed past goal deadline (the past-date bound is route-side now)", () => {
-    const result = updateGoalsSchema.safeParse({ goalDeadline: "2020-01-01" });
-    expect(result.success).toBe(true);
+  it("takes only the six types", () => {
+    expect(addGoalSchema.safeParse({ type: "fat_loss" }).success).toBe(false);
   });
 
-  it("rejects a malformed goal deadline (format-only contract)", () => {
-    // Under-padded — fails the YYYY-MM-DD shape regex (the only check left).
-    const result = updateGoalsSchema.safeParse({ goalDeadline: "2026-6-1" });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues.some((i) => i.path.includes("goalDeadline"))).toBe(true);
-    }
+  it("bounds a weight target in kilograms and a body-fat target in percent", () => {
+    expect(addGoalSchema.safeParse({ type: "lose_weight", targetWeight: 19.5 }).success).toBe(false);
+    expect(addGoalSchema.safeParse({ type: "lose_weight", targetWeight: 251 }).success).toBe(false);
+    expect(addGoalSchema.safeParse({ type: "recomposition", targetBodyFatPercentage: 2.5 }).success).toBe(false);
+    expect(addGoalSchema.safeParse({ type: "recomposition", targetBodyFatPercentage: 61 }).success).toBe(false);
+    expect(
+      addGoalSchema.safeParse({ type: "lose_weight", targetWeight: 64.3, targetBodyFatPercentage: 18.5 }).success
+    ).toBe(true);
   });
 
-  // A goal has no start of its own (docs/MEASUREMENT-LOG-PLAN.md commit 8bb):
-  // the window a nutrition deficit is spread over begins at the day the plan
-  // takes effect. A payload still carrying one — an older client build — is
-  // accepted with the key dropped: never refused, never validated against the
-  // deadline, never stored. Carrying ONLY one is an empty payload.
-  it("drops a goalStartDate rather than validating or storing it", () => {
-    const result = updateGoalsSchema.safeParse({
-      goalStartDate: "2027-01-01",
-      goalDeadline: "2026-12-01", // "before the start" — no rule reads the pair any more
-    });
-    expect(result.success).toBe(true);
-    if (result.success) expect("goalStartDate" in result.data).toBe(false);
-
-    expect(updateGoalsSchema.safeParse({ goalStartDate: "2099-01-01" }).success).toBe(false);
+  it("wants days as YYYY-MM-DD, and leaves the date rules to the goal functions", () => {
+    expect(addGoalSchema.safeParse({ type: "maintain", startsOn: "03/10/2026" }).success).toBe(false);
+    // A day already past on the server's clock is the functions' question, judged on the client's today.
+    expect(addGoalSchema.safeParse({ type: "maintain", startsOn: "2020-01-06", deadline: "2020-02-03" }).success).toBe(true);
   });
 
-  it("accepts an explicit null goalDeadline (clearing)", () => {
-    const result = updateGoalsSchema.safeParse({ goalDeadline: null });
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data.goalDeadline).toBeNull();
+  it("trims a name and refuses one that is blank or too long", () => {
+    const parsed = addGoalSchema.safeParse({ type: "event_prep", name: "  Spring race  " });
+    expect(parsed.success && parsed.data.name).toBe("Spring race");
+    expect(addGoalSchema.safeParse({ type: "event_prep", name: "   " }).success).toBe(false);
+    expect(addGoalSchema.safeParse({ type: "event_prep", name: "x".repeat(81) }).success).toBe(false);
+  });
+});
+
+describe("editGoalSchema", () => {
+  const whole = {
+    type: "build_muscle",
+    name: "Winter build",
+    targetWeight: 86.2,
+    targetBodyFatPercentage: null,
+    description: null,
+    startsOn: "2026-11-02",
+    deadline: null,
+  };
+
+  it("takes the goal whole", () => {
+    expect(editGoalSchema.safeParse(whole).success).toBe(true);
   });
 
-  it("accepts a null goalBodyFatPercentage (clearing the optional target)", () => {
-    const result = updateGoalsSchema.safeParse({ goalBodyFatPercentage: null });
-    expect(result.success).toBe(true);
+  it("refuses a partial goal", () => {
+    const { startsOn: _startsOn, ...partial } = whole;
+    expect(editGoalSchema.safeParse(partial).success).toBe(false);
+  });
+});
+
+describe("the small schemas", () => {
+  it("takes a deadline or none", () => {
+    expect(goalDeadlineSchema.safeParse({ deadline: null }).success).toBe(true);
+    expect(goalDeadlineSchema.safeParse({ deadline: "2027-05-21" }).success).toBe(true);
+    expect(goalDeadlineSchema.safeParse({}).success).toBe(false);
   });
 
-  it("rejects an empty payload (at least one field required)", () => {
+  it("renames with a description or none", () => {
+    expect(renameGoalSchema.safeParse({ name: "Cut", description: null }).success).toBe(true);
+    expect(renameGoalSchema.safeParse({ name: "Cut", description: "x".repeat(501) }).success).toBe(false);
+  });
+
+  it("restores from a copy string", () => {
+    expect(restoreGoalSchema.safeParse({ undo: "payload.signature" }).success).toBe(true);
+    expect(restoreGoalSchema.safeParse({ undo: "" }).success).toBe(false);
+  });
+});
+
+describe("updateGoalsSchema (the details sheet, until 8d2)", () => {
+  it("needs at least one field", () => {
     expect(updateGoalsSchema.safeParse({}).success).toBe(false);
   });
 
-  // goalWeight is canonical KILOGRAMS (migration 141) and had no bounds
-  // coverage at all while carrying a pounds ceiling of 700 — so a goal of
-  // 699 kg validated, and the number only ever made sense as pounds.
-  describe("goalWeight is bounded in kilograms", () => {
-    it("accepts a plausible kg goal", () => {
-      expect(updateGoalsSchema.safeParse({ goalWeight: 82.5 }).success).toBe(true);
-    });
-
-    it("rejects a pounds-shaped goal that the old 20-700 range let through", () => {
-      expect(updateGoalsSchema.safeParse({ goalWeight: 300 }).success).toBe(false);
-      expect(updateGoalsSchema.safeParse({ goalWeight: 699 }).success).toBe(false);
-    });
-
-    it("rejects a goal below the kg floor", () => {
-      expect(updateGoalsSchema.safeParse({ goalWeight: 15 }).success).toBe(false);
-    });
+  it("clears a body-fat target or a deadline with null, never the weight target", () => {
+    expect(updateGoalsSchema.safeParse({ goalBodyFatPercentage: null }).success).toBe(true);
+    expect(updateGoalsSchema.safeParse({ goalDeadline: null }).success).toBe(true);
+    expect(updateGoalsSchema.safeParse({ goalWeight: null }).success).toBe(false);
   });
 });

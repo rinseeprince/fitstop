@@ -20,7 +20,7 @@ import { formatDateOnlyShort } from "@/components/clients/overview/overview-form
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 import { getFirstName } from "@/lib/client-name";
-import type { ClientGoal } from "@/types/client-goals";
+import type { GoalOnDay } from "@/types/client-goals";
 
 function Divider() {
   return <div className="h-px bg-[rgba(13,148,136,0.08)]" />;
@@ -40,13 +40,13 @@ function Divider() {
  * to avoid that is the prop-drilling §4 warns about. A sentence naming the
  * destination costs the coach one click and risks nothing.
  */
-function GoalSummary({ goal }: { goal: ClientGoal | null }) {
+function GoalSummary({ goal }: { goal: GoalOnDay | null }) {
   const { preference } = useUnits();
 
-  const shown = goal?.goalWeight != null ? formatWeight(goal.goalWeight, preference) : null;
+  const shown = goal?.targetWeight != null ? formatWeight(goal.targetWeight, preference) : null;
   const summary = shown
     ? `${shown.value.toFixed(1)} ${shown.unit}${
-        goal?.goalDeadline ? ` by ${formatDateOnlyShort(goal.goalDeadline)}` : ""
+        goal?.deadline ? ` by ${formatDateOnlyShort(goal.deadline)}` : ""
       }`
     : null;
 
@@ -79,12 +79,13 @@ function GoalSummary({ goal }: { goal: ClientGoal | null }) {
  */
 export function DrawerFormBody() {
   const builder = useNutritionBuilderContext();
-  // The same shared read the Overview uses, so both surfaces render one goal
-  // from one cache entry rather than two fetches that can disagree.
-  const { goal } = useClientGoals(builder.client.id);
+  // The goal in force on the client's today, from the same shared read the
+  // Overview uses, so both surfaces render one goal from one cache entry rather
+  // than two fetches that can disagree.
+  const { current } = useClientGoals(builder.client.id);
   // Both are required for the calculator to solve anything: without a deadline
   // it returns maintenance no matter what the target weight says.
-  const hasGoalTarget = goal?.goalWeight != null && goal?.goalDeadline != null;
+  const hasGoalTarget = current?.targetWeight != null && current?.deadline != null;
 
   return (
     <div className="flex-1 overflow-y-auto px-6 pt-6" style={{ paddingBottom: 120 }}>
@@ -107,7 +108,7 @@ export function DrawerFormBody() {
           <NutritionGoalChangedBanner
             drift={builder.nutritionData?.goalChanged}
           />
-          <GoalSummary goal={goal} />
+          <GoalSummary goal={current} />
         </div>
 
         <Divider />

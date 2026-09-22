@@ -5,10 +5,14 @@ import { getIntake } from "@/services/client-intake-service";
 import {
   appendMeasurements,
   getCurrentMeasurements,
+  getReadingsOnDay,
 } from "@/services/measurements-service";
-import { updateGoals } from "@/services/client-goals-service";
+import { getGoalForDate } from "@/services/client-goals-service";
+import { addGoal, GoalWriteError } from "@/services/client-goal-writes-service";
+import { getClientTodayString } from "@/services/today-service";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
-import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
+import { formatDateOnlyShort, getTodayDateStringInTimezone } from "@/lib/date-helpers";
+import { GOAL_TYPE_SETTINGS, goalTypeFromTargets, isGoalType } from "@/lib/goals/goal-types";
 import type { MeasurementValues } from "@/lib/measurements/keys";
 
 const db = supabaseAdmin;
@@ -90,9 +94,6 @@ const FIELD_NAME_MAP: Record<string, string> = {
   height: "height",
   gender: "gender",
   date_of_birth: "date of birth",
-  goal_weight: "goal weight",
-  goal_deadline: "goal deadline",
-  goal_body_fat_percentage: "goal body fat",
   work_activity_level: "activity level",
 };
 
@@ -106,25 +107,47 @@ const READING_NAMES: Record<keyof MeasurementValues, string> = {
   thighs: "thighs",
 };
 
+/** Whether the questionnaire answered anything about a goal. */
+function hasQuestionnaireGoal(intake: ClientIntake): boolean {
+  return (
+    isGoalType(intake.primaryGoal) ||
+    intake.targetWeight != null ||
+    intake.goalBodyFatPercentage != null ||
+    intake.goalDeadline != null ||
+    Boolean(intake.goalDescription?.trim())
+  );
+}
+
+/**
+ * What a sync did: the fields it filled, as the coach reads them; a plain
+ * sentence for each part of the questionnaire it left alone; and the goal it
+ * set, for the route's audit.
+ */
+type IntakeMetricsSync = {
+  syncedFields: string[];
+  notes: string[];
+  goalId: string | null;
+};
+
 /**
  * Sync intake metrics to the client record.
  * Only sets fields that are currently null on the client (does not overwrite),
- * and records the intake's weight and body fat as `intake` readings in the
- * measurement log only when the client has no reading of that metric yet.
- * Returns a list of human-readable field names that were synced.
+ * records the intake's weight and body fat as `intake` readings in the
+ * measurement log only when the client has no reading of that metric yet, and
+ * sets the questionnaire's goal only when the client has no goal in force on
+ * their today.
  */
 export async function syncMetricsToClient(
-  clientId: string
-): Promise<string[]> {
+  clientId: string,
+  coachId: string
+): Promise<IntakeMetricsSync> {
   const intake = await getIntake(clientId);
   if (!intake) throw new Error("No intake found for this client");
 
   const [{ data: client, error: clientError }, current] = await Promise.all([
     db
       .from("clients")
-      .select(
-        "height, gender, date_of_birth, goal_weight, goal_body_fat_percentage, goal_deadline, work_activity_level, timezone"
-      )
+      .select("height, gender, date_of_birth, work_activity_level, timezone")
       .eq("id", clientId)
       .single(),
     getCurrentMeasurements(clientId),
@@ -159,22 +182,6 @@ export async function syncMetricsToClient(
   if (client.date_of_birth == null && intake.dateOfBirth != null) {
     updates.date_of_birth = intake.dateOfBirth;
   }
-  // The goal fields go in their OWN object, which never reaches the `clients`
-  // UPDATE below: `updateGoals` owns `client_goals` and the `clients.*` mirror,
-  // and a second writer here is what let the two stores disagree. The
-  // only-if-currently-null guards are unchanged — they still read the raw mirror
-  // columns, which is the right question ("has this client already got one?").
-  const goalUpdates: Record<string, string | number | undefined> = {};
-
-  if (client.goal_weight == null && intake.targetWeight != null) {
-    goalUpdates.goal_weight = intake.targetWeight;
-  }
-  if (client.goal_deadline == null && intake.goalDeadline != null) {
-    goalUpdates.goal_deadline = intake.goalDeadline;
-  }
-  if (client.goal_body_fat_percentage == null && intake.goalBodyFatPercentage != null) {
-    goalUpdates.goal_body_fat_percentage = intake.goalBodyFatPercentage;
-  }
   if (client.work_activity_level == null && intake.workActivityLevel != null) {
     updates.work_activity_level = intake.workActivityLevel;
   }
@@ -187,12 +194,13 @@ export async function syncMetricsToClient(
   // metric, because client_intake.weight_unit defaults to 'kg' (034:30) and the
   // intake toggle only ever reached localStorage. Overwriting a client's own
   // display preference from a field they never actually set is not a sync.
-  // Spans all three. This is the list the coach is shown ("Synced: weight,
-  // goal weight, goal deadline…"), so a store left out of it would quietly
-  // stop reporting fields the sync still writes.
+  //
+  // This is the list the coach is shown ("Synced: weight, height, goal…"): the
+  // readings, then the profile fields, then the goal and the energy pair as
+  // they land below — a write left out of it would quietly stop being reported.
   const syncedFields = [
     ...(Object.keys(readings) as (keyof MeasurementValues)[]).map((k) => READING_NAMES[k]),
-    ...[...Object.keys(updates), ...Object.keys(goalUpdates)]
+    ...Object.keys(updates)
       .filter((k) => k !== "updated_at")
       .map((k) => FIELD_NAME_MAP[k] ?? k),
   ];
@@ -224,17 +232,71 @@ export async function syncMetricsToClient(
     });
   }
 
-  // Goals are written ONCE, by `updateGoals`, from the object the `clients`
-  // UPDATE above never saw. **This throws**: a swallowed failure here left the
-  // mirror carrying an intake goal that `client_goals` never received, and the
-  // review page reported a successful sync. The metric fields are already
-  // committed and are unaffected.
-  if (Object.keys(goalUpdates).length > 0) {
-    await updateGoals(clientId, {
-      goalWeight: goalUpdates.goal_weight as number | undefined,
-      goalBodyFatPercentage: goalUpdates.goal_body_fat_percentage as number | undefined,
-      goalDeadline: goalUpdates.goal_deadline as string | undefined,
-    }, "intake");
+  // The questionnaire's goal, only when the client has no goal in force on
+  // their today — a goal already set, by the coach or an earlier sync, is never
+  // replaced. It starts today, set by the syncing coach: the client's type,
+  // their targets, their own words as its description, and their deadline
+  // while it is still ahead. A third statement, after the readings (§2 item
+  // 13): if it throws, the fields and readings stand, the sync reports
+  // failure, and a re-run writes only the goal.
+  const notes: string[] = [];
+  let goalId: string | null = null;
+  if (hasQuestionnaireGoal(intake)) {
+    const today = await getClientTodayString(clientId);
+    if (await getGoalForDate(clientId, today)) {
+      notes.push("The client already has a goal, so the questionnaire's goal wasn't copied.");
+    } else {
+      const targetWeight = intake.targetWeight ?? null;
+      const targetBodyFatPercentage = intake.goalBodyFatPercentage ?? null;
+      const deadline = intake.goalDeadline ?? null;
+      const deadlineAhead = deadline != null && deadline >= today;
+      if (deadline != null && !deadlineAhead) {
+        notes.push(
+          `The goal deadline (${formatDateOnlyShort(deadline)}) had passed, so it wasn't copied.`
+        );
+      }
+      // The client's own answer; without one, the targets against their
+      // weight today — read after the readings above, which may have just
+      // recorded it.
+      const type = isGoalType(intake.primaryGoal)
+        ? intake.primaryGoal
+        : goalTypeFromTargets({
+            targetWeight,
+            targetBodyFatPercentage,
+            reading: (await getReadingsOnDay(clientId, today)).weight?.value ?? null,
+          });
+      const goal = (goalDeadline: string | null): Promise<string> =>
+        addGoal({
+          clientId,
+          today,
+          startsOn: today,
+          source: "intake",
+          setBy: coachId,
+          type,
+          name: GOAL_TYPE_SETTINGS[type].name,
+          targetWeight,
+          targetBodyFatPercentage,
+          description: intake.goalDescription ?? null,
+          deadline: goalDeadline,
+        });
+      try {
+        goalId = await goal(deadlineAhead ? deadline : null);
+      } catch (error) {
+        // A goal the coach has already planned starts on or before the
+        // questionnaire's deadline, which a goal's deadline may not reach:
+        // the goal is copied without it, and the sync says so, rather than
+        // failing on every re-run.
+        if (!(error instanceof GoalWriteError && error.code === "deadline_after_next" && deadline)) throw error;
+        goalId = await goal(null);
+        const planned = error.conflict;
+        notes.push(
+          planned?.startsOn
+            ? `The goal deadline (${formatDateOnlyShort(deadline)}) runs into ${planned.name}, which starts ${formatDateOnlyShort(planned.startsOn)}, so it wasn't copied.`
+            : `The goal deadline (${formatDateOnlyShort(deadline)}) runs into the next goal, so it wasn't copied.`
+        );
+      }
+      syncedFields.push("goal");
+    }
   }
 
   // Recompute the energy pair from the freshly-synced profile (non-blocking).
@@ -251,5 +313,5 @@ export async function syncMetricsToClient(
     console.error("Energy recalculation after sync failed:", energyError instanceof Error ? energyError.message : "Unknown error");
   }
 
-  return syncedFields;
+  return { syncedFields, notes, goalId };
 }

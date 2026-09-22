@@ -72,7 +72,9 @@ let answerSeries: () => Promise<unknown> = () => Promise.resolve({ success: true
 function answer(url: string): Promise<unknown> {
   const path = url.split("?")[0];
   if (path.endsWith("/measurement-series")) return answerSeries();
-  if (path.endsWith("/goals")) return Promise.resolve({ success: true, data: null });
+  if (path.endsWith("/goals")) {
+    return Promise.resolve({ success: true, data: { current: null, planned: [] } });
+  }
   if (path.endsWith("/blocks/facts")) return Promise.resolve({ success: true, data: { facts: [] } });
   if (path.endsWith("/blocks")) {
     return Promise.resolve({

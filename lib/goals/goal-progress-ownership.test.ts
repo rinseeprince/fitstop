@@ -6,27 +6,28 @@ import { join, relative } from "node:path";
  * Goal position is composed ONCE, by `deriveGoalProgress` (`./goal-progress.ts`),
  * from a goal and the readings in force AT A DATE — and on the check-in review
  * that date is the check-in's own day (docs/MEASUREMENT-LOG-PLAN.md commit 8b):
- * the position comes from `getReadingsAsOf` and nothing else. Never the client
- * record's current reading, which is today's; never a bare check-in field,
- * which is a report with every field optional — a goal row built from one read
- * a weightless check-in as "No goals" for a client whose weight was in the log.
- * The Overview and the Journey keep reading today, so the two as-of reads have
- * exactly one caller.
+ * the goal judged is the one in force on that day, and the position comes from
+ * `getReadingsAsOf` and nothing else. Never the client record's current
+ * reading, which is today's; never a bare check-in field, which is a report
+ * with every field optional — a goal row built from one read a weightless
+ * check-in as "No goals" for a client whose weight was in the log. The goal's
+ * progress runs from the client's reading on the goal's own start day
+ * (`getReadingsOnDay`), never the baseline. The Overview and the Journey keep
+ * reading today, so the as-of read has exactly one caller.
  *
  * This scan, in the shape of `lib/check-in/adherence-ownership.test.ts`, keeps
- * the composition in one place, the check-in out of it, the review's readings
- * coming from the as-of read, and the as-of reads on the review path alone.
+ * the composition in one place, the check-in out of it, the review's goal
+ * picked by the check-in's day, its readings coming from the as-of read, its
+ * goal start from the start-day read, and the as-of read on the review path
+ * alone.
  */
 const ROOT = join(__dirname, "..", "..");
 const KERNEL = "lib/goals/goal-progress.ts";
 const REVIEW = "services/comparison-service.ts";
 const SCAN: string[] = ["services", "lib/goals"];
-// Where a second caller of the as-of reads would appear.
+// Where a second caller of the as-of read would appear.
 const AS_OF_SCAN: string[] = ["app", "components", "hooks", "lib", "services", "utils"];
-const AS_OF_OWNERS = new Set<string>([
-  "services/measurements-service.ts",
-  "services/client-goals-service.ts",
-]);
+const AS_OF_OWNERS = new Set<string>(["services/measurements-service.ts"]);
 
 const PRIMITIVES = /\b(calculateGoalProgress|deriveGoalStatus|computeGoalPace)\b/g;
 // `currentCheckIn`, `firstCheckIn`, `checkIns`, `CheckIn`… — any identifier
@@ -34,7 +35,7 @@ const PRIMITIVES = /\b(calculateGoalProgress|deriveGoalStatus|computeGoalPace)\b
 const CHECK_IN_IDENT = /\b\w*[cC]heckIn\w*\b/g;
 // The client record's reading — today's, through `client_current_measurements`.
 const RECORD_READING = /\bclient\.(currentWeight|currentBodyFatPercentage)\b/g;
-const AS_OF_READS = /\b(getReadingsAsOf|getGoalAsOf)\b/g;
+const AS_OF_READS = /\bgetReadingsAsOf\b/g;
 
 function filesUnder(target: string): string[] {
   const abs = join(ROOT, target);
@@ -115,6 +116,11 @@ function asOfBinding(src: string): string | null {
   return index === -1 ? null : (names[index] ?? null);
 }
 
+/** The identifier the review binds the goal in force on the check-in's day to. */
+function judgedGoalBinding(src: string): string | null {
+  return /const\s+(\w+)\s*=\s*goalOnDay\(\s*\w+\s*,\s*day\s*\)/.exec(src)?.[1] ?? null;
+}
+
 describe("deriveGoalProgress owns goal position", () => {
   it("is the only caller of the three primitives under services/ and lib/goals/", () => {
     const offenders: string[] = [];
@@ -170,7 +176,33 @@ describe("deriveGoalProgress owns goal position", () => {
     expect(args).toMatch(new RegExp(`\\b${binding}\\.bodyFat\\b`));
   });
 
-  it("the as-of reads have one caller, the review — the Overview and the Journey keep reading today", () => {
+  it("on the review, the goal judged is the one in force on the check-in's day, with that day's deadline", () => {
+    const src = stripComments(readFileSync(join(ROOT, REVIEW), "utf8"));
+
+    // `day` is the check-in's day on the client's calendar; the goal in force
+    // on the client's today answers a different question (is it still?).
+    const judged = judgedGoalBinding(src);
+    expect(judged).not.toBeNull();
+    expect(callArguments(src, "goalAsOf(").map(splitTopLevel)).toContainEqual([judged, "day"]);
+  });
+
+  it("on the review, the goal's progress runs from the reading on the goal's start day — from getReadingsOnDay", () => {
+    const src = stripComments(readFileSync(join(ROOT, REVIEW), "utf8"));
+
+    const reads = callArguments(src, "getReadingsOnDay(").map(splitTopLevel);
+    expect(reads).toHaveLength(1);
+    expect(reads[0][1]).toBe(`${judgedGoalBinding(src)}.startsOn`);
+
+    const binding = /const\s+(\w+)\s*=[^;]*\bgetReadingsOnDay\(/.exec(src)?.[1];
+    expect(binding).toBeDefined();
+    const [args] = callArguments(src, "deriveGoalProgress(");
+    expect(args).toMatch(new RegExp(`\\bgoalStartWeight:\\s*${binding}\\??\\.weight\\b`));
+    expect(args).toMatch(
+      new RegExp(`\\bgoalStartBodyFatPercentage:\\s*${binding}\\??\\.bodyFat\\b`)
+    );
+  });
+
+  it("the as-of read has one caller, the review — the Overview and the Journey keep reading today", () => {
     const offenders: string[] = [];
 
     for (const target of AS_OF_SCAN) {
@@ -184,10 +216,9 @@ describe("deriveGoalProgress owns goal position", () => {
 
     expect(offenders).toEqual([]);
 
-    // …and the review really calls both.
+    // …and the review really calls it.
     const review = stripComments(readFileSync(join(ROOT, REVIEW), "utf8"));
     expect(review).toMatch(/\bgetReadingsAsOf\(/);
-    expect(review).toMatch(/\bgetGoalAsOf\(/);
   });
 
   it("scans a real tree — the guard is worthless if the glob is empty", () => {

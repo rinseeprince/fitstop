@@ -20,9 +20,9 @@ import { AUDIT_ACTIONS } from "@/lib/constants";
 // Journey blocks (client_phases — the coach-facing noun is "block"). "Today"
 // is the CLIENT's calendar day per the locked timezone model: whose calendar
 // the date is on decides the zone, and a block lives on the client's.
-// This route must NEVER call updateGoals — blocks save independently of the
-// goal (workstream invariant 7), and updateGoals supersedes-and-inserts on
-// every call with no change detection.
+// This route must NEVER read or write a goal — blocks save independently of
+// the goal (workstream invariant 7): a block carries no goal, and which goal
+// governed a block is not something the platform records.
 
 /** 422 for the request-shaped service errors, 409 for the question; null
  *  for everything else. */

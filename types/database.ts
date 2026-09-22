@@ -513,55 +513,107 @@ export type Database = {
           },
         ]
       }
+      client_goal_deadlines: {
+        Row: {
+          created_at: string
+          deadline: string | null
+          effective_on: string
+          goal_id: string
+          id: string
+          set_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deadline?: string | null
+          effective_on: string
+          goal_id: string
+          id?: string
+          set_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deadline?: string | null
+          effective_on?: string
+          goal_id?: string
+          id?: string
+          set_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_goal_deadlines_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "client_goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_goal_deadlines_set_by_fkey"
+            columns: ["set_by"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_goals: {
         Row: {
           client_id: string
           created_at: string
-          effective_from: string
-          goal_body_fat_percentage: number | null
-          goal_deadline: string | null
-          goal_weight: number | null
+          description: string | null
           id: string
-          notes: string | null
-          primary_goal: string | null
-          set_by: string
-          superseded_at: string | null
+          name: string
+          set_by: string | null
+          source: string
+          starts_on: string
+          target_body_fat_percentage: number | null
+          target_weight: number | null
+          type: string
           updated_at: string
         }
         Insert: {
           client_id: string
           created_at?: string
-          effective_from?: string
-          goal_body_fat_percentage?: number | null
-          goal_deadline?: string | null
-          goal_weight?: number | null
+          description?: string | null
           id?: string
-          notes?: string | null
-          primary_goal?: string | null
-          set_by?: string
-          superseded_at?: string | null
+          name: string
+          set_by?: string | null
+          source: string
+          starts_on: string
+          target_body_fat_percentage?: number | null
+          target_weight?: number | null
+          type: string
           updated_at?: string
         }
         Update: {
           client_id?: string
           created_at?: string
-          effective_from?: string
-          goal_body_fat_percentage?: number | null
-          goal_deadline?: string | null
-          goal_weight?: number | null
+          description?: string | null
           id?: string
-          notes?: string | null
-          primary_goal?: string | null
-          set_by?: string
-          superseded_at?: string | null
+          name?: string
+          set_by?: string | null
+          source?: string
+          starts_on?: string
+          target_body_fat_percentage?: number | null
+          target_weight?: number | null
+          type?: string
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "client_goals_client_id_fkey"
+            foreignKeyName: "client_goals_client_id_fkey1"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_goals_set_by_fkey"
+            columns: ["set_by"]
+            isOneToOne: false
+            referencedRelation: "coaches"
             referencedColumns: ["id"]
           },
         ]
@@ -990,9 +1042,6 @@ export type Database = {
           date_of_birth: string | null
           email: string
           gender: string | null
-          goal_body_fat_percentage: number | null
-          goal_deadline: string | null
-          goal_weight: number | null
           height: number | null
           id: string
           include_activity_burn: boolean
@@ -1032,9 +1081,6 @@ export type Database = {
           date_of_birth?: string | null
           email: string
           gender?: string | null
-          goal_body_fat_percentage?: number | null
-          goal_deadline?: string | null
-          goal_weight?: number | null
           height?: number | null
           id?: string
           include_activity_burn?: boolean
@@ -1074,9 +1120,6 @@ export type Database = {
           date_of_birth?: string | null
           email?: string
           gender?: string | null
-          goal_body_fat_percentage?: number | null
-          goal_deadline?: string | null
-          goal_weight?: number | null
           height?: number | null
           id?: string
           include_activity_burn?: boolean
@@ -3103,6 +3146,22 @@ export type Database = {
       }
     }
     Functions: {
+      add_client_goal: {
+        Args: {
+          p_client_id: string
+          p_deadline?: string
+          p_description?: string
+          p_name: string
+          p_set_by?: string
+          p_source: string
+          p_starts_on: string
+          p_target_body_fat_percentage?: number
+          p_target_weight?: number
+          p_today: string
+          p_type: string
+        }
+        Returns: string
+      }
       calculate_client_adherence_stats: {
         Args: { client_uuid: string }
         Returns: {
@@ -3190,6 +3249,26 @@ export type Database = {
           p_window_end?: string
         }
         Returns: string
+      }
+      delete_client_goal: {
+        Args: { p_client_id: string; p_goal_id: string }
+        Returns: Json
+      }
+      edit_client_goal: {
+        Args: {
+          p_client_id: string
+          p_deadline?: string
+          p_description?: string
+          p_goal_id: string
+          p_name: string
+          p_set_by?: string
+          p_starts_on: string
+          p_target_body_fat_percentage?: number
+          p_target_weight?: number
+          p_today: string
+          p_type: string
+        }
+        Returns: boolean
       }
       edit_training_plan_atomic: {
         Args: {
@@ -3302,6 +3381,19 @@ export type Database = {
         }
         Returns: Json
       }
+      rename_client_goal: {
+        Args: {
+          p_client_id: string
+          p_description?: string
+          p_goal_id: string
+          p_name: string
+        }
+        Returns: boolean
+      }
+      restore_client_goal: {
+        Args: { p_client_id: string; p_copy: Json }
+        Returns: string
+      }
       restore_measurement: {
         Args: { p_client_id: string; p_id: string }
         Returns: {
@@ -3317,6 +3409,16 @@ export type Database = {
           p_questions: Json
         }
         Returns: string
+      }
+      set_client_goal_deadline: {
+        Args: {
+          p_client_id: string
+          p_deadline?: string
+          p_goal_id: string
+          p_set_by?: string
+          p_today: string
+        }
+        Returns: boolean
       }
       update_client_adherence_stats: {
         Args: { client_uuid: string }

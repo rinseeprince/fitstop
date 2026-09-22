@@ -17,7 +17,8 @@ import {
   ReadingRemovalUnavailableError,
 } from "@/services/measurements-service";
 import { recordClientStart } from "@/services/client-start-service";
-import { updateGoals } from "@/services/client-goals-service";
+import { addGoal } from "@/services/client-goal-writes-service";
+import { GOAL_TYPE_SETTINGS, goalTypeFromTargets } from "@/lib/goals/goal-types";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import { getClientTodayString, getCoachTodayString } from "@/services/today-service";
@@ -52,11 +53,12 @@ const calculateEngagement = (lastCheckInDate: string | null): "high" | "medium" 
 };
 
 
-// Create a new client
+// Create a new client. `goalId` is the first goal's, when the form set one, for
+// the route's audit.
 export const createClient = async (
   coachId: string,
   clientData: CreateClientInput
-): Promise<Client & { inviteSent?: boolean }> => {
+): Promise<Client & { inviteSent?: boolean; goalId?: string }> => {
   const isIntakeMode = clientData.setupMode === "intake";
 
   // No conversion here. The payload is already canonical: the add-client form
@@ -64,7 +66,6 @@ export const createClient = async (
   // (hooks/use-unit-inputs.ts), and the schema no longer carries a unit tag to
   // convert on.
   const currentWeightKg = clientData.currentWeight;
-  const goalWeightKg = clientData.goalWeight;
   const heightCm = clientData.height;
 
   // The pair is set once, at row birth, through the same pure calculator the
@@ -97,14 +98,9 @@ export const createClient = async (
     // different number. (The intake path was unaffected — it syncs the field
     // separately.)
     date_of_birth: clientData.dateOfBirth ?? null,
-    // goal_weight / goal_body_fat_percentage are deliberately ABSENT.
-    // `updateGoals` below is the single writer of both stores — it inserts the
-    // `client_goals` row and mirrors it onto `clients` — so writing them here
-    // too would reopen the window it exists to close: the mirror holding a goal
-    // that `client_goals` never received.
-    //
-    // No weight columns either: the reading is a row in the measurement log
-    // (below), and "now" and "at the start" are derived from that log.
+    // No goal and no weight columns: the goal is a row of its own, set below
+    // through the goal functions, and the reading is a row in the measurement
+    // log (below), from which "now" and "at the start" are derived.
     bmr: energy.status === "ready" ? energy.bmr : null,
     tdee: energy.status === "ready" ? energy.tdee : null,
     // Explicitly NULL rather than letting the column DEFAULT ('sedentary')
@@ -160,30 +156,35 @@ export const createClient = async (
     client.currentBodyFatPercentage = appended.rows.bodyFat?.value;
   }
 
-  // Goals are written ONCE, by `updateGoals`, which owns `client_goals` and the
-  // `clients.*` mirror. The goal columns are absent from `baseInsert` above for
-  // that reason.
-  //
-  // **This throws, and that is the point.** It used to log and continue, and a
-  // swallowed failure is how a live client came to show one goal to their coach
-  // and another in their own portal for six weeks with no error anywhere. On
-  // failure the client row exists with no goal in EITHER store — consistent and
-  // re-editable — rather than with two stores disagreeing behind a 201.
+  // The first goal, when the form carried a target: it starts on the client's
+  // today, through the one goal writer. The form has no type to pick, so the
+  // type comes from the targets against the weight the coach just entered, and
+  // the name from the type; the form has no deadline either. It THROWS, like
+  // the reading above: the client row stands and the request reports failure,
+  // rather than a 201 for a client whose goal was never set.
+  let goalId: string | undefined;
   if (clientData.goalWeight !== undefined || clientData.goalBodyFatPercentage !== undefined) {
-    await updateGoals(client.id, {
-      goalWeight: goalWeightKg,
-      goalBodyFatPercentage: clientData.goalBodyFatPercentage,
-    }, coachId);
-
-    // `client` was mapped from the INSERT's returned row, which no longer
-    // carries the goal columns, so without this the response reports no goal on
-    // a client that has one.
-    if (clientData.goalWeight !== undefined) {
-      client.goalWeight = goalWeightKg ?? undefined;
-    }
-    if (clientData.goalBodyFatPercentage !== undefined) {
-      client.goalBodyFatPercentage = clientData.goalBodyFatPercentage ?? undefined;
-    }
+    const targetWeight = clientData.goalWeight ?? null;
+    const targetBodyFatPercentage = clientData.goalBodyFatPercentage ?? null;
+    const type = goalTypeFromTargets({
+      targetWeight,
+      targetBodyFatPercentage,
+      reading: currentWeightKg ?? null,
+    });
+    const today = await getClientTodayString(client.id);
+    goalId = await addGoal({
+      clientId: client.id,
+      today,
+      startsOn: today,
+      source: "coach",
+      setBy: coachId,
+      type,
+      name: GOAL_TYPE_SETTINGS[type].name,
+      targetWeight,
+      targetBodyFatPercentage,
+      description: null,
+      deadline: null,
+    });
   }
 
   // Create intake record for questionnaire flow
@@ -192,10 +193,10 @@ export const createClient = async (
 
     // Auto-send invite email (non-blocking — client is already created)
     const inviteResult = await sendInvitation(client.id);
-    return { ...client, inviteSent: inviteResult.success };
+    return { ...client, goalId, inviteSent: inviteResult.success };
   }
 
-  return client;
+  return { ...client, goalId };
 };
 
 // Get all clients for a coach with last check-in info
@@ -300,7 +301,6 @@ export const updateClient = async (
 
   // Canonical on arrival — see createClient.
   const currentWeightKg = clientData.currentWeight;
-  const goalWeightKg = clientData.goalWeight;
   const heightCm = clientData.height;
 
   const updateData: Record<string, unknown> = {
@@ -322,8 +322,6 @@ export const updateClient = async (
   // start_date is NOT written here: the origin has one writer, recordClientStart
   // below. No reading is written here either — every weight and body fat on
   // this input becomes a row in the measurement log (below), never a column.
-  // goal_weight / goal_body_fat_percentage are deliberately NOT in updateData —
-  // `updateGoals` below owns both stores. See its comment.
 
   const { data, error } = await supabaseAdmin
     .from("clients")
@@ -432,33 +430,6 @@ export const updateClient = async (
       client.startingBodyFatPercentage = fresh.startingBodyFatPercentage;
       client.bmr = fresh.bmr;
       client.tdee = fresh.tdee;
-    }
-  }
-
-  // Goals are written ONCE, by `updateGoals`, which owns `client_goals` and the
-  // `clients.*` mirror. Writing the mirror here too — as this function used to,
-  // while swallowing the failure — is what let the two stores disagree: the
-  // mirror took the new goal, `client_goals` kept the old one, and the request
-  // returned 200.
-  //
-  // **This throws.** A goal edit now lands in `client_goals` or errors visibly.
-  // The client's other fields are already committed above and are unaffected,
-  // which is the correct split: they are independent edits that happen to travel
-  // in one PATCH. The caller must say so in its error copy.
-  if (clientData.goalWeight !== undefined || clientData.goalBodyFatPercentage !== undefined) {
-    await updateGoals(clientId, {
-      goalWeight: goalWeightKg,
-      goalBodyFatPercentage: clientData.goalBodyFatPercentage,
-    }, coachId ?? "coach");
-
-    // `client` was mapped from the row read BEFORE `updateGoals` moved the
-    // mirror, so without this the response echoes the previous goal back and the
-    // UI renders a successful save as a no-op.
-    if (clientData.goalWeight !== undefined) {
-      client.goalWeight = goalWeightKg ?? undefined;
-    }
-    if (clientData.goalBodyFatPercentage !== undefined) {
-      client.goalBodyFatPercentage = clientData.goalBodyFatPercentage ?? undefined;
     }
   }
 

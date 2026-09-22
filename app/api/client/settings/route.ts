@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { updateSettingsSchema } from "@/lib/validations/client";
 import { updateClientSettings } from "@/services/client-service";
+import { getCurrentGoal } from "@/services/client-goals-service";
 import { toClientSelfView } from "@/lib/mappers";
 
 // PATCH /api/client/settings - Update the authenticated client's settings
@@ -42,7 +43,10 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const client = await updateClientSettings(auth.clientId, parsed.data);
-    return NextResponse.json({ success: true, data: toClientSelfView(client) });
+    // The goal is read after the save, not beside it: a new timezone can move
+    // the client's today, and with it which goal is in force.
+    const goal = await getCurrentGoal(auth.clientId);
+    return NextResponse.json({ success: true, data: toClientSelfView(client, goal) });
   } catch (error) {
     console.error("Error updating client settings:", error);
     return NextResponse.json(

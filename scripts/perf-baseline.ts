@@ -196,9 +196,10 @@ async function runOnce(label: string, invoke: () => Promise<unknown>): Promise<R
 }
 
 // ---------------------------------------------------------------------------
-// admin-equivalent of getClientProgressData (mirrors the three reads in
-// services/client-portal-progress.ts: the check-ins' wellness columns, the
-// measurement log's live rows, and the client row with its two reading views)
+// admin-equivalent of getClientProgressData (mirrors its three reads under the
+// client's JWT in services/client-portal-progress.ts: the check-ins' wellness
+// columns, the measurement log's live rows, and the client row with its two
+// reading views; its fourth, the goal in force today, is not simulated)
 // ---------------------------------------------------------------------------
 
 async function simulateGetClientProgressDataViaAdmin(clientId: string, days: number) {
@@ -225,7 +226,7 @@ async function simulateGetClientProgressDataViaAdmin(clientId: string, days: num
     supabaseAdmin
       .from("clients")
       .select(
-        "current_streak, check_in_adherence_rate, goal_weight, goal_body_fat_percentage, " +
+        "current_streak, check_in_adherence_rate, " +
           "client_current_measurements(metric_key, value, recorded_on, source, measurement_id), " +
           "client_baseline_measurements(metric_key, value, recorded_on, source, measurement_id)"
       )

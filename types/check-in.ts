@@ -454,19 +454,6 @@ export type Client = {
    *  it. Undefined means never set — the calculator falls back to sedentary. */
   workActivityLevel?: ActivityLevel;
 
-  // Goal fields (manually set by coach). The denormalized `clients` mirror of
-  // `client_goals`; read only through `toClientGoalInput`, never directly.
-  //
-  // There is deliberately NO `goalDeadline` here. `mapClientRow` never mapped
-  // `clients.goal_deadline`, so the field was permanently `undefined` and the
-  // three `?? client.goalDeadline` fallbacks that read it were unreachable.
-  // Deleted rather than mapped (owner decision 2026-08-12): mapping it would
-  // have made a mirror deadline that can silently diverge — updateGoals' mirror
-  // write is logged-and-swallowed — reachable in three calculator/pace paths for
-  // the first time. The deadline resolves from `client_goals` only.
-  goalWeight?: number;
-  goalBodyFatPercentage?: number;
-
   // The baseline: the reading as of start_date, derived from the measurement
   // log (client_baseline_measurements) — never a stored pair.
   startingWeight?: number;
@@ -840,9 +827,11 @@ export type GoalPosition = {
    * first: the magnitude means nothing once the goal has been passed.
    */
   remaining: number;
+  /** How far from the goal's start reading towards its target, 0–100. */
   percentComplete: number;
   /**
-   * POSITION relative to the goal — `approaching` | `achieved` | `overshot`.
+   * POSITION relative to the goal — `approaching` | `achieved` | `overshot`,
+   * in the goal type's direction (`goalDirection`, lib/goals/goal-types.ts).
    * Separate from `isOnTrack`, which is the TREND.
    */
   status: GoalStatus;
@@ -860,12 +849,20 @@ export type GoalPosition = {
 export type GoalProgressRows = {
   weight?: {
     goal: number;
+    /** The client's baseline — the reading as of their start date — which the
+     *  KPI ribbon and the review prompt's weight line count "since start" from. */
     startingWeight?: number;
+    /** The client's weight on the goal's start day (`getReadingsOnDay`): where
+     *  the goal's progress runs from, and the start of the strip's track. */
+    goalStartWeight?: number;
     position: GoalPosition | null;
   };
   bodyFat?: {
     goal: number;
+    /** The client's baseline body fat, as `startingWeight`. */
     startingBodyFat?: number;
+    /** The client's body fat on the goal's start day, as `goalStartWeight`. */
+    goalStartBodyFat?: number;
     position: GoalPosition | null;
   };
   deadline?: {
@@ -876,10 +873,10 @@ export type GoalProgressRows = {
 };
 
 /**
- * The check-in review's goal progress: the rows, judged against the goal
- * version in force at the check-in's instant, and whether that version is
- * still the client's live goal. The strip offers "Set new goals" only when it
- * is — a page about a goal already replaced never invites replacing it again.
+ * The check-in review's goal progress: the rows, judged against the goal in
+ * force on the check-in's day, and whether that goal is still the one in force
+ * on the client's today. The strip offers "Set new goals" only when it is — a
+ * page about a goal already replaced never invites replacing it again.
  */
 export type GoalProgress = GoalProgressRows & { goalIsCurrent: boolean };
 

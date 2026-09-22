@@ -1,6 +1,7 @@
 import { countTargetedDays } from "@/lib/check-in/period-snapshot";
 import type { ActivityLevel, CheckIn, Client, Coach, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
+import type { GoalOnDay } from "@/types/client-goals";
 import type { MeasurementValues } from "@/lib/measurements/keys";
 import { toUnitSystem } from "@/utils/unit-conversions";
 import type {
@@ -102,8 +103,6 @@ export function mapClientRow(row: ClientRowWithMeasurements): Client {
     gender: (row.gender ?? undefined) as "male" | "female" | "other" | undefined,
     dateOfBirth: row.date_of_birth ?? undefined,
     phone: row.phone ?? undefined,
-    goalWeight: row.goal_weight ?? undefined,
-    goalBodyFatPercentage: row.goal_body_fat_percentage ?? undefined,
     currentWeight: embeddedReading(row.client_current_measurements, "weight"),
     currentBodyFatPercentage: embeddedReading(row.client_current_measurements, "bodyFat"),
     bmr: row.bmr ?? undefined,
@@ -144,18 +143,33 @@ export function mapClientRow(row: ClientRowWithMeasurements): Client {
   };
 }
 
-function pickAllowed<T>(source: T, keys: readonly (keyof T)[]): Partial<T> {
-  const out: Partial<T> = {};
+// Copies the named keys in the list's order, skipping undefined values — so the
+// list decides both what a wire carries and the order its JSON keys print in.
+function pickAllowed<T, K extends keyof T>(source: T, keys: readonly K[]): Partial<Pick<T, K>> {
+  const out: Partial<Pick<T, K>> = {};
   for (const key of keys) {
     if (source[key] !== undefined) out[key] = source[key];
   }
   return out;
 }
 
+/**
+ * The goal's two targets as the client's own profile carries them — kg and %,
+ * from the goal in force on the client's today. Absent when that goal sets no
+ * such target, or the client has no goal in force.
+ */
+type ClientSelfGoalTargets = {
+  goalWeight?: number;
+  goalBodyFatPercentage?: number;
+};
+
 // Client-facing allowlist for a Client (M6). Every field a client may see about
 // themselves is named; `notes` (the coach's private notes) is excluded, and any
 // FUTURE coach-only column is excluded by default rather than shipped — the same
 // "allowlist, don't denylist" posture as CLIENT_SELF_COLUMNS on the read path.
+// The ORDER is the wire's JSON key order, and the React Native app's contract is
+// additive-only — an existing key never moves: the goal's targets sit after
+// `dateOfBirth`, and `logsOpenFrom` is last.
 const CLIENT_SELF_KEYS = [
   "id", "coachId", "name", "email", "avatarUrl", "active", "createdAt", "updatedAt",
   "height", "gender", "dateOfBirth", "goalWeight", "goalBodyFatPercentage",
@@ -166,10 +180,25 @@ const CLIENT_SELF_KEYS = [
   "includeActivityBurn", "surplusAsCarbs", "startingWeight", "startingBodyFatPercentage",
   "bmrManualOverride", "tdeeManualOverride", "welcomeMessage", "onboardingStatus",
   "walkthroughCompletedAt", "startDate", "timezone", "logsOpenFrom",
-] as const satisfies readonly (keyof Client)[];
+] as const satisfies readonly (keyof (Client & ClientSelfGoalTargets))[];
 
-export function toClientSelfView(client: Client): Partial<Client> {
-  return pickAllowed(client, CLIENT_SELF_KEYS);
+/** `GET /api/client/me` and `PATCH /api/client/settings`: the client's own profile. */
+export type ClientSelfView = Partial<
+  Pick<Client & ClientSelfGoalTargets, (typeof CLIENT_SELF_KEYS)[number]>
+>;
+
+/**
+ * The client's profile as they may see it, with the targets of `goal` — the
+ * goal in force on their today (`getCurrentGoal`); the profile row carries no
+ * goal of its own.
+ */
+export function toClientSelfView(client: Client, goal: GoalOnDay | null): ClientSelfView {
+  const withGoal: Client & ClientSelfGoalTargets = {
+    ...client,
+    goalWeight: goal?.targetWeight ?? undefined,
+    goalBodyFatPercentage: goal?.targetBodyFatPercentage ?? undefined,
+  };
+  return pickAllowed(withGoal, CLIENT_SELF_KEYS);
 }
 
 // Client-facing allowlist for a ClientIntake (M6). Excludes `coachReviewNotes`

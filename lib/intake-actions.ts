@@ -13,7 +13,7 @@ type IntakeAction = "sync-metrics" | "review";
 export async function postIntakeAction(
   clientId: string,
   action: IntakeAction
-): Promise<{ data?: { syncedFields?: string[] } }> {
+): Promise<{ data?: { syncedFields?: string[]; notes?: string[] } }> {
   const res = await fetch(`/api/clients/${clientId}/intake`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -24,5 +24,5 @@ export async function postIntakeAction(
       action === "review" ? "Failed to mark as reviewed" : "Failed to sync metrics"
     );
   }
-  return (await res.json()) as { data?: { syncedFields?: string[] } };
+  return (await res.json()) as { data?: { syncedFields?: string[]; notes?: string[] } };
 }

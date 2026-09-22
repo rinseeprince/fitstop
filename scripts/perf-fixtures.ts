@@ -13,7 +13,6 @@ export const PERF_NUTRITION_PLAN_ID = "5ca1ec1e-0000-4000-8003-000000000001";
  *  open pair so date-resolved version lookups are exercised against fixture
  *  data rather than degenerating to a single covering row. */
 export const PERF_NUTRITION_PLAN_V1_ID = "5ca1ec1e-0000-4000-8003-000000000002";
-export const PERF_CLIENT_GOAL_ID = "5ca1ec1e-0000-4000-8004-000000000001";
 
 export const PERF_HABIT_IDS = [
   "5ca1ec1e-0000-4000-8002-000000000001",

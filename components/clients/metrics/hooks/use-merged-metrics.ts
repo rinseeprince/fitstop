@@ -8,10 +8,7 @@ import { useMeasurementSeries } from "@/hooks/use-measurement-series";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { DOWN_IS_GOOD } from "@/lib/metrics/metric-entry-definitions";
 import type { MeasurementKey } from "@/lib/measurements/keys";
-import {
-  resolveEffectiveGoal,
-  toClientGoalInput,
-} from "@/lib/goals/resolve-effective-goal";
+import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { buildMetricPoints, type MetricPoint } from "@/utils/metric-points";
 import { buildMeasurementLogRows } from "@/utils/measurement-log-rows";
 import {
@@ -126,7 +123,7 @@ function summariseMetric(
 /** The Physique pane: the measurement series and the goal, nothing else. */
 export const usePhysiqueMetrics = (client: Client): MetricPaneData => {
   const { series, isLoading, isError } = useMeasurementSeries(client.id);
-  const { goal: currentGoals } = useClientGoals(client.id);
+  const { current } = useClientGoals(client.id);
   const { preference } = useUnits();
 
   const { metrics, logRows } = useMemo(() => {
@@ -144,16 +141,9 @@ export const usePhysiqueMetrics = (client: Client): MetricPaneData => {
       ])
     );
 
-    // One composer, shared with the three server callers, rather than a private
-    // literal. The private one hardcoded `deadline: null` AFTER fetching the
-    // full goal — two surfaces rendering "the same" goal from two shapes, one
-    // of them deliberately blind. Nothing here reads the deadline (see the goal
-    // block below), so that blindness was inert rather than a live bug — but it
-    // was one edit away from mattering, which is the whole reason the shape is
-    // shared now.
-    const effectiveGoal = resolveEffectiveGoal({
-      clientGoal: toClientGoalInput(currentGoals, client),
-    });
+    // The goal in force on the client's today, resolved as the server's goal
+    // readers resolve it.
+    const effectiveGoal = resolveEffectiveGoal(current);
 
     const summaries = BODY_METRIC_DEFINITIONS.map((def) => {
       const allPoints = pointsByMetric.get(def.id) ?? [];
@@ -245,7 +235,7 @@ export const usePhysiqueMetrics = (client: Client): MetricPaneData => {
     return { metrics: summaries, logRows: rows };
     // `preference` is a real dependency: it changes every value in the series,
     // not just the label.
-  }, [series, currentGoals, client, preference]);
+  }, [series, current, client, preference]);
 
   return { metrics, logRows, isLoading, isError };
 };

@@ -1,228 +1,131 @@
-// Uses supabaseAdmin: service-to-service calls require bypassing RLS,
-// and dual-writes to clients table are system-level operations.
 import { supabaseAdmin } from "./supabase-admin";
+import { getClientTodayString } from "./today-service";
+import { getReadingsOnDay } from "./measurements-service";
 import { GOAL_HISTORY_LIMIT } from "@/lib/constants";
-import { isValidIsoTimestamp } from "@/lib/cursor";
-import type { ClientGoal, ClientGoalRow } from "@/types/client-goals";
+import { goalAsOf, goalOnDay, pastGoals, plannedGoals } from "@/lib/goals/goal-timeline";
+import { isGoalType } from "@/lib/goals/goal-types";
+import type { Database } from "@/types/database";
+import type {
+  ClientGoal,
+  ClientGoalsOverview,
+  GoalOnDay,
+  GoalSource,
+  PastGoal,
+} from "@/types/client-goals";
 
-function mapClientGoalRow(row: ClientGoalRow): ClientGoal {
+/**
+ * A client's goals, read (migration 193; docs/MEASUREMENT-LOG-PLAN.md §6
+ * commit 8d). One read of the goal rows with their deadline lists; WHICH goal
+ * and which deadline a day has is decided by the pure selectors in
+ * `lib/goals/goal-timeline.ts`, and "today" is the client's, from
+ * `getClientTodayString` — so a planned goal takes over at the client's
+ * midnight on every surface at once. The app reads these tables and never
+ * writes them: every write is one of the goal functions, driven by
+ * `services/client-goal-writes-service.ts`.
+ */
+
+type GoalRow = Database["public"]["Tables"]["client_goals"]["Row"];
+type DeadlineRow = Database["public"]["Tables"]["client_goal_deadlines"]["Row"];
+type GoalRowWithDeadlines = GoalRow & {
+  client_goal_deadlines: Pick<DeadlineRow, "effective_on" | "deadline" | "set_by">[] | null;
+};
+
+const GOAL_SELECT = "*, client_goal_deadlines(effective_on, deadline, set_by)";
+
+function mapGoalRow(row: GoalRowWithDeadlines): ClientGoal {
+  if (!isGoalType(row.type)) {
+    throw new Error(`Goal ${row.id} has an unknown type: ${row.type}`);
+  }
   return {
     id: row.id,
     clientId: row.client_id,
-    goalWeight: row.goal_weight ?? undefined,
-    goalBodyFatPercentage: row.goal_body_fat_percentage ?? undefined,
-    goalDeadline: row.goal_deadline ?? undefined,
-    primaryGoal: row.primary_goal ?? undefined,
+    name: row.name,
+    type: row.type,
+    targetWeight: row.target_weight == null ? null : Number(row.target_weight),
+    targetBodyFatPercentage:
+      row.target_body_fat_percentage == null ? null : Number(row.target_body_fat_percentage),
+    description: row.description,
+    startsOn: row.starts_on,
+    source: row.source as GoalSource,
     setBy: row.set_by,
-    notes: row.notes ?? undefined,
-    effectiveFrom: row.effective_from,
-    supersededAt: row.superseded_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    deadlines: (row.client_goal_deadlines ?? [])
+      .map((entry) => ({
+        effectiveOn: entry.effective_on,
+        deadline: entry.deadline,
+        setBy: entry.set_by,
+      }))
+      .sort((a, b) => (a.effectiveOn < b.effectiveOn ? -1 : 1)),
   };
 }
 
-export const getCurrentGoals = async (
-  clientId: string
-): Promise<ClientGoal | null> => {
-  // Ordering belt. `idx_client_goals_active_unique` (migration 060) makes two
-  // active rows impossible, so this changes nothing today. It matters if that
-  // index is ever lost: two active rows make `maybeSingle()` throw PGRST116
-  // forever, and because `updateGoals` opens with this very call, the set-based
-  // supersede that would heal the duplicate is unreachable — there is no in-app
-  // recovery, a human runs SQL. Ordering turns a permanent wedge into a
-  // recoverable wrong answer.
-  //
-  // Its hole: `effective_from` is stamped from one app-side timestamp (see
-  // `updateGoals` below), so two racing writers tie and the pick is arbitrary.
-  // This is insurance against a lost index, NOT a fix for the write race.
+/**
+ * Every goal the client has — past, current and planned — with every deadline
+ * each has had, oldest first. A client's goals are a coaching record, tens of
+ * rows over years, so one unpaged read is the whole of it.
+ */
+export async function listClientGoals(clientId: string): Promise<ClientGoal[]> {
   const { data, error } = await supabaseAdmin
     .from("client_goals")
-    .select("*")
+    .select(GOAL_SELECT)
     .eq("client_id", clientId)
-    .is("superseded_at", null)
-    .order("effective_from", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("starts_on", { ascending: true });
 
   if (error) {
-    console.error("Failed to fetch current goals:", error);
-    throw new Error(`Failed to fetch current goals: ${error.message}`);
+    console.error("Failed to read goals:", error);
+    throw new Error(`Failed to read goals: ${error.message}`);
   }
+  return (data ?? []).map((row) => mapGoalRow(row as GoalRowWithDeadlines));
+}
 
-  return data ? mapClientGoalRow(data) : null;
-};
+/** The goal in force on `day` (the client's calendar), with that day's deadline. */
+export async function getGoalForDate(clientId: string, day: string): Promise<GoalOnDay | null> {
+  const goal = goalOnDay(await listClientGoals(clientId), day);
+  return goal ? goalAsOf(goal, day) : null;
+}
 
-export const updateGoals = async (
-  clientId: string,
-  goals: {
-    goalWeight?: number;
-    goalBodyFatPercentage?: number | null;
-    goalDeadline?: string | null;
-    primaryGoal?: string | null;
-  },
-  setBy: string
-): Promise<ClientGoal> => {
-  const now = new Date().toISOString();
+/** The goal in force on the client's today. */
+export async function getCurrentGoal(clientId: string): Promise<GoalOnDay | null> {
+  const [today, goals] = await Promise.all([
+    getClientTodayString(clientId),
+    listClientGoals(clientId),
+  ]);
+  const goal = goalOnDay(goals, today);
+  return goal ? goalAsOf(goal, today) : null;
+}
 
-  // Get existing goals to carry forward unchanged fields
-  const existing = await getCurrentGoals(clientId);
+/**
+ * The coach's goal read: today's goal — with the client's readings on its
+ * start day, which its progress runs from — and the goals planned after it.
+ */
+export async function getGoalsOverview(clientId: string): Promise<ClientGoalsOverview> {
+  const [today, goals] = await Promise.all([
+    getClientTodayString(clientId),
+    listClientGoals(clientId),
+  ]);
+  const goal = goalOnDay(goals, today);
+  const planned = plannedGoals(goals, today);
+  if (!goal) return { current: null, planned };
 
-  // Supersede existing row if present
-  if (existing) {
-    const { error: supersedeError } = await supabaseAdmin
-      .from("client_goals")
-      .update({ superseded_at: now, updated_at: now })
-      .eq("client_id", clientId)
-      .is("superseded_at", null);
-
-    if (supersedeError) {
-      console.error("Failed to supersede goals:", supersedeError);
-      throw new Error(
-        `Failed to supersede goals: ${supersedeError.message}`
-      );
-    }
-  }
-
-  // Per-field merge on DEFINED presence: a key carrying a real value wins, and an
-  // explicit null still wins (it clears the column — `null !== undefined`). A key
-  // that is absent OR explicitly `undefined` carries the existing value forward.
-  //
-  // The `!== undefined` half is load-bearing. `hasOwnProperty` alone is true for a
-  // key present with value `undefined`, which is exactly what the object-literal
-  // callers build: the intake metrics sync, `updateClient` and the metrics PUT each
-  // spread possibly-undefined fields into a fixed key set, so a single-field goal
-  // edit reached here with its sibling present-and-undefined and NULLed it. Because
-  // the dual-write below mirrors `merged` unconditionally, BOTH stores lost the
-  // value in the same request — there was no surviving copy to reconcile from.
-  //
-  // `createClient` builds the same shape but could never clobber: it runs straight
-  // after the client INSERT, so there is no existing row and both branches already
-  // yielded null. THREE clobber sites, not four — do not "correct" that upward.
-  //
-  // Plain `??` is not the fix either — it could never clear a field. `goalWeight`
-  // is the one field no caller can clear: it is `number | undefined` here and
-  // `.optional()` but not `.nullable()` in `updateGoalsSchema`.
-  const has = (key: keyof typeof goals) =>
-    Object.prototype.hasOwnProperty.call(goals, key) && goals[key] !== undefined;
-  const merged = {
-    goal_weight: has("goalWeight")
-      ? goals.goalWeight ?? null
-      : existing?.goalWeight ?? null,
-    goal_body_fat_percentage: has("goalBodyFatPercentage")
-      ? goals.goalBodyFatPercentage ?? null
-      : existing?.goalBodyFatPercentage ?? null,
-    goal_deadline: has("goalDeadline")
-      ? goals.goalDeadline ?? null
-      : existing?.goalDeadline ?? null,
-    primary_goal: has("primaryGoal")
-      ? goals.primaryGoal ?? null
-      : existing?.primaryGoal ?? null,
+  const readings = await getReadingsOnDay(clientId, goal.startsOn);
+  return {
+    current: {
+      ...goalAsOf(goal, today),
+      startReadings: {
+        weight: readings.weight?.value ?? null,
+        bodyFat: readings.bodyFat?.value ?? null,
+      },
+    },
+    planned,
   };
+}
 
-  const { data, error } = await supabaseAdmin
-    .from("client_goals")
-    .insert({
-      client_id: clientId,
-      ...merged,
-      set_by: setBy,
-      effective_from: now,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Failed to insert new goals:", error);
-    throw new Error(`Failed to insert new goals: ${error.message}`);
-  }
-
-  // Dual-write to clients table for backward compatibility
-  const { error: clientError } = await supabaseAdmin
-    .from("clients")
-    .update({
-      goal_weight: merged.goal_weight,
-      goal_body_fat_percentage: merged.goal_body_fat_percentage,
-      goal_deadline: merged.goal_deadline,
-      updated_at: now,
-    })
-    .eq("id", clientId);
-
-  if (clientError) {
-    console.error("Failed to dual-write goals to clients:", clientError);
-  }
-
-  return mapClientGoalRow(data);
-};
-
-/**
- * The client's SUPERSEDED goal versions, newest first — what the goal used to be.
- *
- * Two things changed when the unreachable `?history=true` branch was replaced by
- * a sibling route (Task 0b.6), and both were defects rather than preferences:
- *
- * - **`superseded_at IS NOT NULL`.** There was no filter, so the CURRENT goal
- *   came back inside "history" as well — once as the live goal and once as its
- *   own predecessor. The live goal is rendered above this list from its own read.
- * - **A bounded result.** There was no limit, so a heavily-edited client returned
- *   every version ever written.
- */
-export const getGoalsHistory = async (
-  clientId: string,
-  options: { limit?: number } = {}
-): Promise<ClientGoal[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("client_goals")
-    .select("*")
-    .eq("client_id", clientId)
-    .not("superseded_at", "is", null)
-    .order("effective_from", { ascending: false })
-    .limit(options.limit ?? GOAL_HISTORY_LIMIT);
-
-  if (error) {
-    console.error("Failed to fetch goals history:", error);
-    throw new Error(`Failed to fetch goals history: ${error.message}`);
-  }
-
-  return (data || []).map((row: ClientGoalRow) => mapClientGoalRow(row));
-};
-
-/**
- * The goal version in force at an instant: `effective_from <= at` and not yet
- * superseded then. A check-in's review judges its goals against this version
- * (docs/MEASUREMENT-LOG-PLAN.md commit 8b), never the live one — and a
- * check-in older than every version has no goal on its page, because the
- * client had none then: the review reads the versions alone, with no
- * `clients.*` mirror leg, the client journey read's precedent. `updateGoals`
- * stamps a supersede and its successor with one instant, so exactly one
- * version is in force at any `at`. The review is this function's only caller
- * (`lib/goals/goal-progress-ownership.test.ts`).
- *
- * `at` comes from a stored `check_ins.created_at`, but it is interpolated into
- * a PostgREST `.or()` predicate, so it is held to the keyset cursor's
- * timestamp charset first — the belt `decodeCursor` wears for the same reason.
- */
-export const getGoalAsOf = async (
-  clientId: string,
-  at: string
-): Promise<ClientGoal | null> => {
-  if (!isValidIsoTimestamp(at)) {
-    throw new Error(`Refusing to resolve a goal at a malformed instant: ${at}`);
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("client_goals")
-    .select("*")
-    .eq("client_id", clientId)
-    .lte("effective_from", at)
-    .or(`superseded_at.is.null,superseded_at.gt.${at}`)
-    .order("effective_from", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Failed to fetch the goal as of an instant:", error);
-    throw new Error(`Failed to fetch the goal as of an instant: ${error.message}`);
-  }
-
-  return data ? mapClientGoalRow(data) : null;
-};
+/** The goals that ended before today's began, newest first, bounded. */
+export async function getPastGoals(clientId: string): Promise<PastGoal[]> {
+  const [today, goals] = await Promise.all([
+    getClientTodayString(clientId),
+    listClientGoals(clientId),
+  ]);
+  return pastGoals(goals, today).slice(0, GOAL_HISTORY_LIMIT);
+}

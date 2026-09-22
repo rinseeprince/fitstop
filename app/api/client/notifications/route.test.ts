@@ -54,8 +54,6 @@ describe('/api/client/notifications', () => {
     heightUnit: 'in' as const,
     gender: undefined,
     dateOfBirth: undefined,
-    goalWeight: undefined,
-    goalBodyFatPercentage: undefined,
     weightUnit: 'lbs' as const,
     currentWeight: undefined,
     currentBodyFatPercentage: undefined,

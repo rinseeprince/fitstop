@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { useInvalidateMeasurementSeries } from "@/hooks/use-measurement-series";
 import { useInvalidateCheckInDetail } from "@/hooks/use-check-in-detail-data";
+import { useInvalidateClientGoals } from "@/hooks/use-client-goals";
 import type { LogRow } from "../metrics-view-types";
 
 /**
@@ -14,21 +15,27 @@ import type { LogRow } from "../metrics-view-types";
  *    status band, all readers of one key;
  *  - the client record, through `onClientUpdated`, for a weight or body fat:
  *    its "now" readings and the energy pair live there (the record carries no
- *    girth, so a girth leaves it alone);
+ *    girth, so a girth leaves it alone) — and the goals area, since a weight or
+ *    body fat may be the reading on a goal's start day, which its chips
+ *    measure from;
  *  - the check-in the reading reports on, when it carries a stamp: its report,
  *    band and comparison read the stamped row.
  */
 export function useReadingActions(clientId: string, onClientUpdated?: () => void) {
   const invalidateSeries = useInvalidateMeasurementSeries();
   const invalidateCheckInDetail = useInvalidateCheckInDetail();
+  const invalidateGoals = useInvalidateClientGoals();
 
   const settle = useCallback(
     async (row: LogRow) => {
       await invalidateSeries(clientId);
-      if (row.metricId === "weight" || row.metricId === "bodyFat") onClientUpdated?.();
+      if (row.metricId === "weight" || row.metricId === "bodyFat") {
+        await invalidateGoals(clientId);
+        onClientUpdated?.();
+      }
       if (row.sourceId) await invalidateCheckInDetail(row.sourceId);
     },
-    [clientId, invalidateSeries, onClientUpdated, invalidateCheckInDetail]
+    [clientId, invalidateSeries, onClientUpdated, invalidateCheckInDetail, invalidateGoals]
   );
 
   const send = useCallback(

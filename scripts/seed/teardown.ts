@@ -20,11 +20,14 @@
  * The owner's real account lives in this database, so "we only deleted our own
  * rows" is asserted, not assumed.
  *
- * The ONE exception to "no cascade": `client_measurements` (migration 158) is
- * append-only for the app role — service_role holds SELECT and INSERT and no
- * DELETE, deliberately — so its seed rows can only leave with their client's
- * row, through the table's `ON DELETE CASCADE`. It is therefore absent from
- * TEARDOWN_ORDER, and the `clients` delete is what clears it.
+ * The exceptions to "no cascade" are the tables whose seed rows the namespace
+ * walk cannot delete: `client_measurements` (migration 158) is append-only for
+ * the app role — service_role holds SELECT and INSERT and no DELETE,
+ * deliberately — and the goal tables, `client_goals` and
+ * `client_goal_deadlines` (migration 193), are written only through their
+ * functions, which mint ids outside the seed namespace. Their seed rows leave
+ * with their client's row, through the tables' `ON DELETE CASCADE`: they are
+ * absent from TEARDOWN_ORDER, and the `clients` delete is what clears them.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -53,7 +56,6 @@ export const TEARDOWN_ORDER: readonly string[] = [
   "training_sessions",
   "training_plans",
   "daily_habits",
-  "client_goals",
   "client_invitations",
   "clients",
   "coaches",

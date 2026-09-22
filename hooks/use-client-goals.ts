@@ -3,17 +3,17 @@
 import { useCallback } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import type { ClientGoal } from "@/types/client-goals";
-
-type GoalsResponse = { success: boolean; data: ClientGoal | null };
+import type { ClientGoalsOverview, GoalOnDay, PastGoal } from "@/types/client-goals";
 
 /**
- * The client's live `client_goals` record — the coach-side goal read path
- * (invariant 16: one writer, one read path).
+ * A client's goals, the coach-side read path: the goal in force on the
+ * client's today — with the client's readings on its start day — and the
+ * goals planned after it (`GET …/goals`), and, on request, the goals that
+ * have ended (`GET …/goals/history`).
  *
- * Returns the RAW goal rather than a resolved one: a resolver answers "what
- * drives this client now?", while an editor seeds its form from what the coach
- * actually set. Consumers resolve; this hook fetches.
+ * Goals come back as stored, not resolved: an editor seeds its fields from the
+ * targets the coach set, and a consumer that needs the calculator's view runs
+ * `resolveEffectiveGoal` itself. Consumers resolve; this module fetches.
  */
 
 const SWR_OPTS = {
@@ -23,53 +23,78 @@ const SWR_OPTS = {
 };
 
 /**
- * The goals API AREA for this client, not one endpoint (CONVENTIONS §7). The
- * `?history=true` variant of the same GET returns a different `data` shape, so
- * it is a separate cache entry that a writer must invalidate too — matching on
- * the prefix covers it by construction.
+ * The goals API AREA for this client, not one endpoint (CONVENTIONS §7): today's
+ * goal and the past ones are two reads under it, and a goal write changes both,
+ * so the invalidator matches on this prefix and covers both by construction.
  */
-const clientGoalsKeyPrefix = (clientId: string) =>
-  `/api/clients/${clientId}/goals`;
+const clientGoalsKey = (clientId: string) => `/api/clients/${clientId}/goals`;
+
+const clientGoalHistoryKey = (clientId: string) => `${clientGoalsKey(clientId)}/history`;
+
+// Stable empties, so a consumer that memoises on a list is not re-run by every
+// render before the read lands.
+const NO_PLANNED: GoalOnDay[] = [];
+const NO_HISTORY: PastGoal[] = [];
 
 export function useClientGoals(clientId: string) {
-  const { data, error, isLoading } = useSWR<GoalsResponse>(
-    clientId ? clientGoalsKeyPrefix(clientId) : null,
+  const { data, error, isLoading } = useSWR<{ success: boolean; data: ClientGoalsOverview }>(
+    clientId ? clientGoalsKey(clientId) : null,
     swrFetcher,
     SWR_OPTS
   );
 
-  return { goal: data?.data ?? null, isLoading, isError: !!error };
+  return {
+    current: data?.data.current ?? null,
+    planned: data?.data.planned ?? NO_PLANNED,
+    isLoading,
+    isError: !!error,
+  };
 }
 
 /**
- * Revalidates every reader of a client's goals, from anywhere. A goal write also
- * dual-writes the `clients` mirror, so a caller that has other client-derived
- * data on screen must refresh that too — this covers the goals area only.
- */
-/**
- * A client's SUPERSEDED goal versions, newest first and bounded server-side.
+ * A client's past goals, newest first and bounded server-side.
  *
  * `enabled` gates the fetch: this backs a popover, and an unconditional read
- * would cost every Overview load a request nobody opened. The key sits under the
- * same prefix as the current-goal read, so the invalidator below covers both.
+ * would cost every Overview load a request nobody opened.
  */
 export function useClientGoalHistory(clientId: string, enabled: boolean) {
-  const { data, error, isLoading } = useSWR<{ success: boolean; data: ClientGoal[] }>(
-    enabled && clientId ? `${clientGoalsKeyPrefix(clientId)}/history` : null,
+  const { data, error, isLoading } = useSWR<{ success: boolean; data: PastGoal[] }>(
+    enabled && clientId ? clientGoalHistoryKey(clientId) : null,
     swrFetcher,
     SWR_OPTS
   );
 
-  return { history: data?.data ?? [], isLoading, isError: !!error };
+  return { history: data?.data ?? NO_HISTORY, isLoading, isError: !!error };
 }
 
+/**
+ * Revalidates every reader of a client's goals, from anywhere — today's goal
+ * and the past ones alike. It covers the goals area only: a caller with other
+ * client-derived data on screen refreshes that itself.
+ */
 export function useInvalidateClientGoals() {
   const { mutate } = useSWRConfig();
   return useCallback(
     (clientId: string) =>
+      mutate((key) => typeof key === "string" && key.startsWith(clientGoalsKey(clientId))),
+    [mutate]
+  );
+}
+
+/**
+ * Drops every cached read of a client's goals, refetching whichever is
+ * mounted — for a write no goals reader on screen shows: the next one to open
+ * starts from its loading state, never on the start reading the write moved
+ * (CONVENTIONS §7, a read that renders a definite answer is cleared).
+ */
+export function useClearClientGoals() {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    (clientId: string) =>
       mutate(
-        (key) =>
-          typeof key === "string" && key.startsWith(clientGoalsKeyPrefix(clientId))
+        (key) => typeof key === "string" && key.startsWith(clientGoalsKey(clientId)),
+        undefined,
+        { revalidate: true }
       ),
     [mutate]
   );

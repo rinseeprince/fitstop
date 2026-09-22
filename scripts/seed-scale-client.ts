@@ -20,6 +20,9 @@ import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import { generateTrainingEvents } from "@/services/training-event-service";
+import { listClientGoals } from "@/services/client-goals-service";
+import { addGoal, deleteGoal } from "@/services/client-goal-writes-service";
+import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import {
   getTodayDateString,
   getDateString,
@@ -32,7 +35,6 @@ import {
   PERF_PLAN_ID,
   PERF_NUTRITION_PLAN_ID,
   PERF_NUTRITION_PLAN_V1_ID,
-  PERF_CLIENT_GOAL_ID,
   PERF_HABIT_IDS,
   PERF_COACH_EMAIL,
   PERF_COACH_NAME,
@@ -167,12 +169,14 @@ async function main() {
 
   const t0 = Date.now();
   const rng = makeRng(args.seed);
+  // The fixture's first day: its start reading and its goal are dated here.
+  const startDate = getDateDaysAgo(args.months * 30);
 
   await cleanExistingFixtures(args.fullReset);
   await insertCoachAndClient();
   await ensureClientAuthUser();
   const exerciseIds = await pickGlobalExercises();
-  await insertClientGoal();
+  await insertClientGoal(startDate);
   await insertNutritionPlan();
   const { sessionIds, exerciseRowsBySession, hotExerciseId } = await insertTrainingPlan(exerciseIds, rng);
   await insertHabits();
@@ -181,7 +185,7 @@ async function main() {
   await insertSessionLogsAndCompletions(sessionIds, exerciseRowsBySession, args, rng);
   await insertHabitLogs(args.months, rng);
   const checkInRows = await insertCheckIns(args.months, rng);
-  await insertMeasurements(checkInRows, getDateDaysAgo(args.months * 30));
+  await insertMeasurements(checkInRows, startDate);
   await insertTrainingEvents(sessionIds, args.months);
   await insertJourneyBlocks();
 
@@ -212,7 +216,13 @@ async function cleanExistingFixtures(fullReset: boolean) {
   await del("training_plans (→ sessions, exercises)", supabaseAdmin.from("training_plans").delete().eq("client_id", c));
   await del("daily_logs (→ wellness/nutrition/training children)", supabaseAdmin.from("daily_logs").delete().eq("client_id", c));
   await del("nutrition_plans (→ daily_targets)", supabaseAdmin.from("nutrition_plans").delete().eq("client_id", c));
-  await del("client_goals", supabaseAdmin.from("client_goals").delete().eq("client_id", c));
+  // The goal tables take no DELETE from the app role (migration 193): each
+  // goal goes through delete_client_goal, taking its deadlines with it.
+  const goals = await listClientGoals(c);
+  for (const goal of goals) {
+    await deleteGoal({ goalId: goal.id, clientId: c });
+  }
+  console.log(`  cleared client_goals (${goals.length})`);
   await del("client_phases (journey blocks)", supabaseAdmin.from("client_phases").delete().eq("client_id", c));
   // The client's check-in form (migration 157). check_in_answers went with the
   // check_ins delete above (CASCADE); this is the form row and, through its own
@@ -269,8 +279,7 @@ async function insertCoachAndClient() {
         unit_preference: "imperial",
         // No weight columns: the readings live in the measurement log
         // (insertMeasurements below), and "now" / "at the start" derive from it.
-        goal_weight: 77.1,
-        goal_body_fat_percentage: 15,
+        // No goal either: it is a row of its own (insertClientGoal below).
         // The fixture carried no height, gender or activity level, so nothing
         // could compute its metabolism and bmr/tdee were literals (1850/2700)
         // that matched no formula. That 1850 is what the Session 4B
@@ -374,21 +383,27 @@ async function pickGlobalExercises(): Promise<Array<{ id: string; name: string }
 }
 
 // ---------------------------------------------------------------------------
-// Client goal placeholder
+// Client goal — through add_client_goal, the one writer of the goal tables.
+// It starts on the fixture's first day, which is handed to the function as
+// its today: the function refuses a start before the today it is given.
 // ---------------------------------------------------------------------------
 
-async function insertClientGoal() {
-  console.log("Inserting client_goals placeholder...");
-  const { error } = await supabaseAdmin.from("client_goals").insert({
-    id: PERF_CLIENT_GOAL_ID,
-    client_id: PERF_CLIENT_ID,
-    goal_weight: 77.1, // kg (was 170 lb)
-    goal_body_fat_percentage: 15,
-    primary_goal: "fat_loss",
-    set_by: "coach",
-    notes: "Perf seed placeholder",
+async function insertClientGoal(startDate: string) {
+  console.log("Setting the client's goal...");
+  const goalId = await addGoal({
+    clientId: PERF_CLIENT_ID,
+    today: startDate,
+    startsOn: startDate,
+    source: "coach",
+    setBy: PERF_COACH_ID,
+    type: "lose_weight",
+    name: GOAL_TYPE_SETTINGS.lose_weight.name,
+    targetWeight: 77.1,
+    targetBodyFatPercentage: 15,
+    description: null,
+    deadline: null,
   });
-  if (error) throw new Error(`client_goals insert: ${error.message}`);
+  console.log(`  set goal ${goalId} from ${startDate}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,14 +1,11 @@
+import type { GoalType } from "@/lib/goals/goal-types";
+
 // Client intake status
 export type IntakeStatus = "pending" | "in_progress" | "completed" | "reviewed";
 
-// Intake enum types
-export type PrimaryGoal =
-  | "lose_weight"
-  | "build_muscle"
-  | "recomposition"
-  | "general_fitness"
-  | "event_prep"
-  | "maintain";
+// Intake enum types. The questionnaire's goal answer is a goal type — the one
+// list, shared with the goal (lib/goals/goal-types.ts).
+export type PrimaryGoal = GoalType;
 
 export type WorkActivityLevel =
   | "sedentary"

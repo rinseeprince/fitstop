@@ -25,7 +25,7 @@ vi.mock("@/lib/validations/nutrition", () => ({
 }));
 
 vi.mock("@/services/client-goals-service", () => ({
-  getCurrentGoals: vi.fn().mockResolvedValue(null),
+  getGoalForDate: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@/services/nutrition-service", () => ({
@@ -52,13 +52,14 @@ import {
 } from "@/services/nutrition-plan-service";
 import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
 import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
-import { getCurrentGoals } from "@/services/client-goals-service";
+import { getGoalForDate } from "@/services/client-goals-service";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import {
   orchestrateNutritionPlanCreation,
   orchestrateNutritionPlanDeletion,
 } from "./nutrition-plan-orchestrator";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
+import type { GoalOnDay } from "@/types/client-goals";
 import { BLOCKS_UNREADABLE, CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 
 const clientId = "client-1";
@@ -72,11 +73,6 @@ const client = {
   bmr: 1700,
   tdee: 2400,
   gender: "male",
-  goalWeight: 170,
-  goalBodyFatPercentage: null,
-  // No `goalDeadline`: `Client` has no such field. It was inert here (null
-  // either way) but named a mirror column nothing ever read — deadlines resolve
-  // from `client_goals` alone.
 };
 
 const calculatedPlan = {
@@ -391,8 +387,23 @@ describe("orchestrateNutritionPlanCreation — the placement's end", () => {
 describe("orchestrateNutritionPlanCreation — the deficit runs from the day the plan takes effect", () => {
   // A 5 kg goal 91 days out (client-today is 2026-07-02): under the weekly
   // safety cap from today AND from three weeks later, so the two windows
-  // yield two different deficits rather than one capped number.
-  const GOAL = { goalWeight: 175, goalDeadline: "2026-09-30" };
+  // yield two different deficits rather than one capped number. It is the
+  // goal in force on the client's today.
+  const GOAL: GoalOnDay = {
+    id: "goal-cut",
+    clientId,
+    name: "Lose weight",
+    type: "lose_weight",
+    targetWeight: 175,
+    targetBodyFatPercentage: null,
+    description: null,
+    startsOn: "2026-06-15",
+    source: "coach",
+    setBy: coachId,
+    createdAt: "2026-06-15T09:00:00+00:00",
+    updatedAt: "2026-06-15T09:00:00+00:00",
+    deadline: "2026-09-30",
+  };
   const THREE_WEEKS_OUT = "2026-07-23";
 
   let realGenerate: typeof generateNutritionPlan;
@@ -403,11 +414,11 @@ describe("orchestrateNutritionPlanCreation — the deficit runs from the day the
     );
     realGenerate = actual.generateNutritionPlan;
     vi.mocked(generateNutritionPlan).mockImplementation(realGenerate);
-    vi.mocked(getCurrentGoals).mockResolvedValue(GOAL as never);
+    vi.mocked(getGoalForDate).mockResolvedValue(GOAL);
   });
 
   afterEach(() => {
-    vi.mocked(getCurrentGoals).mockResolvedValue(null);
+    vi.mocked(getGoalForDate).mockResolvedValue(null);
   });
 
   it("hands the calculator the effective date as the window's start — today when none was sent", async () => {
@@ -420,6 +431,9 @@ describe("orchestrateNutritionPlanCreation — the deficit runs from the day the
     expect(generateNutritionPlan).toHaveBeenLastCalledWith(
       expect.objectContaining({ startDate: THREE_WEEKS_OUT })
     );
+    // The goal priced is the one in force on the client's today, whatever day
+    // the plan takes effect.
+    expect(getGoalForDate).toHaveBeenLastCalledWith(clientId, "2026-07-02");
 
     await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
     expect(generateNutritionPlan).toHaveBeenLastCalledWith(

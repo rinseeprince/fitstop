@@ -24,12 +24,23 @@ vi.mock("@/utils/build-daily-targets", () => ({
   buildDailyTargetsFromPlan: vi.fn().mockReturnValue([]),
 }));
 
+vi.mock("./client-goals-service", () => ({
+  getCurrentGoal: vi.fn(),
+}));
+
+vi.mock("./daily-log-permissions-service", () => ({
+  getLastSubmittedPeriodEnd: vi.fn(),
+}));
+
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
-import { getClientNutritionTargets } from "./client-portal-service";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getCurrentGoal } from "./client-goals-service";
+import { getLastSubmittedPeriodEnd } from "./daily-log-permissions-service";
+import { getClientForCurrentUser, getClientNutritionTargets } from "./client-portal-service";
 
 function createMockQuery(result: { data: unknown; error: unknown }) {
   const query = {
@@ -238,5 +249,85 @@ describe("getClientNutritionTargets", () => {
       effectiveFrom: "2026-05-01",
       effectiveUntil: "2026-09-30",
     });
+  });
+});
+
+// GET /api/client/me is the React Native app's contract, additive-only: the
+// goal's two targets keep their names, units and places, and come from the goal
+// in force on the client's today — the profile row carries no goal.
+describe("getClientForCurrentUser", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("carries the targets of the goal in force on the client's today, after dateOfBirth, with logsOpenFrom last", async () => {
+    const selects: string[] = [];
+    const clientChain = {
+      select: (columns: string) => {
+        selects.push(columns);
+        return clientChain;
+      },
+      eq: () => clientChain,
+      single: () =>
+        Promise.resolve({
+          data: {
+            id: "client-1",
+            coach_id: "coach-1",
+            name: "Sam",
+            email: "sam@example.com",
+            active: true,
+            created_at: "2026-02-09T09:00:00+00:00",
+            updated_at: "2026-09-01T09:00:00+00:00",
+            date_of_birth: "1992-04-18",
+            timezone: "Europe/London",
+            unit_preference: "metric",
+            next_check_in_due: null,
+            start_date: null,
+            client_current_measurements: [
+              { metric_key: "weight", value: 78.8, recorded_on: "2026-09-19", source: "check_in", measurement_id: "m-now" },
+            ],
+          },
+          error: null,
+        }),
+    };
+    vi.mocked(createServerSupabaseClient).mockResolvedValue({
+      auth: { getUser: () => Promise.resolve({ data: { user: { id: "user-1" } } }) },
+      from: () => clientChain,
+    } as never);
+    vi.mocked(getCurrentGoal).mockResolvedValue({
+      id: "goal-now",
+      clientId: "client-1",
+      name: "Lose weight",
+      type: "lose_weight",
+      targetWeight: 72.2,
+      targetBodyFatPercentage: 19.5,
+      description: null,
+      startsOn: "2026-08-10",
+      source: "coach",
+      setBy: "coach-1",
+      createdAt: "2026-08-10T09:00:00+00:00",
+      updatedAt: "2026-08-10T09:00:00+00:00",
+      deadline: "2026-12-04",
+    });
+    vi.mocked(getLastSubmittedPeriodEnd).mockResolvedValue("2026-09-13");
+
+    const profile = await getClientForCurrentUser();
+
+    expect(getCurrentGoal).toHaveBeenCalledWith("client-1");
+    expect(profile?.goalWeight).toBe(72.2);
+    expect(profile?.goalBodyFatPercentage).toBe(19.5);
+    const keys = Object.keys(profile ?? {});
+    const at = keys.indexOf("dateOfBirth");
+    expect(keys.slice(at, at + 4)).toEqual([
+      "dateOfBirth",
+      "goalWeight",
+      "goalBodyFatPercentage",
+      "currentWeight",
+    ]);
+    expect(keys[keys.length - 1]).toBe("logsOpenFrom");
+    expect(profile?.logsOpenFrom).toBe("2026-09-14");
+    // No goal column on the profile read: one named there is a PostgREST 400,
+    // which this read turns into an empty profile.
+    expect(selects[0]).not.toContain("goal_");
   });
 });

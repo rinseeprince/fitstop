@@ -6,14 +6,20 @@
  * built everything up front, which is >1GB of JS objects at this volume) and
  * gives natural progress granularity.
  *
- * The write order below is the dependency order established in Phase 0. One
- * place in it is not obvious:
+ * The write order below is the dependency order established in Phase 0. Two
+ * places in it are not obvious:
  *
  *  - `training_events` <-> `session_logs` is a cycle (both FKs nullable). Events
  *    go in first with `session_log_id` NULL, then session_logs carrying
  *    `training_event_id`, then a second pass upserts the back-link. That pass is
  *    safe specifically because `training_events` has no `updated_at` trigger —
  *    the same second pass on `session_logs` would destroy its backdated stamps.
+ *  - Goals are not rows: the app role only reads the goal tables and writes
+ *    them through their functions (migration 193), so each client's goal is one
+ *    `add_client_goal` call, handed the client's first day as its today — the
+ *    function refuses a start before the today it is given, and a seeded goal
+ *    began in the past. Its id is the function's, outside the seed namespace;
+ *    the goal leaves with its client (ON DELETE CASCADE).
  *
  * Everything is written in the INITIAL insert wherever possible: 25 tables carry
  * BEFORE UPDATE `updated_at` triggers, so any second pass re-stamps the row to
@@ -23,6 +29,8 @@
 import { compactFromSpecs, type SetSpec, type SetType } from "@/utils/exercise-set-specs";
 import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 import { computeEnergyPair } from "@/services/client-energy-calc";
+import { GOAL_TYPE_SETTINGS, goalTypeFromTargets } from "@/lib/goals/goal-types";
+import type { Database } from "@/types/database";
 import { seedUuid, seedEmail } from "./ids";
 import { streamFor, type Rng } from "./rng";
 import {
@@ -42,13 +50,25 @@ export type CatalogExercise = {
   base: number;
 };
 
-export type Step = {
+/** A table's rows, inserted in batches. */
+export type RowStep = {
   table: string;
   rows: Record<string, unknown>[];
   /** upsert is used only for the training_events back-link pass. */
   mode?: "insert" | "upsert";
   onConflict?: string;
 };
+
+/** One `add_client_goal` call's arguments. */
+export type GoalCall = Database["public"]["Functions"]["add_client_goal"]["Args"];
+
+/** Goals, one function call each — see the header. */
+export type GoalStep = {
+  rpc: "add_client_goal";
+  calls: GoalCall[];
+};
+
+export type Step = RowStep | GoalStep;
 
 export type SeedContext = {
   seed: number;
@@ -142,7 +162,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   // Accumulators, so each table is written as one ordered batch per coach.
   const clients: Record<string, unknown>[] = [];
   const invitations: Record<string, unknown>[] = [];
-  const goals: Record<string, unknown>[] = [];
+  const goals: GoalCall[] = [];
   const habits: Record<string, unknown>[] = [];
   const plans: Record<string, unknown>[] = [];
   const sessions: Record<string, unknown>[] = [];
@@ -274,8 +294,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       // No weight columns: "now" and "at the start" are derived from the
       // measurement log (the intake row on the start date below is the
       // baseline; the last fortnightly coach entry is "now").
-      goal_weight: goalWeight,
-      goal_body_fat_percentage: round(Math.max(8, startBf - 6), 1),
       bmr,
       tdee,
       notes: idRng.bool(0.55) ? coachNote(idRng) : null,
@@ -301,18 +319,24 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       });
     }
 
+    // The goal the weight drifts towards, from the client's first day, typed
+    // against the start weight and named for its type, set by their coach.
+    const goalBodyFat = round(Math.max(8, startBf - 6), 1);
+    const goalType = goalTypeFromTargets({
+      targetWeight: goalWeight,
+      targetBodyFatPercentage: goalBodyFat,
+      reading: startWeight,
+    });
     goals.push({
-      id: seedUuid("goal", coachIdx, c),
-      client_id: clientId,
-      goal_weight: goalWeight,
-      goal_body_fat_percentage: round(Math.max(8, startBf - 6), 1),
-      primary_goal: idRng.pick(["fat_loss", "muscle_gain", "recomposition", "performance"] as const),
-      set_by: "coach",
-      notes: idRng.bool(0.4) ? coachNote(idRng) : null,
-      effective_from: startIso,
-      superseded_at: null, // partial unique (client_id) WHERE superseded_at IS NULL
-      created_at: createdAt,
-      updated_at: createdAt,
+      p_client_id: clientId,
+      p_today: startIso,
+      p_starts_on: startIso,
+      p_type: goalType,
+      p_name: GOAL_TYPE_SETTINGS[goalType].name,
+      p_source: "coach",
+      p_set_by: coachId,
+      p_target_weight: goalWeight,
+      p_target_body_fat_percentage: goalBodyFat,
     });
 
     // --- habits. effective_date MUST be backdated: the adherence read filters
@@ -899,7 +923,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   // last because of its two AFTER INSERT triggers.
   push("clients", clients);
   push("client_invitations", invitations);
-  push("client_goals", goals);
+  if (goals.length > 0) steps.push({ rpc: "add_client_goal", calls: goals });
   push("daily_habits", habits);
   push("training_plans", plans);
   push("training_sessions", sessions);

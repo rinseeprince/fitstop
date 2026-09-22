@@ -40,10 +40,12 @@ describe("buildGoalRows", () => {
   const kg = (value: number) => `${value} kg`;
 
   it("draws one row per goal set, judged only when a reading existed then", () => {
+    // Each row carries the client's baseline and the goal's start; the track
+    // runs from the goal's start.
     const rows = buildGoalRows(
       {
-        weight: { goal: 78, startingWeight: 86, position: position({ current: 82.4, remaining: 4.4, percentComplete: 45, isOnTrack: true }) },
-        bodyFat: { goal: 15, startingBodyFat: 22, position: null },
+        weight: { goal: 78, startingWeight: 91, goalStartWeight: 86, position: position({ current: 82.4, remaining: 4.4, percentComplete: 45, isOnTrack: true }) },
+        bodyFat: { goal: 15, startingBodyFat: 26, goalStartBodyFat: 22, position: null },
         goalIsCurrent: true,
       },
       kg

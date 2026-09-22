@@ -138,9 +138,9 @@ export function DetailsGroups({
   const { form } = edit;
   const weightUnit = formatWeight(0, preference).unit;
 
-  // A deadline cannot be in the past (the goals PUT rejects it against the
-  // coach's day), and the native `min` makes those days unclickable rather
-  // than picked and then rejected.
+  // The sheet offers no past day for a deadline: the native `min` makes those
+  // days unclickable rather than picked. (The goal functions themselves refuse
+  // only a deadline before the goal's start.)
   const todayString = getTodayDateString();
 
   // Activation owns the start date; a client still being set up has none to

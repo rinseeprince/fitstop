@@ -5,7 +5,6 @@
 
 import { generateUUID, generateISODate } from './test-utils'
 import type { TrainingEventWithLogRow } from '@/services/training-event-service'
-import type { ClientGoalRow } from '@/types/client-goals'
 import type { TrainingEvent, TrainingEventLog, TrainingEventStatus } from '@/types/training'
 
 // =============================================================================
@@ -43,44 +42,6 @@ import type { TrainingEvent, TrainingEventLog, TrainingEventStatus } from '@/typ
 // =============================================================================
 // Exercise Highlight Builders
 // =============================================================================
-
-// =============================================================================
-// Client Goals Builders
-// =============================================================================
-
-interface MockClientGoalsRowOptions {
-  id?: string
-  clientId?: string
-  goalWeight?: number | null
-  goalBodyFatPercentage?: number | null
-  goalDeadline?: string | null
-  primaryGoal?: string | null
-  setBy?: string
-  notes?: string | null
-  effectiveFrom?: string
-  supersededAt?: string | null
-  createdAt?: string
-  updatedAt?: string
-}
-
-export function createMockClientGoalsRow(options: MockClientGoalsRowOptions = {}): ClientGoalRow {
-  const now = generateISODate()
-
-  return {
-    id: options.id ?? generateUUID(),
-    client_id: options.clientId ?? generateUUID(),
-    goal_weight: options.goalWeight ?? 170,
-    goal_body_fat_percentage: options.goalBodyFatPercentage ?? null,
-    goal_deadline: options.goalDeadline ?? null,
-    primary_goal: options.primaryGoal ?? 'weight_loss',
-    set_by: options.setBy ?? generateUUID(),
-    notes: options.notes ?? null,
-    effective_from: options.effectiveFrom ?? now,
-    superseded_at: options.supersededAt ?? null,
-    created_at: options.createdAt ?? now,
-    updated_at: options.updatedAt ?? now,
-  }
-}
 
 // =============================================================================
 // Training Event Builders

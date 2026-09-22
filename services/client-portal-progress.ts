@@ -1,5 +1,6 @@
 import { createPortalClient } from "./client-portal-service";
 import { CLIENT_MEASUREMENT_EMBEDS } from "./measurements-service";
+import { getCurrentGoal } from "./client-goals-service";
 import { getTrend, calculatePercentChange } from "@/utils/metric-shaping";
 import { fetchAllPages } from "@/lib/paged-fetch";
 import { dayValues, type MeasurementReading } from "@/lib/measurements/day-values";
@@ -60,6 +61,7 @@ export type ProgressData = {
   currentStreak: number;
   adherenceRate: number;
   client: {
+    /** The targets of the goal in force on the client's today (kg, %). */
     goalWeight?: number;
     goalBodyFatPercentage?: number;
     startingWeight?: number;
@@ -119,8 +121,6 @@ type LiveMeasurementRow = {
 type ClientProgressRow = {
   current_streak: number | null;
   check_in_adherence_rate: number | null;
-  goal_weight: number | null;
-  goal_body_fat_percentage: number | null;
   client_current_measurements: ClientMeasurementEmbed[] | null;
   client_baseline_measurements: ClientMeasurementEmbed[] | null;
 };
@@ -155,12 +155,15 @@ export async function getClientProgressData(
   startDate.setDate(startDate.getDate() - days);
   const fromDay = startDate.toISOString().slice(0, 10);
 
-  // Three independent reads, under the client's JWT: the check-ins' wellness
-  // averages, the measurement log's live rows (the D6 policy is what lets this
-  // client see their own — every reading about them, of any source) and the
-  // client row with its two reading views embedded. The log read is paged: it
-  // feeds a series and must be complete past PostgREST's row cap.
-  const [{ data: checkIns }, readingRows, { data: clientData, error: clientError }] =
+  // Four independent reads. Three under the client's JWT: the check-ins'
+  // wellness averages, the measurement log's live rows (the D6 policy is what
+  // lets this client see their own — every reading about them, of any source)
+  // and the client row with its two reading views embedded. The log read is
+  // paged: it feeds a series and must be complete past PostgREST's row cap. The
+  // fourth is the goal in force on the client's today, whose targets the
+  // goals section reads; the service role reads it, scoped by this client's id,
+  // because `client_goals` has no client-facing policy.
+  const [{ data: checkIns }, readingRows, { data: clientData, error: clientError }, goal] =
     await Promise.all([
       supabase
         .from("check_ins")
@@ -183,9 +186,10 @@ export async function getClientProgressData(
       ),
       supabase
         .from("clients")
-        .select(`current_streak, check_in_adherence_rate, goal_weight, goal_body_fat_percentage, ${CLIENT_MEASUREMENT_EMBEDS}`)
+        .select(`current_streak, check_in_adherence_rate, ${CLIENT_MEASUREMENT_EMBEDS}`)
         .eq("id", clientId)
         .single(),
+      getCurrentGoal(clientId),
     ]);
 
   // Surface a failed client fetch instead of swallowing it. A silent failure
@@ -198,7 +202,7 @@ export async function getClientProgressData(
   // reintroduce a column here without checking it against the live schema.
   if (clientError) {
     console.error(
-      `Failed to load client unit/goal fields for ${clientId}:`,
+      `Failed to load the client row's streak and reading fields for ${clientId}:`,
       clientError.message,
     );
   }
@@ -301,8 +305,8 @@ export async function getClientProgressData(
     currentStreak: client?.current_streak ?? 0,
     adherenceRate: client?.check_in_adherence_rate ?? 0,
     client: {
-      goalWeight: client?.goal_weight ?? undefined,
-      goalBodyFatPercentage: client?.goal_body_fat_percentage ?? undefined,
+      goalWeight: goal?.targetWeight ?? undefined,
+      goalBodyFatPercentage: goal?.targetBodyFatPercentage ?? undefined,
       startingWeight: embeddedReading(client?.client_baseline_measurements, "weight"),
       startingBodyFatPercentage: embeddedReading(client?.client_baseline_measurements, "bodyFat"),
       currentWeight: embeddedReading(client?.client_current_measurements, "weight"),

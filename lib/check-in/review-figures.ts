@@ -65,8 +65,11 @@ export function resolveGoalRowState(goal: GoalPosition, distance: string): GoalR
 /**
  * One row per goal that is set, as the strip draws them. `position` is the
  * reading as of the check-in's day against the goal, or null when there was
- * none — the goal is still a row, with no verdict. `formatWeight` renders a
- * kilogram value in the viewer's unit.
+ * none — the goal is still a row, with no verdict. The track runs from the
+ * goal's start — the client's reading on the day the goal began — to its
+ * target, the span `percentComplete` measures; the client's baseline is the
+ * ribbon's, not the strip's. `formatWeight` renders a kilogram value in the
+ * viewer's unit.
  */
 export function buildGoalRows(
   goalProgress: GoalProgress,
@@ -80,7 +83,7 @@ export function buildGoalRows(
     rows.push({
       name: "Weight",
       percentComplete: position?.percentComplete ?? 0,
-      start: weight.startingWeight !== undefined ? formatWeight(weight.startingWeight) : undefined,
+      start: weight.goalStartWeight !== undefined ? formatWeight(weight.goalStartWeight) : undefined,
       goal: formatWeight(weight.goal),
       state: position
         ? resolveGoalRowState(position, formatWeight(Math.abs(position.remaining)))
@@ -94,7 +97,7 @@ export function buildGoalRows(
     rows.push({
       name: "Body fat",
       percentComplete: position?.percentComplete ?? 0,
-      start: bodyFat.startingBodyFat !== undefined ? `${bodyFat.startingBodyFat} %` : undefined,
+      start: bodyFat.goalStartBodyFat !== undefined ? `${bodyFat.goalStartBodyFat} %` : undefined,
       goal: `${bodyFat.goal} %`,
       state: position
         ? resolveGoalRowState(position, `${round1(Math.abs(position.remaining))}%`)

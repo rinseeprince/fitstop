@@ -13,10 +13,28 @@ vi.mock('./client-intake-service', () => ({
 vi.mock('./measurements-service', () => ({
   appendMeasurements: vi.fn(),
   getCurrentMeasurements: vi.fn(),
+  getReadingsOnDay: vi.fn(),
 }))
 
 vi.mock('./client-goals-service', () => ({
-  updateGoals: vi.fn().mockResolvedValue({}),
+  getGoalForDate: vi.fn(),
+}))
+
+vi.mock('./client-goal-writes-service', () => {
+  class GoalWriteError extends Error {
+    constructor(
+      readonly code: string,
+      message: string,
+      readonly conflict: unknown = null
+    ) {
+      super(message)
+    }
+  }
+  return { addGoal: vi.fn(), GoalWriteError }
+})
+
+vi.mock('./today-service', () => ({
+  getClientTodayString: vi.fn(),
 }))
 
 vi.mock('@/services/client-energy-service', () => ({
@@ -30,10 +48,13 @@ vi.mock('@/services/client-energy-service', () => ({
 
 import { supabaseAdmin } from './supabase-admin'
 import { getIntake } from './client-intake-service'
-import { appendMeasurements, getCurrentMeasurements } from './measurements-service'
-import { updateGoals } from './client-goals-service'
+import { appendMeasurements, getCurrentMeasurements, getReadingsOnDay } from './measurements-service'
+import { getGoalForDate } from './client-goals-service'
+import { addGoal, GoalWriteError } from './client-goal-writes-service'
+import { getClientTodayString } from './today-service'
 import { syncMetricsToClient } from './intake-review-service'
 import type { ClientIntake } from '@/types/client-intake'
+import type { GoalOnDay } from '@/types/client-goals'
 
 // Helper to mock supabaseAdmin.from with sequential calls
 function mockSupabaseChain(selectResult: { data: unknown; error: unknown }, updateResult?: { error: unknown }) {
@@ -46,13 +67,13 @@ function mockSupabaseChain(selectResult: { data: unknown; error: unknown }, upda
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
         single: vi.fn().mockResolvedValue(selectResult),
-      } as any
+      } as never
     }
     // Second call: update client
     return {
       update: vi.fn().mockReturnThis(),
       eq: vi.fn().mockResolvedValue(updateResult ?? { error: null }),
-    } as any
+    } as never
   })
 }
 
@@ -62,9 +83,6 @@ const nullClient = {
   height: null,
   gender: null,
   date_of_birth: null,
-  goal_weight: null,
-  goal_body_fat_percentage: null,
-  goal_deadline: null,
   work_activity_level: null,
   timezone: 'Europe/London',
 }
@@ -79,6 +97,28 @@ const emptyIntake: ClientIntake = {
   updatedAt: '2026-06-09T12:00:00Z',
 }
 
+/** The client's today, and the coach pressing Sync. */
+const TODAY = '2026-06-10'
+const COACH_ID = 'coach-9'
+const GOAL_ID = 'goal-7'
+
+/** A goal the coach already set, in force on the client's today. */
+const GOAL_IN_FORCE: GoalOnDay = {
+  id: 'goal-existing',
+  clientId: 'client-123',
+  name: 'Build muscle',
+  type: 'build_muscle',
+  targetWeight: 91.5,
+  targetBodyFatPercentage: null,
+  description: null,
+  startsOn: '2026-05-20',
+  source: 'coach',
+  setBy: COACH_ID,
+  createdAt: '2026-05-20T08:00:00Z',
+  updatedAt: '2026-05-20T08:00:00Z',
+  deadline: null,
+}
+
 describe('Intake Review Service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -91,6 +131,14 @@ describe('Intake Review Service', () => {
     })
     vi.mocked(getCurrentMeasurements).mockReset()
     vi.mocked(getCurrentMeasurements).mockResolvedValue({})
+    vi.mocked(getReadingsOnDay).mockReset()
+    vi.mocked(getReadingsOnDay).mockResolvedValue({})
+    vi.mocked(getClientTodayString).mockReset()
+    vi.mocked(getClientTodayString).mockResolvedValue(TODAY)
+    vi.mocked(getGoalForDate).mockReset()
+    vi.mocked(getGoalForDate).mockResolvedValue(null)
+    vi.mocked(addGoal).mockReset()
+    vi.mocked(addGoal).mockResolvedValue(GOAL_ID)
   })
 
   describe('syncMetricsToClient', () => {
@@ -106,7 +154,7 @@ describe('Intake Review Service', () => {
       })
       mockSupabaseChain({ data: nullClient, error: null })
 
-      await syncMetricsToClient('client-123')
+      await syncMetricsToClient('client-123', COACH_ID)
 
       expect(appendMeasurements).toHaveBeenCalledWith({
         clientId: 'client-123',
@@ -129,20 +177,20 @@ describe('Intake Review Service', () => {
       })
       mockSupabaseChain({ data: nullClient, error: null })
 
-      const synced = await syncMetricsToClient('client-123')
+      const { syncedFields } = await syncMetricsToClient('client-123', COACH_ID)
 
       expect(appendMeasurements).toHaveBeenCalledWith(
         expect.objectContaining({ values: { bodyFat: 18 } })
       )
-      expect(synced).toContain('body fat')
-      expect(synced).not.toContain('weight')
+      expect(syncedFields).toContain('body fat')
+      expect(syncedFields).not.toContain('weight')
     })
 
     it('records nothing when the intake carries no reading', async () => {
       vi.mocked(getIntake).mockResolvedValue({ ...emptyIntake, height: 180 })
       mockSupabaseChain({ data: nullClient, error: null })
 
-      await syncMetricsToClient('client-123')
+      await syncMetricsToClient('client-123', COACH_ID)
 
       expect(appendMeasurements).not.toHaveBeenCalled()
     })
@@ -158,31 +206,9 @@ describe('Intake Review Service', () => {
       })
       mockSupabaseChain({ data: nullClient, error: null })
 
-      const synced = await syncMetricsToClient('client-123')
+      const { syncedFields } = await syncMetricsToClient('client-123', COACH_ID)
 
-      expect(synced.slice(0, 4)).toEqual(['weight', 'body fat', 'height', 'gender'])
-    })
-
-    it('dual-writes goals on sync when goal fields present', async () => {
-      vi.mocked(getIntake).mockResolvedValue({
-        ...emptyIntake,
-        targetWeight: 70,
-        goalDeadline: '2025-06-01',
-        goalBodyFatPercentage: 12,
-      })
-      mockSupabaseChain({ data: nullClient, error: null })
-
-      await syncMetricsToClient('client-123')
-
-      expect(updateGoals).toHaveBeenCalledWith(
-        'client-123',
-        expect.objectContaining({
-          goalWeight: 70,
-          goalBodyFatPercentage: 12,
-          goalDeadline: '2025-06-01',
-        }),
-        'intake'
-      )
+      expect(syncedFields.slice(0, 4)).toEqual(['weight', 'body fat', 'height', 'gender'])
     })
 
     it('a failed reading write is not swallowed', async () => {
@@ -193,82 +219,174 @@ describe('Intake Review Service', () => {
       mockSupabaseChain({ data: nullClient, error: null })
       vi.mocked(appendMeasurements).mockRejectedValueOnce(new Error('DB down'))
 
-      await expect(syncMetricsToClient('client-123')).rejects.toThrow('DB down')
+      await expect(syncMetricsToClient('client-123', COACH_ID)).rejects.toThrow('DB down')
     })
   })
 
-  // Task 0b.2: `updateGoals` is the sole writer of both goal stores, so the goal
-  // fields travel in their own object and never reach the `clients` UPDATE.
-  describe('goals do not travel in the clients UPDATE', () => {
-    const GOAL_INTAKE: ClientIntake = {
-      ...emptyIntake,
-      currentWeight: 80,
-      height: 180,
-      targetWeight: 70,
-      goalDeadline: '2026-12-01',
-      goalBodyFatPercentage: 12,
-    }
-
-    /** Same call-order routing as mockSupabaseChain, but keeps the UPDATE payload. */
-    function chainCapturingUpdate() {
-      const update = vi.fn().mockReturnThis()
-      let callCount = 0
-      vi.mocked(supabaseAdmin.from).mockImplementation(() => {
-        callCount++
-        if (callCount === 1) {
-          return {
-            select: vi.fn().mockReturnThis(),
-            eq: vi.fn().mockReturnThis(),
-            single: vi.fn().mockResolvedValue({ data: nullClient, error: null }),
-          } as any
-        }
-        return { update, eq: vi.fn().mockResolvedValue({ error: null }) } as any
+  describe("the questionnaire's goal", () => {
+    it("sets it from the client's today when they have no goal: their type, targets, own words and deadline, set by the syncing coach", async () => {
+      vi.mocked(getIntake).mockResolvedValue({
+        ...emptyIntake,
+        gender: 'male',
+        primaryGoal: 'event_prep',
+        targetWeight: 88.5,
+        goalBodyFatPercentage: 14.5,
+        goalDescription: 'Step on stage in December',
+        goalDeadline: '2026-12-18',
       })
-      return update
-    }
+      mockSupabaseChain({ data: nullClient, error: null })
 
-    it('writes no goal column to clients, and still routes the values to updateGoals', async () => {
-      vi.mocked(getIntake).mockResolvedValue(GOAL_INTAKE)
-      const update = chainCapturingUpdate()
+      const result = await syncMetricsToClient('client-123', COACH_ID)
 
-      await syncMetricsToClient('client-123')
+      expect(getGoalForDate).toHaveBeenCalledWith('client-123', TODAY)
+      expect(addGoal).toHaveBeenCalledWith({
+        clientId: 'client-123',
+        today: TODAY,
+        startsOn: TODAY,
+        source: 'intake',
+        setBy: COACH_ID,
+        type: 'event_prep',
+        name: 'Event prep',
+        targetWeight: 88.5,
+        targetBodyFatPercentage: 14.5,
+        description: 'Step on stage in December',
+        deadline: '2026-12-18',
+      })
+      // The client's own answer is the type: their weight is never read for it.
+      expect(getReadingsOnDay).not.toHaveBeenCalled()
+      expect(result).toEqual({
+        syncedFields: ['gender', 'goal', 'BMR & TDEE'],
+        notes: [],
+        goalId: GOAL_ID,
+      })
+    })
 
-      const payload = update.mock.calls[0][0]
-      expect(payload).not.toHaveProperty('goal_weight')
-      expect(payload).not.toHaveProperty('goal_deadline')
-      expect(payload).not.toHaveProperty('goal_body_fat_percentage')
-      // No reading travels in it either — that is a row in the measurement log.
-      expect(payload).not.toHaveProperty('current_weight')
-      // The profile half is untouched by the split.
-      expect(payload).toHaveProperty('height', 180)
+    it("types a goal the questionnaire left untyped from its targets against the client's weight today", async () => {
+      // The client already weighs 69.5, so the intake's 76.5 is not recorded,
+      // and a 71.5 target is above them: building muscle, not losing weight.
+      vi.mocked(getCurrentMeasurements).mockResolvedValue({
+        weight: { id: 'm-2', metricKey: 'weight', value: 69.5, date: '2026-06-04', source: 'coach_entry' },
+      })
+      vi.mocked(getReadingsOnDay).mockResolvedValue({
+        weight: { id: 'm-2', metricKey: 'weight', value: 69.5, date: '2026-06-04', source: 'coach_entry' },
+      })
+      vi.mocked(getIntake).mockResolvedValue({ ...emptyIntake, currentWeight: 76.5, targetWeight: 71.5 })
+      mockSupabaseChain({ data: nullClient, error: null })
 
-      expect(updateGoals).toHaveBeenCalledWith(
-        'client-123',
-        { goalWeight: 70, goalBodyFatPercentage: 12, goalDeadline: '2026-12-01' },
-        'intake'
+      await syncMetricsToClient('client-123', COACH_ID)
+
+      expect(getReadingsOnDay).toHaveBeenCalledWith('client-123', TODAY)
+      expect(addGoal).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'build_muscle', name: 'Build muscle', targetWeight: 71.5 })
       )
     })
 
-    // The return value is the "Synced: …" list the coach reads. Splitting the
-    // goals out of `updates` without spanning both objects would silently stop
-    // reporting three fields the sync still writes.
-    it('still reports the goal fields as synced', async () => {
-      vi.mocked(getIntake).mockResolvedValue(GOAL_INTAKE)
-      chainCapturingUpdate()
+    it("reads that weight after recording the intake's own", async () => {
+      vi.mocked(getIntake).mockResolvedValue({ ...emptyIntake, currentWeight: 74.5, targetWeight: 67.5 })
+      mockSupabaseChain({ data: nullClient, error: null })
 
-      const synced = await syncMetricsToClient('client-123')
+      await syncMetricsToClient('client-123', COACH_ID)
 
-      expect(synced).toEqual(
-        expect.arrayContaining(['goal weight', 'goal deadline', 'goal body fat'])
+      expect(appendMeasurements).toHaveBeenCalledTimes(1)
+      expect(getReadingsOnDay).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(appendMeasurements).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(getReadingsOnDay).mock.invocationCallOrder[0]
       )
     })
 
-    it('a failed goal write is no longer swallowed', async () => {
-      vi.mocked(getIntake).mockResolvedValue(GOAL_INTAKE)
-      chainCapturingUpdate()
-      vi.mocked(updateGoals).mockRejectedValueOnce(new Error('goal insert failed'))
+    it('copies a deadline that falls today — it is still ahead', async () => {
+      vi.mocked(getIntake).mockResolvedValue({ ...emptyIntake, primaryGoal: 'maintain', goalDeadline: TODAY })
+      mockSupabaseChain({ data: nullClient, error: null })
 
-      await expect(syncMetricsToClient('client-123')).rejects.toThrow('goal insert failed')
+      const { notes } = await syncMetricsToClient('client-123', COACH_ID)
+
+      expect(addGoal).toHaveBeenCalledWith(expect.objectContaining({ deadline: TODAY }))
+      expect(notes).toEqual([])
+    })
+
+    it('leaves out a deadline that has passed, and says so', async () => {
+      vi.mocked(getIntake).mockResolvedValue({
+        ...emptyIntake,
+        primaryGoal: 'lose_weight',
+        targetWeight: 63.5,
+        goalDeadline: '2026-03-01',
+      })
+      mockSupabaseChain({ data: nullClient, error: null })
+
+      const result = await syncMetricsToClient('client-123', COACH_ID)
+
+      expect(addGoal).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'lose_weight', targetWeight: 63.5, deadline: null })
+      )
+      expect(result.syncedFields).toContain('goal')
+      expect(result.notes).toEqual([
+        "The goal deadline (1 Mar) had passed, so it wasn't copied.",
+      ])
+    })
+
+    it('writes no goal when the client already has one in force today, and says only that', async () => {
+      vi.mocked(getGoalForDate).mockResolvedValue(GOAL_IN_FORCE)
+      vi.mocked(getIntake).mockResolvedValue({
+        ...emptyIntake,
+        primaryGoal: 'lose_weight',
+        targetWeight: 66.5,
+        goalDeadline: '2026-02-14',
+      })
+      mockSupabaseChain({ data: nullClient, error: null })
+
+      const result = await syncMetricsToClient('client-123', COACH_ID)
+
+      expect(getGoalForDate).toHaveBeenCalledWith('client-123', TODAY)
+      expect(addGoal).not.toHaveBeenCalled()
+      expect(result.syncedFields).not.toContain('goal')
+      expect(result.notes).toEqual([
+        "The client already has a goal, so the questionnaire's goal wasn't copied.",
+      ])
+      expect(result.goalId).toBeNull()
+    })
+
+    it('reads and writes no goal, and says nothing of one, when the questionnaire carries none', async () => {
+      vi.mocked(getIntake).mockResolvedValue({ ...emptyIntake, height: 172 })
+      mockSupabaseChain({ data: nullClient, error: null })
+
+      const result = await syncMetricsToClient('client-123', COACH_ID)
+
+      expect(getGoalForDate).not.toHaveBeenCalled()
+      expect(addGoal).not.toHaveBeenCalled()
+      expect(result.notes).toEqual([])
+      expect(result.goalId).toBeNull()
+    })
+
+    it('copies the goal without a deadline that runs into a planned goal, and says so', async () => {
+      vi.mocked(getIntake).mockResolvedValue({
+        ...emptyIntake,
+        primaryGoal: 'build_muscle',
+        targetWeight: 88.4,
+        goalDeadline: '2026-12-11',
+      })
+      mockSupabaseChain({ data: nullClient, error: null })
+      vi.mocked(addGoal)
+        .mockRejectedValueOnce(
+          new GoalWriteError('deadline_after_next', '{}', { goalId: 'goal-planned', name: 'Peak', startsOn: '2026-11-16' })
+        )
+        .mockResolvedValueOnce(GOAL_ID)
+
+      const result = await syncMetricsToClient('client-123', COACH_ID)
+
+      expect(addGoal).toHaveBeenCalledTimes(2)
+      expect(addGoal).toHaveBeenLastCalledWith(expect.objectContaining({ targetWeight: 88.4, deadline: null }))
+      expect(result.syncedFields).toContain('goal')
+      expect(result.notes).toEqual([
+        "The goal deadline (11 Dec) runs into Peak, which starts 16 Nov, so it wasn't copied.",
+      ])
+    })
+
+    it('a failed goal write is not swallowed', async () => {
+      vi.mocked(getIntake).mockResolvedValue({ ...emptyIntake, primaryGoal: 'general_fitness' })
+      mockSupabaseChain({ data: nullClient, error: null })
+      vi.mocked(addGoal).mockRejectedValueOnce(new Error('goal write failed'))
+
+      await expect(syncMetricsToClient('client-123', COACH_ID)).rejects.toThrow('goal write failed')
     })
   })
 })

@@ -75,8 +75,10 @@ vi.mock('@/services/nutrition-plan-service', () => ({
   resolveNutritionPlacementEnd: vi.fn().mockResolvedValue('2026-03-11'),
 }))
 
+// The goal in force on the client's today: the calculator's goal and the drift
+// check's, read once per request.
 vi.mock('@/services/client-goals-service', () => ({
-  getCurrentGoals: vi.fn(),
+  getGoalForDate: vi.fn(),
 }))
 
 // The POST imports the class alone, to say why a save was refused; the real
@@ -116,11 +118,12 @@ import {
 import { BlocksUnreadableError } from '@/services/client-blocks-service'
 import { BLOCKS_UNREADABLE } from '@/lib/constants'
 import { clearNutritionPlansForClient } from '@/services/nutrition-plan-clear-service'
-import { getCurrentGoals } from '@/services/client-goals-service'
+import { getGoalForDate } from '@/services/client-goals-service'
 import { getClientTodayString } from '@/services/today-service'
 import { resolveEventDeletionFloor } from '@/services/event-deletion-floor'
 import { getAuthenticatedCoachId } from '@/lib/auth-helpers'
 import { GET, POST, DELETE } from './route'
+import type { GoalOnDay } from '@/types/client-goals'
 
 const mockClient = {
   id: 'client-1',
@@ -130,11 +133,28 @@ const mockClient = {
   weightUnit: 'lbs' as const,
   bmr: 1700,
   tdee: 2100,
-  goalWeight: 170,
   gender: 'male' as const,
   height: 70,
   heightUnit: 'in' as const,
 }
+
+/** The goal in force on a day, as the goals service returns it. */
+const goalOnDay = (overrides: Partial<GoalOnDay> = {}): GoalOnDay => ({
+  id: 'goal-1',
+  clientId: 'client-1',
+  name: 'Lose weight',
+  type: 'lose_weight',
+  targetWeight: null,
+  targetBodyFatPercentage: null,
+  description: null,
+  startsOn: '2025-12-29',
+  source: 'coach',
+  setBy: 'coach-1',
+  createdAt: '2025-12-29T09:00:00Z',
+  updatedAt: '2025-12-29T09:00:00Z',
+  deadline: null,
+  ...overrides,
+})
 
 const mockBody = {
   workActivityLevel: 'moderate',
@@ -173,15 +193,7 @@ describe('Nutrition Route POST - the calculator reads the client record', () => 
     // the same round trip as the row (getClientById); there is no second
     // weight store for the calculator to prefer.
     vi.mocked(getClientById).mockResolvedValue({ ...mockClient, currentWeight: 175 } as never)
-    vi.mocked(getCurrentGoals).mockResolvedValue({
-      id: 'goal-1',
-      clientId: 'client-1',
-      goalWeight: 165,
-      setBy: 'coach',
-      effectiveFrom: '2024-01-01T00:00:00Z',
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-    })
+    vi.mocked(getGoalForDate).mockResolvedValue(goalOnDay({ targetWeight: 165 }))
 
     const request = makeRequest(mockBody)
     await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
@@ -204,17 +216,17 @@ describe('Nutrition Route POST - the calculator reads the client record', () => 
     expect(createCall.baseWeightKg).toBe(175)
   })
 
-  it('falls back to the client goal fields when getCurrentGoals returns null', async () => {
+  it('prices maintenance when no goal is in force on the client\'s today — the profile holds no goal', async () => {
     vi.mocked(getClientById).mockResolvedValue({ ...mockClient, currentWeight: 175 } as never)
-    vi.mocked(getCurrentGoals).mockResolvedValue(null)
+    vi.mocked(getGoalForDate).mockResolvedValue(null)
 
     const request = makeRequest(mockBody)
     await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
 
-    // The weight is still the record's (175); goalWeight falls back to
-    // client.goalWeight (170). Both are already kilograms.
+    // The weight is still the record's (175); with no goal there is no goal
+    // weight and no deadline for the calculator to solve against.
     expect(generateNutritionPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ currentWeightKg: 175, goalWeightKg: 170 })
+      expect.objectContaining({ currentWeightKg: 175, goalWeightKg: undefined, goalDeadline: undefined })
     )
   })
 })
@@ -237,24 +249,18 @@ describe('Nutrition Route POST - goal resolution', () => {
     } as never)
   })
 
-  it('uses the client goal weight', async () => {
-    vi.mocked(getCurrentGoals).mockResolvedValue({
-      id: 'goal-1',
-      clientId: 'client-1',
-      goalWeight: 165,
-      setBy: 'coach',
-      effectiveFrom: '2024-01-01T00:00:00Z',
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-    })
+  it("uses the weight target and deadline of the goal in force on the client's today", async () => {
+    vi.mocked(getGoalForDate).mockResolvedValue(
+      goalOnDay({ targetWeight: 163.5, deadline: '2026-04-30' })
+    )
 
     const request = makeRequest(mockBody)
     const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
-    const data = await response.json()
 
-    // Client goal weight (165 kg) flows through unconverted.
+    expect(getGoalForDate).toHaveBeenCalledWith('client-1', '2026-01-15')
+    // The goal's kilograms flow through unconverted, with that day's deadline.
     expect(generateNutritionPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ goalWeightKg: 165 })
+      expect.objectContaining({ goalWeightKg: 163.5, goalDeadline: '2026-04-30' })
     )
     expect(response.status).toBe(200)
   })
@@ -276,7 +282,7 @@ describe('Nutrition Route POST - effectiveFrom judged against client-local today
       requiredDailyDeficit: 500,
       warnings: [],
     } as never)
-    vi.mocked(getCurrentGoals).mockResolvedValue(null)
+    vi.mocked(getGoalForDate).mockResolvedValue(null)
     // Far-future dates so these tests can ONLY pass/fail via the mocked
     // client-local comparison — a real-clock UTC comparison would never
     // reject 2099 dates, so a regression to getTodayDateString() fails both.
@@ -453,7 +459,7 @@ describe('Nutrition Route GET — the three-role read (versions placed by date)'
     vi.mocked(getAuthenticatedCoachId).mockResolvedValue('coach-1')
     vi.mocked(getClientById).mockResolvedValue(mockClient as never)
     vi.mocked(getClientTodayString).mockResolvedValue('2026-08-11')
-    vi.mocked(getCurrentGoals).mockResolvedValue(null)
+    vi.mocked(getGoalForDate).mockResolvedValue(null)
     vi.mocked(getNutritionPlanForDate).mockResolvedValue(null)
     vi.mocked(getLatestNutritionPlan).mockResolvedValue(null)
     vi.mocked(getNextFutureNutritionPlan).mockResolvedValue(null)
@@ -561,5 +567,35 @@ describe('Nutrition Route GET — the three-role read (versions placed by date)'
     expect(data.hasPlan).toBe(false)
     expect(data).toHaveProperty('calcInputs')
     expect(data.calorieTarget).toBeUndefined()
+  })
+
+  // The drift banner compares the version the drawer will overwrite with the
+  // goal in force on the client's today — its weight target and that day's
+  // deadline, from one goal — and the preview prices that same goal.
+  it("judges goal drift against the goal in force on the client's today, read once", async () => {
+    const row = planRow({ goal_weight_kg: 81.5, goal_deadline: '2026-10-30' })
+    vi.mocked(getNutritionPlanForDate).mockResolvedValue(row)
+    vi.mocked(getLatestNutritionPlan).mockResolvedValue(row)
+    vi.mocked(getGoalForDate).mockResolvedValue(
+      goalOnDay({ targetWeight: 81.5, deadline: '2026-10-30' })
+    )
+
+    const same = await (await GET(makeGetRequest(), getParams)).json()
+
+    expect(getGoalForDate).toHaveBeenCalledTimes(1)
+    expect(getGoalForDate).toHaveBeenCalledWith('client-1', '2026-08-11')
+    expect(same.goalChanged.changed).toBe(false)
+    expect(same.calcInputs).toMatchObject({ goalWeightKg: 81.5, goalDeadline: '2026-10-30' })
+
+    vi.mocked(getGoalForDate).mockResolvedValue(
+      goalOnDay({ targetWeight: 79.5, deadline: '2026-10-30' })
+    )
+    const moved = await (await GET(makeGetRequest(), getParams)).json()
+
+    expect(moved.goalChanged).toMatchObject({
+      changed: true,
+      planGoalWeightKg: 81.5,
+      currentGoalWeightKg: 79.5,
+    })
   })
 })

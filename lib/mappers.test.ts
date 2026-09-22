@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-import { mapCheckInRow, mapClientRow, mapCoachRow } from "./mappers";
+import { mapCheckInRow, mapClientRow, mapCoachRow, toClientSelfView } from "./mappers";
 import type { ClientRow, CoachRow } from "./database-helpers";
+import type { GoalOnDay } from "@/types/client-goals";
 
 /**
  * Scoped to the unit-preference normalization, not the whole mapper.
@@ -109,6 +110,114 @@ describe("mapClientRow — the four reading fields come from the embedded views"
     const client = mapClientRow(base);
     expect(client.currentWeight).toBeUndefined();
     expect(client.startingWeight).toBeUndefined();
+  });
+});
+
+// GET /api/client/me and PATCH /api/client/settings are the React Native app's
+// contract, additive-only: every key keeps its name, its unit and its PLACE in
+// the JSON. The goal is not on the profile row — its two targets come from the
+// goal in force on the client's today — and they print where they always have,
+// after `dateOfBirth`.
+describe("toClientSelfView — the client's own profile", () => {
+  /** A row carrying every column, the coach-only ones included. */
+  const fullRow = clientRow({
+    avatar_url: "https://cdn.example.com/a.png",
+    notes: "Coach-only notes",
+    active: true,
+    created_at: "2026-03-02T09:00:00+00:00",
+    updated_at: "2026-09-01T09:00:00+00:00",
+    height: 181.5,
+    gender: "female",
+    date_of_birth: "1991-06-14",
+    phone: "+44 7700 900123",
+    bmr: 1733,
+    tdee: 2481,
+    work_activity_level: "lightly_active",
+    check_in_frequency: "weekly",
+    check_in_frequency_days: 7,
+    next_check_in_due: "2026-09-25",
+    last_reminder_sent_at: "2026-09-18T08:00:00+00:00",
+    reminder_preferences: { email: true },
+    total_check_ins_expected: 23,
+    total_check_ins_completed: 21,
+    check_in_adherence_rate: 91.3,
+    current_streak: 6,
+    longest_streak: 12,
+    unit_preference: "metric",
+    include_activity_burn: true,
+    surplus_as_carbs: false,
+    bmr_manual_override: false,
+    tdee_manual_override: false,
+    welcome_message: "Welcome aboard",
+    onboarding_status: "active",
+    walkthrough_completed_at: "2026-03-03T10:00:00+00:00",
+    start_date: "2026-03-02",
+    timezone: "Europe/London",
+  } as Partial<ClientRow>);
+  const client = {
+    ...mapClientRow({
+      ...fullRow,
+      client_current_measurements: [
+        { metric_key: "weight", value: 79.9, recorded_on: "2026-09-20", source: "check_in", measurement_id: "m-now" },
+        { metric_key: "bodyFat", value: 21.4, recorded_on: "2026-09-20", source: "check_in", measurement_id: "m-bf" },
+      ],
+      client_baseline_measurements: [
+        { metric_key: "weight", value: 85.7, recorded_on: "2026-03-02", source: "intake", measurement_id: "m-base" },
+        { metric_key: "bodyFat", value: 24.6, recorded_on: "2026-03-02", source: "intake", measurement_id: "m-base-bf" },
+      ],
+    }),
+    logsOpenFrom: "2026-09-12",
+  };
+  const goal = (overrides: Partial<GoalOnDay> = {}): GoalOnDay => ({
+    id: "goal-now",
+    clientId: "client-1",
+    name: "Lose weight",
+    type: "lose_weight",
+    targetWeight: null,
+    targetBodyFatPercentage: null,
+    description: null,
+    startsOn: "2026-08-03",
+    source: "coach",
+    setBy: "coach-1",
+    createdAt: "2026-08-03T09:00:00+00:00",
+    updatedAt: "2026-08-03T09:00:00+00:00",
+    deadline: "2026-12-11",
+    ...overrides,
+  });
+
+  it("carries the targets of the goal in force, in their places, and nothing coach-only", () => {
+    const view = toClientSelfView(client, goal({ targetWeight: 73.4, targetBodyFatPercentage: 17.5 }));
+
+    expect(Object.keys(view)).toEqual([
+      "id", "coachId", "name", "email", "avatarUrl", "active", "createdAt", "updatedAt",
+      "height", "gender", "dateOfBirth", "goalWeight", "goalBodyFatPercentage",
+      "currentWeight", "currentBodyFatPercentage", "bmr", "tdee",
+      "checkInFrequency", "checkInFrequencyDays", "nextCheckInDue", "lastReminderSentAt",
+      "reminderPreferences", "totalCheckInsExpected", "totalCheckInsCompleted",
+      "checkInAdherenceRate", "currentStreak", "longestStreak", "unitPreference",
+      "includeActivityBurn", "surplusAsCarbs", "startingWeight", "startingBodyFatPercentage",
+      "bmrManualOverride", "tdeeManualOverride", "welcomeMessage", "onboardingStatus",
+      "walkthroughCompletedAt", "startDate", "timezone", "logsOpenFrom",
+    ]);
+    // Kilograms and percent, as numbers.
+    expect(view.goalWeight).toBe(73.4);
+    expect(view.goalBodyFatPercentage).toBe(17.5);
+    // The deadline is not a profile field; the journey carries it.
+    expect(view).not.toHaveProperty("deadline");
+  });
+
+  it("omits a target the goal does not set, and both with no goal in force", () => {
+    const bodyFatOnly = toClientSelfView(
+      client,
+      goal({ type: "recomposition", targetBodyFatPercentage: 16.5 })
+    );
+    expect(bodyFatOnly).not.toHaveProperty("goalWeight");
+    expect(bodyFatOnly.goalBodyFatPercentage).toBe(16.5);
+
+    const none = toClientSelfView(client, null);
+    expect(none).not.toHaveProperty("goalWeight");
+    expect(none).not.toHaveProperty("goalBodyFatPercentage");
+    expect(Object.keys(none).slice(10, 12)).toEqual(["dateOfBirth", "currentWeight"]);
   });
 });
 

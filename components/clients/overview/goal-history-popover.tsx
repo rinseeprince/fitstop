@@ -18,20 +18,19 @@ import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 
 /**
- * What the goal used to be. Read-only, no new storage — `client_goals` has
- * versioned since migration 060, and `getGoalsHistory` existed the whole time
- * behind a `?history=true` branch nothing in the product ever requested.
+ * The client's past goals: each goal that has ended, newest first, with the
+ * deadline it ended with and its last day. Read-only.
  *
  * The fetch is LAZY: it backs a popover, so reading it on every Overview load
- * would buy a request nobody opened. Only superseded rows come back, so the
- * live goal shown on the card above is never repeated here.
+ * would buy a request nobody opened. Only goals that have ended come back, so
+ * the goal in force, shown on the band above, is never repeated here.
  */
 export function GoalHistoryPopover({ clientId }: { clientId: string }) {
   const [open, setOpen] = useState(false);
   const { history, isLoading } = useClientGoalHistory(clientId, open);
   const { preference } = useUnits();
 
-  const weight = (kg?: number) =>
+  const weight = (kg: number | null) =>
     kg == null ? null : formatWeight(kg, preference);
 
   return (
@@ -68,30 +67,23 @@ export function GoalHistoryPopover({ clientId }: { clientId: string }) {
               This goal has not been changed yet.
             </p>
           ) : (
-            history.map((version) => {
-              const shown = weight(version.goalWeight);
+            history.map((past) => {
+              const shown = weight(past.targetWeight);
               return (
                 <div
-                  key={version.id}
+                  key={past.id}
                   className="rounded-[4px] px-2 py-1.5 hover:bg-[rgba(13,148,136,0.05)]"
                 >
                   {/* Standalone data lines, not sentences — the numerals are the
                       information, so they carry mono. */}
                   <p className={cn(MONO, "text-[12px] font-medium text-[#0c1a1e]")}>
                     {shown ? `${shown.value.toFixed(1)} ${shown.unit}` : "Maintenance"}
-                    {version.goalDeadline
-                      ? ` by ${formatDateOnlyShort(version.goalDeadline)}`
-                      : ""}
+                    {past.deadline ? ` by ${formatDateOnlyShort(past.deadline)}` : ""}
                   </p>
-                  {/* Always present in practice — the route returns superseded
-                      rows only — but guarded rather than asserted, because a
-                      non-null assertion is a promise the type system cannot
-                      keep if that filter is ever loosened. */}
-                  {version.supersededAt && (
-                    <p className={cn(MONO, "mt-0.5 text-[10px] text-[#93b0b4]")}>
-                      {`Until ${formatDateOnlyShort(version.supersededAt.slice(0, 10))}`}
-                    </p>
-                  )}
+                  {/* The goal's last day, a YYYY-MM-DD on the client's calendar. */}
+                  <p className={cn(MONO, "mt-0.5 text-[10px] text-[#93b0b4]")}>
+                    {`Until ${formatDateOnlyShort(past.endsOn)}`}
+                  </p>
                 </div>
               );
             })

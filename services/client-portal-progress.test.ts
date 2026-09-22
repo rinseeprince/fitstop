@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./client-portal-service", () => ({ createPortalClient: vi.fn() }));
+// The goal is not on the client row: it is the goal in force on the client's
+// today, read through the goals service.
+vi.mock("./client-goals-service", () => ({ getCurrentGoal: vi.fn() }));
 // The module reads CLIENT_MEASUREMENT_EMBEDS from the real measurements
 // service, whose supabase-admin import needs env at load. Stub that client and
 // the energy helper rather than the service, so the embed string the clients
@@ -11,6 +14,8 @@ vi.mock("./client-energy-service", () => ({ recalculateClientEnergy: vi.fn() }))
 import { getClientProgressData } from "./client-portal-progress";
 import type { ClientMetricSeries } from "./client-portal-progress";
 import { createPortalClient } from "./client-portal-service";
+import { getCurrentGoal } from "./client-goals-service";
+import type { GoalOnDay } from "@/types/client-goals";
 
 /** A `client_measurements_live` row as the portal's select returns it. */
 type LiveRow = {
@@ -112,6 +117,24 @@ function fakeSupabase(opts: {
   };
 }
 
+/** The goal in force on the client's today, as the goals service returns it. */
+const goalOnDay = (overrides: Partial<GoalOnDay> = {}): GoalOnDay => ({
+  id: "goal-now",
+  clientId: "c1",
+  name: "Lose weight",
+  type: "lose_weight",
+  targetWeight: null,
+  targetBodyFatPercentage: null,
+  description: null,
+  startsOn: "2026-04-06",
+  source: "coach",
+  setBy: "coach-1",
+  createdAt: "2026-04-06T09:00:00+00:00",
+  updatedAt: "2026-04-06T09:00:00+00:00",
+  deadline: null,
+  ...overrides,
+});
+
 function findSeries(series: ClientMetricSeries[], id: string): ClientMetricSeries {
   const found = series.find((s) => s.id === id);
   if (!found) throw new Error(`series ${id} not found`);
@@ -119,7 +142,10 @@ function findSeries(series: ClientMetricSeries[], id: string): ClientMetricSerie
 }
 
 describe("getClientProgressData — the client row", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getCurrentGoal).mockResolvedValue(null);
+  });
 
   it("returns canonical kg + cm and surfaces goals/streak", async () => {
     vi.mocked(createPortalClient).mockResolvedValue(
@@ -127,10 +153,10 @@ describe("getClientProgressData — the client row", () => {
         client: {
           current_streak: 6,
           check_in_adherence_rate: 92,
-          goal_weight: 78,
         },
       }) as never,
     );
+    vi.mocked(getCurrentGoal).mockResolvedValue(goalOnDay({ targetWeight: 78 }));
 
     const result = await getClientProgressData("c1");
 
@@ -141,6 +167,46 @@ describe("getClientProgressData — the client row", () => {
     expect(result.currentStreak).toBe(6);
     expect(result.adherenceRate).toBe(92);
     expect(result.client.goalWeight).toBe(78);
+  });
+
+  // GET /api/client/progress is the React Native contract: `client.goalWeight`
+  // and `client.goalBodyFatPercentage` keep their names, their places and their
+  // units, and now come from the goal in force on the client's today.
+  it("takes the goal's targets from the goal in force on the client's today, in their places", async () => {
+    vi.mocked(createPortalClient).mockResolvedValue(fakeSupabase({ client: {} }) as never);
+    vi.mocked(getCurrentGoal).mockResolvedValue(
+      goalOnDay({ targetWeight: 71.6, targetBodyFatPercentage: 14.5 })
+    );
+
+    const result = await getClientProgressData("c1");
+
+    expect(getCurrentGoal).toHaveBeenCalledWith("c1");
+    expect(result.client.goalWeight).toBe(71.6);
+    expect(result.client.goalBodyFatPercentage).toBe(14.5);
+    expect(Object.keys(result.client)).toEqual([
+      "goalWeight",
+      "goalBodyFatPercentage",
+      "startingWeight",
+      "startingBodyFatPercentage",
+      "currentWeight",
+      "currentBodyFatPercentage",
+    ]);
+  });
+
+  it("omits a target the goal does not set, and both when no goal is in force", async () => {
+    vi.mocked(createPortalClient).mockResolvedValue(fakeSupabase({ client: {} }) as never);
+    vi.mocked(getCurrentGoal).mockResolvedValue(
+      goalOnDay({ type: "recomposition", targetBodyFatPercentage: 13.5 })
+    );
+
+    const bodyFatOnly = await getClientProgressData("c1");
+    expect(bodyFatOnly.client.goalWeight).toBeUndefined();
+    expect(bodyFatOnly.client.goalBodyFatPercentage).toBe(13.5);
+
+    vi.mocked(getCurrentGoal).mockResolvedValue(null);
+    const none = await getClientProgressData("c1");
+    expect(none.client.goalWeight).toBeUndefined();
+    expect(none.client.goalBodyFatPercentage).toBeUndefined();
   });
 
   // Replaces the old "returns lbs + in for an imperial client". Since migration
@@ -161,7 +227,6 @@ describe("getClientProgressData — the client row", () => {
   it("reads 'now' and the baseline from the two embedded views — no weight column on clients", async () => {
     const fake = fakeSupabase({
       client: {
-        goal_weight: 78,
         client_current_measurements: [
           { metric_key: "weight", value: 79.3, recorded_on: "2026-05-08", source: "check_in", measurement_id: "m-9" },
           { metric_key: "bodyFat", value: 18.5, recorded_on: "2026-05-08", source: "check_in", measurement_id: "m-10" },
@@ -187,6 +252,8 @@ describe("getClientProgressData — the client row", () => {
     expect(clientSelect).toContain("client_baseline_measurements(");
     expect(clientSelect).not.toContain("current_weight");
     expect(clientSelect).not.toContain("starting_weight");
+    // The profile carries no goal: a goal column named here is a PostgREST 400.
+    expect(clientSelect).not.toContain("goal_");
   });
 
   // The historic bug: this query selected a column that does not exist, PostgREST

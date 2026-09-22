@@ -619,3 +619,59 @@ export async function getReadingsAsOf(
   });
   return out;
 }
+
+/**
+ * The readings a goal's progress runs from: per metric, the client's reading on
+ * the goal's start day — the newest live reading dated on or before it, else
+ * the first one after it (the baseline's rule, anchored on the goal's start
+ * day instead of the client's). Weight and body fat only, the two a goal can
+ * target. The goals read and the check-in review both take it from here, so
+ * the Overview's chips and the review's strip measure a goal from one start.
+ *
+ * Four reads in one round trip: the newest on or before, and the first after,
+ * per metric — one ordered list per metric, for the reason `getReadingsAsOf`
+ * gives.
+ */
+export async function getReadingsOnDay(
+  clientId: string,
+  day: string
+): Promise<Partial<Record<MeasurementKey, StandingReading>>> {
+  const reads = GOAL_KEYS.flatMap((key) => [
+    supabaseAdmin
+      .from("client_measurements_live")
+      .select(READING_COLUMNS)
+      .eq("client_id", clientId)
+      .eq("metric_key", key)
+      .lte("recorded_on", day)
+      .order("recorded_on", { ascending: false })
+      .order("recorded_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1),
+    supabaseAdmin
+      .from("client_measurements_live")
+      .select(READING_COLUMNS)
+      .eq("client_id", clientId)
+      .eq("metric_key", key)
+      .gt("recorded_on", day)
+      .order("recorded_on", { ascending: true })
+      .order("recorded_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1),
+  ]);
+  const results = await Promise.all(reads);
+
+  const failed = results.find((result) => result.error);
+  if (failed?.error) {
+    console.error("Failed to read the readings on a day:", failed.error);
+    throw new Error(`Failed to read measurements on a day: ${failed.error.message}`);
+  }
+
+  const out: Partial<Record<MeasurementKey, StandingReading>> = {};
+  GOAL_KEYS.forEach((key, i) => {
+    const [onOrBefore] = toReadings(results[i * 2].data);
+    const [after] = toReadings(results[i * 2 + 1].data);
+    const reading = onOrBefore ?? after;
+    if (reading) out[key] = standingOf(reading);
+  });
+  return out;
+}

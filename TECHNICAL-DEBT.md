@@ -52,21 +52,6 @@ Two design constraints that survive with it: the stored deficit is **intent, not
 
 ---
 
-## `updateGoals` is not atomic — two silent failure modes the unique index cannot catch
-
-Logged: 2026-08-13 (migrated out of the goals/blocks plan doc before its deletion; re-verified against `main` on migration).
-
-`updateGoals` (`services/client-goals-service.ts`) is three autocommitted PostgREST round trips with no transaction, no RPC, no advisory lock and no version check: a SELECT of the live goal (`:41`), a **set-based** UPDATE stamping `superseded_at` (`:76-78`) **with no `.select()`** — so a 0-row supersede is indistinguishable from a 1-row supersede — and an INSERT of the merged row (`:129`).
-
-Two live failure modes:
-
-- **Silent lost update.** If T2's supersede lands after T1's insert, it supersedes *T1's brand-new row*, then inserts values merged from its own stale read. Every field T1 changed that T2's payload omits is reverted. **Both callers get HTTP 200.** No error anywhere.
-- **Zero active rows.** Supersede succeeds, insert fails → the client has no active goal and every surface renders "No goal set yet".
-
-**The real fix already existed and was reverted.** Commit `dc9898c` shipped `update_client_goals_atomic`, a single RPC doing supersede + insert + mirror in one transaction; it was reverted and its migration slot reused by `139_nutrition_event_coach_note.sql`. Re-landing it needs a migration. Session 0's ordering belt is insurance against a *different* failure (a dropped index), not against these two.
-
----
-
 ## The two goal targets contradict each other on the coach Overview status card
 
 Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it). Narrowed 2026-09-02: the check-in review page no longer contradicts itself — its goal strip resolves weight and body fat through one state column (`status` > `paceStatus` > `isOnTrack`, `components/clients/check-ins/check-in-goal-strip.tsx`), so its two rows cannot reach different verdicts about one client.
@@ -80,28 +65,6 @@ Compounding it: **`isOnTrack` defaults to `true`** when there is no average chan
 Fixing the card means choosing which target is the headline, or making the summary read both. There is no lean-mass model in the repo, so the two targets cannot be reconciled arithmetically.
 
 **Next step (2026-09-02):** the Overview chips adopt `deriveGoalProgress` (`lib/goals/goal-progress.ts`) — the kernel the check-in goal strip resolves through, fed by the client record's current reading — in place of `lib/goals/goal-state.ts`, so both surfaces read one position and `goal-state.ts` goes. The headline-vs-both question above stays the owner's; the kernel only guarantees the two pages agree about each target.
-
----
-
-## Removing the `clients.*` goal mirror — costed, and its one real landmine
-
-Logged: 2026-08-13 (migrated out of the goals/blocks plan doc, which costed it so the next attempt does not re-derive it).
-
-`updateGoals` is already the sole writer of the mirror columns. **Full removal is a separate workstream:** ~21 production files, 12 test files, 3 scripts, 4 docs, 1 migration + `gen types` ≈ **42 files**. Three surfaces need a brand-new goal fetch — the coach Overview (`GET /api/clients/[id]`), the client portal Goals card, and `/api/client/me` (the RN contract). A "Tier B" that deletes the fallback reads and leaves the columns as dead data is **not separately shippable**: the moment writes stop, the mirror goes stale, so those three surfaces must convert in the same shipment. The `DROP` itself is trivially safe (`pg_depend = 0` on all three columns — measured on **DEV**; re-probe prod first).
-
-**The riskiest single change is not the migration.** It is `CLIENT_SELF_COLUMNS` (`services/client-portal-service.ts:50-60`): a `+`-concatenated string, so TypeScript widens it to `string` and `tsc` cannot see a stale column name. It still lists `goal_weight` and `goal_body_fat_percentage`. Drop a column without editing that string and PostgREST 400s the whole query, `if (error || !data) return null` (`:75`) swallows it, and `/api/client/me` silently returns nothing.
-
----
-
-## `client_goals.primary_goal` is dead weight, and a bare `DROP` breaks every goal write
-
-Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; line numbers re-derived on migration — the doc's were stale by ~29 lines).
-
-Zero branches, zero production writers of a meaningful value, free `TEXT` with no CHECK. It is mapped (`services/client-goals-service.ts:15`), typed (`types/client-goals.ts:10`) and validated (`lib/validations/client-goals.ts:33`), but nothing branches on it.
-
-**The landmine:** it is an **unconditional key** in the merged INSERT object (`client-goals-service.ts:122-124`, spread into the insert at `:129`), so a bare `DROP COLUMN` without the code change PGRST204s **every** goal write. Removal is ~3 lines plus a migration plus `gen types`.
-
-Do not confuse it with `client_intake.primary_goal`, which is a live discriminator with three real branches.
 
 ---
 
@@ -158,13 +121,10 @@ the anti-pattern that section names: there is no cache to invalidate at all, so
 **no other surface can refresh it** — only a caller holding the hook's own
 `refetchNutrition`.
 
-That already bit once. `ClientGoalEditor` is mounted *inside* the nutrition
-drawer and its save revalidates only `/api/clients/{id}/goals`, so a goal edit
-left the drawer's derived targets and drift banner stale. Fixed narrowly by
-threading an `onSaved` callback through to `refetchNutrition`
-(`drawer-form-body.tsx`), which is correct but does not generalise: the next
-writer of client weight, goals, or metrics will have the same problem and no
-invalidator to call.
+A goal is set on the Overview (the client details sheet) and a reading on the
+Journey, and neither can refresh the drawer's derived targets or its drift
+banner: they catch up only when the drawer refetches. Every writer of client
+weight, goals or metrics has the same problem and no invalidator to call.
 
 Proper fix: migrate the hook to SWR with a co-located key builder + exported
 invalidator, matching `useInvalidateNutritionCalendar`. Deferred because it is a

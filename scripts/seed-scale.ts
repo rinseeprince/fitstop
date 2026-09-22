@@ -15,7 +15,9 @@
  *
  * Removable: every row carries a reserved UUID-namespace primary key, teardown
  * deletes by PK range scan in explicit reverse dependency order, and asserts
- * that no row outside the namespace was touched.
+ * that no row outside the namespace was touched. The goal tables are the
+ * exception: a goal is written through its function, which makes its own id,
+ * and it goes with its client (ON DELETE CASCADE).
  *
  * See scripts/seed/ for the pieces: ids (the marker), rng (determinism),
  * model (engagement realism), generate (rows), db (batching/ANALYZE), teardown.
@@ -28,7 +30,7 @@ import {
   type WriteLedger, type Manifest,
 } from "./seed/db";
 import { seedUuid, seedEmail, SEED_ID_LO, SEED_ID_HI, SEED_EMAIL_DOMAIN } from "./seed/ids";
-import { generateCoachBundle, fallbackCatalog, type CatalogExercise, type SeedContext } from "./seed/generate";
+import { generateCoachBundle, fallbackCatalog, type CatalogExercise, type RowStep, type SeedContext } from "./seed/generate";
 import { teardown, TEARDOWN_ORDER } from "./seed/teardown";
 import { EXERCISE_POOL } from "./seed/model";
 
@@ -387,7 +389,7 @@ async function main(): Promise<void> {
       // and coaches_email_key is NOT its ON CONFLICT target — so pre-inserting a
       // row with the same email makes createUser fail with 23505 inside the
       // trigger. Create the user first, then adopt the row it produced.
-      const coachRow = steps.find((s) => s.table === "coaches")!.rows[0];
+      const coachRow = steps.find((s): s is RowStep => "table" in s && s.table === "coaches")!.rows[0];
       const authId = await ensureAuthUser(db, seedEmail("coach", coachIdx), args.password);
       // .select() so a zero-row match is detectable. Without it the update
       // reports success having matched nothing, and because the `coaches`
@@ -408,10 +410,23 @@ async function main(): Promise<void> {
             "Investigate before re-running — the namespace now holds a partial dataset."
         );
       }
-      steps = steps.filter((s) => s.table !== "coaches");
+      steps = steps.filter((s) => !("table" in s && s.table === "coaches"));
     }
 
     for (const step of steps) {
+      if ("rpc" in step) {
+        // The goal tables take no INSERT from this role (migration 193): each
+        // goal is one call of its function.
+        for (const args of step.calls) {
+          const { error } = await db.rpc(step.rpc, args);
+          if (error) throw new Error(`${step.rpc} for client ${args.p_client_id}: ${error.message}`);
+        }
+        for (const table of ["client_goals", "client_goal_deadlines"]) {
+          ledger.set(table, (ledger.get(table) ?? 0) + step.calls.length);
+        }
+        progress.add(step.calls.length);
+        continue;
+      }
       await insertInBatches(db, step.table, step.rows, ledger, {
         mode: step.mode,
         onConflict: step.onConflict,

@@ -31,10 +31,6 @@ vi.mock('@/lib/csrf-protection', () => ({
   requireCSRFProtection: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/services/client-goals-service', () => ({
-  getCurrentGoals: vi.fn(),
-}))
-
 vi.mock('@/services/training-event-service', () => ({
   cancelFutureEventsForPlan: vi.fn().mockResolvedValue(undefined),
   cancelFutureEventsForPlans: vi.fn().mockResolvedValue(undefined),
@@ -78,8 +74,6 @@ const mockClient = {
   currentWeight: 180,
   weightUnit: 'lbs' as const,
   currentBodyFatPercentage: 20,
-  goalWeight: 170,
-  goalBodyFatPercentage: 15,
   tdee: 2100,
   bmr: 1700,
   gender: 'male',

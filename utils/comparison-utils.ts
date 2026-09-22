@@ -35,14 +35,17 @@ const GOAL_EPSILON = 0.05;
 export function deriveGoalStatus(
   current: number,
   goal: number,
-  startingValue?: number
+  startingValue?: number,
+  givenDirection?: -1 | 0 | 1
 ): GoalStatus {
   if (Math.abs(goal - current) < GOAL_EPSILON) return "achieved";
 
-  // The direction the client was asked to move. Without a start — or with a
-  // start already at the goal — there is no direction to overshoot IN, so the
-  // honest answer is that they are still approaching.
-  const direction = startingValue != null ? goal - startingValue : 0;
+  // The direction the client was asked to move: the goal type's where it
+  // decides one (`goalDirection`, lib/goals/goal-types.ts), else the side of
+  // the start the goal sits on. Without either — or with a start already at
+  // the goal — there is no direction to overshoot IN, so the honest answer is
+  // that they are still approaching.
+  const direction = givenDirection ?? (startingValue != null ? goal - startingValue : 0);
   if (direction === 0) return "approaching";
 
   // Past the goal, travelling the way they were asked to: a loss goal whose
@@ -55,7 +58,8 @@ export function calculateGoalProgress(
   current: number,
   goal: number,
   startingValue?: number,
-  avgChange?: number
+  avgChange?: number,
+  direction?: -1 | 0 | 1
 ): {
   remaining: number;
   percentComplete: number;
@@ -67,7 +71,7 @@ export function calculateGoalProgress(
   // approached, and is why the sign lives here rather than being thrown away at
   // source: `status` is what tells a caller whether a magnitude means anything.
   const remaining = Number((goal - current).toFixed(2));
-  const status = deriveGoalStatus(current, goal, startingValue);
+  const status = deriveGoalStatus(current, goal, startingValue, direction);
   const totalChange = startingValue ? goal - startingValue : goal - current;
   const progressMade = startingValue ? current - startingValue : 0;
 

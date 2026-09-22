@@ -1,23 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/services/client-goals-service", () => ({
-  getCurrentGoals: vi.fn(),
+  getGoalForDate: vi.fn(),
 }));
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
 
-import { getCurrentGoals } from "@/services/client-goals-service";
+import { getGoalForDate } from "@/services/client-goals-service";
 import { getClientTodayString } from "@/services/today-service";
 import { resolveNutritionCalcInputs } from "./nutrition-calc-inputs";
 import type { Client } from "@/types/check-in";
+import type { GoalOnDay } from "@/types/client-goals";
 
-// No `goalDeadline` here, deliberately. This fixture used to carry one and the
-// ready-arm test asserted it reached the result — through the `?? client
-// .goalDeadline` fallback, which was unreachable in production the whole time
-// because `mapClientRow` never mapped the column. The cast hides that from tsc,
-// so the fallback looked exercised while nothing real could reach it. Deadlines
-// now come from `client_goals`, which is where they always came from live.
+// The client record carries the weight and the energy pair. It carries no
+// goal: the goal is the one in force on the client's today, read through the
+// goals service.
 const CLIENT = {
   id: "client-1",
   currentWeight: 180,
@@ -25,22 +23,39 @@ const CLIENT = {
   bmr: 1800,
   tdee: 2400,
   gender: "male",
-  goalWeight: 165,
 } as unknown as Client;
+
+/** The goal in force on a day, as the goals service returns it. */
+const goalOnDay = (overrides: Partial<GoalOnDay> = {}): GoalOnDay => ({
+  id: "goal-now",
+  clientId: "client-1",
+  name: "Lose weight",
+  type: "lose_weight",
+  targetWeight: null,
+  targetBodyFatPercentage: null,
+  description: null,
+  startsOn: "2026-07-13",
+  source: "coach",
+  setBy: "coach-1",
+  createdAt: "2026-07-13T09:00:00+00:00",
+  updatedAt: "2026-07-13T09:00:00+00:00",
+  deadline: null,
+  ...overrides,
+});
 
 describe("resolveNutritionCalcInputs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getCurrentGoals).mockResolvedValue(null);
+    vi.mocked(getGoalForDate).mockResolvedValue(null);
     vi.mocked(getClientTodayString).mockResolvedValue("2026-08-05");
   });
 
   it("returns a ready arm whose fields match NutritionCalculationInput's names and optionality", async () => {
-    // Goal weight from the mirror (that fallback survives), deadline from
-    // client_goals (its only source) — the two legs this resolver now has.
-    vi.mocked(getCurrentGoals).mockResolvedValue({
-      goalDeadline: "2026-12-31",
-    } as never);
+    // The weight target and the deadline come from one goal: the one in force
+    // on the client's today.
+    vi.mocked(getGoalForDate).mockResolvedValue(
+      goalOnDay({ targetWeight: 165, deadline: "2026-12-31" })
+    );
 
     const result = await resolveNutritionCalcInputs("client-1", CLIENT);
 
@@ -64,10 +79,8 @@ describe("resolveNutritionCalcInputs", () => {
   });
 
   it("converts an absent goal to undefined, not null, so the spread satisfies the calculator", async () => {
-    const result = await resolveNutritionCalcInputs("client-1", {
-      ...CLIENT,
-      goalWeight: undefined,
-    } as unknown as Client);
+    // No goal in force on the client's today: maintenance.
+    const result = await resolveNutritionCalcInputs("client-1", CLIENT);
 
     if (result.status !== "ready") throw new Error("expected ready");
     expect(result.goalWeightKg).toBeUndefined();
@@ -75,22 +88,28 @@ describe("resolveNutritionCalcInputs", () => {
     expect("goalWeightKg" in result).toBe(true);
   });
 
-  it("no deadline reaches the calculator from the clients mirror", async () => {
-    // The deleted fallback, pinned. A `goal_deadline` on the client object can
-    // no longer influence the calculator: with no client_goals row the deficit
-    // path must see no deadline and fall through to maintenance, rather than
-    // solving against a mirror value that has no single writer.
-    const withMirrorDeadline = {
-      ...CLIENT,
-      goalDeadline: "2030-01-01",
-    } as unknown as Client;
+  // The calculator needs both a weight target and a deadline to solve for a
+  // deficit; a goal missing either reaches it as maintenance.
+  it("a goal with no weight target hands the calculator no goal weight", async () => {
+    vi.mocked(getGoalForDate).mockResolvedValue(
+      goalOnDay({ type: "recomposition", targetBodyFatPercentage: 16.5, deadline: "2026-11-27" })
+    );
 
-    const result = await resolveNutritionCalcInputs("client-1", withMirrorDeadline);
+    const result = await resolveNutritionCalcInputs("client-1", CLIENT);
 
     if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.goalWeightKg).toBeUndefined();
+    expect(result.goalDeadline).toBe("2026-11-27");
+  });
+
+  it("a goal with no deadline hands the calculator no deadline", async () => {
+    vi.mocked(getGoalForDate).mockResolvedValue(goalOnDay({ targetWeight: 171.5 }));
+
+    const result = await resolveNutritionCalcInputs("client-1", CLIENT);
+
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.goalWeightKg).toBe(171.5);
     expect(result.goalDeadline).toBeUndefined();
-    // The goal WEIGHT mirror leg is untouched by that deletion.
-    expect(result.goalWeightKg).toBe(165);
   });
 
   // Both inputs come from the client object and nowhere else: the weight is
@@ -181,51 +200,43 @@ describe("resolveNutritionCalcInputs", () => {
     expect(result.missing.length).toBeGreaterThanOrEqual(3);
   });
 
-  // Without this the coach GET pays for today + goals twice, because it has
+  // Without this the coach GET pays for today + the goal twice, because it has
   // already resolved both for its own drift check.
-  it("uses prefetched today/goals instead of re-querying", async () => {
+  it("uses prefetched today and goal instead of re-querying", async () => {
     await resolveNutritionCalcInputs("client-1", CLIENT, {
       today: "2026-09-09",
-      currentGoals: null,
+      goal: null,
     });
 
     expect(getClientTodayString).not.toHaveBeenCalled();
-    expect(getCurrentGoals).not.toHaveBeenCalled();
+    expect(getGoalForDate).not.toHaveBeenCalled();
   });
 
-  it("falls back to its own reads when nothing is prefetched", async () => {
+  it("takes the weight target and the deadline from a prefetched goal", async () => {
+    const result = await resolveNutritionCalcInputs("client-1", CLIENT, {
+      today: "2026-09-09",
+      goal: goalOnDay({ targetWeight: 158.5, deadline: "2027-01-31" }),
+    });
+
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.goalWeightKg).toBe(158.5);
+    expect(result.goalDeadline).toBe("2027-01-31");
+  });
+
+  it("falls back to its own reads when nothing is prefetched: the goal in force on the client's today", async () => {
     await resolveNutritionCalcInputs("client-1", CLIENT);
 
     expect(getClientTodayString).toHaveBeenCalledWith("client-1");
-    expect(getCurrentGoals).toHaveBeenCalledWith("client-1");
+    expect(getGoalForDate).toHaveBeenCalledWith("client-1", "2026-08-05");
   });
 
-  // Two different claims, deliberately not merged under one title. The WEIGHT
-  // assertion is a precedence test — there is a mirror value to beat. The
-  // deadline is not: it has no mirror leg any more, so asserting it under
-  // "wins over the denormalized fields" would name a contest that no longer
-  // has two sides.
-  it("a live client goal's WEIGHT wins over the denormalized client field", async () => {
-    vi.mocked(getCurrentGoals).mockResolvedValue({
-      goalWeight: 154,
-      goalBodyFatPercentage: null,
-    } as never);
+  // The plan POST hands in the today it already resolved and no goal: the goal
+  // read must ask for THAT day, or a save near the client's midnight would
+  // price itself against another day's goal.
+  it("reads the goal in force on a prefetched today", async () => {
+    await resolveNutritionCalcInputs("client-1", CLIENT, { today: "2026-09-14" });
 
-    const result = await resolveNutritionCalcInputs("client-1", CLIENT);
-    if (result.status !== "ready") throw new Error("expected ready");
-    // CLIENT's mirror holds 165.
-    expect(result.goalWeightKg).toBe(154);
-  });
-
-  it("the deadline comes from client_goals, its only source", async () => {
-    vi.mocked(getCurrentGoals).mockResolvedValue({
-      goalWeight: 154,
-      goalBodyFatPercentage: null,
-      goalDeadline: "2027-01-31",
-    } as never);
-
-    const result = await resolveNutritionCalcInputs("client-1", CLIENT);
-    if (result.status !== "ready") throw new Error("expected ready");
-    expect(result.goalDeadline).toBe("2027-01-31");
+    expect(getClientTodayString).not.toHaveBeenCalled();
+    expect(getGoalForDate).toHaveBeenCalledWith("client-1", "2026-09-14");
   });
 });

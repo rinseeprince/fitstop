@@ -49,7 +49,7 @@ function bodyFatGoal(position: Partial<GoalPosition> = {}): BodyFatRow {
 }
 
 /** A goal that is set, with no reading as of the check-in's day behind it. */
-const UNREAD_WEIGHT: WeightRow = { goal: 66, startingWeight: 91, position: null };
+const UNREAD_WEIGHT: WeightRow = { goal: 66, startingWeight: 91, goalStartWeight: 91, position: null };
 const UNREAD_BODY_FAT: BodyFatRow = { goal: 14, startingBodyFat: 23, position: null };
 
 const NO_CLIENT = {} as CheckInComparison["client"];

@@ -1,17 +1,12 @@
 import { z } from "zod";
+import { GOAL_TYPES } from "@/lib/goals/goal-types";
 
 // -------------------------------------------------------
 // Enum schemas
 // -------------------------------------------------------
 
-const primaryGoalSchema = z.enum([
-  "lose_weight",
-  "build_muscle",
-  "recomposition",
-  "general_fitness",
-  "event_prep",
-  "maintain",
-]);
+// The questionnaire's answer is a goal type: the one list, shared with the goal.
+const primaryGoalSchema = z.enum(GOAL_TYPES);
 
 const workActivityLevelSchema = z.enum([
   "sedentary",

@@ -22,10 +22,10 @@ export interface ClientJourneyBlock {
   weekOfTotal: BlockWeekOfTotal | null;
 }
 
-/** The client's long-term goal, resolved through resolveEffectiveGoal over
- *  client_goals (owner decision 2026-08-12: the deadline is client-visible
- *  here, scoped to this endpoint only). A null weightKg means maintenance —
- *  render no goal line. */
+/** The goal in force on the client's today (`client_goals`), resolved through
+ *  resolveEffectiveGoal, with that day's deadline — the one client wire that
+ *  carries the deadline. A planned goal is not here before its day. A null
+ *  weightKg means maintenance — render no goal line. */
 interface ClientJourneyGoal {
   weightKg: number | null;
   deadline: string | null;

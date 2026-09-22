@@ -1,18 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./client-blocks-service", () => ({ listBlocks: vi.fn() }));
-vi.mock("./client-goals-service", () => ({ getCurrentGoals: vi.fn() }));
+vi.mock("./client-goals-service", () => ({ getGoalForDate: vi.fn() }));
 vi.mock("./measurements-service", () => ({ getMeasurementSeries: vi.fn() }));
 vi.mock("./nutrition-plan-service", () => ({
   listNutritionPlanNotesInRange: vi.fn(),
 }));
 
 import { listBlocks } from "./client-blocks-service";
-import { getCurrentGoals } from "./client-goals-service";
+import { getGoalForDate } from "./client-goals-service";
 import { getMeasurementSeries } from "./measurements-service";
 import { listNutritionPlanNotesInRange } from "./nutrition-plan-service";
 import { getClientJourney } from "./client-journey-service";
 import type { ClientBlock } from "@/types/client-blocks";
+import type { GoalOnDay } from "@/types/client-goals";
 import type { DayValue } from "@/lib/measurements/day-values";
 import type { MeasurementKey, MeasurementSource } from "@/lib/measurements/keys";
 
@@ -26,6 +27,24 @@ const block = (overrides: Partial<ClientBlock> = {}): ClientBlock => ({
   startsOn: "2026-08-01",
   endsOn: "2026-08-28",
   archivedAt: null,
+  ...overrides,
+});
+
+/** The goal in force on a day, as the goals service returns it. */
+const goalOnDay = (overrides: Partial<GoalOnDay> = {}): GoalOnDay => ({
+  id: "goal-now",
+  clientId: CLIENT_ID,
+  name: "Lose weight",
+  type: "lose_weight",
+  targetWeight: null,
+  targetBodyFatPercentage: null,
+  description: null,
+  startsOn: "2026-07-20",
+  source: "coach",
+  setBy: "coach-1",
+  createdAt: "2026-07-20T09:00:00+00:00",
+  updatedAt: "2026-07-20T09:00:00+00:00",
+  deadline: null,
   ...overrides,
 });
 
@@ -58,7 +77,7 @@ function mockWeightSeries(values: DayValue[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getCurrentGoals).mockResolvedValue(null);
+  vi.mocked(getGoalForDate).mockResolvedValue(null);
   vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([]);
   mockWeightSeries([]);
 });
@@ -160,23 +179,25 @@ describe("getClientJourney", () => {
     expect(listNutritionPlanNotesInRange).not.toHaveBeenCalled();
   });
 
-  it("resolves the goal through client_goals: weight and deadline in kg, untouched", async () => {
+  it("ships the goal in force on the client's today: its weight target and that day's deadline, in kg, untouched", async () => {
     vi.mocked(listBlocks).mockResolvedValue([]);
-    vi.mocked(getCurrentGoals).mockResolvedValue({
-      goalWeight: 85.5,
-      goalDeadline: "2026-12-01",
-    } as never);
+    vi.mocked(getGoalForDate).mockResolvedValue(
+      goalOnDay({ targetWeight: 85.5, deadline: "2026-12-01" })
+    );
 
     const journey = await getClientJourney(CLIENT_ID, TODAY);
 
+    // Asked with the client's today — the day this read is anchored on — so a
+    // goal planned for tomorrow is not the one shipped.
+    expect(getGoalForDate).toHaveBeenCalledWith(CLIENT_ID, TODAY);
     expect(journey.goal).toEqual({ weightKg: 85.5, deadline: "2026-12-01" });
   });
 
-  it("maintenance goal (no goal weight) ships weightKg null; missing deadline ships null", async () => {
+  it("a goal with no weight target ships weightKg null; no deadline ships null", async () => {
     vi.mocked(listBlocks).mockResolvedValue([]);
-    vi.mocked(getCurrentGoals).mockResolvedValue({
-      goalBodyFatPercentage: 15,
-    } as never);
+    vi.mocked(getGoalForDate).mockResolvedValue(
+      goalOnDay({ type: "recomposition", targetBodyFatPercentage: 15 })
+    );
 
     const journey = await getClientJourney(CLIENT_ID, TODAY);
 

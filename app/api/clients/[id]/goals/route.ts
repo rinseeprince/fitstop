@@ -2,105 +2,156 @@ import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import { getCurrentGoals, updateGoals } from "@/services/client-goals-service";
+import { getGoalsOverview } from "@/services/client-goals-service";
+import { addGoal, saveDetailsSheetGoal } from "@/services/client-goal-writes-service";
+import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
-import { updateGoalsSchema } from "@/lib/validations/client-goals";
-import { getCoachTodayString } from "@/services/today-service";
+import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
+import { goalWriteErrorResponse, type GoalWriteAttempt } from "@/lib/goals/goal-write-response";
+import { addGoalSchema, updateGoalsSchema } from "@/lib/validations/client-goals";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+type Params = { params: Promise<{ id: string }> };
+
+/** Today's goal — with the readings its progress runs from — and the planned ones. */
+export async function GET(request: NextRequest, { params }: Params) {
   const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
     const { id: clientId } = await params;
 
-    const auth = await requireCoachOwnsClient(clientId);
+    const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
-    // `data` is a `ClientGoal | null` on every response, unconditionally. It used
-    // to SWITCH shape to `{ current, history }` under `?history=true` — a branch
-    // nothing in the product ever requested, while three typed readers assumed
-    // the flat shape. History moved to the sibling `…/goals/history` route
-    // (Task 0b.6) so the switch is not merely unused but unexpressible.
-    const current = await getCurrentGoals(clientId);
-
+    const overview = await getGoalsOverview(clientId);
     return NextResponse.json(
-      { success: true, data: current },
-      { status: 200 }
+      { success: true, data: overview },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
     console.error("Error fetching goals:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch goals" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch goals" }, { status: 500 });
   }
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+/**
+ * A goal from today, or planned from a later day (`startsOn`). The name
+ * defaults to the type's.
+ */
+export async function POST(request: NextRequest, { params }: Params) {
   const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
   if (csrfError) return csrfError;
 
+  let attempt: GoalWriteAttempt = {};
   try {
     const { id: clientId } = await params;
-
-    const auth = await requireCoachOwnsClient(clientId);
+    const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
-    const body = await request.json();
-    const validation = updateGoalsSchema.safeParse(body);
-
+    const validation = addGoalSchema.safeParse(await request.json().catch(() => null));
     if (!validation.success) {
       return NextResponse.json(
         { success: false, error: "Invalid input", details: validation.error.errors },
         { status: 400 }
       );
     }
+    const body = validation.data;
+    attempt = { startsOn: body.startsOn, deadline: body.deadline };
 
-    // Past-deadline bound (format-only schema): the coach is the setter, so the
-    // honest "today" is the coach's local day — not the server's UTC clock, which
-    // would reject an east-of-UTC coach's own today (the habit-log bug class).
-    const { goalDeadline } = validation.data;
-    if (goalDeadline) {
-      const coachToday = await getCoachTodayString(auth.coachId);
-      if (goalDeadline < coachToday) {
-        return NextResponse.json(
-          { success: false, error: "Goal deadline cannot be in the past" },
-          { status: 400 }
-        );
-      }
-    }
-
-    const goals = await updateGoals(clientId, validation.data, auth.coachId);
+    const today = await getClientTodayString(clientId);
+    const startsOn = body.startsOn ?? today;
+    const goalId = await addGoal({
+      clientId,
+      today,
+      startsOn,
+      source: "coach",
+      setBy: auth.coachId,
+      type: body.type,
+      name: body.name ?? GOAL_TYPE_SETTINGS[body.type].name,
+      targetWeight: body.targetWeight ?? null,
+      targetBodyFatPercentage: body.targetBodyFatPercentage ?? null,
+      description: body.description ?? null,
+      deadline: body.deadline ?? null,
+    });
 
     void recordAuditEvent({
       actorId: auth.coachId,
       actorRole: "trainer",
       action: AUDIT_ACTIONS.GOAL_CREATE,
       targetTable: "client_goals",
+      targetId: goalId,
       clientId,
+      metadata: { startsOn, planned: startsOn > today },
       request,
     });
 
     return NextResponse.json(
-      { success: true, data: goals },
+      { success: true, data: await getGoalsOverview(clientId) },
+      { status: 201 }
+    );
+  } catch (error) {
+    return goalWriteErrorResponse(error, attempt);
+  }
+}
+
+/**
+ * The client details sheet's goal fields, until commit 8d2 gives the goal its
+ * own sheet: a target change makes a new goal from today (or corrects today's
+ * goal), a deadline change is recorded against today's goal.
+ */
+export async function PUT(request: NextRequest, { params }: Params) {
+  const rateLimitResult = await coachApiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
+
+  let attempt: GoalWriteAttempt = {};
+  try {
+    const { id: clientId } = await params;
+    const auth = await requireCoachOwnsClient(clientId, request);
+    if (!auth.authorized) return auth.response;
+
+    const validation = updateGoalsSchema.safeParse(await request.json().catch(() => null));
+    if (!validation.success) {
+      return NextResponse.json(
+        { success: false, error: "Invalid input", details: validation.error.errors },
+        { status: 400 }
+      );
+    }
+    attempt = { deadline: validation.data.goalDeadline };
+
+    const saved = await saveDetailsSheetGoal(clientId, validation.data, auth.coachId);
+
+    const action =
+      saved.wrote === "create"
+        ? AUDIT_ACTIONS.GOAL_CREATE
+        : saved.wrote === "edit"
+          ? AUDIT_ACTIONS.GOAL_UPDATE
+          : saved.wrote === "deadline"
+            ? AUDIT_ACTIONS.GOAL_DEADLINE
+            : null;
+    if (action && saved.goalId) {
+      void recordAuditEvent({
+        actorId: auth.coachId,
+        actorRole: "trainer",
+        action,
+        targetTable: "client_goals",
+        targetId: saved.goalId,
+        clientId,
+        request,
+      });
+    }
+
+    return NextResponse.json(
+      { success: true, data: await getGoalsOverview(clientId) },
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error updating goals:", error);
-    return NextResponse.json(
-      { error: "Failed to update goals" },
-      { status: 500 }
-    );
+    return goalWriteErrorResponse(error, attempt);
   }
 }

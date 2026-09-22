@@ -34,10 +34,7 @@ import { useOverviewBrief } from "@/hooks/use-overview-brief";
 import { useOverviewPlanSummary } from "@/hooks/use-overview-plan-summary";
 import { useWellnessData } from "@/hooks/use-wellness-data";
 import { toast } from "sonner";
-import {
-  resolveEffectiveGoal,
-  toClientGoalInput,
-} from "@/lib/goals/resolve-effective-goal";
+import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { ClientTab } from "@/lib/client-tabs";
 import type { AlertType } from "@/types/attention-feed";
 import type { Client } from "@/types/check-in";
@@ -73,7 +70,7 @@ export function ClientOverviewTab({
     isMarkingSeen,
   } = useOverviewBrief(client.id);
   const { summary, isLoading: summaryLoading } = useOverviewPlanSummary(client.id);
-  const { goal: currentGoals, isLoading: goalLoading } = useClientGoals(client.id);
+  const { current: currentGoal, isLoading: goalLoading } = useClientGoals(client.id);
   const invalidateGoals = useInvalidateClientGoals();
   const invalidateSeries = useInvalidateMeasurementSeries();
   const {
@@ -105,17 +102,9 @@ export function ClientOverviewTab({
 
   const wellnessDates = useMemo(() => trailingDates(WELLNESS_WINDOW_DAYS), []);
 
-  // The goal the client is on RIGHT NOW, resolved from `client_goals` through
-  // the one shared resolver (invariant 16). The status card used to read the
-  // denormalized `clients` mirror directly, which made it the only coach surface
-  // rendering a goal nobody had resolved.
-  const effectiveGoal = useMemo(
-    () =>
-      resolveEffectiveGoal({
-        clientGoal: toClientGoalInput(currentGoals, client),
-      }),
-    [currentGoals, client]
-  );
+  // The goal in force on the client's today, resolved once for the band and the
+  // chart — by the same resolver the server's goal readers use.
+  const effectiveGoal = useMemo(() => resolveEffectiveGoal(currentGoal), [currentGoal]);
 
   const goToTab = useCallback(
     (tab: ClientTab, extraParams?: Record<string, string>) =>
@@ -134,18 +123,18 @@ export function ClientOverviewTab({
   }, [onClientUpdated, mutateBrief]);
 
   // A sheet save touches THREE areas, so it has to revalidate all three: the
-  // goals read behind the band, the client record everything else derives from
-  // (a goal write dual-writes the `clients` mirror), and the chart's series —
-  // correcting a recorded start weight routes to `recordClientStart`, which
-  // MOVES the metric entries dated on the start date, so the chart's first
-  // point changes under a save that never looked like a measurement.
+  // goals read behind the band, the client record everything else derives from,
+  // and the chart's series — correcting a recorded start weight routes to
+  // `recordClientStart`, which MOVES the metric entries dated on the start date,
+  // so the chart's first point changes under a save that never looked like a
+  // measurement, and so can the goal's start reading the chips measure from.
   const handleSaved = useCallback(() => {
     void invalidateGoals(client.id);
     void invalidateSeries(client.id);
     handleClientUpdated();
   }, [invalidateGoals, invalidateSeries, client.id, handleClientUpdated]);
 
-  const edit = useClientProfileEdit(client, handleSaved, currentGoals);
+  const edit = useClientProfileEdit(client, handleSaved, currentGoal);
 
   // The activation card's Client-profile row opens the same sheet as the rail's
   // pencil. It used to also scroll the page, because the editor it opened was
@@ -222,6 +211,7 @@ export function ClientOverviewTab({
       <StatusBand
         client={client}
         goal={effectiveGoal}
+        goalStart={currentGoal}
         goalPending={goalLoading}
         series={series}
         seriesPending={seriesLoading}

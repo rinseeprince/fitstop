@@ -3,8 +3,10 @@ import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { StatusBand } from "./status-band";
+import type { GoalType } from "@/lib/goals/goal-types";
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { Client } from "@/types/check-in";
+import type { CurrentGoal } from "@/types/client-goals";
 import type { MeasurementSeries, MeasurementSeriesPoint } from "@/types/coach-overview";
 
 // Required, not optional: units-context imports auth-context, which constructs
@@ -26,8 +28,8 @@ const BASE: Client = {
   timezone: "UTC",
 };
 
-// Both targets arrive resolved from `client_goals`. The band is presentational
-// about them: the tab runs resolveEffectiveGoal and hands the result down.
+// The goal in force arrives resolved: the tab runs resolveEffectiveGoal on it
+// and hands the band the targets and the deadline.
 const NO_GOAL: EffectiveGoal = {
   goalWeightKg: null,
   goalBodyFatPercentage: null,
@@ -39,6 +41,20 @@ const goalOf = (overrides: Partial<EffectiveGoal>): EffectiveGoal => ({
   ...overrides,
 });
 
+/**
+ * The same goal's type and the client's readings on its start day — what the
+ * chips measure from. A reading left out is one the client does not have.
+ */
+function startOf(
+  type: GoalType,
+  readings: { weight?: number; bodyFat?: number } = {}
+): Pick<CurrentGoal, "type" | "startReadings"> {
+  return {
+    type,
+    startReadings: { weight: readings.weight ?? null, bodyFat: readings.bodyFat ?? null },
+  };
+}
+
 const point = (date: string, value: number): MeasurementSeriesPoint => ({
   date,
   value,
@@ -48,13 +64,18 @@ const point = (date: string, value: number): MeasurementSeriesPoint => ({
   recordedAt: `${date}T08:00:00+00:00`,
 });
 
-type Pair = { start?: number; current?: number };
+/** The client's origin (the start-date reading) and the newest reading. */
+type Readings = { baseline?: number; current?: number };
+
+// An older point before every "now", holding a value no figure in this file
+// shows: the band takes the NEWEST point, never the first.
+const OLDER_POINT = { weight: 108.5, bodyFat: 36.5 } as const;
 
 /**
- * The series payload the band reads its four reading figures from: the
- * newest point is "now", the baseline is the start. Everything else empty.
+ * The series payload the band reads "now" and the baseline from. Everything
+ * else empty.
  */
-function seriesOf(readings: { weight?: Pair; bodyFat?: Pair } = {}): MeasurementSeries {
+function seriesOf(readings: { weight?: Readings; bodyFat?: Readings } = {}): MeasurementSeries {
   const series: MeasurementSeries = {
     weight: [],
     bodyFat: [],
@@ -69,12 +90,11 @@ function seriesOf(readings: { weight?: Pair; bodyFat?: Pair } = {}): Measurement
   };
   for (const key of ["weight", "bodyFat"] as const) {
     const pair = readings[key];
-    if (pair?.start != null) {
-      series.baseline[key] = { value: pair.start, date: "2026-03-01", source: "intake", id: `${key}-0` };
+    if (pair?.baseline != null) {
+      series.baseline[key] = { value: pair.baseline, date: "2026-03-01", source: "intake", id: `${key}-0` };
     }
     if (pair?.current != null) {
-      // An older point first: the band must take the NEWEST, not the first.
-      series[key] = [point("2026-03-08", pair.start ?? pair.current), point("2026-08-20", pair.current)];
+      series[key] = [point("2026-03-08", OLDER_POINT[key]), point("2026-08-20", pair.current)];
     }
   }
   return series;
@@ -84,6 +104,7 @@ function seriesOf(readings: { weight?: Pair; bodyFat?: Pair } = {}): Measurement
 // pinned by progression-chart.test.tsx.
 const PROPS = {
   goal: NO_GOAL,
+  goalStart: null,
   chart: <div data-testid="chart" />,
   onOpenMetrics: vi.fn(),
   series: seriesOf(),
@@ -91,53 +112,131 @@ const PROPS = {
 
 beforeEach(() => cleanup());
 
+// The chips measure a goal from the client's reading on its start day, in the
+// direction its type decides; "now" is the series' newest point.
 describe("StatusBand — goal chips", () => {
   it("gap: reports the distance still to travel", () => {
     render(
       <StatusBand
         client={BASE}
         {...PROPS}
-        series={seriesOf({ weight: { start: 90, current: 86 } })}
-        goal={goalOf({ goalWeightKg: 82 })}
+        series={seriesOf({ weight: { current: 89 } })}
+        goal={goalOf({ goalWeightKg: 85 })}
+        goalStart={startOf("lose_weight", { weight: 94 })}
       />
     );
 
     expect(screen.getByText("4.0 kg to go")).toBeInTheDocument();
   });
 
-  it("reached: says so once the client lands on the goal", () => {
+  it("reached: says so once the client lands within the tolerance of the goal", () => {
     render(
       <StatusBand
         client={BASE}
         {...PROPS}
-        series={seriesOf({ weight: { start: 90, current: 82 } })}
-        goal={goalOf({ goalWeightKg: 82 })}
+        series={seriesOf({ weight: { current: 83.03 } })}
+        goal={goalOf({ goalWeightKg: 83 })}
+        goalStart={startOf("lose_weight", { weight: 96 })}
       />
     );
 
     expect(screen.getByText("Goal reached")).toBeInTheDocument();
   });
 
-  it("beyond a loss goal reads 'under goal', beyond a gain goal 'over goal'", () => {
+  it("a lose-weight goal started above its target reads 'under goal' once below it", () => {
+    render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        series={seriesOf({ weight: { current: 81.5 } })}
+        goal={goalOf({ goalWeightKg: 84 })}
+        goalStart={startOf("lose_weight", { weight: 97 })}
+      />
+    );
+
+    expect(screen.getByText("2.5 kg under goal")).toBeInTheDocument();
+  });
+
+  it("a build-muscle goal reads 'over goal' once above its target", () => {
+    render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        series={seriesOf({ weight: { current: 77.5 } })}
+        goal={goalOf({ goalWeightKg: 74 })}
+        goalStart={startOf("build_muscle", { weight: 68 })}
+      />
+    );
+
+    expect(screen.getByText("3.5 kg over goal")).toBeInTheDocument();
+  });
+
+  // The type decides the direction where it has one, so a goal whose start
+  // day has no reading is still judged past its target.
+  it("a lose-weight goal counts weight down with no start reading", () => {
+    render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        series={seriesOf({ weight: { current: 86.2 } })}
+        goal={goalOf({ goalWeightKg: 87 })}
+        goalStart={startOf("lose_weight")}
+      />
+    );
+
+    expect(screen.getByText("0.8 kg under goal")).toBeInTheDocument();
+  });
+
+  it("a recomp goal counts body fat down with no start reading", () => {
+    render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        series={seriesOf({ bodyFat: { current: 21.7 } })}
+        goal={goalOf({ goalBodyFatPercentage: 22.5 })}
+        goalStart={startOf("recomposition")}
+      />
+    );
+
+    expect(screen.getByText("0.8% under goal")).toBeInTheDocument();
+  });
+
+  it("with no direction — a type that decides none, no start reading — reads only to go or reached", () => {
+    const goal = goalOf({ goalWeightKg: 78.5 });
+    const goalStart = startOf("general_fitness");
     const { rerender } = render(
       <StatusBand
         client={BASE}
         {...PROPS}
-        series={seriesOf({ weight: { start: 90, current: 80 } })}
-        goal={goalOf({ goalWeightKg: 82 })}
+        series={seriesOf({ weight: { current: 81 } })}
+        goal={goal}
+        goalStart={goalStart}
       />
     );
-    expect(screen.getByText("2.0 kg under goal")).toBeInTheDocument();
+    expect(screen.getByText("2.5 kg to go")).toBeInTheDocument();
+
+    // Below the target is not "under goal": nothing says which way is past it.
+    rerender(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        series={seriesOf({ weight: { current: 75.5 } })}
+        goal={goal}
+        goalStart={goalStart}
+      />
+    );
+    expect(screen.getByText("3.0 kg to go")).toBeInTheDocument();
 
     rerender(
       <StatusBand
         client={BASE}
         {...PROPS}
-        series={seriesOf({ weight: { start: 70, current: 78 } })}
-        goal={goalOf({ goalWeightKg: 76 })}
+        series={seriesOf({ weight: { current: 78.54 } })}
+        goal={goal}
+        goalStart={goalStart}
       />
     );
-    expect(screen.getByText("2.0 kg over goal")).toBeInTheDocument();
+    expect(screen.getByText("Goal reached")).toBeInTheDocument();
   });
 
   it("body fat uses percent rather than the weight unit", () => {
@@ -145,53 +244,54 @@ describe("StatusBand — goal chips", () => {
       <StatusBand
         client={BASE}
         {...PROPS}
-        series={seriesOf({ bodyFat: { start: 24, current: 20 } })}
-        goal={goalOf({ goalBodyFatPercentage: 18 })}
+        series={seriesOf({ bodyFat: { current: 20.5 } })}
+        goal={goalOf({ goalBodyFatPercentage: 18.5 })}
+        goalStart={startOf("lose_weight", { bodyFat: 25.5 })}
       />
     );
 
     expect(screen.getByText("2.0% to go")).toBeInTheDocument();
   });
+
+  it("with no goal in force, the three goal cells read Not set and no chip renders", () => {
+    render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        series={seriesOf({ weight: { baseline: 95.5, current: 92 } })}
+      />
+    );
+
+    expect(screen.queryByText(/to go|goal reached|under goal|over goal/i)).not.toBeInTheDocument();
+    // Goal weight, goal body fat and the deadline.
+    expect(screen.getAllByText("Not set")).toHaveLength(3);
+  });
 });
 
-// The regression this inherits from the status card it replaces: that card used
-// to read `clients.goal_weight` — the denormalized mirror — and was the last
-// coach surface rendering a goal nobody had resolved (invariant 16).
-describe("StatusBand — targets come from client_goals, not the mirror", () => {
-  it("a diverged mirror cannot win: the resolved goal is what renders", () => {
+// Two starts, two figures: the chips measure the goal from the client's reading
+// on the goal's start day; the Since-start pill measures the client from their
+// origin, the baseline. Each start sits on the other side of the target from
+// the other, so the chip's wording shows which one it measured from.
+describe("StatusBand — the chips start at the goal's start, the pill at the baseline", () => {
+  it("takes the chips' start from the goal's start reading, never the baseline", () => {
     render(
       <StatusBand
-        client={{
-          ...BASE,
-          // What a stale/failed dual-write leaves behind. Nothing may read it.
-          goalWeight: 99,
-          goalBodyFatPercentage: 30,
-        }}
+        client={BASE}
         {...PROPS}
-        series={seriesOf({ weight: { start: 90, current: 86 } })}
-        goal={goalOf({ goalWeightKg: 82, goalBodyFatPercentage: 18 })}
+        series={seriesOf({
+          weight: { baseline: 88.5, current: 82 },
+          bodyFat: { baseline: 30.5, current: 20.8 },
+        })}
+        goal={goalOf({ goalWeightKg: 80.5, goalBodyFatPercentage: 19.5 })}
+        goalStart={startOf("general_fitness", { weight: 76.5, bodyFat: 17.5 })}
       />
     );
 
-    expect(screen.getByText("82.0")).toBeInTheDocument();
-    expect(screen.getByText("18.0")).toBeInTheDocument();
-    expect(screen.queryByText("99.0")).not.toBeInTheDocument();
-    expect(screen.queryByText("30.0")).not.toBeInTheDocument();
-  });
-
-  it("maintenance (no weight target) reads as Not set, whatever the mirror holds", () => {
-    render(
-      <StatusBand
-        client={{ ...BASE, goalWeight: 99 }}
-        {...PROPS}
-        series={seriesOf({ weight: { start: 90, current: 86 } })}
-      />
-    );
-
-    expect(screen.queryByText("99.0")).not.toBeInTheDocument();
-    expect(screen.queryByText(/to go|goal reached/i)).not.toBeInTheDocument();
-    // Goal weight, goal body fat and the deadline are all unset here.
-    expect(screen.getAllByText("Not set")).toHaveLength(3);
+    // Started below both targets, so above them is past them.
+    expect(screen.getByText("1.5 kg over goal")).toBeInTheDocument();
+    expect(screen.getByText("1.3% over goal")).toBeInTheDocument();
+    // The pill, from the baseline.
+    expect(screen.getByText("-6.5kg · -9.7%")).toBeInTheDocument();
   });
 });
 
@@ -199,32 +299,36 @@ describe("StatusBand — targets come from client_goals, not the mirror", () => 
 // the chips read the page-level client record — fetched once, revalidated only
 // by coach-side writes — while the chart beside them read the series, so a
 // check-in the client submitted reached the chart on the next visit and the
-// pill only on a reload. One read for the four figures.
-describe("StatusBand — every reading figure comes from the series", () => {
+// pill only on a reload. "Now" and the baseline come from the series.
+describe("StatusBand — no reading comes from the client record", () => {
   it("ignores the client record's readings: the series is what renders", () => {
     render(
       <StatusBand
         client={{
           ...BASE,
-          startingWeight: 99,
-          currentWeight: 99,
-          startingBodyFatPercentage: 40,
-          currentBodyFatPercentage: 40,
+          startingWeight: 99.5,
+          currentWeight: 98.5,
+          startingBodyFatPercentage: 41,
+          currentBodyFatPercentage: 39,
         }}
         {...PROPS}
-        series={seriesOf({ weight: { start: 90, current: 86 }, bodyFat: { start: 24, current: 21.5 } })}
-        goal={goalOf({ goalWeightKg: 82 })}
+        series={seriesOf({
+          weight: { baseline: 92.5, current: 88 },
+          bodyFat: { baseline: 26.5, current: 23 },
+        })}
+        goal={goalOf({ goalWeightKg: 86 })}
+        goalStart={startOf("lose_weight")}
       />
     );
 
-    expect(screen.getByText("4.0 kg to go")).toBeInTheDocument();
-    expect(screen.getByText("-4.0kg · -2.5%")).toBeInTheDocument();
+    expect(screen.getByText("2.0 kg to go")).toBeInTheDocument();
+    expect(screen.getByText("-4.5kg · -3.5%")).toBeInTheDocument();
   });
 
-  it("takes 'now' from the NEWEST point, whatever its date, and the start from the baseline", () => {
-    const series = seriesOf({ weight: { start: 90, current: 86 } });
+  it("takes 'now' from the NEWEST point, whatever its date, and the pill's start from the baseline", () => {
+    const series = seriesOf({ weight: { baseline: 100.5, current: 96.5 } });
     // A backdated reading appended later still sits before the newest day.
-    series.weight = [point("2026-08-20", 86), point("2026-02-01", 95)].sort((a, b) =>
+    series.weight = [point("2026-08-20", 96.5), point("2026-02-01", 107)].sort((a, b) =>
       a.date < b.date ? -1 : 1
     );
     render(<StatusBand client={BASE} {...PROPS} series={series} />);
@@ -239,7 +343,7 @@ describe("StatusBand — every reading figure comes from the series", () => {
         {...PROPS}
         series={null}
         seriesPending
-        goal={goalOf({ goalWeightKg: 82 })}
+        goal={goalOf({ goalWeightKg: 79.5 })}
       />
     );
 
@@ -350,12 +454,15 @@ describe("StatusBand — footer", () => {
       <StatusBand
         client={BASE}
         {...PROPS}
-        series={seriesOf({ weight: { start: 90, current: 86 }, bodyFat: { start: 24, current: 21.5 } })}
+        series={seriesOf({
+          weight: { baseline: 102.5, current: 99 },
+          bodyFat: { baseline: 29, current: 27.5 },
+        })}
       />
     );
 
     expect(screen.getByText(/Since start:/)).toBeInTheDocument();
-    expect(screen.getByText("-4.0kg · -2.5%")).toBeInTheDocument();
+    expect(screen.getByText("-3.5kg · -1.5%")).toBeInTheDocument();
   });
 
   it("hides the chip when neither measurement pair exists", () => {
@@ -388,7 +495,7 @@ describe("StatusBand — a start date still ahead", () => {
       <StatusBand
         client={{ ...BASE, startDate: "2026-10-15" }}
         {...PROPS}
-        series={seriesOf({ weight: { start: 90, current: 86 } })}
+        series={seriesOf({ weight: { baseline: 93.5, current: 91 } })}
       />
     );
 
@@ -404,7 +511,7 @@ describe("StatusBand — a start date still ahead", () => {
       <StatusBand
         client={{ ...BASE, timezone: "Pacific/Auckland", startDate: "2026-08-29" }}
         {...PROPS}
-        series={seriesOf({ weight: { start: 90, current: 86 } })}
+        series={seriesOf({ weight: { baseline: 95, current: 90.5 } })}
       />
     );
 

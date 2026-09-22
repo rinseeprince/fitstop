@@ -4,6 +4,8 @@ import { createClientSchema } from "@/lib/validations/client";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { recordAuditEvent } from "@/services/audit-log-service";
+import { AUDIT_ACTIONS } from "@/lib/constants";
 
 // GET /api/clients - List all clients for authenticated coach
 export async function GET(request: NextRequest) {
@@ -69,7 +71,21 @@ export async function POST(request: NextRequest) {
     }
 
     const client = await createClient(coachId, validationResult.data);
-    const { inviteSent, ...clientData } = client;
+    const { inviteSent, goalId, ...clientData } = client;
+
+    // CONVENTIONS §8 "when to log": goals. Fire-and-forget, after the write —
+    // it records, never gates.
+    if (goalId) {
+      void recordAuditEvent({
+        actorId: coachId,
+        actorRole: "trainer",
+        action: AUDIT_ACTIONS.GOAL_CREATE,
+        targetTable: "client_goals",
+        targetId: goalId,
+        clientId: clientData.id,
+        request,
+      });
+    }
 
     return NextResponse.json({ client: clientData, inviteSent }, { status: 201 });
   } catch (error) {

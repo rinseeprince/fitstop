@@ -29,12 +29,25 @@ vi.mock("@/services/event-deletion-floor", () => ({
 }));
 
 // Invariant 7's route-half tripwire: blocks save independently of the goal.
-// The goals service is mocked with spies so that if anyone ever wires
-// updateGoals into this route, the never-called pin below fails.
+// Both goal modules — the reads and the writes — are mocked with spies, so if
+// anyone ever wires a goal read or write into this route, the never-called pin
+// below fails.
 vi.mock("@/services/client-goals-service", () => ({
-  getCurrentGoals: vi.fn(),
-  updateGoals: vi.fn(),
-  getGoalsHistory: vi.fn(),
+  listClientGoals: vi.fn(),
+  getGoalForDate: vi.fn(),
+  getCurrentGoal: vi.fn(),
+  getGoalsOverview: vi.fn(),
+  getPastGoals: vi.fn(),
+}));
+
+vi.mock("@/services/client-goal-writes-service", () => ({
+  addGoal: vi.fn(),
+  editGoal: vi.fn(),
+  setGoalDeadline: vi.fn(),
+  renameGoal: vi.fn(),
+  deleteGoal: vi.fn(),
+  restoreGoal: vi.fn(),
+  saveDetailsSheetGoal: vi.fn(),
 }));
 
 // The factory defines the error classes so the route (importing from the
@@ -73,7 +86,8 @@ import {
   BlockPayloadError,
   BlockTrimsPendingError,
 } from "@/services/client-blocks-service";
-import { updateGoals, getCurrentGoals } from "@/services/client-goals-service";
+import * as goalReads from "@/services/client-goals-service";
+import * as goalWrites from "@/services/client-goal-writes-service";
 
 const TODAY = "2026-08-11";
 const mockParams = { params: Promise.resolve({ id: "client-1" }) };
@@ -320,8 +334,11 @@ describe("/api/clients/[id]/blocks", () => {
 
       await PUT(createMockRequest("PUT", VALID_PUT_BODY), mockParams);
 
-      expect(updateGoals).not.toHaveBeenCalled();
-      expect(getCurrentGoals).not.toHaveBeenCalled();
+      const goalFunctions = [...Object.values(goalReads), ...Object.values(goalWrites)];
+      expect(goalFunctions).toHaveLength(12);
+      for (const goalFunction of goalFunctions) {
+        expect(goalFunction).not.toHaveBeenCalled();
+      }
     });
 
     it.each<[string, Error]>([

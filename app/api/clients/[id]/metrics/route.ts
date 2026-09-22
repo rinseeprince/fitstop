@@ -5,7 +5,6 @@ import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateClientMetricsSchema } from "@/lib/validations/client-metrics";
 import { appendMeasurements } from "@/services/measurements-service";
-import { updateGoals } from "@/services/client-goals-service";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
 import type { ClientEnergyOverrides } from "@/services/client-energy-service";
 import { getCoachTodayString } from "@/services/today-service";
@@ -121,17 +120,6 @@ export async function PUT(
         { error: energy.rejection ?? "Invalid energy override" },
         { status: 400 }
       );
-    }
-
-    // Goals are written ONCE, by `updateGoals`, which owns both stores. **This
-    // throws**: a swallowed goal failure returned 200 while the mirror moved and
-    // `client_goals` did not, and nothing surfaced it. The measurement writes
-    // above are already committed and are unaffected.
-    if (body.goalWeight !== undefined || body.goalBodyFatPercentage !== undefined) {
-      await updateGoals(clientId, {
-        goalWeight: body.goalWeight,
-        goalBodyFatPercentage: body.goalBodyFatPercentage,
-      }, coachId);
     }
 
     // Get updated client data

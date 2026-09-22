@@ -132,7 +132,7 @@ export async function POST(
     }
 
     if (parsed.data.action === "sync-metrics") {
-      const syncedFields = await syncMetricsToClient(clientId);
+      const { syncedFields, notes, goalId } = await syncMetricsToClient(clientId, coachId);
       // CONVENTIONS §8 "when to log": intake metrics sync. Fire-and-forget,
       // after the authorized write — it records, never gates. (This lived on a
       // caller-less sub-route until the 2026-08 dead-code sweep removed it.)
@@ -145,7 +145,19 @@ export async function POST(
         clientId,
         request,
       });
-      return NextResponse.json({ success: true, data: { syncedFields } });
+      // And goals: the goal the sync set, when it set one.
+      if (goalId) {
+        void recordAuditEvent({
+          actorId: coachId,
+          actorRole: "trainer",
+          action: AUDIT_ACTIONS.GOAL_CREATE,
+          targetTable: "client_goals",
+          targetId: goalId,
+          clientId,
+          request,
+        });
+      }
+      return NextResponse.json({ success: true, data: { syncedFields, notes } });
     }
 
     return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });

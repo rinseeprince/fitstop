@@ -139,6 +139,7 @@ const fixture: CheckInReviewInput = {
       weight: {
         goal: 78,
         startingWeight: 86,
+        goalStartWeight: 86,
         position: { current: 82.4, remaining: 4.4, percentComplete: 45, status: "approaching", isOnTrack: true, paceStatus: "on_track" },
       },
       deadline: { date: "2026-11-30", daysRemaining: 74, isPastDeadline: false },

@@ -1,12 +1,13 @@
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "./supabase-admin";
 import { coversDate } from "./training-plan-window";
-import type { Client, DietType, UnitPreference } from "@/types/check-in";
+import type { DietType, UnitPreference } from "@/types/check-in";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
-import { mapClientRow } from "@/lib/mappers";
+import { mapClientRow, toClientSelfView, type ClientSelfView } from "@/lib/mappers";
 import type { ClientRowWithMeasurements } from "@/lib/database-helpers";
 import { CLIENT_MEASUREMENT_EMBEDS } from "./measurements-service";
+import { getCurrentGoal } from "./client-goals-service";
 import { getLastSubmittedPeriodEnd } from "./daily-log-permissions-service";
 import { resolveLogsOpenFrom } from "@/lib/daily-log-permissions";
 import { getEventsForDateRange } from "./training-event-service";
@@ -46,10 +47,10 @@ export type NutritionTargets = {
 // client may see about themselves is named here; coach-private columns (notes)
 // are deliberately excluded so a client-facing read can never leak them, and a
 // future coach-only column is excluded by default rather than shipped.
-// SCOPE: this list governs THIS read, not every client-facing surface — the
-// goal DEADLINE (absent here) reaches the client through GET /api/client/journey
-// via client_goals/resolveEffectiveGoal (owner decision 2026-08-12, scoped to
-// that endpoint only).
+// SCOPE: this list governs THIS read. The goal is not a column anywhere: every
+// client wire takes it from `client_goals` — the goal in force on the client's
+// today — and this profile carries its two targets (getClientForCurrentUser);
+// its deadline reaches the client through GET /api/client/journey.
 //
 // The client's readings — current and at the start — are not columns: they
 // ride in from the two measurement views (CLIENT_MEASUREMENT_EMBEDS), which
@@ -58,7 +59,7 @@ export type NutritionTargets = {
 // profile, so check every name against the live schema.
 const CLIENT_SELF_COLUMNS =
   "id, coach_id, name, email, avatar_url, active, created_at, updated_at, " +
-  "height, gender, date_of_birth, goal_weight, goal_body_fat_percentage, bmr, tdee, " +
+  "height, gender, date_of_birth, bmr, tdee, " +
   "check_in_frequency, check_in_frequency_days, next_check_in_due, " +
   "last_reminder_sent_at, reminder_preferences, total_check_ins_expected, " +
   "total_check_ins_completed, check_in_adherence_rate, current_streak, longest_streak, " +
@@ -67,8 +68,8 @@ const CLIENT_SELF_COLUMNS =
   "welcome_message, onboarding_status, walkthrough_completed_at, start_date, timezone, " +
   CLIENT_MEASUREMENT_EMBEDS;
 
-// Get client record for the authenticated user
-export async function getClientForCurrentUser(): Promise<Client | null> {
+// The authenticated client's own profile (GET /api/client/me), allowlisted.
+export async function getClientForCurrentUser(): Promise<ClientSelfView | null> {
   const supabase = await createPortalClient();
 
   const {
@@ -89,18 +90,23 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
   // `notes` is not selected, so mapClientRow resolves it to undefined.
   const client = mapClientRow(data as unknown as ClientRowWithMeasurements);
 
-  // The day-rule boundary rides on this read because it is the one client-level
-  // fetch every screen in the app already holds, and the pages that lock a day
-  // read it from here. It is derived, not a column, so it is attached after the
-  // mapper rather than added to the column list above; the schedule facts it
-  // needs (timezone, next_check_in_due, start_date) are already selected, so
-  // only the last submitted period costs a query.
-  const logsOpenFrom = resolveLogsOpenFrom(
-    client,
-    await getLastSubmittedPeriodEnd(client.id)
-  );
+  // Two reads keyed on the row just resolved, run together. The goal in force
+  // on the client's today supplies the profile's two goal targets; the service
+  // role reads it, scoped by this session's own client id, because
+  // `client_goals` has no client-facing policy. The day-rule boundary rides on
+  // this read because it is the one client-level fetch every screen in the app
+  // already holds, and the pages that lock a day read it from here. It is
+  // derived, not a column, so it is attached after the mapper rather than added
+  // to the column list above; the schedule facts it needs (timezone,
+  // next_check_in_due, start_date) are already selected, so only the last
+  // submitted period costs a query.
+  const [goal, lastSubmittedPeriodEnd] = await Promise.all([
+    getCurrentGoal(client.id),
+    getLastSubmittedPeriodEnd(client.id),
+  ]);
+  const logsOpenFrom = resolveLogsOpenFrom(client, lastSubmittedPeriodEnd);
 
-  return { ...client, logsOpenFrom };
+  return toClientSelfView({ ...client, logsOpenFrom }, goal);
 }
 
 // Get nutrition targets for a client with daily breakdown

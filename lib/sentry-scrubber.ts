@@ -13,6 +13,8 @@ const SENSITIVE_KEYS = new Set([
   "current_weight",
   "goalWeight",
   "goal_weight",
+  "targetWeight",
+  "target_weight",
   "mood",
   "energy",
   "sleep",

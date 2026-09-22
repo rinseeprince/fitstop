@@ -10,7 +10,7 @@ import { useCanonicalInput, useHeightInput } from "@/hooks/use-unit-inputs";
 import { formatWeight } from "@/utils/unit-conversions";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import type { Client } from "@/types/check-in";
-import type { ClientGoal } from "@/types/client-goals";
+import type { GoalOnDay } from "@/types/client-goals";
 
 /**
  * The client details form, behind the details sheet.
@@ -43,9 +43,9 @@ const profileFormSchema = z
     dateOfBirth: z.string().refine(isoDate, { message: "Use a valid date" }),
     startDate: z.string().refine(isoDate, { message: "Use a valid date" }),
     phone: z.string().trim().max(30, "Phone must be less than 30 characters"),
-    // Format-only, like goalDeadline: the past-date bound is enforced by the
-    // route against the COACH's today, and `min` on the input is the
-    // affordance. Empty means "no schedule".
+    // Format-only: the past-date bound is enforced by the route against the
+    // COACH's today, and `min` on the input is the affordance. Empty means
+    // "no schedule".
     nextCheckInDue: z.string().refine(isoDate, { message: "Use a valid date" }),
     checkInFrequency: z.enum(["weekly", "biweekly", "monthly", "custom", "none"]),
     workActivityLevel: z.enum([
@@ -79,12 +79,11 @@ type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 /**
  * Seeds come from TWO records, deliberately. The profile fields are on `clients`;
- * the goal fields are on the live `client_goals` row, which is the only store
- * that can be trusted for them — the RAW goal, never a resolved `EffectiveGoal`,
- * so a resolver's coalesced value can never be written into a field the coach
- * never set.
+ * the goal fields are the goal in force on the client's today, as stored — never
+ * a resolved `EffectiveGoal` — so each box holds exactly the target the coach
+ * set, and an empty one means none.
  */
-function toDefaults(client: Client, goal: ClientGoal | null): ProfileFormValues {
+function toDefaults(client: Client, goal: GoalOnDay | null): ProfileFormValues {
   return {
     name: client.name,
     email: client.email,
@@ -102,8 +101,8 @@ function toDefaults(client: Client, goal: ClientGoal | null): ProfileFormValues 
         ? String(client.startingBodyFatPercentage)
         : "",
     goalBodyFatPercentage:
-      goal?.goalBodyFatPercentage != null ? String(goal.goalBodyFatPercentage) : "",
-    goalDeadline: goal?.goalDeadline ?? "",
+      goal?.targetBodyFatPercentage != null ? String(goal.targetBodyFatPercentage) : "",
+    goalDeadline: goal?.deadline ?? "",
   };
 }
 
@@ -124,7 +123,8 @@ export type ClientProfileEdit = ReturnType<typeof useClientProfileEdit>;
 export function useClientProfileEdit(
   client: Client,
   onSaved: () => void,
-  goal: ClientGoal | null
+  /** The goal in force on the client's today; null = none. */
+  goal: GoalOnDay | null
 ) {
   const { preference } = useUnits();
   const [isEditing, setIsEditing] = useState(false);
@@ -146,7 +146,7 @@ export function useClientProfileEdit(
   // makes a focus-through an exact no-op: 100 kg seeds an imperial coach as
   // "220.5" and re-parses to 100.017, so a form that re-parsed whatever sat in
   // the box would drift the stored goal on every save (CONVENTIONS §20).
-  const goalWeight = useCanonicalInput(preference, goal?.goalWeight, "weight");
+  const goalWeight = useCanonicalInput(preference, goal?.targetWeight, "weight");
   // The BASELINE weight, same treatment as the goal weight: collected in the
   // coach's unit, guarded on the seeded string so a focus-through is an exact
   // no-op (CONVENTIONS §20). Saving it appends a reading dated on the start
@@ -169,7 +169,7 @@ export function useClientProfileEdit(
     if (isEditing) {
       reset(toDefaults(client, goal));
       resetHeight(client.height);
-      resetGoalWeight(goal?.goalWeight);
+      resetGoalWeight(goal?.targetWeight);
       resetStartWeight(client.startingWeight);
       setIsCustomTdee(client.tdeeManualOverride === true);
       setCustomTdee(client.tdee != null ? String(Math.round(client.tdee)) : "");
@@ -374,13 +374,15 @@ export function useClientProfileEdit(
 
       // The goal, LAST and only when it actually changed.
       //
-      // **The change detection is load-bearing, not an optimisation.**
-      // `updateGoals` supersedes-and-inserts on EVERY call with no change
-      // detection of its own, so calling it unconditionally would mint a new
-      // `client_goals` version and an audit event every time a coach edited a
-      // phone number (invariant 7). Each field is compared against the value it
-      // was SEEDED from; the weight compares through `commit`'s seeded-string
-      // guard rather than an epsilon.
+      // **The change detection is load-bearing, not an optimisation.** The PUT
+      // compares what it is sent with the goal in force exactly: a target that
+      // differs makes a new goal from today (or rewrites today's, if it started
+      // today), and for a client with no goal any PUT creates one. So an
+      // untouched field is never re-sent — an imperial coach's goal weight
+      // re-parsed through its rounded display would differ from the stored one
+      // and replace the client's goal on a save that changed a phone number.
+      // Each field is compared against the value it was SEEDED from; the weight
+      // compares through `commit`'s seeded-string guard rather than an epsilon.
       const seeded = toDefaults(client, goal);
       const goalPayload: Record<string, number | string | null> = {};
       if (!goalWeight.isPristine) {
