@@ -488,7 +488,7 @@ stored/AI nutrition adherence use the week's targets.
   the function goes from 1 to 4 selects and the submit path reads `nutrition_logs` three times
   per submission (own read, (d), snapshot) — constant, pre-existing 2×, report it. The prompt's
   no-summary fallback `Days on target: N/7` → `/daysInWeek`. `types/weekly-nutrition.ts` comment
-  and `NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md:151` ("frozen-logs-only → invariant") amended.
+  amended.
 - Partial first week: denominator = `dates.length` (3/3, not 3/7 — `resolveCheckInWindow`'s own
   doc). Wellness averages stay calendar-day means (no target; D5.4). Nutrition "hit" source =
   the persisted `nutrition_logs.nutrition_adherence` (one definition with the Overview rails); the
@@ -615,7 +615,7 @@ TECHNICAL-DEBT `:518/:532` (modal, stale 352 lines; the file is deleted by C1) �
 | D7.2 | Include "Share with client" and "Reflection" in the uniform treatment? | Yes, both |
 | D7.3 | Card shell: borderless (SOT) with the siblings owed a follow-up, or bordered for in-modal parity? Animate like the framer siblings? | Borderless; no animation on the rail (sticky column) |
 | D7.4 | Remove the never-persisted Summary pencil edit? | Remove |
-| D-docs | Historical records that will keep naming the deleted queue page and the changed adherence invariant (`CLIENT-PORTAL-EXECUTION-PLAN.md` ledgers, `NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md:151`): annotate, delete shipped sections wholesale, or leave? | Leave the ledgers; amend the SPEC's `:151` invariant line in C5 |
+| D-docs | Historical records that will keep naming the deleted queue page and the changed adherence invariant (`CLIENT-PORTAL-EXECUTION-PLAN.md` ledgers): annotate, delete shipped sections wholesale, or leave? | Leave the ledgers |
 
 ---
 
