@@ -222,7 +222,10 @@ export function LibraryExerciseList({ editable }: { editable: boolean }) {
           if (!open) formDialog.close();
         }}
         exercise={formDialog.subject}
-        onSaved={() => void mutate()}
+        onSaved={() => {
+          toast.success(formDialog.subject ? "Exercise updated" : "Exercise created");
+          void mutate();
+        }}
       />
 
       <ConfirmDialog

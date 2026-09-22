@@ -33,7 +33,11 @@ import {
 // One dialog for both create (exercise undefined — POST /api/training/exercises)
 // and edit (coach-owned rows only; PATCH). Fields mirror the catalog columns:
 // the type is one of the six (it decides the column preset the exercise starts
-// on in a session), category is a free string.
+// on in a session), category is a free string. A create can open on a name
+// already typed: the builder's exercise search hands over one the catalog
+// doesn't have. The saved exercise goes to `onSaved` and the host says what
+// happened — the library panel confirms the save; the session editor adds the
+// new exercise to its session and confirms the add.
 //
 // The host keys it by the opening (`useDialogSubject`'s openKey), so each open
 // mounts it fresh on its exercise and a close leaves the closing card — its
@@ -43,15 +47,17 @@ export function ExerciseFormDialog({
   open,
   onOpenChange,
   exercise,
+  initialName = "",
   onSaved,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   exercise?: Exercise | null
-  onSaved: () => void
+  initialName?: string
+  onSaved: (exercise: Exercise) => void
 }) {
   const isEdit = exercise != null
-  const [name, setName] = useState(exercise?.name ?? "")
+  const [name, setName] = useState(exercise?.name ?? initialName)
   const [exerciseType, setExerciseType] = useState<ExerciseType>(
     exercise?.exerciseType ?? DEFAULT_EXERCISE_TYPE,
   )
@@ -81,8 +87,8 @@ export function ExerciseFormDialog({
         },
       )
       if (!res.ok) throw new Error("Failed to save")
-      toast.success(isEdit ? "Exercise updated" : "Exercise created")
-      onSaved()
+      const { exercise: saved } = (await res.json()) as { exercise: Exercise }
+      onSaved(saved)
       onOpenChange(false)
     } catch {
       toast.error("Error", {

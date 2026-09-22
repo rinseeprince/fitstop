@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { useEffect, useState } from "react";
-import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import { SessionEditorBody } from "./session-editor-body";
@@ -10,20 +10,27 @@ import { makeStandaloneDraft } from "@/components/programs/use-standalone-sessio
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import type { ExerciseDraft, ExerciseGroupDraft, SessionDraft } from "./program-builder-types";
 
-// The picker stub hands back one catalog pick, so the add path from the
-// popover down is the real one.
+// The picker stub hands back one catalog pick, or a name the catalog doesn't
+// have, so the add path from the popover down is the real one.
 vi.mock("./exercise-picker", () => ({
   ExercisePicker: ({
     onPick,
+    onCreate,
   }: {
-    onPick: (pick: { name: string; exerciseId: string | null; exerciseType: "strength" | null }) => void;
+    onPick: (pick: { name: string; exerciseId: string; exerciseType: "strength" }) => void;
+    onCreate: (name: string) => void;
   }) => (
-    <button
-      type="button"
-      onClick={() => onPick({ name: "Bench Press", exerciseId: "e-bench", exerciseType: "strength" })}
-    >
-      Pick Bench Press
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => onPick({ name: "Bench Press", exerciseId: "e-bench", exerciseType: "strength" })}
+      >
+        Pick Bench Press
+      </button>
+      <button type="button" onClick={() => onCreate("Zone 2 Run")}>
+        Use Zone 2 Run
+      </button>
+    </>
   ),
 }));
 vi.mock("@/contexts/units-context", () => ({
@@ -514,5 +521,71 @@ describe("Session editor — adding an exercise from the popover", () => {
     expect(screen.getAllByRole("button", { name: /^(Expand|Collapse) sets$/ })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Collapse sets" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pick Bench Press" })).toBeInTheDocument();
+  });
+
+  // A name the catalog doesn't have ("Use …") opens New exercise on it: the
+  // popover closes and the form opens in one click, and the exercise the form
+  // creates joins the session like any pick, on its type's columns.
+  it("Use … opens New exercise on the typed name, and the exercise it creates is added to the session", async () => {
+    const created = {
+      id: "ex-zone2",
+      coachId: "coach-1",
+      name: "Zone 2 Run",
+      muscleGroup: null,
+      equipment: null,
+      category: null,
+      exerciseType: "endurance",
+      aliases: [],
+      createdAt: "2026-09-22T00:00:00Z",
+      updatedAt: "2026-09-22T00:00:00Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({ success: true, exercise: created }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      render(<Host groups={[lone(SQUAT)]} />);
+      fireEvent.click(screen.getByRole("button", { name: "Add exercise" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Use Zone 2 Run" }));
+
+      // One commit: the popover is gone and the form is open on the name.
+      expect(screen.queryByRole("button", { name: "Pick Bench Press" })).toBeNull();
+      const form = screen.getByRole("dialog", { name: "New exercise" });
+      expect(within(form).getByLabelText("Name")).toHaveValue("Zone 2 Run");
+
+      fireEvent.click(within(form).getByRole("button", { name: "Create exercise" }));
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith("Exercise added", { description: "Zone 2 Run" }),
+      );
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe("/api/training/exercises");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(String(init.body))).toMatchObject({ name: "Zone 2 Run" });
+
+      // The form closed; the one confirmation is the add, and the new card
+      // opens on the endurance columns its type starts on.
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "New exercise" })).toBeNull());
+      expect(toast.success).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Zone 2 Run")).toBeInTheDocument();
+      expect(screen.getByText("Distance")).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("closing New exercise without creating adds nothing", async () => {
+    render(<Host groups={[lone(SQUAT)]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add exercise" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use Zone 2 Run" }));
+
+    const form = screen.getByRole("dialog", { name: "New exercise" });
+    fireEvent.click(within(form).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "New exercise" })).toBeNull());
+    expect(screen.queryByText("Zone 2 Run")).toBeNull();
+    expect(screen.getAllByRole("button", { name: /^(Expand|Collapse) sets$/ })).toHaveLength(1);
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

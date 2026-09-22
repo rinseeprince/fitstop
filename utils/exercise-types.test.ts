@@ -9,7 +9,6 @@ import {
   toExerciseType,
 } from "./exercise-types";
 import { COLUMN_PRESET_FIELDS, COLUMN_PRESETS, presetColumnsForType } from "./column-presets";
-import { DEFAULT_PRESCRIBED_FIELDS } from "./prescribed-fields";
 
 // The type list is defined once in code and mirrored by migration 185's
 // CHECK; the global catalog's classification is written twice — the
@@ -91,9 +90,7 @@ describe("the types and migration 185 agree", () => {
     }
   });
 
-  it("no type is Strength, and a preset comes back as a fresh array", () => {
-    expect(presetColumnsForType(null)).toEqual([...DEFAULT_PRESCRIBED_FIELDS]);
-    expect(presetColumnsForType(undefined)).toEqual([...DEFAULT_PRESCRIBED_FIELDS]);
+  it("a preset comes back as a fresh array", () => {
     const erg = presetColumnsForType("erg");
     erg.push("reps");
     expect(presetColumnsForType("erg")).toEqual([...COLUMN_PRESET_FIELDS.erg]);

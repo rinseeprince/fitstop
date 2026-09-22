@@ -354,7 +354,7 @@ function exerciseLine(ex: ExerciseDraft, position: number, inRounds = false): st
   if (ex.restSeconds != null && !inRounds) bits.push(`rest ${ex.restSeconds}s`);
   const columns = columnsNote(ex.prescribedFields);
   if (columns) bits.push(columns);
-  if (ex.exerciseId == null) bits.push("(unlinked free-text)");
+  if (ex.exerciseId == null) bits.push("(no catalog link)");
   return bits.join(" — ");
 }
 

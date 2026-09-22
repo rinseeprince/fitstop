@@ -31,10 +31,9 @@ import {
 import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 import { setSpecCount } from "@/utils/exercise-set-specs";
 import { COLUMN_PRESET_FIELDS } from "@/utils/column-presets";
-import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 
 const exercise = (uid: string, overrides: Partial<ExerciseDraft> = {}): ExerciseDraft => ({
-  ...defaultExerciseDraftFromCatalog({ name: uid, exerciseId: null, exerciseType: null }),
+  ...defaultExerciseDraftFromCatalog({ name: uid, exerciseId: uid, exerciseType: "strength" }),
   uid,
   ...overrides,
 });
@@ -469,14 +468,10 @@ describe("reorderSessionInDay", () => {
 // Strength. The reps default follows the columns: 3 × 8–12 where they ask
 // for reps, no rep range where they don't.
 describe("defaultExerciseDraftFromCatalog", () => {
-  it("starts a catalog pick on its type's preset, and a free-text pick on Strength", () => {
+  it("starts a catalog pick on its type's preset", () => {
     const row = defaultExerciseDraftFromCatalog({ name: "Rowing Machine", exerciseId: "e-row", exerciseType: "erg" });
     expect(row.prescribedFields).toEqual([...COLUMN_PRESET_FIELDS.erg]);
     expect(row.exerciseId).toBe("e-row");
-
-    const free = defaultExerciseDraftFromCatalog({ name: "Made up", exerciseId: null, exerciseType: null });
-    expect(free.prescribedFields).toEqual([...DEFAULT_PRESCRIBED_FIELDS]);
-    expect(free.exerciseId).toBeNull();
   });
 
   it("gives 3 sets of 8–12 where the columns ask for reps, and 3 sets with no rep range where they don't", () => {

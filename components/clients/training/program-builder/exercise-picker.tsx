@@ -13,26 +13,27 @@ import type { CatalogPick } from "./program-builder-model";
 // Single-EXERCISE catalog picker (saved-session insertion is Phase 3).
 // Instant search over the SWR-cached catalog (name + aliases) — every match
 // renders inside a scrollable list, nothing is dropped. A pick carries the
-// row's type, which decides the columns the exercise starts on. Free-text
-// fallback adds by name with exerciseId and exerciseType null; the server
-// resolves / creates the catalog row on save (resolveExercises). While the
-// query is empty, a focused picker offers the coach's recently used
-// exercises instead.
+// row's id and type, which decides the columns the exercise starts on. A name
+// the catalog doesn't have is offered as "Use …", which hands it to the host
+// to create in the New exercise form: every exercise the picker adds is a
+// catalog exercise with a type. While the query is empty, a focused picker
+// offers the coach's recently used exercises instead.
 type ExercisePickerProps = {
   onPick: (pick: CatalogPick) => void;
+  onCreate: (name: string) => void;
 };
 
 const ROW_CLASS =
   "flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-[rgba(13,148,136,0.05)]";
 
-export function ExercisePicker({ onPick }: ExercisePickerProps) {
+export function ExercisePicker({ onPick, onCreate }: ExercisePickerProps) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { results, isLoading } = useExerciseSearch(query);
   const { recent } = useRecentExercises();
 
-  const pick = (name: string, exerciseId: string | null, exerciseType: ExerciseType | null) => {
+  const pick = (name: string, exerciseId: string, exerciseType: ExerciseType) => {
     onPick({ name, exerciseId, exerciseType });
     setQuery("");
     // Re-focus the input: picking unmounts the clicked row, and a focused
@@ -65,8 +66,8 @@ export function ExercisePicker({ onPick }: ExercisePickerProps) {
         <Input
           ref={inputRef}
           value={query}
-          // savedExerciseInputSchema caps names at 200 — a longer free-text
-          // pick would block the whole save.
+          // A name typed here can become a new exercise ("Use …"), and the
+          // New exercise form caps names at 200.
           maxLength={200}
           placeholder="Add exercise — search the catalog…"
           aria-label="Search exercises"
@@ -108,7 +109,7 @@ export function ExercisePicker({ onPick }: ExercisePickerProps) {
                 TEXT_SECONDARY,
               )}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(trimmed, null, null)}
+              onClick={() => onCreate(trimmed)}
             >
               <Plus className="h-3 w-3" strokeWidth={1.5} />
               Use &ldquo;{trimmed}&rdquo;

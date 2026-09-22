@@ -123,11 +123,8 @@ export async function fetchCatalogRowsForResolve(
 /**
  * READ-ONLY resolution over pre-fetched catalog rows — the AI assistant's
  * matcher (builder S6a / the Phase-6 catalog constraint). Same pipeline as
- * resolveExercise (exact name → alias → abbreviation-normalized retry) but
- * NEVER creates a row on a miss: the assistant must repair or ask, not mint
- * coach-specific catalog entries. The shared resolveExercises create-on-miss
- * default is deliberately untouched (manual/overwrite/standalone save paths
- * depend on it).
+ * resolveExercises (exact name → alias → abbreviation-normalized retry): a
+ * miss is a miss, and the assistant must repair or ask.
  */
 export function matchExerciseInRows(
   rows: ExerciseRow[],
@@ -176,9 +173,12 @@ export function suggestExerciseCandidates(
 }
 
 /**
- * Batch resolve multiple exercise names to exercise IDs.
- * Fetches all coach + global exercises in one query, matches in memory,
- * batch-inserts missing ones.
+ * Batch match exercise names to catalog ids: all coach + global exercises in
+ * one query, matched in memory. A name that matches nothing is left out of the
+ * map, so its exercise saves with no catalog link — a save never adds to the
+ * catalog. New exercises are created in the New exercise form, with a type,
+ * and arrive with their id; the names that reach here without one belong to
+ * older exercises.
  * Returns Map<originalName, exerciseId>.
  */
 export async function resolveExercises(
@@ -199,7 +199,6 @@ export async function resolveExercises(
   // Fetch all exercises for this coach + global, ordered coach-first
   const rows = await fetchCatalogRowsForResolve(coachId);
   const result = new Map<string, string>(); // originalName → exerciseId
-  const toCreate: Array<{ name: string; lower: string }> = [];
 
   for (const [lower, original] of uniqueMap) {
     const normalized = normalizeExerciseName(original);
@@ -212,35 +211,7 @@ export async function resolveExercises(
       match = findMatch(rows, normalized);
     }
 
-    if (match) {
-      result.set(original, match.id);
-    } else {
-      toCreate.push({ name: original, lower });
-    }
-  }
-
-  // Batch insert missing exercises
-  if (toCreate.length > 0) {
-    const inserts = toCreate.map((e) => ({
-      coach_id: coachId,
-      name: e.name,
-    }));
-
-    const { data: newExercises, error: insertError } = await supabaseAdmin
-      .from("exercises")
-      .insert(inserts)
-      .select();
-
-    if (insertError)
-      throw new Error(`Failed to create exercises: ${insertError.message}`);
-
-    for (const row of newExercises ?? []) {
-      const lower = row.name.toLowerCase();
-      const original = uniqueMap.get(lower);
-      if (original) {
-        result.set(original, row.id);
-      }
-    }
+    if (match) result.set(original, match.id);
   }
 
   // Map all original names (including duplicates) to their exercise IDs.
@@ -406,8 +377,8 @@ export type RecentExercise = {
  * coach_saved_exercises: builder saves are wipe-and-reinsert, so created_at
  * reads as "last time a session containing this exercise was saved" — the
  * right recency signal for the picker's "Recently used" strip. Rows with
- * exercise_id NULL (free-text that never resolved) are skipped: the strip
- * needs a catalog identity to re-pick. The LOOKBACK window is a recency
+ * exercise_id NULL (older exercises with no catalog link) are skipped: the
+ * strip needs a catalog identity to re-pick. The LOOKBACK window is a recency
  * heuristic, not a completeness guarantee — 200 rows comfortably covers
  * `limit` distinct exercises for any real library.
  */
@@ -515,9 +486,10 @@ export async function deleteCatalogExercise(
 }
 
 /**
- * Creates a coach-specific exercise. It starts as Strength unless the form
- * says otherwise (§4.4); a free-text name the builder can't match is created
- * by resolveExercises above and takes the column's default, the same type.
+ * Creates a coach-specific exercise — the only way one is made: the New
+ * exercise form, which the builder's exercise search also opens for a name
+ * the catalog doesn't have. It starts as Strength unless the form says
+ * otherwise (§4.4).
  */
 export async function createExercise(
   coachId: string,

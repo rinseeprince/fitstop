@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react"
+import { toast } from "sonner"
 import type { Exercise } from "@/types/training"
 import { ExerciseFormDialog } from "./exercise-form-dialog"
 
@@ -20,8 +21,13 @@ const curl: Exercise = {
   updatedAt: "2026-01-01T00:00:00Z",
 }
 
-function jsonResponse(status: number): Response {
-  return { ok: status >= 200 && status < 300, status, json: () => Promise.resolve({}) } as Response
+// The routes answer a save with the saved exercise, as POST and PATCH do.
+function jsonResponse(status: number, exercise: Exercise = curl): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: () => Promise.resolve({ success: true, exercise }),
+  } as Response
 }
 
 describe("ExerciseFormDialog", () => {
@@ -64,6 +70,7 @@ describe("ExerciseFormDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
     expect(onSaved).toHaveBeenCalledTimes(1)
+    expect(onSaved).toHaveBeenCalledWith(curl)
     expect(fetchMock).toHaveBeenCalledWith("/api/training/exercises/ex-curl", expect.objectContaining({ method: "PATCH" }))
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled()
 
@@ -118,6 +125,26 @@ describe("ExerciseFormDialog — the Type field", () => {
       equipment: null,
       category: null,
     })
+  })
+
+  // The builder's exercise search opens the form on a name the catalog doesn't
+  // have; the host adds what the form created and says so, so the form
+  // confirms nothing itself.
+  it("a create opens on a typed name and hands its host the exercise it created", async () => {
+    const zone2: Exercise = { ...curl, id: "ex-zone2", name: "Zone 2 Run", exerciseType: "endurance" }
+    fetchMock.mockResolvedValue(jsonResponse(201, zone2))
+    const onSaved = vi.fn()
+    render(
+      <ExerciseFormDialog open onOpenChange={vi.fn()} exercise={null} initialName="Zone 2 Run" onSaved={onSaved} />,
+    )
+    expect(screen.getByText("New exercise")).toBeInTheDocument()
+    expect(screen.getByLabelText("Name")).toHaveValue("Zone 2 Run")
+
+    fireEvent.click(screen.getByRole("button", { name: "Create exercise" }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(zone2))
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toMatchObject({ name: "Zone 2 Run", exerciseType: "strength" })
+    expect(toast.success).not.toHaveBeenCalled()
   })
 
   it("seeds an edit from the exercise's own type and sends it back", async () => {

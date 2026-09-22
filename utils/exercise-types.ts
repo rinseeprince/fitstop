@@ -33,8 +33,8 @@ export const EXERCISE_TYPE_LABELS: Record<ExerciseType, string> = {
 
 /**
  * Every catalog exercise starts here — the column's default and the exercise
- * form's — and a free-text name in the builder, which matches no catalog row,
- * reads as it too (§4.4: "with no type, on Strength").
+ * form's — and an older exercise with no catalog link, which has no type,
+ * charts as it.
  */
 export const DEFAULT_EXERCISE_TYPE: ExerciseType = "strength";
 

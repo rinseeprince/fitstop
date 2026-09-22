@@ -207,8 +207,8 @@ commit's plan.
   a whole group. Coaches don't save their own. The exact columns in each preset were put to the owner
   in commit 12 and confirmed at its smoke (owner, 2026-09-19); they are listed under commit 12.
 - **Exercise types:** Strength, Bodyweight, Endurance, Erg, Carry & sled, Holds — on every catalog
-  exercise. A new exercise starts on its type's preset; with no type, on Strength. The existing
-  free-text Category (compound, isolation, cardio, plyometric) stays separate.
+  exercise. A new exercise starts on its type's preset. The existing free-text Category (compound,
+  isolation, cardio, plyometric) stays separate.
 - **Classifying the catalog:** compound and isolation become Strength by rule, except carries/sleds
   and holds, which are picked out by name, and the exercises done with bodyweight alone — pull-ups,
   push-ups, dips, pistol squats, burpees — which are Bodyweight; of those, a "Weighted" variant stays
@@ -216,7 +216,10 @@ commit's plan.
   ignored the equipment and typed 225 of them Strength). The cardio and plyometric exercises are
   classified by hand with the owner's review. "Burpee Broad Jump", the one HYROX station missing, is
   added.
-- **Coach-made exercises** start as Strength and get a Type field in the exercise form.
+- **Coach-made exercises** start as Strength and get a Type field in the exercise form. Every
+  exercise is made in that form: the builder's exercise search opens it on a name the catalog
+  doesn't have, and the new exercise joins the session; a save never adds to the catalog (owner,
+  2026-09-22).
 - **Client inputs follow the columns — one box per column (owner, 2026-09-18).** Each ticked column
   is one box: the coach's target as its hint, the client types what they did. No column adds, fills
   or works out another. Load's box is the weight lifted, so Weight shows only when Load is on — today

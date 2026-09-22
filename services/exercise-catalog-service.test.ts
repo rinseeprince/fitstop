@@ -125,8 +125,7 @@ describe("exercise-catalog-service", () => {
       expect(result.get("Squat")).toBe("ex-2");
     });
 
-    it("creates missing exercises while reusing existing ones", async () => {
-      // Fetch returns only one match
+    it("leaves a name the catalog doesn't have unmatched, and never adds it to the catalog", async () => {
       const fetchQuery = createMockQuery({
         data: [
           {
@@ -138,21 +137,7 @@ describe("exercise-catalog-service", () => {
         ],
         error: null,
       });
-      // Insert returns the new exercise
-      const insertQuery = createMockQuery({
-        data: [
-          {
-            id: "new-ex-1",
-            name: "Cable Fly",
-            coach_id: coachId,
-          },
-        ],
-        error: null,
-      });
-
-      mockFrom
-        .mockReturnValueOnce(fetchQuery as any)
-        .mockReturnValueOnce(insertQuery as any);
+      mockFrom.mockReturnValue(fetchQuery as any);
 
       const result = await resolveExercises(
         ["Bench Press", "Cable Fly"],
@@ -160,7 +145,12 @@ describe("exercise-catalog-service", () => {
       );
 
       expect(result.get("Bench Press")).toBe("ex-1");
-      expect(result.get("Cable Fly")).toBe("new-ex-1");
+      expect(result.has("Cable Fly")).toBe(false);
+      expect(result.has("cable fly")).toBe(false);
+      // One read of the catalog and nothing else: a save never creates an
+      // exercise — the New exercise form does, with a type.
+      expect(mockFrom).toHaveBeenCalledTimes(1);
+      expect(fetchQuery.insert).not.toHaveBeenCalled();
     });
 
     it("returns empty Map for empty input", async () => {

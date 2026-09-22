@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { DndContext } from "@dnd-kit/core";
 import type { ReactNode } from "react";
+import { toast } from "sonner";
 import type { Exercise } from "@/types/training";
 import { LibraryExerciseList } from "./library-exercise-list";
 
@@ -62,10 +63,12 @@ vi.mock("@/components/programs/exercise-form-dialog", async () => {
       open,
       onOpenChange,
       exercise,
+      onSaved,
     }: {
       open: boolean;
       onOpenChange: (open: boolean) => void;
       exercise?: Exercise | null;
+      onSaved: (exercise: Exercise) => void;
     }): ReactNode => {
       const [mount] = useState(() => ++formMounts.next);
       return (
@@ -77,6 +80,16 @@ vi.mock("@/components/programs/exercise-form-dialog", async () => {
         >
           <button type="button" onClick={() => onOpenChange(false)}>
             Close form
+          </button>
+          {/* A save as the real form finishes one: the saved exercise to the host, then the close. */}
+          <button
+            type="button"
+            onClick={() => {
+              onSaved(exercise ?? { ...exercises[0], id: "ex-new", name: "New Lift" });
+              onOpenChange(false);
+            }}
+          >
+            Save form
           </button>
         </div>
       );
@@ -163,6 +176,21 @@ describe("LibraryExerciseList", () => {
     fireEvent.click(screen.getAllByLabelText("Edit")[1]);
     expect(form()).toHaveAttribute("data-open", "true");
     expect(form()).toHaveAttribute("data-subject", "ex-press");
+  });
+
+  // The form hands its save back and the panel confirms it: "created" for
+  // New exercise, "updated" for an edit, and the catalog reloads either way.
+  it("a save through the form is confirmed by the panel and reloads the catalog", () => {
+    renderList();
+    fireEvent.click(screen.getByRole("button", { name: /New exercise/ }));
+    fireEvent.click(screen.getByText("Save form"));
+    expect(toast.success).toHaveBeenCalledWith("Exercise created");
+    expect(catalogMutate).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getAllByLabelText("Edit")[0]);
+    fireEvent.click(screen.getByText("Save form"));
+    expect(toast.success).toHaveBeenLastCalledWith("Exercise updated");
+    expect(catalogMutate).toHaveBeenCalledTimes(2);
   });
 
   it("each open mounts the form fresh, the same exercise included, and a close keeps its mount", () => {

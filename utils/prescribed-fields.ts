@@ -40,11 +40,10 @@ export const PRESCRIBED_FIELDS = [
 export type PrescribedField = (typeof PRESCRIBED_FIELDS)[number];
 
 /**
- * The Strength preset's columns (utils/column-presets.ts): what a free-text
- * exercise starts on (a catalog exercise starts on its type's preset,
- * `presetColumnsForType`), the columns an exercise carried before it could
- * choose (the migration-183 backfill writes this list), and what a log
- * snapshot with no list reads as.
+ * The Strength preset's columns (utils/column-presets.ts; a new exercise
+ * starts on its type's preset, `presetColumnsForType`): the columns an
+ * exercise carried before it could choose (the migration-183 backfill writes
+ * this list), and what a log snapshot with no list reads as.
  */
 export const DEFAULT_PRESCRIBED_FIELDS: readonly PrescribedField[] = [
   "set_type",

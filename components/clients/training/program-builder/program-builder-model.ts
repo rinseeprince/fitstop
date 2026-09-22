@@ -420,14 +420,14 @@ export function patchChanges<T extends object>(obj: T, patch: Partial<T>): boole
 // =============================================================================
 
 /**
- * What a catalog pick hands the builder: the name, the catalog row's id (null
- * for free text, which the server resolves or creates on save) and the row's
- * type (null for free text — "with no type, on Strength", §4.4).
+ * What a catalog pick hands the builder: the name, the catalog row's id and
+ * its type. Every exercise added to a session is a catalog exercise; a name
+ * the catalog doesn't have is created in the New exercise form first.
  */
 export type CatalogPick = {
   name: string;
-  exerciseId: string | null;
-  exerciseType: ExerciseType | null;
+  exerciseId: string;
+  exerciseType: ExerciseType;
 };
 
 /**
