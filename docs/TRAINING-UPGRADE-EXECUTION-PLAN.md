@@ -29,9 +29,10 @@ When this plan is done:
   heart rate, power, % FTP) — starting from a preset set by the exercise's type: Strength,
   Bodyweight, Endurance, Erg, Carry & sled or Holds.
 - **Clients log all of it**, including group scores: AMRAP rounds and For time finish times.
-- **Progress charts show each exercise's own markers** with a table of its sessions beneath,
-  endurance and erg PRs are race distances, and duplicate-with-progression can progress endurance
-  targets.
+- **Progress charts show each exercise's own markers** with a table of its sessions beneath, and
+  endurance and erg PRs are race distances.
+- **Duplicating a week copies it exactly.** The builder has no automatic progression: a coach
+  progresses a program by editing it, or by asking the AI assistant to.
 - **Programs can be periodised** into named, coloured phases (Foundation, Deload, Taper…) shown as
   tabs in the builder, colouring the coach's calendar and the client's program, and named in the
   client's header.
@@ -181,7 +182,7 @@ commit's plan.
 - **Counts:** sessions per week can exceed 7. Views that show one row per day (the coach's Data table
   and similar) show one row per workout.
 
-### 4.4 Measurement columns, presets and exercise types (commits 11–13, 16–17)
+### 4.4 Measurement columns, presets and exercise types (commits 11–13, 16)
 
 - **Columns are per exercise**, chosen in each exercise's column selector: presets at the top, every
   column below, each ticked or unticked freely.
@@ -207,8 +208,7 @@ commit's plan.
   in commit 12 and confirmed at its smoke (owner, 2026-09-19); they are listed under commit 12.
 - **Exercise types:** Strength, Bodyweight, Endurance, Erg, Carry & sled, Holds — on every catalog
   exercise. A new exercise starts on its type's preset; with no type, on Strength. The existing
-  free-text Category (compound, isolation, cardio, plyometric) stays separate: "Compounds only" in
-  duplicate-with-progression reads it.
+  free-text Category (compound, isolation, cardio, plyometric) stays separate.
 - **Classifying the catalog:** compound and isolation become Strength by rule, except carries/sleds
   and holds, which are picked out by name, and the exercises done with bodyweight alone — pull-ups,
   push-ups, dips, pistol squats, burpees — which are Bodyweight; of those, a "Weighted" variant stays
@@ -341,7 +341,7 @@ commit's plan.
 - **Builder:** tabs under the Schedule rail, one per phase; each tab shows its weeks; week numbers
   carry on across tabs (Foundation W1–4, Deload W5). A program with no phases looks and works exactly
   as today.
-- **Weeks in a tab:** add, delete, duplicate and duplicate-with-progression work inside the open tab;
+- **Weeks in a tab:** add, delete and duplicate work inside the open tab;
   a copy stays in the same phase. A phase keeps at least one week: its last week can't be deleted or
   dragged out — remove the tab instead. *(confirm)*
 - **Across tabs:** weeks and sessions can be dragged across tabs. Hovering a tab mid-drag opens it. A
@@ -484,7 +484,7 @@ anything you rely on.
 **Workouts, prescriptions and copies**
 - A session is a flat list of exercises in every layer: the builder's draft and model, the four hosts
   of `session-editor-body.tsx`, the AI assistant's shared op module (server executors and client
-  replay), duplicate-with-progression, the serializers, and every path that saves or copies exercises.
+  replay), the serializers, and every path that saves or copies exercises.
 - Paths that insert or clone exercise rows: the library save (`overwriteSavedPlan` — several separate
   writes, row by row), duplicate, promote from draft, standalone workouts, saving a client session to
   the library, placing a program (from the library and from an edited client draft), dropping a
@@ -569,7 +569,7 @@ anything you rely on.
 | 16a | A sessions table beneath every chart | Every chart has a table of its sessions beneath it |
 | 16a-2 | The sessions table, as a coach reads it | Each row shows the session's sets and its figures |
 | 16b | Race-distance PRs and every exercise's bests | Endurance PRs are race distances |
-| 17 | Endurance progression | Duplicate-with-progression moves endurance targets |
+| 17 | Remove duplicate-with-progression | Duplicating a week copies it exactly |
 | 18 | Phases: the structure | Programs carry phases; nothing looks different |
 | 19 | Phases in the builder | Phase tabs in the builder |
 | 20 | Drag weeks and sessions across phase tabs | Work moves between phases |
@@ -681,7 +681,7 @@ WHEN THIS COMMIT IS DONE
 - Group settings: format (straight sets or superset/circuit), rounds, rest between exercises, rest between rounds, notes. In a looped group, each exercise's rows follow the group's rounds, and each round can have its own targets.
 - It works everywhere a session is edited: the session sheet, the create slide-over, the placed-session tray, the standalone workout editor, and all three builder targets (library, client draft, Edit plan).
 - Summaries — the week grid's day cells, library cards, calendar readouts — read sensibly for groups.
-- The AI assistant can create and edit groups; duplicate-with-progression walks groups.
+- The AI assistant can create and edit groups.
 - docs/newdesignsystem.md gains the grouped-exercise recipe.
 
 RULES: §4.2 — closed. Include a frame test for every group interaction (§2).
@@ -886,17 +886,16 @@ NOT IN THIS COMMIT: logged values and the client's boxes for the new measurement
    Everything else in the builder looks as today: the Columns menu offers today's five (set type,
    reps, load, RPE, rest), "Show all columns" ticks those five, and any other column an exercise
    carries survives every edit and save with its targets. New exercises start on today's five.
-2. Duplicate-with-progression moves both ends of a load or rep range.
-3. RPE is 1–10 everywhere; the builder turns a typed 0 into 1.
-4. The assistant keeps every column and target through every edit and writes RPE and load ranges. It
+2. RPE is 1–10 everywhere; the builder turns a typed 0 into 1.
+3. The assistant keeps every column and target through every edit and writes RPE and load ranges. It
    can't write the new measures yet: its "set the sets" tool refuses, with a sentence, an exercise
    carrying targets it can't write, instead of wiping them. Its program view prints every target; its
    new exercises start on today's five.
-5. Where the client's grid and the coach's logged-workout view show RPE and load today, a range reads
+4. Where the client's grid and the coach's logged-workout view show RPE and load today, a range reads
    "7–8", "100–105 kg", "70–75% 1RM".
-6. A logged workout whose exercise the coach later removed shows its prescription again — reps, RPE,
+5. A logged workout whose exercise the coach later removed shows its prescription again — reps, RPE,
    rest — and appears once, not twice.
-7. Every existing exercise gets today's five columns explicitly. Six DEV client exercises already carry
+6. Every existing exercise gets today's five columns explicitly. Six DEV client exercises already carry
    lists without Load; their Weight box goes in 11b.
 
 *Data (decided; the names are the planning session's proposal — keep them unless you find a reason)*
@@ -960,7 +959,7 @@ NOT IN THIS COMMIT: logged values and the client's boxes for the new measurement
   (`program-builder/assistant/use-assistant-chat.ts`). `set_exercise_sets`
   (`services/assistant/draft-exercise-tools.ts`) rebuilds every spec key by key. The ops drift test
   (`program-builder-ops.test.ts`) catches only keys in its maximal fixture. Everything else already
-  copies specs whole: `cloneSpec` in `set-spec-edits.ts`, `progression-rules.ts`, the builder model's
+  copies specs whole: `cloneSpec` in `set-spec-edits.ts`, the builder model's
   clones, the serializers and the database-to-database copies.
 - The client tracker's snapshot fallback (`components/client-portal/training/set-tracker.tsx`
   `normalizeExercise`) reads camelCase keys from a snake_case snapshot, and the snapshot carries no
@@ -1332,24 +1331,112 @@ NOT IN THIS COMMIT: nothing of commits 16a and 16a-2 is reopened.
 its read. The race-distance PRs, the star by the record's session, the Overview's race rows and the
 one identity stay.
 
-### Commit 17 — Endurance progression
+### Commit 17 — Remove duplicate-with-progression
 
 ```text
-Implement commit 17 of 22 — Endurance progression — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
+Implement commit 17 of 22 — Remove duplicate-with-progression — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
 
-Before anything else, read the plan's §1–§5 (skip the other commits' prompts), then CONVENTIONS.md and docs/ARCHITECTURE.md in full, then docs/newdesignsystem.md. Work the way §2 says: ARCHITECTURE.md describes today's product, so where this commit changes a shape it describes, follow the plan and rewrite that part of the doc. Plan first, with plain sentences, and wait for my go.
+Before anything else, read the plan's §1–§5 (skip the other commits' prompts) and this commit's whole section in §6, including the planning notes under this prompt; then CONVENTIONS.md and docs/ARCHITECTURE.md in full, then docs/newdesignsystem.md. Work the way §2 says: ARCHITECTURE.md describes today's product, so where this commit changes a shape it describes, follow the plan and rewrite that part of the doc.
+
+Commit 17 was replanned with the owner on 2026-09-22: it no longer adds endurance progression — it removes duplicate-with-progression altogether. The behaviours in the planning notes are approved. Plan against them (§2.4) without reopening them, put anything they don't answer to me as a plain sentence, and wait for my go.
 
 WHAT WE'RE BUILDING
-Duplicate-with-progression can progress endurance targets as well as strength ones.
+A simpler builder with no automatic progression. Duplicating a week copies it exactly; a coach progresses a program by editing it, or by asking the AI assistant, which edits the copies like any other change. Nothing is left behind — no control, dialog, engine, assistant rule, doc sentence or comment — that could make anyone, Claude included, believe the feature still exists.
 
 WHEN THIS COMMIT IS DONE
-- The progression dialog and the AI assistant's week duplication offer endurance rules beside today's load, reps and sets — for example distance or duration up by an amount or a percentage, pace or split faster by seconds. Put the exact rule set to me as plain sentences.
-- The preview shows before and after for those measurements.
-- The sets rule no longer adds sets where that makes no sense; put the rule to me.
-- Progression walks groups and several sessions a day.
+- In every builder target (library, client draft, Edit plan), a week's controls are drag, collapse, Duplicate and Delete. The progression control and its dialog are gone.
+- Duplicate copies a week exactly, as today.
+- The AI assistant's week duplication makes exact copies — how many, and after which week — and nothing more. Asked for a progression or a deload, the assistant duplicates and then edits the copies with its exercise tools; its instructions show that with one example, let it work the numbers out, and still have it report the values the program holds.
+- The progression engine and everything only it uses are deleted, with their tests. What lives beside it but isn't progression moves to a neutral home first, and the program state the assistant reads is byte-identical.
+- Programs, clients, the React Native app and stored data are untouched; no migration.
+- docs/ARCHITECTURE.md, CONVENTIONS.md, docs/newdesignsystem.md and README.md describe the builder without the feature: current shape only, no "removed" or "used to".
+- The search in the planning notes finds nothing, knip reports nothing unused, and every §2 gate passes.
 
-RULES: §4.4 — closed.
+RULES: the planning notes below — approved. Include a frame test for the week's controls (§2).
+
+WATCH FOR: the planning notes list what the planning session found in the code — re-check each before relying on it. "Progression" also names the progress charts' read, a different, live feature: leave it.
+
+NOT IN THIS COMMIT: the progress charts; exercise Category (it stays).
 ```
+
+**Planning notes — commit 17 (approved by the owner, 2026-09-22)**
+
+*Why.* The owner is stripping the platform back to what is make-or-break. Automatic progression is a
+nice-to-have that brings too much complexity, as planning endurance progression showed. If a client
+asks for it, the owner builds it then; until then the AI assistant progresses a program when told to,
+without an engine.
+
+*Approved behaviours*
+1. In every builder — library programs, client drafts and Edit plan — hovering a week shows drag,
+   collapse, Duplicate and Delete. The "Duplicate with progression" control (the trending-up arrow)
+   and its dialog are gone.
+2. Duplicate copies the week exactly, as it does today.
+3. The AI assistant duplicates weeks as exact copies. Asked for a progression ("add 2.5 kg to the
+   bench each week for three weeks") or a deload, it duplicates the week and then edits each copy
+   itself, exercise by exercise. It works the numbers out itself, so loads are no longer rounded to
+   plates automatically, and a long progressive build takes it more edits, and more waiting, than one
+   rule did.
+4. Programs already built with the feature keep their weeks; nothing stored records that a week was
+   progressed.
+5. Nothing changes for clients, the React Native app or stored data; no migration.
+6. The defect found while planning goes with it: Sets +1 gave each AMRAP exercise a second row, which
+   the save refuses, and turned a single run into two.
+
+*What goes (found in the code, 2026-09-22 — re-check before relying on it)*
+- The builder: the week card's progression control (`week-card.tsx`, wired through `week-row.tsx` and
+  `program-builder.tsx`), `duplicate-week-dialog.tsx`, `progression-preview.tsx`,
+  `progression-preview-model.ts`, the builder's open-dialog state in `program-builder.tsx`, and
+  `insertWeekAfter` (`use-program-builder-state.ts` — the dialog is its only caller) with its lock
+  wrapper in `use-locked-mutators.ts`.
+- The engine: `utils/progression-rules.ts` whole; `progressWeek` and `progressSession` in
+  `program-builder-model.ts`; `progressGroupRounds` in `program-builder-groups.ts`, whose only caller
+  is `progressSession`; and anything knip then reports unused.
+- The AI assistant: `duplicate_week` (`services/assistant/draft-week-tools.ts`) keeps `count` and
+  `insertAfterWeek` and loses its rules, scope, `everyNWeeks` and "Resulting loads" report; the
+  workspace's `isCompound` (`draft-workspace.ts` — only `duplicate_week` reads it). In the system
+  prompt (`draft-agent-service.ts`): the "duplicate this week with progression" bullet, the
+  "Progression semantics" section, the six worked examples that use rules, and the "Never compute a
+  weight, rep count, or set count yourself" rule — rewritten so the assistant works numbers out and
+  still quotes what the program holds — plus the set-type line's "excluded from volume and
+  progression" and "what progression moves".
+- Tests: `utils/progression-rules.test.ts`, `progression-preview-model.test.ts`,
+  `duplicate-week-dialog.test.tsx`, the progression cases in `program-builder-model.test.ts`,
+  `program-builder-groups.test.ts` and `services/assistant/draft-tools.test.ts`, and the
+  progression-control assertions in `week-row.test.tsx` and `program-builder.test.tsx`.
+- Comments that name the feature: `utils/set-spec-edits.ts` (its header), `utils/exercise-set-specs.ts`
+  (the authoring ceilings), `use-locked-mutators.ts` (its list of surfaces),
+  `services/assistant/draft-tool-helpers.ts` (the note on `formatLoads`).
+- Docs: in ARCHITECTURE.md, the Category sentence's "Compounds only" clause, "Duplicate-with-progression
+  moves both ends of a load or rep range", the "walks groups … `progressGroupRounds`" sentence and the
+  assistant section's opening example ("+5% bench each week"); in CONVENTIONS.md, "progression dialog"
+  in the `program-builder/` folder line, and the sentence that the progression engine touches
+  `working`-type sets only and that the two filters are deliberately different — rewrite it to name
+  what remains, or remove it if nothing does; in docs/newdesignsystem.md, `TrendingUp` in the week's
+  hover controls and the duplicate-week dialog and progression preview recipe; README.md's
+  "progression rules".
+- Claude's memory notes that describe the feature become one line: removed by the owner, rebuilt only
+  when a client asks.
+
+*What stays*
+- Duplicate (`duplicateWeek`) and `cloneWeek`, which Duplicate and the assistant use.
+- `formatLoads`, `formatReps` and `formatSetCount`: they live in `progression-preview-model.ts` today
+  and print the program state the assistant reads (`draft-tool-helpers.ts`). They move, with the
+  working-set filter they use, before that file goes.
+- The assistant's catalog search still marks compound exercises (`draft-read-tools.ts`), so "only the
+  big lifts" works when a coach asks.
+- Exercise Category, in the exercise form and the catalog.
+- Everything named "progression" that belongs to the progress charts: `get_exercise_progression_window`,
+  the progression read and its points, the exercise data view and the Overview progression chart. After
+  this commit it is the only meaning of the word in the code.
+
+*Proof that nothing is left*
+- A case-insensitive search of the code and docs, this plan aside, for "duplicate with progression",
+  "duplicate-with-progression", "progression-rules", "progressWeek", "progressExercise",
+  "progressGroupRounds", "DuplicateWeekDialog", "ProgressionPreview", "progression dialog",
+  "progression engine", "Compounds only", "everyNWeeks" and "Resulting loads" finds nothing.
+- knip reports nothing unused, and §2's gates pass.
+- The owner's smoke: the week's controls in all three builders; Duplicate; the assistant asked for a
+  three-week progression and for a deload.
 
 ### Commit 18 — Phases: the structure
 
@@ -1390,7 +1477,7 @@ Coaches split a program into phases, shown as tabs.
 WHEN THIS COMMIT IS DONE
 - A tab row sits under the builder's Schedule rail: one tab per phase, and a way to add a phase.
 - Each tab shows only its phase's weeks, and week numbers carry on across tabs.
-- Add week, delete week, duplicate and duplicate-with-progression work inside the open tab, and a copy stays in its phase; weeks reorder within a tab.
+- Add week, delete week and duplicate work inside the open tab, and a copy stays in its phase; weeks reorder within a tab.
 - A phase can be named and given a colour from the palette, which is added to docs/newdesignsystem.md.
 - It works in all three builder targets: applying a client draft carries its phases, and Edit plan shows tabs over the laid plan, with today's locks on weeks that have started.
 - The AI assistant's week operations keep phases valid.
