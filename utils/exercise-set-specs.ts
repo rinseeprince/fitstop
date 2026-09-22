@@ -187,7 +187,7 @@ export function countWorkingSets(setSpecs: unknown, fallbackSets: number): numbe
   return count;
 }
 
-// Authoring ceilings shared by the builder editors and the progression engine.
+// Authoring ceilings shared by the builder's editors and the assistant's tools.
 // MAX_SET_SPECS mirrors setSpecsArraySchema's .max(30); MAX_WORKING_SETS names
 // the training_exercises.sets CHECK bound [1, 20] the compact projection
 // clamps to.

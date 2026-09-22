@@ -152,7 +152,7 @@ export const GROUP_RULE_WORDS: Record<GroupFormat, { unused: string; missing: st
 };
 
 /** A group as the rules read it: its format, its settings and its exercises' set counts. */
-export type GroupRuleInput = Partial<Omit<GroupSettings, "format">> & {
+type GroupRuleInput = Partial<Omit<GroupSettings, "format">> & {
   format: GroupFormat;
   exercises: ReadonlyArray<{ sets: number; setSpecs?: readonly unknown[] | null }>;
 };

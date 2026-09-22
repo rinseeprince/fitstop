@@ -18,7 +18,6 @@ import { SectionLabel } from "@/components/programs/shared/section-label";
 import { cn } from "@/lib/utils";
 import type { Exercise, SavedSession } from "@/types/training";
 import {
-  MAX_WEEKS,
   newUid,
   type DaySlotDraft,
   type SessionDraft,
@@ -42,7 +41,6 @@ import type { SessionEditorState } from "@/components/programs/use-standalone-se
 import { useClientApply } from "./use-client-apply";
 import { ProgramTopBar } from "./program-top-bar";
 import { ProgramGrid } from "./program-grid";
-import { DuplicateWeekDialog } from "./duplicate-week-dialog";
 import { SessionEditorSheet } from "./session-editor-sheet";
 import { BuilderLibraryPanel } from "./builder-library-panel";
 import {
@@ -130,7 +128,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     moveGroup,
     updateGroup,
     editSetSpec,
-    insertWeekAfter,
     dayRules,
     limit,
     placedLoadError,
@@ -161,9 +158,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   // the dock, because the dock steps aside while it is open. The subject
   // outlives the close, so the sheet keeps what it showed while it slides out.
   const librarySessionEditor = useDialogSubject<SessionEditorState>();
-  // The uid only — the week resolves live at render, so a vanished uid or a
-  // mode flip closes the progression dialog by unmounting it.
-  const [progressionWeekUid, setProgressionWeekUid] = useState<string | null>(null);
   const [addTarget, setAddTarget] = useState<AddSessionTarget | null>(null);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
@@ -265,11 +259,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     sessionSheetOpen ||
     isCreateSessionPath(pathname, isLibrary ? savedPlanId : null) ||
     librarySessionEditor.open;
-  const progressionWeek =
-    mode === "edit"
-      ? (draft.weeks.find((w) => w.uid === progressionWeekUid) ?? null)
-      : null;
-
   // Sessions, not training days: a day can hold several.
   const trainingCount = draft.weeks.reduce((sum, w) => sum + weekSessions(w).length, 0);
 
@@ -501,7 +490,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                   })
                 }
                 onDuplicateWeek={duplicateWeek}
-                onDuplicateWeekWithProgression={setProgressionWeekUid}
                 onDeleteWeek={deleteWeek}
                 onAddWeek={addWeek}
                 onOpenSession={sessionSheet.show}
@@ -604,21 +592,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onClose={librarySessionEditor.close}
       />
       <AssistantDock sheetOpen={sheetOverBuilder} />
-
-      {/* Conditional mount: an always-mounted dialog would fetch the exercise
-          catalog on every builder render and leak closed-state preview
-          content into count-sensitive queries. */}
-      {progressionWeek && (
-        <DuplicateWeekDialog
-          week={progressionWeek}
-          canAddWeek={draft.weeks.length < MAX_WEEKS}
-          onCommit={(newWeek) => {
-            insertWeekAfter(progressionWeek.uid, newWeek);
-            setProgressionWeekUid(null);
-          }}
-          onClose={() => setProgressionWeekUid(null)}
-        />
-      )}
 
       <AddSessionPopover
         target={mode === "edit" ? addTarget : null}

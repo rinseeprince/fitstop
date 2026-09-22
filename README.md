@@ -7,7 +7,7 @@ A modern fitness coaching platform that helps trainers manage clients, create pe
 - **Client Management** - Add, edit, and organize clients with detailed profiles including fitness goals, body metrics, and activity levels
 - **Client Invitations** - Token-based invitation system with email integration for seamless client onboarding
 - **Nutrition Planning** - AI-powered meal plan generation with customizable macros, BMR calculations, and dietary preferences
-- **Training Plans** - Author reusable multi-week programs in a full-page builder (per-set prescription, progression rules, drag-and-drop scheduling), then place them onto any client's calendar
+- **Training Plans** - Author reusable multi-week programs in a full-page builder (per-set prescription, drag-and-drop scheduling), then place them onto any client's calendar
 - **AI Draft Assistant** - A chat copilot inside the program builder that executes natural-language edits on the program you're authoring ("duplicate this week but add 2kg and an extra set")
 - **Check-in System** - Scheduled client check-ins with progress photos, measurements, and goal tracking
 - **Reminders & Notifications** - Automated reminder system for overdue check-ins

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { WeekRow } from "./week-row";
@@ -27,7 +27,6 @@ function renderRow(props: Partial<Parameters<typeof WeekRow>[0]> = {}) {
   const handlers = {
     onToggleCollapse: vi.fn(),
     onDuplicateWeek: vi.fn(),
-    onDuplicateWeekWithProgression: vi.fn(),
     onDeleteWeek: vi.fn(),
     onOpenSession: vi.fn(),
     onRequestAddSession: vi.fn(),
@@ -76,12 +75,19 @@ describe("WeekRow / WeekCard", () => {
     expect(screen.getAllByText("Rest")).toHaveLength(5);
   });
 
-  it("wires duplicate, duplicate-with-progression, and delete to the week uid", () => {
+  it("a week's controls are drag, collapse, duplicate and delete — nothing else", () => {
+    renderRow();
+    const column = screen.getByText("W1").parentElement!;
+    const controls = within(column)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"));
+    expect(controls).toEqual(["Drag week 1", "Collapse week", "Duplicate week 1", "Delete week 1"]);
+  });
+
+  it("wires duplicate and delete to the week uid", () => {
     const { week, handlers } = renderRow();
     fireEvent.click(screen.getByLabelText("Duplicate week 1"));
     expect(handlers.onDuplicateWeek).toHaveBeenCalledWith(week.uid);
-    fireEvent.click(screen.getByLabelText("Duplicate week 1 with progression"));
-    expect(handlers.onDuplicateWeekWithProgression).toHaveBeenCalledWith(week.uid);
     fireEvent.click(screen.getByLabelText("Delete week 1"));
     expect(handlers.onDeleteWeek).toHaveBeenCalledWith(week.uid);
   });
@@ -106,11 +112,10 @@ describe("WeekRow / WeekCard", () => {
     expect(screen.getAllByText("—")).toHaveLength(6);
   });
 
-  it("view mode renders no grip, duplicate, progression, or delete", () => {
+  it("view mode renders no grip, duplicate or delete", () => {
     renderRow({ mode: "view" });
     expect(screen.queryByLabelText("Drag week 1")).toBeNull();
     expect(screen.queryByLabelText("Duplicate week 1")).toBeNull();
-    expect(screen.queryByLabelText("Duplicate week 1 with progression")).toBeNull();
     expect(screen.queryByLabelText("Delete week 1")).toBeNull();
   });
 });

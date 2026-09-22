@@ -13,11 +13,7 @@ import {
   applyDraftOp,
   type DraftOp,
 } from "@/components/clients/training/program-builder/program-builder-ops";
-import {
-  formatLoads,
-  formatReps,
-  formatSetCount,
-} from "@/components/clients/training/program-builder/progression-preview-model";
+import { formatLoads, formatReps, formatSetCount } from "./draft-exercise-summary";
 import {
   SET_SPEC_MEASURE_KEYS,
   setSpecCount,
@@ -346,9 +342,7 @@ function exerciseLine(ex: ExerciseDraft, position: number, inRounds = false): st
     `${position}. ${ex.name}`,
     inRounds ? `${setSpecCount(ex)} rounds` : formatSetCount(ex),
     `reps ${formatReps(ex)}`,
-    // Model-facing: canonical kilograms, never the viewer's unit. See the fork
-    // note on formatLoads in progression-preview-model.ts.
-    `load ${formatLoads(ex, "metric")}`,
+    `load ${formatLoads(ex)}`,
   ];
   if (ex.rpeTarget != null) bits.push(`RPE ${ex.rpeTarget}`);
   if (ex.restSeconds != null && !inRounds) bits.push(`rest ${ex.restSeconds}s`);

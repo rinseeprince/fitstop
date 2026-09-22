@@ -40,3 +40,18 @@ describe("the assistant is told a type is a default, never a restriction", () =>
     expect(description("update_exercise")).toContain("any preset applies to any exercise, whatever its type");
   });
 });
+
+// No engine progresses a program (owner, 2026-09-22): the assistant copies a
+// week exactly, edits the copies itself, and reports what the program holds.
+describe("the assistant progresses a program by copying weeks and editing the copies", () => {
+  it("shows it with one example, in every target, and reports the values the program holds", () => {
+    for (const target of ["library", "client-draft", "placed-plan"] as const) {
+      const prompt = systemPrompt(target);
+      expect(prompt).toContain(
+        "A progression or a deload is those copies edited afterwards with the exercise tools",
+      );
+      expect(prompt.match(/duplicate_week\{/g)).toHaveLength(1);
+      expect(prompt).toContain("Never report a number the program doesn't hold.");
+    }
+  });
+});

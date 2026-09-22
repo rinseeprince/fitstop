@@ -1334,7 +1334,7 @@ NOT IN THIS COMMIT: nothing of commits 16a and 16a-2 is reopened.
 its read. The race-distance PRs, the star by the record's session, the Overview's race rows and the
 one identity stay.
 
-### Commit 17 — Remove duplicate-with-progression
+### Commit 17 — Remove duplicate-with-progression — SHIPPED 2026-09-22
 
 ```text
 Implement commit 17 of 22 — Remove duplicate-with-progression — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

@@ -30,7 +30,6 @@ type WeekRowProps = {
   dayReorder?: DayReorder | null;
   onToggleCollapse: (weekUid: string) => void;
   onDuplicateWeek: (weekUid: string) => void;
-  onDuplicateWeekWithProgression: (weekUid: string) => void;
   onDeleteWeek: (weekUid: string) => void;
   onOpenSession: (sessionUid: string) => void;
   onRequestAddSession: (slot: DaySlotDraft, anchor: AddSessionAnchor) => void;
@@ -47,7 +46,6 @@ export function WeekRow({
   dayReorder = null,
   onToggleCollapse,
   onDuplicateWeek,
-  onDuplicateWeekWithProgression,
   onDeleteWeek,
   onOpenSession,
   onRequestAddSession,
@@ -88,7 +86,6 @@ export function WeekRow({
           canReorder={!weekLocked}
           onToggleCollapse={() => onToggleCollapse(week.uid)}
           onDuplicate={() => onDuplicateWeek(week.uid)}
-          onDuplicateWithProgression={() => onDuplicateWeekWithProgression(week.uid)}
           onDelete={() => onDeleteWeek(week.uid)}
           dragHandleProps={{ ...attributes, ...listeners }}
         />

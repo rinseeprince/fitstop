@@ -1,11 +1,5 @@
 import { applySetSpecEdit } from "@/utils/set-spec-edits";
-import {
-  MAX_SET_SPECS,
-  MAX_WORKING_SETS,
-  expandSetSpecs,
-  setSpecCount,
-} from "@/utils/exercise-set-specs";
-import { isWorkingSpec } from "@/utils/progression-rules";
+import { MAX_SET_SPECS, setSpecCount } from "@/utils/exercise-set-specs";
 import {
   DEFAULT_AMRAP_TIME_CAP_SECONDS,
   DEFAULT_EMOM_INTERVAL_SECONDS,
@@ -510,49 +504,4 @@ export function updateGroup(
   const groups = [...session.groups];
   groups[at] = next;
   return withGroups(session, groups);
-}
-
-/**
- * A group whose rounds are a setting — a superset or circuit, an EMOM, a For
- * time — with `amount` rounds added or removed, or null when that changes
- * nothing: duplicate-with-progression's Sets rule on a group, so its exercises
- * stay one row per round. A round added copies every exercise's last set and
- * stops where any exercise would pass 30 sets or 20 working sets; rounds come
- * off the end, and a group keeps one round and a working set on every
- * exercise. An AMRAP's rows never change.
- */
-export function progressGroupRounds(
-  group: ExerciseGroupDraft,
-  amount: number,
-): ExerciseGroupDraft | null {
-  const n = Math.trunc(amount);
-  if (!Number.isFinite(n) || n === 0 || !hasGroupRounds(group)) return null;
-  const specsOf = group.exercises.map((exercise) => expandSetSpecs(exercise));
-  const rounds = group.rounds ?? Math.max(...specsOf.map((specs) => specs.length));
-
-  let change: number;
-  if (n > 0) {
-    const headroom = Math.min(
-      ...specsOf.map((specs) => {
-        const room = MAX_SET_SPECS - specs.length;
-        const last = specs[specs.length - 1];
-        return last && isWorkingSpec(last)
-          ? Math.min(room, MAX_WORKING_SETS - specs.filter(isWorkingSpec).length)
-          : room;
-      }),
-    );
-    change = Math.max(0, Math.min(n, headroom));
-  } else {
-    change = -Math.min(-n, rounds - 1);
-    while (
-      change < 0 &&
-      !specsOf.every((specs) => specs.slice(0, rounds + change).some((s) => s.set_type !== "warmup"))
-    ) {
-      change += 1;
-    }
-  }
-  if (change === 0) return null;
-  const fitted = fitAll(group.exercises, rounds + change);
-  if (!fitted.ok) return null;
-  return { ...group, rounds: rounds + change, exercises: fitted.exercises };
 }

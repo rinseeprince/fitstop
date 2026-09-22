@@ -11,21 +11,17 @@ import {
   PAST_LOCKED,
   type EditableDays,
 } from "./program-builder-lock-model";
-import type {
-  ExerciseDraft,
-  SessionDraft,
-  WeekDraft,
-} from "./program-builder-types";
+import type { ExerciseDraft, SessionDraft } from "./program-builder-types";
 import type { ExerciseDestination, GroupSettingsPatch, LinkFormat } from "./program-builder-groups";
 import type { ProgramBuilderState } from "./use-program-builder-state";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
 
 // The plan editor's single choke point for MANUAL edits: the provider swaps
 // its context mutators for these wrappers, so every UI path (grid, dnd, session
-// editor, add-session popover, progression dialog) refuses a locked or greyed
-// day with one toast. The grid also disables those affordances; this is the
-// belt for anything that slips past them (keyboard paths, future call sites).
-// The rule is read from the grid as it stands at the moment of the edit.
+// editor, add-session popover) refuses a locked or greyed day with one toast.
+// The grid also disables those affordances; this is the belt for anything that
+// slips past them (keyboard paths, future call sites). The rule is read from
+// the grid as it stands at the moment of the edit.
 
 type UseLockedMutatorsParams = {
   /** The plan editor's editable days; null leaves every mutator untouched. */
@@ -62,7 +58,6 @@ export function useLockedMutators({
       updateGroup: state.updateGroup,
       deleteWeek: state.deleteWeek,
       duplicateWeek: state.duplicateWeek,
-      insertWeekAfter: state.insertWeekAfter,
       reorderWeek: state.reorderWeek,
       editSetSpec,
     };
@@ -163,13 +158,6 @@ export function useLockedMutators({
       const week = weeksNow()[index];
       if (week && refused(insertWeekRefusal(weeksNow(), editableDays, index, week))) return;
       state.duplicateWeek(weekUid);
-    },
-    insertWeekAfter: (weekUid: string, week: WeekDraft) => {
-      const index = weekIndex(weekUid);
-      if (index >= 0 && refused(insertWeekRefusal(weeksNow(), editableDays, index, week))) {
-        return;
-      }
-      state.insertWeekAfter(weekUid, week);
     },
     reorderWeek: (activeUid: string, overUid: string) => {
       const from = weekIndex(activeUid);

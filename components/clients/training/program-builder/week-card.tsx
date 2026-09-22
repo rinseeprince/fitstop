@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Copy, GripVertical, Trash2, TrendingUp } from "lucide-react";
+import { ChevronDown, Copy, GripVertical, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WeekDraft } from "./program-builder-types";
 import { weekSessions } from "./program-builder-model";
@@ -8,26 +8,23 @@ import { MONO, TEXT_MUTED, TEXT_SECONDARY } from "./builder-tokens";
 
 // The slim 42px week column (reference `.wk`): a `W#` teal chip + the week's
 // session-count frequency, NOT a card. All week controls (grip-reorder,
-// collapse, duplicate, duplicate-with-progression, delete) live in a
-// hover-revealed vertical stack below the chip — nothing is lost, the column
-// just stays narrow like the mockup. Edit controls only surface when the week
-// is expanded (a collapsed row is too short to host them); collapse itself is
-// always reachable on hover in both modes.
+// collapse, duplicate, delete) live in a hover-revealed vertical stack below
+// the chip — nothing is lost, the column just stays narrow like the mockup.
+// Edit controls only surface when the week is expanded (a collapsed row is too
+// short to host them); collapse itself is always reachable on hover in both
+// modes.
 type WeekCardProps = {
   week: WeekDraft;
   mode: "view" | "edit";
   collapsed: boolean;
   canDelete: boolean;
   // Placed-plan lock policies (default true — no locking): a fully-elapsed
-  // week can't be duplicated/progressed (decision 8); a week touching history
-  // can't be reordered, so its grip hides.
+  // week can't be duplicated (decision 8); a week touching history can't be
+  // reordered, so its grip hides.
   canDuplicate?: boolean;
   canReorder?: boolean;
   onToggleCollapse: () => void;
   onDuplicate: () => void;
-  // Opens the progression dialog (duplicate + rule + preview). Plain
-  // Duplicate stays one-click — these are sibling affordances by design.
-  onDuplicateWithProgression: () => void;
   onDelete: () => void;
   // useSortable attributes+listeners from week-row — grip-only drag.
   dragHandleProps?: Record<string, unknown>;
@@ -45,7 +42,6 @@ export function WeekCard({
   canReorder = true,
   onToggleCollapse,
   onDuplicate,
-  onDuplicateWithProgression,
   onDelete,
   dragHandleProps,
 }: WeekCardProps) {
@@ -103,20 +99,6 @@ export function WeekCard({
               onClick={onDuplicate}
             >
               <Copy className="h-3 w-3" strokeWidth={1.5} />
-            </button>
-            <button
-              type="button"
-              aria-label={`Duplicate week ${week.weekIndex + 1} with progression`}
-              title="Duplicate with progression"
-              disabled={!canDuplicate}
-              className={cn(
-                CTRL_BTN,
-                !canDuplicate &&
-                  cn(TEXT_MUTED, "cursor-not-allowed opacity-40 hover:bg-transparent"),
-              )}
-              onClick={onDuplicateWithProgression}
-            >
-              <TrendingUp className="h-3 w-3" strokeWidth={1.5} />
             </button>
             <button
               type="button"

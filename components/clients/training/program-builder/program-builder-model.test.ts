@@ -12,7 +12,6 @@ import {
   mapSessionExercises,
   moveSessionToDay,
   normalizeDraft,
-  progressWeek,
   removeSessionExercise,
   removeSessionFromDay,
   reorderSessionInDay,
@@ -29,7 +28,6 @@ import {
   type WeekDraft,
 } from "./program-builder-types";
 import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
-import { setSpecCount } from "@/utils/exercise-set-specs";
 import { COLUMN_PRESET_FIELDS } from "@/utils/column-presets";
 
 const exercise = (uid: string, overrides: Partial<ExerciseDraft> = {}): ExerciseDraft => ({
@@ -146,57 +144,6 @@ describe("cloneWeek", () => {
   });
 });
 
-describe("progressWeek", () => {
-  it("adds a round to a whole superset or circuit when any exercise in it is in scope", () => {
-    const week = weekOf(
-      session([circuit("grp-c", [exercise("a", { sets: 3 }), exercise("b", { sets: 3 })]), lone("c")]),
-    );
-    const { week: next, changedExerciseUids } = progressWeek(
-      week,
-      { kind: "sets", amount: 1 },
-      (e) => e.uid === "b",
-    );
-    const s = next.days[0].sessions[0];
-    expect([...changedExerciseUids].sort()).toEqual(["a", "b"]);
-    expect(s.groups[0]).toMatchObject({ uid: "grp-c", format: "circuit", rounds: 4, restBetweenRoundsSeconds: 90 });
-    expect(s.groups[0].exercises.map(setSpecCount)).toEqual([4, 4]);
-    // The group nothing changed in keeps its reference.
-    expect(s.groups[1]).toBe(week.days[0].sessions[0].groups[1]);
-  });
-
-  it("leaves a superset or circuit none of whose exercises is in scope", () => {
-    const week = weekOf(session([circuit("grp-c", [exercise("a"), exercise("b")]), lone("c")]));
-    const { week: next, changedExerciseUids } = progressWeek(
-      week,
-      { kind: "sets", amount: 1 },
-      (e) => e.uid === "c",
-    );
-    expect([...changedExerciseUids]).toEqual(["c"]);
-    expect(next.days[0].sessions[0].groups[0]).toBe(week.days[0].sessions[0].groups[0]);
-  });
-
-  it("progresses load and reps round by round, exercise by exercise, inside a group", () => {
-    const week = weekOf(
-      session([circuit("grp-c", [exercise("a", { sets: 3 }), exercise("b", { sets: 3 })])]),
-    );
-    const { week: next, changedExerciseUids } = progressWeek(
-      week,
-      { kind: "reps", amount: 1 },
-      (e) => e.uid === "a",
-    );
-    const [a, b] = next.days[0].sessions[0].groups[0].exercises;
-    expect([...changedExerciseUids]).toEqual(["a"]);
-    expect(a.repsMin).toBe(9);
-    expect(setSpecCount(a)).toBe(3);
-    expect(b).toBe(week.days[0].sessions[0].groups[0].exercises[1]);
-  });
-
-  it("returns the same week when the rule changes nothing", () => {
-    const week = weekOf(session([lone("a")]));
-    expect(progressWeek(week, { kind: "sets", amount: 1 }, () => false).week).toBe(week);
-  });
-});
-
 describe("mapSessionExercises", () => {
   it("returns the same session when nothing changes", () => {
     const s = session([lone("a"), circuit("grp-c", [exercise("b"), exercise("c")])]);
@@ -245,7 +192,7 @@ describe("normalizeDraft over a day's sessions", () => {
   });
 });
 
-describe("cloneWeek and progressWeek over a day holding two sessions", () => {
+describe("cloneWeek over a day holding two sessions", () => {
   it("cloneWeek copies every session of the day, in order, each a new session with new uids", () => {
     const source = weekOf(session([lone("a")], "sess-am"), session([lone("b")], "sess-pm"));
     const copy = cloneWeek(source).days[0];
@@ -255,24 +202,6 @@ describe("cloneWeek and progressWeek over a day holding two sessions", () => {
     expect(new Set(copy.sessions.map((s) => s.uid)).size).toBe(2);
     expect(copy.sessions.map((s) => sessionExercises(s).map((e) => e.name))).toEqual([["a"], ["b"]]);
     expect(copy.sessions.flatMap((s) => sessionExercises(s).map((e) => e.uid))).not.toContain("a");
-  });
-
-  it("progressWeek progresses every session on the day; a session the rule leaves keeps its reference", () => {
-    const week = weekOf(
-      session([lone("a")], "sess-am"),
-      session([lone("b")], "sess-pm"),
-      session([lone("c")], "sess-late"),
-    );
-    const { week: next, changedExerciseUids } = progressWeek(
-      week,
-      { kind: "reps", amount: 1 },
-      (e) => e.uid !== "b",
-    );
-    expect([...changedExerciseUids].sort()).toEqual(["a", "c"]);
-    const [am, pm, late] = next.days[0].sessions;
-    expect(sessionExercises(am)[0].repsMin).toBe(9);
-    expect(pm).toBe(week.days[0].sessions[1]);
-    expect(sessionExercises(late)[0].repsMin).toBe(9);
   });
 });
 

@@ -7,7 +7,6 @@ import {
   moveExercise,
   moveGroup,
   normalizeGroups,
-  progressGroupRounds,
   rowsAreRounds,
   unlinkGroup,
   updateGroup,
@@ -572,50 +571,6 @@ describe("updateGroup", () => {
     expect(updateGroup(s, "grp-c", { notes: "x".repeat(1001) }).ok).toBe(false);
     expect(updateGroup(session([lone("a")]), "grp-a", { notes: "x" }).ok).toBe(false);
     expect(updateGroup(s, "gone", { rounds: 2 }).ok).toBe(false);
-  });
-});
-
-describe("progressGroupRounds", () => {
-  const group = (exercises: ExerciseDraft[], rounds = 3) => circuit("grp-c", exercises, { rounds });
-
-  it("adds rounds to every exercise, copying its last set", () => {
-    const next = progressGroupRounds(group([exercise("a", { sets: 3 }), exercise("b", { sets: 3 })]), 2);
-    expect(next?.rounds).toBe(5);
-    expect(next?.exercises.map(setSpecCount)).toEqual([5, 5]);
-  });
-
-  it("removes rounds from the end and keeps one round with a working set on every exercise", () => {
-    const next = progressGroupRounds(group([exercise("a", { sets: 3 }), exercise("b", { sets: 3 })]), -5);
-    expect(next?.rounds).toBe(1);
-
-    const warmupFirst = group([
-      exercise("a", { setSpecs: [spec(1, { set_type: "warmup" }), spec(2), spec(3)] }),
-      exercise("b", { sets: 3 }),
-    ]);
-    expect(progressGroupRounds(warmupFirst, -2)?.rounds).toBe(2);
-  });
-
-  it("stops where an exercise would pass 20 working sets", () => {
-    const next = progressGroupRounds(group([exercise("a", { sets: 19 }), exercise("b", { sets: 19 })], 19), 5);
-    expect(next?.rounds).toBe(20);
-    expect(progressGroupRounds(group([exercise("a", { sets: 20 }), exercise("b", { sets: 20 })], 20), 1)).toBeNull();
-  });
-
-  it("adds rounds to an EMOM and a For time, and never changes an AMRAP's one row", () => {
-    const emom = progressGroupRounds(timed("e", "emom", [exercise("a", { sets: 3 })]), 2);
-    expect(emom?.rounds).toBe(5);
-    expect(emom?.exercises.map(setSpecCount)).toEqual([5]);
-    const forTime = progressGroupRounds(timed("f", "for_time", [exercise("a", { sets: 3 }), exercise("b", { sets: 3 })]), -1);
-    expect(forTime?.rounds).toBe(2);
-    expect(progressGroupRounds(timed("a", "amrap", [exercise("a", { sets: 1 })]), 1)).toBeNull();
-  });
-
-  it("changes nothing for a zero amount, a lone exercise or linked straight sets", () => {
-    expect(progressGroupRounds(group([exercise("a"), exercise("b")]), 0)).toBeNull();
-    expect(progressGroupRounds(group([exercise("a")]), 1)).toBeNull();
-    expect(
-      progressGroupRounds({ ...group([exercise("a"), exercise("b")]), format: "straight_sets" }, 1),
-    ).toBeNull();
   });
 });
 

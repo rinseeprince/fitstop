@@ -86,7 +86,6 @@ function fakeState(draft: ProgramDraft) {
     updateGroup: vi.fn(),
     deleteWeek: vi.fn(),
     duplicateWeek: vi.fn(),
-    insertWeekAfter: vi.fn(),
     reorderWeek: vi.fn(),
   };
   const state = { ...calls, getDraft: () => draft } as unknown as ProgramBuilderState;

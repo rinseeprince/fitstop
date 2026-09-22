@@ -1,10 +1,6 @@
 import { presetColumnsForType } from "@/utils/column-presets";
 import type { ExerciseType } from "@/utils/exercise-types";
 import {
-  progressExercise,
-  type ProgressionRule,
-} from "@/utils/progression-rules";
-import {
   DAYS_PER_WEEK,
   makeRestSlot,
   newUid,
@@ -17,11 +13,7 @@ import {
 } from "./program-builder-types";
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
-import {
-  hasGroupRounds,
-  normalizeGroups,
-  progressGroupRounds,
-} from "./program-builder-groups";
+import { normalizeGroups } from "./program-builder-groups";
 
 // Pure model helpers for the builder draft tree — normalization, cloning, and
 // lookups. Kept free of React so the state hook stays thin and these are unit
@@ -118,84 +110,6 @@ export function cloneWeek(w: WeekDraft): WeekDraft {
       sessions: slot.sessions.map(cloneSession),
     })),
   };
-}
-
-// =============================================================================
-// progression (builder S4)
-// =============================================================================
-
-/**
- * Apply a progression rule across a week — the WeekDraft-typed walk over the
- * pure engine in utils/progression-rules.ts (which cannot import component
- * types). Call it on a cloneWeek()'d copy and commit THAT returned week:
- * clone-then-progress, never re-clone after, or changedExerciseUids (the
- * clone's uids, used for preview rows) go stale. Progresses every session of
- * every day, and never adds/removes/reorders sessions or exercises — the
- * preview pairs source↔progressed positionally. Rest slots, out-of-scope
- * exercises, and rule no-ops keep their references; a week the rule doesn't
- * touch returns the INPUT reference so callers can detect "this rule changes
- * nothing".
- */
-export function progressWeek(
-  week: WeekDraft,
-  rule: ProgressionRule,
-  inScope: (ex: ExerciseDraft) => boolean,
-): { week: WeekDraft; changedExerciseUids: ReadonlySet<string> } {
-  const changedExerciseUids = new Set<string>();
-  let weekChanged = false;
-  const days = week.days.map((slot) => {
-    let slotChanged = false;
-    const sessions = slot.sessions.map((session) => {
-      const next = progressSession(session, rule, inScope, changedExerciseUids);
-      if (next !== session) slotChanged = true;
-      return next;
-    });
-    if (!slotChanged) return slot;
-    weekChanged = true;
-    return { ...slot, sessions };
-  });
-  return {
-    week: weekChanged ? { ...week, days } : week,
-    changedExerciseUids,
-  };
-}
-
-// A group walk: in a superset or circuit the Sets rule changes the group's
-// rounds, every exercise together, when any of its exercises is in scope — so
-// its exercises stay one set per round. Every other rule, and every exercise
-// outside one, progresses exercise by exercise.
-function progressSession(
-  session: SessionDraft,
-  rule: ProgressionRule,
-  inScope: (ex: ExerciseDraft) => boolean,
-  changed: Set<string>,
-): SessionDraft {
-  let sessionChanged = false;
-  const groups = session.groups.map((group) => {
-    if (rule.kind === "sets" && hasGroupRounds(group)) {
-      if (!group.exercises.some(inScope)) return group;
-      const next = progressGroupRounds(group, rule.amount);
-      if (!next) return group;
-      next.exercises.forEach((ex, i) => {
-        if (ex !== group.exercises[i]) changed.add(ex.uid);
-      });
-      sessionChanged = true;
-      return next;
-    }
-    let groupChanged = false;
-    const exercises = group.exercises.map((ex) => {
-      if (!inScope(ex)) return ex;
-      const result = progressExercise(ex, rule);
-      if (!result) return ex;
-      changed.add(ex.uid);
-      groupChanged = true;
-      return { ...ex, ...result };
-    });
-    if (!groupChanged) return group;
-    sessionChanged = true;
-    return { ...group, exercises };
-  });
-  return sessionChanged ? { ...session, groups } : session;
 }
 
 // =============================================================================

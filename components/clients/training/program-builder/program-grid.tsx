@@ -28,7 +28,6 @@ type ProgramGridProps = {
   collapsedWeeks: Set<string>;
   onToggleCollapse: (weekUid: string) => void;
   onDuplicateWeek: (weekUid: string) => void;
-  onDuplicateWeekWithProgression: (weekUid: string) => void;
   onDeleteWeek: (weekUid: string) => void;
   onAddWeek: () => void;
   onOpenSession: (sessionUid: string) => void;
@@ -44,7 +43,6 @@ export function ProgramGrid({
   collapsedWeeks,
   onToggleCollapse,
   onDuplicateWeek,
-  onDuplicateWeekWithProgression,
   onDeleteWeek,
   onAddWeek,
   onOpenSession,
@@ -92,7 +90,6 @@ export function ProgramGrid({
                 defaultSurplusPercentage={draft.defaultSurplusPercentage}
                 onToggleCollapse={onToggleCollapse}
                 onDuplicateWeek={onDuplicateWeek}
-                onDuplicateWeekWithProgression={onDuplicateWeekWithProgression}
                 onDeleteWeek={onDeleteWeek}
                 onOpenSession={onOpenSession}
                 onRequestAddSession={onRequestAddSession}

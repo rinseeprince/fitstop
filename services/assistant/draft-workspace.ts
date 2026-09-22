@@ -29,7 +29,6 @@ export type DraftWorkspace = {
   // edits, sweep discards) — independent of the model's own narration.
   notes: string[];
   catalog: ExerciseRow[];
-  isCompound: (ex: { exerciseId: string | null; name: string }) => boolean;
   // The plan editor: the days the coach may change, as positions from the
   // plan's start. commitOp passes them into applyDraftOp's ctx, so server
   // executors refuse exactly what the client replay refuses.
@@ -46,25 +45,6 @@ export type DraftWorkspace = {
     pastSlotFingerprints: Map<string, string>;
   };
 };
-
-// Same classifier the duplicate-week dialog uses (progression-preview-model's
-// buildIsCompound), rebuilt over raw catalog rows: category "compound"
-// case-insensitively; id-first, name-fallback; unknown = NOT compound.
-function buildIsCompoundFromRows(
-  rows: ExerciseRow[],
-): DraftWorkspace["isCompound"] {
-  const byId = new Map<string, boolean>();
-  const byName = new Map<string, boolean>();
-  for (const row of rows) {
-    const compound = (row.category ?? "").trim().toLowerCase() === "compound";
-    byId.set(row.id, compound);
-    byName.set(row.name.trim().toLowerCase(), compound);
-  }
-  return (ex) =>
-    ex.exerciseId != null
-      ? (byId.get(ex.exerciseId) ?? false)
-      : (byName.get(ex.name.trim().toLowerCase()) ?? false);
-}
 
 export async function createDraftWorkspace(opts: {
   coachId: string;
@@ -121,7 +101,6 @@ export function buildWorkspaceFromRows(opts: {
     ops: [],
     notes: [],
     catalog,
-    isCompound: buildIsCompoundFromRows(catalog),
     editableDays,
     entry: {
       programName: draft.name,

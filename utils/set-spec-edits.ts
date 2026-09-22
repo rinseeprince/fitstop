@@ -15,9 +15,8 @@ import {
 // compact columns via compactFromSpecs so the collapsed summary and legacy
 // readers stay truthful (landmine #2).
 //
-// Structurally typed (like progression-rules.ts) — utils must not import
-// component types; the builder's ExerciseDraft satisfies SpecEditableExercise
-// with no cast.
+// Structurally typed — utils must not import component types; the builder's
+// ExerciseDraft satisfies SpecEditableExercise with no cast.
 
 export const MAX_DROPS = 20;
 

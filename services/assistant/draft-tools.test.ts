@@ -185,53 +185,36 @@ const squatLoads = (ws: ReturnType<typeof makeWs>, weekIndex: number): number[] 
   );
 };
 
-describe("duplicate_week with progression", () => {
-  it("compounds per-step load rules cumulatively (+2kg per generated week)", async () => {
+// A week's content — every day, session, group, exercise and set — with the
+// uids a copy mints and the week's own place taken out.
+const weekContent = (ws: DraftWorkspace, weekIndex: number): unknown =>
+  JSON.parse(
+    JSON.stringify(ws.draft.weeks[weekIndex], (key: string, value: unknown) =>
+      key === "uid" || key === "weekIndex" ? undefined : value,
+    ),
+  );
+
+describe("duplicate_week makes exact copies", () => {
+  it("copies a week as many times as asked, each copy exactly the week, with uids of its own", async () => {
     const ws = makeWs();
     const dup = tool(buildWeekTools(ws), "duplicate_week");
-    const out = await dup.run({
-      week: 1,
-      count: 3,
-      rules: [{ kind: "load_kg", amount: 2 }],
-    } as never);
-    expect(out).toMatch(/Inserted 3 week/);
+    const out = await dup.run({ week: 1, count: 3 } as never);
+    expect(out).toBe("Inserted 3 week(s) after week 1. The program now has 4 weeks.");
     expect(ws.ops).toHaveLength(3);
     expect(ws.ops.every((op) => op.type === "insert_week")).toBe(true);
-    expect(squatLoads(ws, 1)).toEqual([102, 102]);
-    expect(squatLoads(ws, 2)).toEqual([104, 104]);
-    expect(squatLoads(ws, 3)).toEqual([106, 106]);
+    for (const copy of [1, 2, 3]) {
+      expect(weekContent(ws, copy)).toEqual(weekContent(ws, 0));
+      expect(squatLoads(ws, copy)).toEqual([100, 100]);
+    }
+    const uids = JSON.stringify(ws.draft).match(/"uid":"[^"]+"/g) ?? [];
+    expect(new Set(uids).size).toBe(uids.length);
   });
 
-  it("fires everyNWeeks rules only on their cadence (extra set every other week)", async () => {
-    const ws = makeWs();
-    const dup = tool(buildWeekTools(ws), "duplicate_week");
-    await dup.run({
-      week: 1,
-      count: 4,
-      rules: [{ kind: "sets", amount: 1, everyNWeeks: 2 }],
-    } as never);
-    const setCount = (w: number) => {
-      const [session] = ws.draft.weeks[w].days[0].sessions;
-      return session ? sessionExercises(session)[0].setSpecs?.length : undefined;
+  it("takes the week, how many copies and where they go — nothing else", () => {
+    const dup = tool(buildWeekTools(makeWs()), "duplicate_week") as unknown as {
+      input_schema: { properties: Record<string, unknown> };
     };
-    expect(setCount(1)).toBe(2); // step 1: rule not due
-    expect(setCount(2)).toBe(3); // step 2: +1
-    expect(setCount(3)).toBe(3); // step 3: not due
-    expect(setCount(4)).toBe(4); // step 4: +1 again (cumulative)
-  });
-
-  it("scopes 'compounds' via the catalog category (case-insensitive)", async () => {
-    const ws = makeWs();
-    const dup = tool(buildWeekTools(ws), "duplicate_week");
-    await dup.run({
-      week: 1,
-      count: 1,
-      rules: [{ kind: "load_kg", amount: 5 }],
-      scope: "compounds",
-    } as never);
-    const exercises = sessionExercises(ws.draft.weeks[1].days[0].sessions[0]);
-    expect(exercises[0].setSpecs?.[0].load_min).toBe(105); // Back Squat (Compound)
-    expect(exercises[1].setSpecs?.[0].load_min).toBe(40); // Leg Curl untouched
+    expect(Object.keys(dup.input_schema.properties)).toEqual(["week", "count", "insertAfterWeek"]);
   });
 
   it("relays the MAX_WEEKS belt instead of silently no-opping", async () => {
@@ -618,33 +601,50 @@ describe("review-fleet regressions (S6a follow-up)", () => {
   });
 });
 
-describe("duplicate_week insertAfterWeek (deload-then-resume)", () => {
-  it("clones from BEFORE a deload and places the copies AFTER it, in order", async () => {
+describe("duplicate_week places its copies", () => {
+  // Three weeks, each Lower A holding a squat at its own load.
+  function threeWeeks() {
     const ws = makeWs();
-    const dup = tool(buildWeekTools(ws), "duplicate_week");
+    const [base] = ws.draft.weeks;
+    ws.draft = normalizeDraft({
+      ...ws.draft,
+      weeks: [100, 110, 120].map((load) => {
+        const week = makeRestWeek(0);
+        week.days[0] = {
+          ...makeRestSlot(0),
+          isRest: false,
+          sessions: [
+            {
+              ...base.days[0].sessions[0],
+              uid: newUid("sess"),
+              groups: [lone(exercise("Back Squat", SQUAT_ID, [workingSet(load), workingSet(load)]))],
+            },
+          ],
+        };
+        return week;
+      }),
+    });
+    return ws;
+  }
 
-    // W2-W3 progressing +10kg off W1.
-    await dup.run({ week: 1, count: 2, rules: [{ kind: "load_kg", amount: 10 }] } as never);
-    expect(squatLoads(ws, 1)).toEqual([110, 110]);
-    expect(squatLoads(ws, 2)).toEqual([120, 120]);
+  it("lands a copy right after its source in the middle of a program, and says where", async () => {
+    const ws = threeWeeks();
+    const out = await tool(buildWeekTools(ws), "duplicate_week").run({ week: 1 } as never);
+    expect(out).toBe("Inserted 1 week(s) after week 1. The program now has 4 weeks.");
+    expect([0, 1, 2, 3].map((w) => squatLoads(ws, w)[0])).toEqual([100, 100, 110, 120]);
+  });
 
-    // W4 = deload off W3.
-    await dup.run({ week: 3, count: 1, rules: [{ kind: "load_kg", amount: -60 }] } as never);
-    expect(squatLoads(ws, 3)).toEqual([60, 60]);
-
-    // W5-W6 resume from W3's PRE-deload loads, placed after the deload.
-    const out = await dup.run({
-      week: 3,
+  it("copies one week and places the copies after another, in order", async () => {
+    const ws = threeWeeks();
+    const out = await tool(buildWeekTools(ws), "duplicate_week").run({
+      week: 1,
       count: 2,
-      insertAfterWeek: 4,
-      rules: [{ kind: "load_kg", amount: 10 }],
+      insertAfterWeek: 2,
     } as never);
-
-    expect(ws.draft.weeks).toHaveLength(6);
-    expect(squatLoads(ws, 3)).toEqual([60, 60]); // deload still sits at position 4
-    expect(squatLoads(ws, 4)).toEqual([130, 130]); // resumed from 120, not 60
-    expect(squatLoads(ws, 5)).toEqual([140, 140]); // and keeps compounding
-    expect(out).toMatch(/cloned from week 3/);
+    expect(out).toBe(
+      "Inserted 2 week(s) after week 2 (cloned from week 1). The program now has 5 weeks.",
+    );
+    expect([0, 1, 2, 3, 4].map((w) => squatLoads(ws, w)[0])).toEqual([100, 110, 100, 100, 120]);
   });
 
   it("rejects an insertAfterWeek that doesn't exist instead of guessing", async () => {
@@ -701,42 +701,6 @@ describe("programContext front-loading (latency)", () => {
     expect(ctx.complete).toBe(false);
     expect(ctx.text).toContain("W1:"); // one line per week
     expect(ctx.text.length).toBeLessThan(12_000);
-  });
-});
-
-describe("duplicate_week reports STORED loads, not recomputed arithmetic", () => {
-  it("quotes the plate-rounded values the engine actually saved", async () => {
-    const ws = makeWs();
-    // Reproduces the live 12-week case: 80kg bench, +5%/week. Raw arithmetic
-    // gives 84 / 88.2 / 92.61; the engine snaps to the nearest 0.5kg, so the
-    // tool result must say 88 and 92.5 — those are what the grid holds.
-    const sessionUid = ws.draft.weeks[0].days[0].sessions[0].uid;
-    ws.draft = normalizeDraft(
-      mapSession(ws.draft, sessionUid, (s) => ({
-        ...s,
-        groups: [lone(exercise("Back Squat", SQUAT_ID, [workingSet(80)]))],
-      })),
-    );
-
-    const dup = tool(buildWeekTools(ws), "duplicate_week");
-    const out = await dup.run({
-      week: 1,
-      count: 3,
-      rules: [{ kind: "load_percent", amount: 5 }],
-    } as never);
-
-    expect(out).toContain("Resulting loads:");
-    expect(out).toContain("Back Squat");
-    // Stored, plate-rounded chain — never the raw 88.2 / 92.61.
-    expect(out).toContain("84");
-    expect(out).toContain("88");
-    expect(out).toContain("92.5");
-    expect(out).not.toContain("88.2");
-    expect(out).not.toContain("92.6");
-
-    const loads = (w: number) =>
-      sessionExercises(ws.draft.weeks[w].days[0].sessions[0])[0].setSpecs![0].load_min;
-    expect([loads(1), loads(2), loads(3)]).toEqual([84, 88, 92.5]);
   });
 });
 
@@ -1699,17 +1663,14 @@ describe("a day holding several sessions", () => {
     );
   });
 
-  it("duplicate_week copies and progresses every session of a day, and reports across them", async () => {
-    const { ws } = twoADayWs();
-    const out = await tool(buildWeekTools(ws), "duplicate_week").run({
-      week: 1,
-      rules: [{ kind: "load_kg", amount: 5 }],
-    } as never);
-    expect(out).toContain("4/4 in-scope exercises changed");
-    expect(out).toContain("Back Squat 100 kg → 105 kg");
+  it("duplicate_week copies every session of a day, in its order, exactly; the client replays it", async () => {
+    const { coachDraft, ws } = twoADayWs();
+    const out = await tool(buildWeekTools(ws), "duplicate_week").run({ week: 1 } as never);
+    expect(out).toBe("Inserted 1 week(s) after week 1. The program now has 2 weeks.");
     const [am, pm] = ws.draft.weeks[1].days[0].sessions;
     expect([am.name, pm.name]).toEqual(["AM run", "PM lift"]);
-    expect(sessionExercises(pm).map((e) => e.setSpecs![0].load_min)).toEqual([105, 85]);
+    expect(sessionExercises(pm).map((e) => e.setSpecs![0].load_min)).toEqual([100, 80]);
+    expectReplayMatches(coachDraft, ws);
   });
 
   it("the catalog sweep reads every session: an unresolved exercise new on a day's second session discards the turn", () => {
