@@ -603,7 +603,7 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "client_goals_client_id_fkey1"
+            foreignKeyName: "client_goals_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
