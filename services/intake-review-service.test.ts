@@ -20,18 +20,9 @@ vi.mock('./client-goals-service', () => ({
   getGoalForDate: vi.fn(),
 }))
 
-vi.mock('./client-goal-writes-service', () => {
-  class GoalWriteError extends Error {
-    constructor(
-      readonly code: string,
-      message: string,
-      readonly conflict: unknown = null
-    ) {
-      super(message)
-    }
-  }
-  return { addGoal: vi.fn(), GoalWriteError }
-})
+vi.mock('./client-goal-writes-service', () => ({
+  addGoal: vi.fn(),
+}))
 
 vi.mock('./today-service', () => ({
   getClientTodayString: vi.fn(),
@@ -50,7 +41,7 @@ import { supabaseAdmin } from './supabase-admin'
 import { getIntake } from './client-intake-service'
 import { appendMeasurements, getCurrentMeasurements, getReadingsOnDay } from './measurements-service'
 import { getGoalForDate } from './client-goals-service'
-import { addGoal, GoalWriteError } from './client-goal-writes-service'
+import { addGoal } from './client-goal-writes-service'
 import { getClientTodayString } from './today-service'
 import { syncMetricsToClient } from './intake-review-service'
 import type { ClientIntake } from '@/types/client-intake'
@@ -355,30 +346,6 @@ describe('Intake Review Service', () => {
       expect(addGoal).not.toHaveBeenCalled()
       expect(result.notes).toEqual([])
       expect(result.goalId).toBeNull()
-    })
-
-    it('copies the goal without a deadline that runs into a planned goal, and says so', async () => {
-      vi.mocked(getIntake).mockResolvedValue({
-        ...emptyIntake,
-        primaryGoal: 'build_muscle',
-        targetWeight: 88.4,
-        goalDeadline: '2026-12-11',
-      })
-      mockSupabaseChain({ data: nullClient, error: null })
-      vi.mocked(addGoal)
-        .mockRejectedValueOnce(
-          new GoalWriteError('deadline_after_next', '{}', { goalId: 'goal-planned', name: 'Peak', startsOn: '2026-11-16' })
-        )
-        .mockResolvedValueOnce(GOAL_ID)
-
-      const result = await syncMetricsToClient('client-123', COACH_ID)
-
-      expect(addGoal).toHaveBeenCalledTimes(2)
-      expect(addGoal).toHaveBeenLastCalledWith(expect.objectContaining({ targetWeight: 88.4, deadline: null }))
-      expect(result.syncedFields).toContain('goal')
-      expect(result.notes).toEqual([
-        "The goal deadline (11 Dec) runs into Peak, which starts 16 Nov, so it wasn't copied.",
-      ])
     })
 
     it('a failed goal write is not swallowed', async () => {

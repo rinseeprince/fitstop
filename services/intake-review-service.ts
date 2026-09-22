@@ -8,7 +8,7 @@ import {
   getReadingsOnDay,
 } from "@/services/measurements-service";
 import { getGoalForDate } from "@/services/client-goals-service";
-import { addGoal, GoalWriteError } from "@/services/client-goal-writes-service";
+import { addGoal } from "@/services/client-goal-writes-service";
 import { getClientTodayString } from "@/services/today-service";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
 import { formatDateOnlyShort, getTodayDateStringInTimezone } from "@/lib/date-helpers";
@@ -265,36 +265,19 @@ export async function syncMetricsToClient(
             targetBodyFatPercentage,
             reading: (await getReadingsOnDay(clientId, today)).weight?.value ?? null,
           });
-      const goal = (goalDeadline: string | null): Promise<string> =>
-        addGoal({
-          clientId,
-          today,
-          startsOn: today,
-          source: "intake",
-          setBy: coachId,
-          type,
-          name: GOAL_TYPE_SETTINGS[type].name,
-          targetWeight,
-          targetBodyFatPercentage,
-          description: intake.goalDescription ?? null,
-          deadline: goalDeadline,
-        });
-      try {
-        goalId = await goal(deadlineAhead ? deadline : null);
-      } catch (error) {
-        // A goal the coach has already planned starts on or before the
-        // questionnaire's deadline, which a goal's deadline may not reach:
-        // the goal is copied without it, and the sync says so, rather than
-        // failing on every re-run.
-        if (!(error instanceof GoalWriteError && error.code === "deadline_after_next" && deadline)) throw error;
-        goalId = await goal(null);
-        const planned = error.conflict;
-        notes.push(
-          planned?.startsOn
-            ? `The goal deadline (${formatDateOnlyShort(deadline)}) runs into ${planned.name}, which starts ${formatDateOnlyShort(planned.startsOn)}, so it wasn't copied.`
-            : `The goal deadline (${formatDateOnlyShort(deadline)}) runs into the next goal, so it wasn't copied.`
-        );
-      }
+      goalId = await addGoal({
+        clientId,
+        today,
+        startsOn: today,
+        source: "intake",
+        setBy: coachId,
+        type,
+        name: GOAL_TYPE_SETTINGS[type].name,
+        targetWeight,
+        targetBodyFatPercentage,
+        description: intake.goalDescription ?? null,
+        deadline: deadlineAhead ? deadline : null,
+      });
       syncedFields.push("goal");
     }
   }
