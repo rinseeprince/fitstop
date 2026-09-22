@@ -41,6 +41,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { appendMeasurements } from "@/services/measurements-service";
 import { voidMeasurement } from "@/services/measurement-edits-service";
 import { addGoal } from "@/services/client-goal-writes-service";
+import { fillSentSnapshots } from "@/services/check-in-sent-snapshot-fill";
 import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { addDaysToDateString, differenceInDays, getTodayDateStringInTimezone } from "@/lib/date-helpers";
 
@@ -108,7 +109,7 @@ async function mintSession(email: string): Promise<Session> {
   return { cookie: [...jar].map(([name, value]) => `${name}=${value}`).join("; ") };
 }
 
-type GoalRow = { goal?: number; startingWeight?: number; startingBodyFat?: number; position: { current: number; isOnTrack: boolean; paceStatus?: string } | null };
+type GoalRow = { goal?: number; startingWeight?: number; goalStartWeight?: number; startingBodyFat?: number; position: { current: number; isOnTrack: boolean; paceStatus?: string } | null };
 type Comparison = {
   comparison: {
     client: {
@@ -408,6 +409,12 @@ async function main(): Promise<void> {
     check("setup: the Overview's 'now' for the throwaway is C's 91 — the reading written last today", nowC === 91, nowC);
     const [startThen] = await readingsOnOrBefore(C, "weight", goal1Starts);
 
+    // These check-ins are inserted directly, so each gets the copy a sent
+    // check-in saves (migration 195) from the fill, which freezes what the
+    // review shows now — the as-of reading this proof exists for.
+    const copies = await fillSentSnapshots({ clientIds: [String(C)] });
+    check("setup: the four throwaway check-ins have their saved copies", copies.filled === 4 && copies.failed.length === 0, copies);
+
     console.info("B1. Check-in B, inside goal 1");
     const b = await comparisonOf(coachSession, B_ID);
     check("→ 200", b.status === 200, b.status);
@@ -428,8 +435,8 @@ async function main(): Promise<void> {
     check("the position is B's own stamped 84, not today's 91", b.body.goalProgress.weight?.position?.current === 84 && b.body.comparison.client.currentWeight === 84, b.body.goalProgress.weight?.position);
     check(
       `the start is the reading on goal 1's start day (${startThen?.value}) — the coach entry before it, not the removed 83 and not the baseline 90`,
-      Number(startThen?.value) === 85 && b.body.goalProgress.weight?.startingWeight === Number(startThen?.value),
-      { wire: b.body.goalProgress.weight?.startingWeight, expected: startThen }
+      Number(startThen?.value) === 85 && b.body.goalProgress.weight?.goalStartWeight === Number(startThen?.value),
+      { wire: b.body.goalProgress.weight?.goalStartWeight, expected: startThen }
     );
     check("the trend stops at B: 86 → 84 reads losing, towards 80 — with C's later 91 in the set it would read gaining", b.body.goalProgress.weight?.position?.isOnTrack === true, b.body.goalProgress.weight?.position);
     check("the drift note reads the version covering B's day: base 87", b.body.comparison.client.nutritionPlanBaseWeightKg === 87 && b.body.comparison.client.nutritionPlanEffectiveDate === d(-30), b.body.comparison.client);

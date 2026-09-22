@@ -369,8 +369,11 @@ export async function getMeasurementSeries(
 }
 
 /**
- * What each check-in reported: its own live row per metric — the row carrying
- * its stamp, edited in place when a coach changes it, so the report follows.
+ * Each check-in's own live row per metric — the row carrying its stamp, as the
+ * client's log holds it now (a coach's correction edits it in place). A sent
+ * check-in does not read these: it reports what it saved when it was sent
+ * (lib/check-in/sent-snapshot.ts). They are read to fill the saved copy of a
+ * check-in sent before copies existed, which freezes what its review showed.
  * The latest by `recorded_at` per (stamp, metric): a stamped row written as a
  * correction before migration 161 still resolves. Empty input costs no query.
  */
@@ -557,36 +560,41 @@ function standingOf(reading: MeasurementReading): StandingReading {
 }
 
 /**
- * The readings a check-in's review judges its goals against (commit 8b): per
- * metric, the check-in's own live stamped row when it has one, else the newest
- * live reading dated on or before `day` — rule 2 at a date, the as-of rule the
- * baseline view applies at the start date. The stamped row wins over a
- * same-day reading logged later, because the review reports what THIS
+ * The readings a check-in's goal section is judged against, on the check-in's
+ * day: per metric, the check-in's own live stamped row when it has one, else
+ * the newest live reading dated on or before `day` — rule 2 at a date, the
+ * as-of rule the baseline view applies at the start date. The stamped row wins
+ * over a same-day reading logged later, because the section reports what THIS
  * check-in said (rule 5); the Journey's day-value is a different question.
- * Weight and body fat only, the two a goal can be set on.
+ * Weight and body fat only, the two a goal can be set on. Without a check-in
+ * id — at Send, when the check-in's own rows are not written yet and its
+ * reported values stand in for them — only the newest before `day` is read.
  *
  * Three reads in one round trip — the stamped rows, then the newest row on or
  * before the day per metric. One ordered read cannot answer both: with two
  * metrics in one list, a limit cuts the other metric's newest row whenever one
  * metric has been logged more often.
  *
- * The review is this function's only caller
- * (`lib/goals/goal-progress-ownership.test.ts`): the Overview and the Journey
+ * The sent check-in's saved copy is this function's only caller
+ * (`services/check-in-sent-snapshot-service.ts`, pinned by
+ * `lib/goals/goal-progress-ownership.test.ts`): the Overview and the Journey
  * read "now" through `client_current_measurements`.
  */
 export async function getReadingsAsOf(
   clientId: string,
   day: string,
-  checkInId: string
+  checkInId?: string
 ): Promise<Partial<Record<MeasurementKey, StandingReading>>> {
-  const stampedQuery = supabaseAdmin
-    .from("client_measurements_live")
-    .select(READING_COLUMNS)
-    .eq("client_id", clientId)
-    .eq("source_id", checkInId)
-    .in("metric_key", [...GOAL_KEYS])
-    .order("recorded_at", { ascending: false })
-    .order("id", { ascending: false });
+  const stampedQuery = checkInId
+    ? supabaseAdmin
+        .from("client_measurements_live")
+        .select(READING_COLUMNS)
+        .eq("client_id", clientId)
+        .eq("source_id", checkInId)
+        .in("metric_key", [...GOAL_KEYS])
+        .order("recorded_at", { ascending: false })
+        .order("id", { ascending: false })
+    : Promise.resolve({ data: [], error: null });
   const beforeQueries = GOAL_KEYS.map((key) =>
     supabaseAdmin
       .from("client_measurements_live")

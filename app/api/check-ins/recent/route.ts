@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCoachAuth, getCoachClientIds } from "@/lib/require-coach-auth";
-import { getMeasurementsForCheckIns } from "@/services/measurements-service";
+import { readSentSnapshot } from "@/lib/check-in/sent-snapshot";
 
 export async function GET(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
@@ -41,12 +41,6 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    // What each check-in reported: the measurement-log rows carrying its
-    // stamp, one read for the ten rows.
-    const readings = await getMeasurementsForCheckIns(
-      (checkIns || []).map((checkIn: { id: string }) => checkIn.id)
-    );
-
     // Transform the data to include client info at top level
     const formattedCheckIns = (checkIns || []).map((checkIn: any) => ({
       id: checkIn.id,
@@ -55,9 +49,10 @@ export async function GET(request: NextRequest) {
       clientEmail: checkIn.clients?.email,
       clientAvatar: checkIn.clients?.avatar_url,
       status: checkIn.status,
-      // Canonical kilograms, from the log. Kept in the payload so the
-      // response shape stays stable.
-      weight: readings.get(checkIn.id)?.weight ?? null,
+      // Canonical kilograms: what the check-in reported, from the copy it
+      // saved when sent — never the log's row as a coach may since have
+      // corrected it. Kept in the payload so the response shape stays stable.
+      weight: readSentSnapshot(checkIn.sent_snapshot)?.readings.weight ?? null,
       workoutsCompleted: checkIn.workouts_completed,
       adherencePercentage: checkIn.adherence_percentage,
       mood: checkIn.mood,

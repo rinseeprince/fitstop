@@ -22,13 +22,19 @@ const insertCheckInAnswersMock = vi.fn()
 const calculateCheckInPeriodMock = vi.fn()
 const resolveCheckInWindowMock = vi.fn()
 const appendMeasurementsMock = vi.fn()
-const getMeasurementsForCheckInsMock = vi.fn()
+const buildSentSnapshotAtSendMock = vi.fn()
 
-// The measurement log: a check-in's readings are rows stamped with its id,
-// written by submit and folded back in by every reader.
+// The measurement log: submit writes the check-in's readings as rows stamped
+// with its id. No reader folds them back — a sent check-in reports its saved
+// copy (lib/check-in/sent-snapshot.ts).
 vi.mock('./measurements-service', () => ({
   appendMeasurements: (...args: unknown[]) => appendMeasurementsMock(...args),
-  getMeasurementsForCheckIns: (...args: unknown[]) => getMeasurementsForCheckInsMock(...args),
+}))
+
+// The copy a check-in saves when it is sent (migration 195), built before the
+// INSERT and written in it.
+vi.mock('./check-in-sent-snapshot-service', () => ({
+  buildSentSnapshotAtSend: (...args: unknown[]) => buildSentSnapshotAtSendMock(...args),
 }))
 
 vi.mock('./client-service', () => ({
@@ -94,6 +100,24 @@ function nutritionPeriod(summary: { onTarget: number; targetedDays: number; calo
   }
 }
 
+/**
+ * A check-in's saved copy as the database hands it back (lib/check-in/sent-snapshot.ts):
+ * what it reported when it was sent. `readings` fills in the rest as null.
+ */
+function sentCopy(readings: Record<string, number> = {}) {
+  return {
+    version: 1,
+    day: '2026-06-14',
+    readings: { weight: null, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null, ...readings },
+    standing: { weight: readings.weight ?? null, bodyFat: readings.bodyFat ?? null },
+    goal: null,
+    goalProgress: {},
+    nutritionPlan: null,
+    period: null,
+    questions: [],
+  }
+}
+
 // We mock the whole date-helpers module elsewhere is risky (the service uses
 // several helpers), so instead we spy on calculateCheckInPeriod via partial mock.
 vi.mock('@/lib/date-helpers', async (importOriginal) => {
@@ -141,8 +165,8 @@ describe('Check-in Service', () => {
       unchanged: [],
       energy: 'nothing_inserted',
     })
-    getMeasurementsForCheckInsMock.mockReset()
-    getMeasurementsForCheckInsMock.mockResolvedValue(new Map())
+    buildSentSnapshotAtSendMock.mockReset()
+    buildSentSnapshotAtSendMock.mockResolvedValue(sentCopy({ weight: 79.9 }))
   })
 
   describe('submitCheckIn (Session 6.4 spine derivation)', () => {
@@ -162,6 +186,10 @@ describe('Check-in Service', () => {
         select: vi.fn().mockReturnThis(),
         insert: vi.fn().mockReturnThis(),
         single: vi.fn().mockResolvedValue(result),
+        // A later write to the check-in row would succeed quietly here, so only
+        // the assertions can catch it.
+        update: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockResolvedValue({ error: null }),
       }
       const update = { update: vi.fn(), eq: vi.fn() }
       update.update.mockReturnValue(update)
@@ -183,7 +211,7 @@ describe('Check-in Service', () => {
       calculateCheckInPeriodMock.mockReset()
       resolveCheckInWindowMock.mockReset()
       // Default happy-path period + client.
-      getClientByIdMock.mockResolvedValue({ nextCheckInDue: '2026-06-14', startDate: '2026-01-01' }) // a Sunday
+      getClientByIdMock.mockResolvedValue({ id: 'client-123', nextCheckInDue: '2026-06-14', startDate: '2026-01-01', timezone: 'UTC' }) // a Sunday
       resolveCheckInWindowMock.mockReturnValue({ periodStart: '2026-05-08', periodEnd: '2026-05-14' })
       getNutritionPeriodMock.mockResolvedValue(nutritionPeriod({ targetedDays: 0, onTarget: 0, calorieAdherencePct: null }))
       getDailyLogsMock.mockResolvedValue([])
@@ -198,6 +226,86 @@ describe('Check-in Service', () => {
       expect(result).toBe('new-check-in-id')
       expect(supabaseAdmin.from).toHaveBeenCalledWith('check_ins')
       expect(q.insert).toHaveBeenCalled()
+    })
+
+    // ---- the saved copy: the check-in as it stands, written in the INSERT ----
+
+    it("throws for a client it cannot find — a check-in no one's goal can be judged for", async () => {
+      getClientByIdMock.mockResolvedValue(null)
+      const q = mockInsert({ data: { id: 'never' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await expect(submitCheckIn('client-404', { weight: 80.1 })).rejects.toThrow('Client not found')
+      expect(q.insert).not.toHaveBeenCalled()
+      expect(buildSentSnapshotAtSendMock).not.toHaveBeenCalled()
+    })
+
+    it('writes the saved copy IN the INSERT — never a later update — with created_at the same instant it was judged at', async () => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-06-14T12:00:00Z'))
+        const copy = sentCopy({ weight: 80.6, bodyFat: 17.9 })
+        buildSentSnapshotAtSendMock.mockResolvedValue(copy)
+        const q = mockInsert({ data: { id: 'ci-sent-1' }, error: null })
+
+        const { submitCheckIn } = await import('./check-in-service')
+        await submitCheckIn('client-123', { weight: 80.6, bodyFatPercentage: 17.9 })
+
+        expect(q.insert).toHaveBeenCalledTimes(1)
+        const inserted = q.insert.mock.calls[0][0]
+        expect(inserted.sent_snapshot).toBe(copy)
+        expect(inserted.created_at).toBe('2026-06-14T12:00:00.000Z')
+        // One clock: the copy was judged at the row's own instant and day.
+        const [input] = buildSentSnapshotAtSendMock.mock.calls[0]
+        expect(input.at.toISOString()).toBe(inserted.created_at)
+        expect(input.day).toBe('2026-06-14')
+        // Built BEFORE the INSERT, so the row never exists without it…
+        expect(buildSentSnapshotAtSendMock.mock.invocationCallOrder[0]).toBeLessThan(
+          q.insert.mock.invocationCallOrder[0],
+        )
+        // …and no statement after the INSERT touches the check-in row: the
+        // only update is the schedule advance on `clients`.
+        expect(vi.mocked(supabaseAdmin.from).mock.calls.filter(([table]) => (table as string) === 'check_ins')).toHaveLength(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('hands the copy what the form reported, the stored week and its food rows, and the questions answered', async () => {
+      getNutritionPeriodMock.mockResolvedValue(nutritionPeriod({ targetedDays: 2, onTarget: 1, calorieAdherencePct: 62 }))
+      mockInsert({ data: { id: 'ci-sent-2' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await submitCheckIn('client-123', {
+        weight: 80.8,
+        waist: 82.3,
+        customAnswers: [
+          { questionId: 'q-sleep', answer: 'slept badly' },
+          { questionId: 'q-blank', answer: '   ' },
+          { questionId: 'q-sleep', answer: 'twice, by a retry' },
+          { questionId: 'q-knee', answer: 'left knee' },
+        ],
+      })
+
+      const [input] = buildSentSnapshotAtSendMock.mock.calls[0]
+      expect(input.client).toEqual(expect.objectContaining({ id: 'client-123', timezone: 'UTC' }))
+      expect(input.reported).toEqual({ weight: 80.8, waist: 82.3 })
+      expect(input.period).toEqual({ start: '2026-05-08', end: '2026-05-14' })
+      // The same kernel rows the period snapshot freezes.
+      expect(input.nutritionDays).toEqual(nutritionPeriod({ targetedDays: 2, onTarget: 1, calorieAdherencePct: 62 }).days)
+      // A blank answer is never stored, so its wording is not kept; a repeat is kept once.
+      expect(input.answeredQuestionIds).toEqual(['q-sleep', 'q-knee'])
+    })
+
+    it('writes nothing when the copy cannot be built — a check-in never exists without it', async () => {
+      buildSentSnapshotAtSendMock.mockRejectedValue(new Error('Failed to read goals: down'))
+      const q = mockInsert({ data: { id: 'ci-sent-3' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await expect(submitCheckIn('client-123', { weight: 80.9 })).rejects.toThrow('Failed to read goals: down')
+      expect(q.insert).not.toHaveBeenCalled()
+      expect(appendMeasurementsMock).not.toHaveBeenCalled()
+      expect(insertCheckInAnswersMock).not.toHaveBeenCalled()
     })
 
     // ---- the readings: rows in the measurement log, stamped with the id ----
@@ -680,7 +788,7 @@ describe('Check-in Service', () => {
   })
 
   describe('getCheckInById', () => {
-    it('returns check-in when found, with its readings folded in from the measurement log', async () => {
+    it('returns check-in when found, reporting the readings its saved copy holds — one read, no log', async () => {
       const mockQuery = createMockQuery({
         data: {
           id: 'check-in-123',
@@ -688,19 +796,17 @@ describe('Check-in Service', () => {
           status: 'pending',
           mood: 4,
           energy: 7,
-          // A stale column beside the log: ignored, the stamped rows win.
+          // A stale column beside the copy: ignored, the copy is the report.
           weight: 999,
+          // What it reported when it was sent — the form's bodyFatPercentage
+          // lives under the copy's bodyFat key.
+          sent_snapshot: sentCopy({ weight: 80.2, bodyFat: 18.3, waist: 81.4 }),
           created_at: '2024-01-15T00:00:00Z',
           updated_at: '2024-01-15T00:00:00Z',
         },
         error: null,
       })
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-      // The readings are the live log rows stamped with the check-in's id —
-      // the form's bodyFatPercentage lives under the log's bodyFat key.
-      getMeasurementsForCheckInsMock.mockResolvedValue(
-        new Map([['check-in-123', { weight: 80, bodyFat: 18, waist: 81 }]]),
-      )
 
       const { getCheckInById } = await import('./check-in-service')
       const result = await getCheckInById('check-in-123')
@@ -709,11 +815,13 @@ describe('Check-in Service', () => {
       expect(result?.id).toBe('check-in-123')
       expect(result?.clientId).toBe('client-456')
       expect(result?.mood).toBe(4)
-      expect(getMeasurementsForCheckInsMock).toHaveBeenCalledWith(['check-in-123'])
-      expect(result?.weight).toBe(80)
-      expect(result?.bodyFatPercentage).toBe(18)
-      expect(result?.waist).toBe(81)
+      expect(result?.weight).toBe(80.2)
+      expect(result?.bodyFatPercentage).toBe(18.3)
+      expect(result?.waist).toBe(81.4)
       expect(result?.hips).toBeUndefined()
+      expect(result?.sentSnapshot?.readings.weight).toBe(80.2)
+      // The check_ins row is the only read: the measurement log is not asked.
+      expect(vi.mocked(supabaseAdmin.from).mock.calls.map((call) => call[0])).toEqual(['check_ins'])
     })
 
     it('returns null when not found', async () => {
@@ -745,6 +853,7 @@ describe('Check-in Service', () => {
           id: 'check-in-2',
           client_id: 'client-123',
           status: 'pending',
+          sent_snapshot: sentCopy({ weight: 79.1 }),
           created_at: '2024-01-08T00:00:00Z',
           updated_at: '2024-01-08T00:00:00Z',
         },
@@ -761,7 +870,6 @@ describe('Check-in Service', () => {
       }
 
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-      getMeasurementsForCheckInsMock.mockResolvedValue(new Map([['check-in-2', { weight: 79 }]]))
 
       const { getClientCheckIns } = await import('./check-in-service')
       const result = await getClientCheckIns('client-123', { limit: 10, offset: 0 })
@@ -769,11 +877,11 @@ describe('Check-in Service', () => {
       expect(result.checkIns).toHaveLength(2)
       expect(result.total).toBe(10)
       expect(result.checkIns[0].id).toBe('check-in-1')
-      // ONE log read for the whole page, folded per row by its stamp.
-      expect(getMeasurementsForCheckInsMock).toHaveBeenCalledTimes(1)
-      expect(getMeasurementsForCheckInsMock).toHaveBeenCalledWith(['check-in-1', 'check-in-2'])
+      // Each row reports its own saved copy: none on the first, 79.1 on the
+      // second — and the page costs one read, never a log read per page.
+      expect(vi.mocked(supabaseAdmin.from).mock.calls.map((call) => call[0])).toEqual(['check_ins'])
       expect(result.checkIns[0].weight).toBeUndefined()
-      expect(result.checkIns[1].weight).toBe(79)
+      expect(result.checkIns[1].weight).toBe(79.1)
     })
 
     it('filters by status when provided', async () => {
@@ -821,11 +929,6 @@ describe('Check-in Service', () => {
       // A keyset page pays for no count unless a caller opts in.
       expect(mockQuery.select).toHaveBeenCalledWith('*', undefined)
       expect(result.checkIns).toHaveLength(2) // extra row trimmed
-      // …and the peeked row is trimmed BEFORE the fold, so it costs no log read.
-      expect(getMeasurementsForCheckInsMock).toHaveBeenCalledWith([
-        '11111111-1111-4111-8111-111111111111',
-        '22222222-2222-4222-8222-222222222222',
-      ])
       expect(result.checkIns.map((c) => c.id)).toEqual([
         '11111111-1111-4111-8111-111111111111',
         '22222222-2222-4222-8222-222222222222',
@@ -941,24 +1044,21 @@ describe('Check-in Service', () => {
   })
 
   describe('getPreviousCheckIn', () => {
-    it("folds the previous check-in's readings in from the measurement log", async () => {
-      const current = { id: 'ci-2', client_id: 'client-456', status: 'pending', created_at: '2024-01-15T00:00:00Z', updated_at: '2024-01-15T00:00:00Z' }
-      const previous = { id: 'ci-1', client_id: 'client-456', status: 'reviewed', created_at: '2024-01-08T00:00:00Z', updated_at: '2024-01-08T00:00:00Z' }
+    it("reports the previous check-in's readings from its own saved copy", async () => {
+      const current = { id: 'ci-2', client_id: 'client-456', status: 'pending', sent_snapshot: sentCopy({ weight: 80.7 }), created_at: '2024-01-15T00:00:00Z', updated_at: '2024-01-15T00:00:00Z' }
+      const previous = { id: 'ci-1', client_id: 'client-456', status: 'reviewed', sent_snapshot: sentCopy({ weight: 81.6 }), created_at: '2024-01-08T00:00:00Z', updated_at: '2024-01-08T00:00:00Z' }
       const mockQuery = createMockQuery({ data: current, error: null })
       mockQuery.single
         .mockResolvedValueOnce({ data: current, error: null })
         .mockResolvedValueOnce({ data: previous, error: null })
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
-      getMeasurementsForCheckInsMock.mockImplementation((ids: string[]) =>
-        Promise.resolve(new Map(ids.filter((id) => id === 'ci-1').map((id) => [id, { weight: 81 }]))),
-      )
 
       const { getPreviousCheckIn } = await import('./check-in-service')
       const result = await getPreviousCheckIn('client-456', 'ci-2')
 
       expect(mockQuery.lt).toHaveBeenCalledWith('created_at', '2024-01-15T00:00:00Z')
       expect(result?.id).toBe('ci-1')
-      expect(result?.weight).toBe(81)
+      expect(result?.weight).toBe(81.6)
     })
   })
 
@@ -1069,7 +1169,6 @@ describe('getClientCheckIns — the upTo bound (commit 8b)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    getMeasurementsForCheckInsMock.mockResolvedValue(new Map())
   })
 
   it('bounds the offset path to created_at <= upTo — the review\'s trend is the check-ins up to the one under review', async () => {

@@ -461,7 +461,7 @@
 
   **What JSONB is for here, and only here:** value-bags and snapshots that have no identity
   and are never addressed from outside — a set prescription (`set_specs`), a frozen
-  submit-time snapshot (`period_snapshot`, `prescribed_session_snapshot`), a preference blob
+  submit-time snapshot (`period_snapshot`, a sent check-in's `sent_snapshot`, `prescribed_session_snapshot`), a preference blob
   read whole (`reminder_preferences`), an AI payload read whole (`ai_insights`). The moment a
   key inside the blob needs a stable identity, an edit, or a reference, it is a table.
 

@@ -24,13 +24,9 @@ vi.mock("@/lib/date-helpers", () => ({
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./check-in-service", () => ({ getCheckInById: vi.fn() }));
 
-const getClientAdherenceForRangeMock = vi.fn();
-vi.mock("./client-adherence-service", () => ({
-  getClientAdherenceForRange: (...args: unknown[]) =>
-    getClientAdherenceForRangeMock(...args),
-}));
-
 import { supabaseAdmin } from "./supabase-admin";
+import { parseSentSnapshot, type SentSnapshot } from "@/lib/check-in/sent-snapshot";
+import type { NutritionDay } from "@/types/schedule";
 import {
   getTrainingEventDetailsForCheckIn,
   getCheckInAnswers,
@@ -244,76 +240,105 @@ describe("resolveCheckInReportingPeriod", () => {
   });
 });
 
-describe("getCheckInPeriodAdherence", () => {
-  const summary = {
-    dates: ["2026-05-08", "2026-05-09"],
-    loggedDates: ["2026-05-08"],
-    training: { rail: [], completed: 1, planned: 2, pct: 50 },
-    nutrition: { rail: [], onTarget: 1, loggedDays: 1, pct: 50 },
-    habits: { rail: [], avgPct: 50, daysBelow50: 0, perHabit: [] },
+/** A check-in's saved copy (lib/check-in/sent-snapshot.ts), with a week or without. */
+function sentCopy(overrides: Partial<SentSnapshot> = {}): SentSnapshot {
+  return parseSentSnapshot({
+    version: 1,
+    day: "2026-05-14",
+    readings: { weight: 81.7, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null },
+    standing: { weight: 81.7, bodyFat: null },
+    goal: null,
+    goalProgress: {},
+    nutritionPlan: null,
+    period: null,
+    questions: [],
+    ...overrides,
+  });
+}
+
+const foodDay = (
+  date: string,
+  status: NutritionDay["status"],
+  target: number | null,
+  eaten: number | null
+): NutritionDay => ({
+  date,
+  dayOfWeek: "friday",
+  status,
+  targetCalories: target,
+  targetProteinG: target == null ? null : 140,
+  targetCarbsG: target == null ? null : 210,
+  targetFatG: target == null ? null : 65,
+  actualCalories: eaten,
+  actualProteinG: eaten == null ? null : 140,
+  actualCarbsG: eaten == null ? null : 210,
+  actualFatG: eaten == null ? null : 65,
+});
+
+describe("getCheckInPeriodAdherence — the week as it stood when the check-in was sent", () => {
+  const habits = {
+    rail: ["complete", "no_log", "none"] as ("complete" | "no_log" | "none")[],
+    avgPct: 50,
+    daysBelow50: 1,
+    perHabit: [
+      { id: "h-1", name: "10k steps", eligibleDays: 2, completedDays: 1, pct: 50, rail: [true, false, null] },
+    ],
+  };
+  const week: SentSnapshot["period"] = {
+    dates: ["2026-05-12", "2026-05-13", "2026-05-14"],
+    loggedDates: ["2026-05-12", "2026-05-14"],
+    nutrition: [
+      foodDay("2026-05-12", "hit", 2050, 2050),
+      foodDay("2026-05-13", "not_logged", 2050, null),
+      foodDay("2026-05-14", "no_target", null, 1930),
+    ],
+    habits,
   };
 
-  const stored = {
-    id: "ci-1",
-    clientId: "c1",
-    createdAt: "2026-05-14T12:00:00Z",
-    periodStart: "2026-05-08",
-    periodEnd: "2026-05-14",
-  } as unknown as CheckIn;
+  beforeEach(() => vi.clearAllMocks());
 
-  beforeEach(() => {
-    getClientAdherenceForRangeMock.mockReset();
-    getClientByIdMock.mockReset();
-  });
+  it("reads the copy's week — the food rows through the Overview's rules, the habits and the days verbatim — and nothing live", () => {
+    const result = getCheckInPeriodAdherence({ id: "ci-11", sentSnapshot: sentCopy({ period: week }) });
 
-  it("reads the kernel over the check-in's OWN period", async () => {
-    getClientAdherenceForRangeMock.mockResolvedValue(summary);
-
-    await getCheckInPeriodAdherence(stored);
-
-    expect(getClientAdherenceForRangeMock).toHaveBeenCalledWith(
-      "c1",
-      "2026-05-08",
-      "2026-05-14",
-      // The week's own last day stands in for today: it only decides which
-      // still-scheduled workouts read as missed, and training is not on this wire.
-      "2026-05-14",
-    );
-  });
-
-  it("does NOT carry training — the page derives its own, differently", async () => {
-    // The kernel's training half counts full completions; the page reads
-    // `summariseTraining`'s `completed` — full AND partial — over the workouts
-    // it already carries. Both on one screen is the two-conventions problem, so
-    // only what this wire replaces crosses it.
-    getClientAdherenceForRangeMock.mockResolvedValue(summary);
-
-    const result = await getCheckInPeriodAdherence(stored);
-
-    expect(result).toEqual({
-      dates: summary.dates,
-      loggedDates: summary.loggedDates,
-      nutrition: summary.nutrition,
-      habits: summary.habits,
+    expect(result?.dates).toEqual(week.dates);
+    expect(result?.loggedDates).toEqual(week.loggedDates);
+    expect(result?.habits).toEqual(habits);
+    // One dot per day from its frozen standing: hit, a targeted day not logged, no target.
+    expect(result?.nutrition.rail).toEqual(["complete", "no_log", "none"]);
+    // The kernel over the frozen rows: two targeted days, one on target; the
+    // untargeted day is logged and in no ratio.
+    expect(result?.nutrition).toMatchObject({
+      periodDays: 3,
+      loggedDays: 2,
+      targetedDays: 2,
+      onTarget: 1,
+      loggedNoTargetDays: 1,
+      daysOnTargetPct: 50,
     });
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+    expect(getClientByIdMock).not.toHaveBeenCalled();
+  });
+
+  it("does NOT carry training — the page derives its own, differently", () => {
+    const result = getCheckInPeriodAdherence({ id: "ci-12", sentSnapshot: sentCopy({ period: week }) });
+    expect(Object.keys(result ?? {}).sort()).toEqual(["dates", "habits", "loggedDates", "nutrition"]);
     expect(result).not.toHaveProperty("training");
   });
 
-  it("is null, and reads nothing, when the period cannot be resolved", async () => {
-    getClientByIdMock.mockResolvedValue({ nextCheckInDue: null });
-
-    const result = await getCheckInPeriodAdherence({
-      ...stored,
-      periodStart: null,
-      periodEnd: null,
-    } as unknown as CheckIn);
+  it("is null, and reads nothing, when the copy saved no week — the period could not be resolved", () => {
+    const result = getCheckInPeriodAdherence({ id: "ci-13", sentSnapshot: sentCopy({ period: null }) });
 
     expect(result).toBeNull();
-    expect(getClientAdherenceForRangeMock).not.toHaveBeenCalled();
+    expect(getClientByIdMock).not.toHaveBeenCalled();
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+  });
+
+  it("throws for a check-in with no saved copy rather than computing today's figures", () => {
+    expect(() => getCheckInPeriodAdherence({ id: "ci-14", sentSnapshot: null })).toThrow(/no saved copy/);
   });
 });
 
-describe("getCheckInAnswers", () => {
+describe("getCheckInAnswers — each answer under the wording the client saw", () => {
   /** A `check_in_answers` builder whose `.order()` resolves. */
   function wire(rows: unknown, error: unknown = null) {
     const builder: Record<string, unknown> = {};
@@ -324,35 +349,54 @@ describe("getCheckInAnswers", () => {
     return builder;
   }
 
+  const copy = sentCopy({
+    questions: [
+      { questionId: "00000000-0000-4000-8000-00000000a0a1", prompt: "How was sleep?" },
+      { questionId: "00000000-0000-4000-8000-00000000a0a2", prompt: "Any pain this week?" },
+    ],
+  });
+
   beforeEach(() => vi.clearAllMocks());
 
-  it("joins the prompt LIVE from the question row rather than a snapshot", async () => {
-    // Rewording a question relabels every past answer, because it is the same
-    // question. That only holds while the prompt is read through the FK.
-    wire([
-      {
-        question_id: "q-a",
-        answer: "slept badly",
-        check_in_questions: { prompt: "How was sleep?" },
-      },
+  it("labels each answer with the wording its copy saved — a question reworded since never relabels it", () => {
+    const builder = wire([
+      { question_id: "00000000-0000-4000-8000-00000000a0a1", answer: "slept badly", created_at: "2026-05-14T12:00:01Z" },
+      { question_id: "00000000-0000-4000-8000-00000000a0a2", answer: "left knee", created_at: "2026-05-14T12:00:02Z" },
     ]);
 
-    await expect(getCheckInAnswers("ci-1")).resolves.toEqual([
-      { questionId: "q-a", prompt: "How was sleep?", answer: "slept badly" },
+    return expect(getCheckInAnswers({ id: "ci-21", sentSnapshot: copy }))
+      .resolves.toEqual([
+        { questionId: "00000000-0000-4000-8000-00000000a0a1", answer: "slept badly", prompt: "How was sleep?" },
+        { questionId: "00000000-0000-4000-8000-00000000a0a2", answer: "left knee", prompt: "Any pain this week?" },
+      ])
+      .then(() => {
+        // The answers only — the question's live wording is never joined.
+        expect(builder.select).toHaveBeenCalledWith("question_id, answer, created_at");
+      });
+  });
+
+  it("falls back to a neutral label for an answer whose question the copy does not name", async () => {
+    wire([{ question_id: "00000000-0000-4000-8000-00000000a0a9", answer: "fine", created_at: "2026-05-14T12:00:03Z" }]);
+    await expect(getCheckInAnswers({ id: "ci-22", sentSnapshot: copy })).resolves.toEqual([
+      { questionId: "00000000-0000-4000-8000-00000000a0a9", answer: "fine", prompt: "Question" },
     ]);
   });
 
   it("scopes to the check-in and orders oldest first, so answers read in form order", async () => {
     const builder = wire([]);
-    await getCheckInAnswers("ci-1");
+    await getCheckInAnswers({ id: "ci-23", sentSnapshot: copy });
 
-    expect(builder.eq).toHaveBeenCalledWith("check_in_id", "ci-1");
+    expect(builder.eq).toHaveBeenCalledWith("check_in_id", "ci-23");
     expect(builder.order).toHaveBeenCalledWith("created_at", { ascending: true });
   });
 
   it("degrades to an empty list on a read error rather than failing the whole detail", async () => {
     wire(null, { message: "boom" });
-    await expect(getCheckInAnswers("ci-1")).resolves.toEqual([]);
+    await expect(getCheckInAnswers({ id: "ci-24", sentSnapshot: copy })).resolves.toEqual([]);
+  });
+
+  it("throws for a check-in with no saved copy rather than labelling answers with today's wording", async () => {
+    await expect(getCheckInAnswers({ id: "ci-25", sentSnapshot: null })).rejects.toThrow(/no saved copy/);
   });
 });
 

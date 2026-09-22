@@ -29,6 +29,7 @@ import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getClientCheckIns } from "@/services/check-in-service";
+import { fillSentSnapshots } from "@/services/check-in-sent-snapshot-fill";
 import type { Database } from "@/types/database";
 import { PERF_COACH_ID } from "./perf-fixtures";
 
@@ -537,6 +538,10 @@ async function seedStreakAndCheckin() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: ciErr } = await (supabaseAdmin.from("check_ins").insert as any)(ciRows);
   if (ciErr) throw new Error(`3.7 check_ins seed: ${ciErr.message}`);
+  // Inserted directly, so each gets the copy a sent check-in saves (migration
+  // 195) from the fill before anything reads it.
+  const copies = await fillSentSnapshots({ clientIds: [String(S37_CLIENT_ID)] });
+  if (copies.failed.length > 0) throw new Error(`3.7 check-in copies: ${copies.failed[0].error}`);
 
   console.log(`  inserted ${dlRows.length} daily_logs + ${ciRows.length} check_ins for the 3.7 client`);
 }

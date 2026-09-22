@@ -430,6 +430,7 @@ export type Database = {
           photo_side: string | null
           prs: string | null
           response_sent_at: string | null
+          sent_snapshot: Json | null
           sleep: number | null
           soreness: number | null
           status: string
@@ -463,6 +464,7 @@ export type Database = {
           photo_side?: string | null
           prs?: string | null
           response_sent_at?: string | null
+          sent_snapshot?: Json | null
           sleep?: number | null
           soreness?: number | null
           status?: string
@@ -496,6 +498,7 @@ export type Database = {
           photo_side?: string | null
           prs?: string | null
           response_sent_at?: string | null
+          sent_snapshot?: Json | null
           sleep?: number | null
           soreness?: number | null
           status?: string

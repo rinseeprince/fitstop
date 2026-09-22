@@ -51,14 +51,15 @@ beforeEach(() => {
   vi.mocked(getClientById).mockResolvedValue(client as never);
   vi.mocked(getCoachUnitPreference).mockResolvedValue("imperial");
   vi.mocked(resolveCheckInReportingPeriod).mockResolvedValue({ periodStart: "2026-09-11", periodEnd: "2026-09-17" });
-  vi.mocked(getCheckInPeriodAdherence).mockResolvedValue({
+  // Both read the check-in's saved copy, so both answer at once.
+  vi.mocked(getCheckInPeriodAdherence).mockReturnValue({
     dates: ["2026-09-11", "2026-09-12"],
     loggedDates: ["2026-09-11"],
     nutrition: {} as never,
     habits: { rail: [], avgPct: null, daysBelow50: 0, perHabit: [{ id: "h-1", name: "Walk", eligibleDays: 2, completedDays: 1, pct: 50, rail: [true, false] }] },
   });
   vi.mocked(getDailyLogs).mockResolvedValue([]);
-  vi.mocked(getCheckInNutritionPeriod).mockResolvedValue(nutrition as never);
+  vi.mocked(getCheckInNutritionPeriod).mockReturnValue(nutrition as never);
   vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([
     { eventId: "e-1", date: "2026-09-11", sessionName: "Lower A", status: "completed", logStatus: "logged", completionQuality: "full", trainingSessionId: "s-1", sessionLogId: "log-1" },
     { eventId: "e-2", date: "2026-09-12", sessionName: "Upper A", status: "scheduled", logStatus: "not_logged", completionQuality: null, trainingSessionId: "s-2", sessionLogId: null },
@@ -82,12 +83,13 @@ describe("getCheckInReviewInput — one input for both paths", () => {
     expect(getExerciseSummariesForPeriod).toHaveBeenCalledWith(["log-1"], "imperial");
   });
 
-  it("reads the stored period through the page's own reads and carries every part", async () => {
+  it("reads the week's food, habits and days from the check-in's saved copy, and the client's own logging of the week from the week", async () => {
     const input = await getCheckInReviewInput("ci-1");
     expect(getTrainingEventDetailsForPeriod).toHaveBeenCalledWith("client-1", "2026-09-11", "2026-09-17");
     expect(getDailyLogs).toHaveBeenCalledWith("client-1", "2026-09-11", "2026-09-17");
-    expect(getCheckInNutritionPeriod).toHaveBeenCalledWith(checkIn, "2026-09-11", "2026-09-17");
-    expect(getCheckInPeriodAdherence).toHaveBeenCalledWith(checkIn);
+    // The copy alone — no window, so nothing is read over the period live.
+    expect(vi.mocked(getCheckInNutritionPeriod).mock.calls).toEqual([[checkIn]]);
+    expect(vi.mocked(getCheckInPeriodAdherence).mock.calls).toEqual([[checkIn]]);
     expect(buildCheckInComparison).toHaveBeenCalledWith(checkIn, client);
     expect(input).toMatchObject({
       clientName: "Jane Doe",
@@ -126,17 +128,22 @@ describe("getCheckInReviewInput — one input for both paths", () => {
     await expect(getCheckInReviewInput("ci-1")).rejects.toThrow("logs down");
   });
 
-  it("gives a legacy row with no period the six days up to its submission, and no figures", async () => {
+  it("gives a legacy row with no period the six days up to its submission, no figures and no food rows — its copy saved no week", async () => {
     vi.mocked(resolveCheckInReportingPeriod).mockResolvedValue(null);
-    vi.mocked(getCheckInPeriodAdherence).mockResolvedValue(null);
+    vi.mocked(getCheckInPeriodAdherence).mockReturnValue(null);
+    const noFood = { days: [], summary: { periodDays: 0 } };
+    vi.mocked(getCheckInNutritionPeriod).mockReturnValue(noFood as never);
     const input = await getCheckInReviewInput("ci-1");
     expect(getTrainingEventDetailsForPeriod).not.toHaveBeenCalled();
     expect(getDailyLogs).toHaveBeenCalledWith("client-1", "2026-09-12", "2026-09-18");
+    // The food is the copy's (none), never the six days read live.
+    expect(vi.mocked(getCheckInNutritionPeriod).mock.calls).toEqual([[checkIn]]);
     expect(input).toMatchObject({
       dates: ["2026-09-12", "2026-09-13", "2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18"],
       loggedDates: null,
       workouts: [],
       habits: [],
+      nutrition: noFood,
     });
   });
 });

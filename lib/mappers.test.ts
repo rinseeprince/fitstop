@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-import { mapCheckInRow, mapClientRow, mapCoachRow, toClientSelfView } from "./mappers";
+import {
+  mapCheckInRow,
+  mapClientRow,
+  mapCoachRow,
+  toClientFacingCheckIn,
+  toClientSelfView,
+  withoutSentSnapshot,
+} from "./mappers";
 import type { ClientRow, CoachRow } from "./database-helpers";
 import type { GoalOnDay } from "@/types/client-goals";
 
@@ -221,7 +228,7 @@ describe("toClientSelfView — the client's own profile", () => {
   });
 });
 
-describe("mapCheckInRow — readings are folded in, and the keys keep their place", () => {
+describe("mapCheckInRow — a sent check-in reports its saved copy, and the keys keep their place", () => {
   const row = {
     id: "ci1",
     client_id: "c1",
@@ -230,20 +237,97 @@ describe("mapCheckInRow — readings are folded in, and the keys keep their plac
     updated_at: "2026-05-04T08:00:00+00:00",
   } as unknown as Parameters<typeof mapCheckInRow>[0];
 
-  it("takes the seven readings from the fold, never from the row", () => {
-    const withColumns = { ...row, weight: 99.9, waist: 99.8 } as typeof row;
-    const checkIn = mapCheckInRow(withColumns, { weight: 79.5, bodyFat: 19.6, waist: 80.2 });
+  /** A copy that passes the declared shape: what the check-in reported when sent. */
+  function sentCopy(readings: Partial<Record<"weight" | "bodyFat" | "waist" | "hips" | "chest" | "arms" | "thighs", number>>) {
+    return {
+      version: 1,
+      day: "2026-05-04",
+      readings: {
+        weight: null,
+        bodyFat: null,
+        waist: null,
+        hips: null,
+        chest: null,
+        arms: null,
+        thighs: null,
+        ...readings,
+      },
+      standing: { weight: readings.weight ?? null, bodyFat: readings.bodyFat ?? null },
+      goal: null,
+      goalProgress: {},
+      nutritionPlan: null,
+      period: null,
+      questions: [],
+    };
+  }
+
+  const withCopy = (copy: unknown) => ({ ...row, sent_snapshot: copy }) as typeof row;
+
+  it("takes the seven readings from the check-in's saved copy, never from a column on the row", () => {
+    const withColumns = {
+      ...withCopy(sentCopy({ weight: 79.5, bodyFat: 19.6, waist: 80.2 })),
+      weight: 99.9,
+      waist: 99.8,
+    } as typeof row;
+    const checkIn = mapCheckInRow(withColumns);
     expect(checkIn.weight).toBe(79.5);
     expect(checkIn.bodyFatPercentage).toBe(19.6);
     expect(checkIn.waist).toBe(80.2);
     expect(checkIn.hips).toBeUndefined();
   });
 
+  it("reads only the copy — a reading corrected in the client's log since has no way in", () => {
+    // The mapper takes the row alone: whatever the log's stamped row now says
+    // (a coach's correction edits it in place), the check-in reports what it
+    // saved when it was sent.
+    expect(mapCheckInRow.length).toBe(1);
+    const checkIn = mapCheckInRow(withCopy(sentCopy({ weight: 82.7 })));
+    expect(checkIn.weight).toBe(82.7);
+  });
+
+  it("carries the validated copy last, for the server's readers", () => {
+    const checkIn = mapCheckInRow(withCopy(sentCopy({ weight: 78.1 })));
+    const keys = Object.keys(checkIn);
+    expect(keys[keys.length - 1]).toBe("sentSnapshot");
+    expect(checkIn.sentSnapshot?.readings.weight).toBe(78.1);
+    expect(checkIn.sentSnapshot?.version).toBe(1);
+  });
+
+  it("maps a row the fill has not reached with no readings and a null copy", () => {
+    const checkIn = mapCheckInRow(row);
+    expect(checkIn.weight).toBeUndefined();
+    expect(checkIn.bodyFatPercentage).toBeUndefined();
+    expect(checkIn.thighs).toBeUndefined();
+    expect(checkIn.sentSnapshot).toBeNull();
+  });
+
+  it("throws on a copy that does not match its declared shape — corruption, never a state to render", () => {
+    expect(() => mapCheckInRow(withCopy({ version: 2, readings: {} }))).toThrow(
+      /saved copy does not match its shape/
+    );
+    expect(() =>
+      mapCheckInRow(withCopy({ ...sentCopy({ weight: 77.3 }), readings: { weight: "77.3" } }))
+    ).toThrow(/saved copy does not match its shape/);
+  });
+
   it("emits the reading keys at the same position whether or not a reading exists — the wire's byte order", () => {
     const bare = Object.keys(mapCheckInRow(row));
-    const folded = Object.keys(mapCheckInRow(row, { weight: 79.5, thighs: 61 }));
-    expect(folded).toEqual(bare);
+    const reported = Object.keys(mapCheckInRow(withCopy(sentCopy({ weight: 79.4, thighs: 61.2 }))));
+    expect(reported).toEqual(bare);
     expect(bare.indexOf("weight")).toBe(bare.indexOf("notes") + 1);
     expect(bare.indexOf("thighs")).toBe(bare.indexOf("photoFront") - 1);
+    expect(bare[bare.length - 1]).toBe("sentSnapshot");
+  });
+
+  it("leaves the copy off both browser wires — the coach's check-in and the client's history list", () => {
+    const checkIn = mapCheckInRow(withCopy(sentCopy({ weight: 80.9 })));
+
+    const coachWire = withoutSentSnapshot(checkIn);
+    expect(coachWire).not.toHaveProperty("sentSnapshot");
+    expect(coachWire.weight).toBe(80.9);
+
+    const clientWire = toClientFacingCheckIn(checkIn);
+    expect(clientWire).not.toHaveProperty("sentSnapshot");
+    expect(clientWire.weight).toBe(80.9);
   });
 });

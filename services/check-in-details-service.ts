@@ -13,7 +13,8 @@ import { getTrainingEventDetailsForPeriod } from "./check-in-context-service";
 import { calculateCheckInPeriod } from "@/lib/date-helpers";
 import { checkInWeekday } from "@/lib/check-in-week";
 import { getClientById } from "./client-service";
-import { getClientAdherenceForRange } from "./client-adherence-service";
+import { classifyNutritionDay } from "./client-adherence-service";
+import { summarizeNutritionPeriod } from "@/utils/nutrition-period-summary";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 
 /**
@@ -49,37 +50,38 @@ export const resolveCheckInReportingPeriod = async (
 };
 
 /**
- * The nutrition and habit figures for a check-in's own period, from the shipped
- * Overview kernel — one definition of "on target" and "eligible" across both
- * surfaces rather than a second one written into the review's renderers.
+ * The nutrition and habit figures for a check-in's own period, as they stood
+ * when it was sent — read from its saved copy (lib/check-in/sent-snapshot.ts),
+ * so a nutrition setting switched, a same-day re-save or a habit switched off
+ * afterwards never moves them (owner ruling 2026-09-22). The food against each
+ * day's target is the saved rows through the same kernel the Overview runs
+ * (`summarizeNutritionPeriod`, one dot per day by `classifyNutritionDay`); the
+ * habits, the days and the days logged are the saved figures themselves.
  *
  * **Training is deliberately NOT on this wire.** The review page counts the
  * period's training itself, from the per-workout detail it already carries,
  * through `summariseTraining` (`lib/training-adherence.ts`). Two numbers from
  * two derivations on one screen is the defect; so the page keeps its own
  * training figure and this returns only what it is replacing.
+ *
+ * Null when the check-in's week could not be resolved — its copy saved none.
  */
-export const getCheckInPeriodAdherence = async (
-  checkIn: CheckIn
-): Promise<CheckInPeriodAdherence | null> => {
-  const period = await resolveCheckInReportingPeriod(checkIn);
+export const getCheckInPeriodAdherence = (
+  checkIn: Pick<CheckIn, "id" | "sentSnapshot">
+): CheckInPeriodAdherence | null => {
+  const snapshot = checkIn.sentSnapshot;
+  if (!snapshot) throw new Error(`Check-in ${checkIn.id} has no saved copy`);
+  const period = snapshot.period;
   if (!period) return null;
 
-  const summary = await getClientAdherenceForRange(
-    checkIn.clientId,
-    period.periodStart,
-    period.periodEnd,
-    // The week's own last day stands in for "today" here: it only decides which
-    // still-scheduled workouts read as missed, and the training half of this
-    // summary is deliberately not on this wire.
-    period.periodEnd
-  );
-
   return {
-    dates: summary.dates,
-    loggedDates: summary.loggedDates,
-    nutrition: summary.nutrition,
-    habits: summary.habits,
+    dates: period.dates,
+    loggedDates: period.loggedDates,
+    nutrition: {
+      rail: period.nutrition.map((day) => classifyNutritionDay(day.status)),
+      ...summarizeNutritionPeriod(period.nutrition),
+    },
+    habits: period.habits,
   };
 };
 
@@ -154,20 +156,22 @@ export const insertExerciseHighlights = async (
 
 /**
  * Answers to the coach's custom questions for one check-in, in the order the
- * form asked them.
- *
- * The prompt is joined LIVE from `check_in_questions` rather than snapshotted
- * onto the answer: rewording a question relabels every past answer, because it
- * is the same question. A question archived after the fact still resolves —
- * `archived_at` retires it from future forms, not from history.
+ * form asked them, each under the wording the client saw — the check-in's
+ * saved copy keeps it, so rewording a question later never relabels a sent
+ * check-in's answer (owner, 2026-09-22). The answers still point at their
+ * question, which is what "how did answers to this question change" reads.
  */
 export const getCheckInAnswers = async (
-  checkInId: string
+  checkIn: Pick<CheckIn, "id" | "sentSnapshot">
 ): Promise<CheckInCustomAnswer[]> => {
+  const snapshot = checkIn.sentSnapshot;
+  if (!snapshot) throw new Error(`Check-in ${checkIn.id} has no saved copy`);
+  const wording = new Map(snapshot.questions.map((question) => [question.questionId, question.prompt]));
+
   const { data, error } = await supabaseAdmin
     .from("check_in_answers")
-    .select("question_id, answer, created_at, check_in_questions ( prompt )")
-    .eq("check_in_id", checkInId)
+    .select("question_id, answer, created_at")
+    .eq("check_in_id", checkIn.id)
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -175,16 +179,10 @@ export const getCheckInAnswers = async (
     return [];
   }
 
-  type AnswerRow = {
-    question_id: string;
-    answer: string;
-    check_in_questions: { prompt: string } | null;
-  };
-
-  return ((data ?? []) as AnswerRow[]).map((row) => ({
+  return (data ?? []).map((row) => ({
     questionId: row.question_id,
     answer: row.answer,
-    prompt: row.check_in_questions?.prompt ?? "Question",
+    prompt: wording.get(row.question_id) ?? "Question",
   }));
 };
 
@@ -245,7 +243,7 @@ export const getCheckInWithDetails = async (
 
   const [highlightRows, customAnswers] = await Promise.all([
     getCheckInExerciseHighlights(checkInId),
-    getCheckInAnswers(checkInId),
+    getCheckInAnswers(checkIn),
   ]);
 
   return {

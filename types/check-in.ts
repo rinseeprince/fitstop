@@ -1,3 +1,4 @@
+import type { SentSnapshot } from "@/lib/check-in/sent-snapshot";
 import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import type { DailyLog } from "./daily-log";
 import type { OnboardingStatus } from "./client-intake";
@@ -340,6 +341,15 @@ export type CheckIn = {
   // Timestamps
   createdAt: string;
   updatedAt: string;
+
+  /**
+   * The check-in as it stood when it was sent — the readings above, the goal
+   * section, the week's food and habits, the question wording — saved once and
+   * never changed (migration 195, lib/check-in/sent-snapshot.ts). Null only on
+   * a row the one-off fill has not reached. Server-side: the routes that send a
+   * check-in to a browser leave it off.
+   */
+  sentSnapshot?: SentSnapshot | null;
 };
 
 // Form data structure for client submission

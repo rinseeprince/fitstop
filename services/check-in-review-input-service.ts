@@ -60,13 +60,18 @@ export async function getCheckInReviewInput(
     ? { start: period.periodStart, end: period.periodEnd }
     : { start: addDaysToDateString(submittedOn, -6), end: submittedOn };
 
-  const [workouts, adherence, dailyLogs, nutrition, comparison] = await Promise.all([
+  // The week's food, habits and days logged, and the goal section, are the
+  // check-in's saved copy — the review as it stood when it was sent. The
+  // workouts, the day-form rows and the exercise lines are the client's own
+  // logging of a week the Send closed.
+  const adherence = getCheckInPeriodAdherence(checkIn);
+  const nutrition = getCheckInNutritionPeriod(checkIn);
+
+  const [workouts, dailyLogs, comparison] = await Promise.all([
     period
       ? getTrainingEventDetailsForPeriod(checkIn.clientId, window.start, window.end)
       : Promise.resolve([]),
-    getCheckInPeriodAdherence(checkIn),
     getDailyLogs(checkIn.clientId, window.start, window.end),
-    getCheckInNutritionPeriod(checkIn, window.start, window.end),
     buildCheckInComparison(checkIn, client).catch((error: unknown) => {
       console.error(
         "Check-in review: comparison read failed, the review is written without the goal strip:",

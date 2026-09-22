@@ -61,8 +61,8 @@ coaches
         │     └── daily_habit_logs
         │
         ├── check_in_forms            -- the CLIENT's own form (at most one; no row = the full default form)
-        ├── check_ins                 -- weekly structured submissions
-        │     └── check_in_answers    -- one per (check-in, custom question); prompt read through the FK
+        ├── check_ins                 -- weekly structured submissions, each frozen at Send in the copy it saves (sent_snapshot, mig 195)
+        │     └── check_in_answers    -- one per (check-in, custom question); the wording the client saw is in the check-in's copy
         ├── client_goals              -- one row per goal: a start day, no end (it runs until the next goal starts)
         │     └── client_goal_deadlines  -- every deadline the goal has had, each with the day it took effect
         ├── client_phases             -- journey blocks: name, focus, [starts_on, ends_on], archived_at
@@ -83,7 +83,7 @@ coaches
 - **What changes a goal.** Changing its targets or its type is a NEW goal — from today, or planned from a later day. Changing its deadline keeps the goal: the change is recorded against it, dated today; a planned goal's one entry is rewritten, and a change back to yesterday's deadline removes today's entry rather than copying it. Renaming keeps it: the name and the description are labels, editable on any goal. **A goal that has started never changes its type, targets or start day**; today's goal may be corrected today, and a planned goal is edited, moved or deleted freely until its day.
 - **The date rules**, enforced by the functions against the CLIENT's today: a goal starts today or later; a deadline falls on or after its goal's start and before the next goal's start; a goal planned ahead may not start on or before the deadline of the goal before it. A goal set from today replaces the current one, which ends yesterday whatever its deadline said. The two deadline guards refuse with the goal in the way and the fixes (`lib/goals/goal-write-response.ts`): move the next goal to the day after the new deadline, or delete it; or end the previous goal's deadline the day before the new start.
 - **Every write is one of six database functions** — `add_client_goal` (from today or a later day), `edit_client_goal` (a planned goal or today's, rewritten whole), `set_client_goal_deadline`, `rename_client_goal`, `delete_client_goal`, `restore_client_goal` — SECURITY DEFINER and executable by `service_role` alone, each one transaction, serialised per client by an advisory lock, and writing nothing when nothing changed. The app role holds `SELECT` on both tables and nothing else; RLS is on with no policies, and every read is the service role's, scoped by the route-verified client. `services/client-goal-writes-service.ts` drives the functions and maps a refusal ("code: message") to a `GoalWriteError`; `scripts/goal-functions-proof.ts` proves every rule on DEV inside a rolled-back transaction, each against a copy of its function with that rule taken out.
-- **Delete is a hard delete** — a deliberate exception to CONVENTIONS §8's soft-delete rule, because nothing references a goal row and the goal before it simply covers its days again. The delete returns exactly what it removed; the route signs it (`services/goal-undo-token.ts`: HMAC-SHA256 under a key derived from the server's secret) and hands it back as `undo`, and `POST …/goals/restore` puts back only a copy this server signed for this client within `GOAL_UNDO_WINDOW_MS` — the same id, fields and deadlines — refusing one whose day another goal now takes. Nothing lingers in the database.
+- **Delete is a hard delete** — a deliberate exception to CONVENTIONS §8's soft-delete rule, because nothing references a goal row — a sent check-in keeps its own copy of the goal it was judged against — and the goal before it simply covers its days again. The delete returns exactly what it removed; the route signs it (`services/goal-undo-token.ts`: HMAC-SHA256 under a key derived from the server's secret) and hands it back as `undo`, and `POST …/goals/restore` puts back only a copy this server signed for this client within `GOAL_UNDO_WINDOW_MS` — the same id, fields and deadlines — refusing one whose day another goal now takes. Nothing lingers in the database.
 - **The two ways a first goal is set** both go through `add_client_goal` from the client's today: the manual Add client (`createClient` — the form's targets, typed from them against the weight it was given) and the intake's Sync metrics (the questionnaire's type, its targets, the client's own words as the description, and the deadline only while it is still ahead — a passed one is not copied, and the sync says so — written only when the client has no goal in force). Until commit 8d2 gives the goal its own sheet, the client details sheet's three goal fields save through `PUT …/goals` (`saveDetailsSheetGoal`): a target change makes a new goal from today — or corrects today's goal — typed from its targets, and a deadline change is recorded against today's goal.
 - **Routes** (the full coach chain; audited as `goal.create`, `goal.update`, `goal.deadline`, `goal.rename`, `goal.delete` and `goal.restore`, never with a target): `GET`, `POST` and `PUT /api/clients/[id]/goals`, `PATCH` and `DELETE …/goals/[goalId]`, `PUT …/goals/[goalId]/deadline`, `PUT …/goals/[goalId]/name`, `POST …/goals/restore`, `GET …/goals/history`. A refusal is a 409 carrying its sentence, its code, the goal in the way and the fixes; another client's goal is a 404.
 - **The client's wires** carry the goal in force on the client's today, read by the service role with the route-verified client id: `goalWeight` / `goalBodyFatPercentage` on `GET /api/client/me` and `PATCH /api/client/settings` (in their place in `toClientSelfView`, `lib/mappers.ts`), `client.goalWeight` / `client.goalBodyFatPercentage` on `GET /api/client/progress`, and `goal: { weightKg, deadline }` on `GET /api/client/journey`. `Client` carries no goal fields, and a planned goal reaches no wire before its day.
@@ -94,13 +94,13 @@ coaches
 
 - `services/nutrition-calc-inputs.ts` — the goal in force on the client's today; the only route to the resolver for the nutrition write path (`nutrition-plan-orchestrator.ts` calls `resolveNutritionCalcInputs`) and for the coach nutrition GET.
 - `app/api/clients/[id]/nutrition/route.ts` — the goal-drift check ("Goal changed — regenerate"), against the same goal, which the route reads once and hands to the calc inputs.
-- `services/comparison-service.ts` — the check-in review's goal strip: the goal in force on the check-in's day (see "Goal progress and pace").
+- `lib/check-in/sent-snapshot-goal.ts` (`composeGoalSection`) — a check-in's goal section: the goal in force on the check-in's day, composed once when its copy is saved and frozen with it (see "A sent check-in is frozen").
 - `components/clients/client-overview-tab.tsx` and `components/clients/metrics/hooks/use-merged-metrics.ts` — the Overview's status band and chart, and the Journey's Physique pane: today's goal from `GET /api/clients/[id]/goals` (`hooks/use-client-goals.ts`).
 - `services/client-journey-service.ts` — `GET /api/client/journey`'s goal weight and deadline: the goal in force on the client's today.
 
 ### Goal progress and pace
 
-**Position reads the readings in force at the surface's date, never a check-in; progress runs from the client's reading on the GOAL's start day.** `deriveGoalProgress` (`lib/goals/goal-progress.ts`) is the one composer of the primitives below. It takes a goal (its targets and its type), the readings in force at the caller's date — derived from the measurement log (see "client_measurements table") — the client's readings on the goal's start day (`getReadingsOnDay`, `services/measurements-service.ts`: the newest live reading on or before that day, else the first after it — the baseline's rule, anchored on the goal's start), the trend and the deadline arithmetic, and returns the goal rows (`GoalProgressRows`) with a row for **every target that is set**. The goal's start reading is where its progress runs from, and the goal's TYPE gives the direction it is judged in (`goalDirection`, `lib/goals/goal-types.ts`): losing weight counts down, building muscle up, a recomp's body fat down; any other type, the side of the start the target sits on. Each row also carries the client's baseline (`startingWeight` / `startingBodyFat`, the reading as of their start date), which the check-in's KPI ribbon and the AI prompt's weight line read as "since start" — the client's origin, not the goal's. The date is the caller's. **The Overview reads today**: its chips take the current goal's start readings from `GET …/goals` and today's reading from the series. **A check-in review reads its own day** (`services/comparison-service.ts`; owner decisions 2026-09-03 and 2026-09-22, docs/MEASUREMENT-LOG-PLAN.md commits 8b and 8d): the reading then — the check-in's own stamped row, else the newest live reading dated on or before its day (`getReadingsAsOf`); the goal then — the goal in force on the check-in's day (`goalOnDay` over `listClientGoals`) with that day's deadline, so a check-in older than every goal shows none, because the client had none then; the goal's start readings; the clock then — days remaining counted from the check-in's day; the trend then — the ten check-ins up to and including it (`getClientCheckIns`' `upTo`); and the drift note against the nutrition version covering its day. `goalProgress.goalIsCurrent` says whether the goal judged is still the goal in force on the client's today. A check-in is a report of what the client typed that week, every field on it optional; the check-in object is not among the kernel's inputs, and a check-in without a weight is judged from the reading before it. A row's `position` is `null` when no reading exists as of the date, and the strip renders it as `No reading yet` — the goal is real, the verdict is not. `services/comparison-service.ts` is the only caller of the kernel and of `getReadingsAsOf`; `lib/goals/goal-progress-ownership.test.ts` fails if anything under `services/` or `lib/goals/` calls `calculateGoalProgress`, `deriveGoalStatus` or `computeGoalPace` directly, hands the kernel a check-in field, feeds the review's kernel from the client record's reading rather than the as-of read, calls `getReadingsAsOf` from anywhere but the review, judges the review's goal on any day but the check-in's, or takes the kernel's goal start from anywhere but `getReadingsOnDay` on the judged goal's start day.
+**Position reads the readings in force at the surface's date, never a check-in; progress runs from the client's reading on the GOAL's start day.** `deriveGoalProgress` (`lib/goals/goal-progress.ts`) is the one composer of the primitives below. It takes a goal (its targets and its type), the readings in force at the caller's date — derived from the measurement log (see "client_measurements table") — the client's readings on the goal's start day (`getReadingsOnDay`, `services/measurements-service.ts`: the newest live reading on or before that day, else the first after it — the baseline's rule, anchored on the goal's start), the trend and the deadline arithmetic, and returns the goal rows (`GoalProgressRows`) with a row for **every target that is set**. The goal's start reading is where its progress runs from, and the goal's TYPE gives the direction it is judged in (`goalDirection`, `lib/goals/goal-types.ts`): losing weight counts down, building muscle up, a recomp's body fat down; any other type, the side of the start the target sits on. Each row also carries the client's baseline (`startingWeight` / `startingBodyFat`, the reading as of their start date), which the check-in's KPI ribbon and the AI prompt's weight line read as "since start" — the client's origin, not the goal's. The date is the caller's. **The Overview reads today**: its chips take the current goal's start readings from `GET …/goals` and today's reading from the series. **A check-in's goal section is judged on its own day, once, and frozen** — when the check-in is sent, in the copy it saves (see "A sent check-in is frozen"; owner decisions 2026-09-03 and 2026-09-22, docs/MEASUREMENT-LOG-PLAN.md commits 8b, 8d and 8d1): the reading then — the check-in's own reading, else the newest live reading dated on or before its day (`getReadingsAsOf`); the goal then — the goal in force on the check-in's day (`goalOnDay` over `listClientGoals`) with that day's deadline, so a check-in older than every goal shows none, because the client had none then; the goal's start readings; the clock then — days remaining counted from the check-in's day; the trend then — the ten check-ins up to and including it (`getClientCheckIns`' `upTo`); and the nutrition version covering its day, for the drift note. At Send the check-in's own readings are not in the log yet — they are written just after its row — so the reported values stand in for them wherever the as-of rule would have seen them (`withSentReading`), and the copy is what a review read straight after the Send would show. The review reads the saved section and composes nothing; `goalProgress.goalIsCurrent` — whether the goal judged is still the goal in force on the client's today — is the one part it reads live. A check-in is a report of what the client typed that week, every field on it optional; the check-in object is not among the kernel's inputs, and a check-in without a weight is judged from the reading before it. A row's `position` is `null` when no reading exists as of the date, and the strip renders it as `No reading yet` — the goal is real, the verdict is not. `composeGoalSection` (`lib/check-in/sent-snapshot-goal.ts`) is the only caller of the kernel, and the copy's two builders — `services/check-in-sent-snapshot-service.ts` at Send and `services/check-in-sent-snapshot-fill.ts` for a check-in sent before copies existed — are its only callers and the only readers of `getReadingsAsOf`; `lib/goals/goal-progress-ownership.test.ts` fails if anything under `services/`, `lib/goals/` or `lib/check-in/` calls `calculateGoalProgress`, `deriveGoalStatus` or `computeGoalPace` directly, hands the kernel a check-in field, lets the review compose a goal section, feeds a builder's position from the client record's reading rather than the as-of read, calls `getReadingsAsOf` from anywhere but the two builders, judges the goal on any day but the check-in's, or takes the goal start from anywhere but `getReadingsOnDay` on the judged goal's start day.
 
 `calculateGoalProgress` (`utils/comparison-utils.ts`) answers where a client stands relative to a goal. It returns two independent facts, and collapsing either into the other is what makes a goal card contradict itself:
 
@@ -123,10 +123,10 @@ coaches
 2. **The value for a day is the reading written last** — the latest live row for that client, metric and day by `recorded_at`, a tie broken by id (`lib/measurements/day-values.ts`; owner decision D23). No source ranking: the coach logging after the check-in wins. An edit changes a value and nothing else — `recorded_at` is set once, so no edit can reorder a day or make an older reading the day's value; a coach who wants a different number to stand for a day logs a new reading.
 3. **Writers append only on change.** A value equal to the day's standing value for the same source AND stamp is not written again. The stamp is part of the key deliberately: a check-in submitted on a day whose earlier check-in was deleted still gets its own rows, or it would report nothing.
 4. **No cache.** "Now" is the newest row per metric, of any source, through the view `client_current_measurements`; the baseline is the reading as of `clients.start_date` through `client_baseline_measurements` (see "The client's origin"). `getClientById` / `mapClientRow` fill `Client.currentWeight`, `currentBodyFatPercentage`, `startingWeight` and `startingBodyFatPercentage` from those two views, embedded in the same read as the row (`CLIENT_MEASUREMENT_EMBEDS`), so every consumer of the object — `/api/client/me` included — reads derived numbers under the same names. The string-built column lists that select a client (`CLIENT_SELF_COLUMNS`, the portal progress read, `ENERGY_COLUMNS`) carry the embeds, and the intake sync reads `getCurrentMeasurements` beside its own select; a stale name in any of them is a PostgREST 400 that `tsc` cannot see, and the portal's `return null` turns it into an empty profile.
-5. **A check-in owns no measurement column.** Its readings are rows with `source = 'check_in'` and `source_id = the check-in id`, written by `submitCheckIn` as a second statement after the INSERT (`measured_at` = the submission time, `recorded_on` = the client's day; the same seam as the custom answers — if it throws, the check-in stands without its readings, the POST 500s, and the retry meets migration 156's period-unique constraint). `getMeasurementsForCheckIns` folds the check-in's own live row per metric — the latest by `updated_at` per (stamp, metric), edited in place when a coach changes it — back into the `CheckIn` object (`mapCheckInRow(row, measurements)` keeps the seven fields in their place), so the object and every wire built from it keep their shape.
-6. **"Where they stand" is read at a date; "what this check-in reported" reads the stamped rows.** The date is today on the Overview and the Journey, and the check-in's own day on its review (commit 8b): goal position and the drift note there take the reading as of that day — the check-in's stamped row, else the newest live reading dated on or before it (`getReadingsAsOf`, the review's alone) — while the Overview, the Journey and the energy pair take the client record's readings (rule 4). The review band, the AI prompt and the client's check-in detail take the stamped rows (rule 5). The band's "vs last check-in" compares this check-in's stamped rows with the previous check-in's stamped rows and nothing else — a reading logged between two check-ins belongs to the Journey series and to "now", never to that comparison. A check-in submitted without a weight has no weight row: the band's cell shows its empty state while the goal strip judges the reading before it.
+5. **A check-in's readings are written to the log, and it reports what it sent.** Its readings are rows with `source = 'check_in'` and `source_id = the check-in id`, written by `submitCheckIn` as a second statement after the INSERT (`measured_at` = the submission time, `recorded_on` = the client's day; the same seam as the custom answers — if it throws, the check-in stands without its readings, the POST 500s, and the retry meets migration 156's period-unique constraint). Those rows are the client's log — the Journey, "now", the baseline and the energy pair read them, and a coach's correction edits them in place. The check-in itself reports what the client sent: the seven values it saved in its copy at Send (see "A sent check-in is frozen"), which `mapCheckInRow` puts in their place in the `CheckIn` object, so the object and every wire built from it keep their shape and a correction never moves a sent check-in (owner ruling 2026-09-22). `getMeasurementsForCheckIns` reads a check-in's own rows as the log holds them now — to save the copy of a check-in sent before copies existed.
+6. **"Where they stand" is read at a date; "what this check-in reported" is what it sent.** The date is today on the Overview and the Journey, and the check-in's own day for its goal section (commit 8b), judged once when it is sent and frozen with it: goal position and the drift note take the reading as of that day — the check-in's own reading, else the newest live reading dated on or before it (`getReadingsAsOf`, the copy's builders alone) — while the Overview, the Journey and the energy pair take the client record's readings (rule 4). The review band, the AI prompt and the client's check-in detail take what the check-in sent (rule 5). The band's "vs last check-in" compares what this check-in sent with what the previous check-in sent and nothing else — a reading logged between two check-ins belongs to the Journey series and to "now", never to that comparison. A check-in submitted without a weight reported none: the band's cell shows its empty state while the goal strip judges the reading before it.
 7. **Every calculation reads `client_measurements_live`, never the table** — the view filters `voided_at IS NULL`, so a removed reading leaves every figure and every client surface at once and the filter is spelled once; every view carries `security_invoker`. The table has two readers, both in the service: `getMeasurementReadings`, the coach's measurement list, which shows a removed reading muted with who removed it and when; and `getMeasurementReading`, the row an edit acts on. Series reads are paged (`lib/paged-fetch.ts`): they feed aggregates and must be complete past PostgREST's row cap.
-8. **A reading is edited in place, removed by a mark or restored — never deleted** (owner decisions D9 and D23). A wrong VALUE is edited: `update_measurement` changes the row's `value` and stamps `updated_at`, keeping its id, day, source, check-in stamp, `measured_at` and place in the day, so the check-in fold reads it as the check-in's reading (rule 5), and rule 2 and every "now" surface read it when it is the reading written last; it refuses a row outside `p_client_id` (the route proves the coach owns the client and cannot prove the row does) and a removed row, and an unchanged value writes nothing and audits nothing. A reading that should never have existed is removed: `void_measurement` sets the mark, and refuses a foreign row, a row already removed, and the client's only live weight (activation refuses without one and the pair cannot compute without one — edit it instead; body fat may go to none, the formula switches); `restore_measurement` clears it and refuses a live row. Each returns whether the row is, was, or becomes the client's newest reading of its metric, and the service recomputes the energy pair on that for weight and body fat — the trigger appending a newest reading fires. Coach only, from the Journey's measurement log: Edit reading and Remove reading (behind the destructive-confirm dialog, which names the reading and says when it is the current reading or the baseline) on any live reading, Restore reading on a removed one; audited as `measurement.update`, `measurement.void` and `measurement.restore` with the metric and date only. The routes are `PATCH /api/clients/[id]/measurements/[measurementId]` (zod `{ value }`, canonical) and `POST …/[measurementId]/{void,restore}` on the full coach chain; a foreign row is 404, a state refusal 409, a value outside the metric's bounds 400. A change reaches the client on their next read; the coach's series, the client record (for a weight or body fat) and the stamped check-in's detail are invalidated together (`use-reading-actions.ts`).
+8. **A reading is edited in place, removed by a mark or restored — never deleted** (owner decisions D9 and D23). A wrong VALUE is edited: `update_measurement` changes the row's `value` and stamps `updated_at`, keeping its id, day, source, check-in stamp, `measured_at` and place in the day, so rule 2 and every "now" surface read it when it is the reading written last — the check-in it came from keeps the value it sent (rule 5); it refuses a row outside `p_client_id` (the route proves the coach owns the client and cannot prove the row does) and a removed row, and an unchanged value writes nothing and audits nothing. A reading that should never have existed is removed: `void_measurement` sets the mark, and refuses a foreign row, a row already removed, and the client's only live weight (activation refuses without one and the pair cannot compute without one — edit it instead; body fat may go to none, the formula switches); `restore_measurement` clears it and refuses a live row. Each returns whether the row is, was, or becomes the client's newest reading of its metric, and the service recomputes the energy pair on that for weight and body fat — the trigger appending a newest reading fires. Coach only, from the Journey's measurement log: Edit reading and Remove reading (behind the destructive-confirm dialog, which names the reading and says when it is the current reading or the baseline) on any live reading, Restore reading on a removed one; audited as `measurement.update`, `measurement.void` and `measurement.restore` with the metric and date only. The routes are `PATCH /api/clients/[id]/measurements/[measurementId]` (zod `{ value }`, canonical) and `POST …/[measurementId]/{void,restore}` on the full coach chain; a foreign row is 404, a state refusal 409, a value outside the metric's bounds 400. A change reaches the client on their next read; the coach's series and the client record (for a weight or body fat, with the goals area) are invalidated together (`use-reading-actions.ts`) — never a check-in's, which does not follow.
 
 **Energy follows the newest reading.** `appendMeasurements` calls `recalculateClientEnergy` when a row it wrote is the client's newest weight or body fat (`client_current_measurements` after the insert); a backdated row that is not the newest recomputes nothing. Editing, removing or restoring a reading fires the same recompute when that reading is, was, or becomes the newest (rule 8).
 
@@ -134,7 +134,7 @@ coaches
 
 **Writers**, all through `appendMeasurements` (an edit is not a writer — it changes a row through `update_measurement`, rule 8): check-in submit (`check_in`, stamped); the Journey's "Log measurement" for a physique key, the metrics PUT and a `currentWeight` / `currentBodyFatPercentage` carried by `PATCH /api/clients/[id]` (`coach_entry`, dated the coach's today); the details sheet's Baseline fields (`coach_entry` dated ON the start date; an `intake` row dated today before activation); `createClient` (`intake`, the weight and body fat it was given, dated the coach's today); the intake sync (`intake`, dated the questionnaire's completion day on the client's calendar, only for a metric the client has no reading of). A coach's write is audited as `measurement.create`, an edit as `measurement.update`, a removal and a restore as `measurement.void` / `measurement.restore` (metric and date only). The seeds write the log; `scripts/seed/teardown.ts` relies on the `ON DELETE CASCADE` from `clients`, because the app role has no `DELETE`.
 
-**Readers:** the check-in object assembly (`services/check-in-service.ts`, every reader that maps a row); `GET /api/clients/[id]/measurement-series` (`services/measurement-series-service.ts` — every metric's day-values, the baseline per metric, the start date and `readings`, every row of the log newest first with its removal; one payload for the Overview chart and status band, the Journey's Physique pane, its measurement log and the blocks); `services/client-portal-progress.ts` (`GET /api/client/progress`, under the client's JWT); `services/comparison-service.ts` (the ten-check-in trend, through the folded objects); `services/client-journey-service.ts`; the activity feed (`coach_entry` rows since the coach's last visit); `services/nutrition-calc-inputs.ts` and `services/client-energy-service.ts` (through the current view).
+**Readers:** the copy of a check-in sent before copies existed, filled once from its own rows (`services/check-in-sent-snapshot-fill.ts`); `GET /api/clients/[id]/measurement-series` (`services/measurement-series-service.ts` — every metric's day-values, the baseline per metric, the start date and `readings`, every row of the log newest first with its removal; one payload for the Overview chart and status band, the Journey's Physique pane, its measurement log and the blocks); `services/client-portal-progress.ts` (`GET /api/client/progress`, under the client's JWT); the saved copy's builders at a check-in's day (`getReadingsAsOf`, `getReadingsOnDay`, `getBaseline`); `services/client-journey-service.ts`; the activity feed (`coach_entry` rows since the coach's last visit); `services/nutrition-calc-inputs.ts` and `services/client-energy-service.ts` (through the current view).
 
 ### client_metric_entries table (migration 132; wellness keys since migration 159)
 
@@ -1043,7 +1043,7 @@ This REPLACED the "past logged → locked" rule on 2026-09-04 (today editable; a
 - **Read side**: server code derives "today" via `getTodayDateStringInTimezone()` in `lib/date-helpers.ts` — the only surface owning `Intl.DateTimeFormat` math. (Sanctioned exception: the two settings routes validate input zones with `Intl.supportedValuesOf("timeZone")` — validation, not date math.)
 - **Helper inventory**: `lib/date-helpers.ts` owns the pure helpers — `getTodayDateStringInTimezone(tz, now?)` (string), `getTodayInTimezone(tz, now?)` (local-midnight `Date` for the injectable check-in helpers; NOT `parseISODate`, which parses as UTC midnight), `getDeviceTimeZone()` (browser capture). `services/today-service.ts` owns the DB-fetching ones — `getClientTodayString(clientId)` (client tz → coach tz fallback while the client is on the unsynced `'UTC'` sentinel → UTC) and `getCoachTodayString(coachId)`. **Rule:** when a `Client` record with `timezone` is already in scope, use the pure helpers (zero extra fetches — the overdue/attention-feed loops rely on this); the fetching helpers are for call sites holding a bare id.
 - A stored `'UTC'` is the "never device-synced" sentinel; coach-initiated placement on a never-synced client's calendar falls back to the coach's zone (`getClientTodayString`, Session 7.82), then UTC.
-- **Where each anchor applies** (Sessions 7.82–7.86): client tz — plan placement RPCs (`p_today`), calendar move/delete guards, the client home week, check-in gate/window, streaks/habit defaults, the check-in review's goal clock — the check-in's own day on the client's calendar, for its pace window and its days remaining (Session 7.86, commit 8b, `services/comparison-service.ts`), the coach calendar's drag/delete *gating* (Session 7.86 — the visual today ring stays coach-device), check-in due/overdue, and the placement-path event window-delete (`clientToday` threaded from the route as the additive RPC's `p_today` floor, `GREATEST(effective_from, today)`; migration 114 replaced the old STEP-0 cross-plan wipe). Coach tz — attention-feed window, coach "current week" metrics/history anchors, the attention-dismissal `dismissed_at` (migration 112 drops the column's UTC `CURRENT_DATE` default so a writer that forgets the date fails loudly), and the goal-deadline write bound (Session 7.86 — the coach is the setter, so the past-date check is route-side via `getCoachTodayString`; the zod schema is format-only). The placement RPCs additionally take `p_effective_from DATE DEFAULT NULL` coalescing to `p_today` (migration 110, carried into the additive 114/115 rewrites).
+- **Where each anchor applies** (Sessions 7.82–7.86): client tz — plan placement RPCs (`p_today`), calendar move/delete guards, the client home week, check-in gate/window, streaks/habit defaults, the check-in's goal clock — the check-in's own day on the client's calendar, for its pace window and its days remaining, judged when it is sent and frozen with it (Session 7.86, commits 8b and 8d1, `services/check-in-sent-snapshot-service.ts`), the coach calendar's drag/delete *gating* (Session 7.86 — the visual today ring stays coach-device), check-in due/overdue, and the placement-path event window-delete (`clientToday` threaded from the route as the additive RPC's `p_today` floor, `GREATEST(effective_from, today)`; migration 114 replaced the old STEP-0 cross-plan wipe). Coach tz — attention-feed window, coach "current week" metrics/history anchors, the attention-dismissal `dismissed_at` (migration 112 drops the column's UTC `CURRENT_DATE` default so a writer that forgets the date fails loudly), and the goal-deadline write bound (Session 7.86 — the coach is the setter, so the past-date check is route-side via `getCoachTodayString`; the zod schema is format-only). The placement RPCs additionally take `p_effective_from DATE DEFAULT NULL` coalescing to `p_today` (migration 110, carried into the additive 114/115 rewrites).
 
 ### Scale / payload contracts
 
@@ -1508,19 +1508,63 @@ the full rule, including the roll on the next check-in day, is under "Date-edit 
 is no reopen and no same-day warning; after the close only the COACH changes anything about that
 week, and only readings, from the Journey's measurement log.
 
-That is what keeps the figures a check-in freezes at submit — `workouts_completed`,
-`adherence_percentage`, `nutrition_days_on_target`, the five wellness averages and `period_snapshot`
-— from going stale against the coach's review, which reads the period's logs live. Before the close
-a client who backfilled a day after submitting moved the review while their own copy stood still.
-The same index that enforces one check-in per period serves the boundary read
-(`getLastSubmittedPeriodEnd`), so the close costs one indexed lookup.
+That is what keeps the client's own logging of the week — their workouts and sets, their food
+entries, wellness, habit ticks and day notes — as it was when they sent it: the review reads those
+from the logs, and nothing can write them any more. Before the close a client who backfilled a day
+after submitting moved the review while their own copy stood still. The same index that enforces
+one check-in per period serves the boundary read (`getLastSubmittedPeriodEnd`), so the close costs
+one indexed lookup.
 
 The freeze is one INSERT: `submitCheckIn` derives the columns and builds `period_snapshot` from
 the same kernel run (`getNutritionPeriod` → `buildPeriodSnapshot`, `lib/check-in/period-snapshot.ts`),
-and the AI review's nutrition — on the client-submit path and on the coach's Regenerate — is those
-frozen rows and the kernel over them (`getCheckInNutritionPeriod`). The coach's review page still
-reads the period live, so a plan the coach changes after submit moves the review's targets while
-the client's card keeps the frozen count; that gap is the open item in `docs/CHECK-IN-FINDINGS.md`.
+and saves the check-in's copy beside them (below). What the coach could still change after the
+Send — a reading, the goal, the start date, a nutrition setting, a habit, a question's wording —
+the copy holds as it stood, so nothing moves a sent check-in.
+
+### A sent check-in is frozen (migration 195)
+
+**A sent check-in is frozen in time** (owner ruling 2026-09-22, docs/MEASUREMENT-LOG-PLAN.md commit
+8d1): everything it shows is what it showed when the client sent it, whatever the coach does
+afterwards. A coach correcting its weigh-in on the Journey corrects the client's log — the Journey,
+the Overview, the client's progress screen and the calories' starting weight read the correction —
+and never the check-in. Nobody edits a sent check-in, the client included: a mistake is corrected in
+the log, and a question is asked in the reply.
+
+**The copy, `check_ins.sent_snapshot`** — one frozen block with a version number inside, its shape
+declared once in `lib/check-in/sent-snapshot.ts` (`SENT_SNAPSHOT_VERSION`), validated when written
+(`parseSentSnapshot`) and when read (`readSentSnapshot`, in `mapCheckInRow`). It holds: the seven
+readings the client reported; the goal in force on the check-in's day (its id, name, type, targets,
+start and that day's deadline) and the goal section's rows as the review draws them (position,
+the goal's start, the client's baseline, verdict, pace, the deadline line); the reading as of the
+day and the nutrition version covering it, for the drift note; the week — its days, the days the
+client logged, the food against each day's target and the habits as they stood; and each answered
+question in the wording the client saw. A later shape is a new version beside this one.
+
+- **Written in the check-in's own INSERT** by `submitCheckIn` (`services/check-in-sent-snapshot-service.ts`
+  builds it first, from one instant that is also the row's `created_at`), so a check-in never exists
+  without it. Its goal section is the review's computation on the check-in's day, done once
+  (`composeGoalSection`, see "Goal progress and pace"); the check-in's own readings are written just
+  after the row, so the reported values stand in wherever an as-of read would have seen them, and the
+  trend reads the nine check-ins before from their own copies.
+- **Write-once, enforced by the database**: the trigger `check_ins_sent_snapshot_write_once` refuses
+  any change to a copy once it is set, and emptying one. An empty copy may be filled once — how a
+  check-in sent before copies existed got its copy (`scripts/fill-check-in-sent-snapshots.ts` over
+  `services/check-in-sent-snapshot-fill.ts`: exactly what its review showed that day — the food rows
+  frozen at Send where they cover its week), and how a seed script's check-ins get theirs (the three
+  seeds call the same fill). The status, the coach's reply and the AI review still change.
+- **Every check-in surface reads it**: the check-in object's readings (`mapCheckInRow`) and so the
+  review's ribbon, the AI review, the client's check-in list and detail and the coach's recent list;
+  the goal section and the drift note (`buildCheckInComparison`); the nutrition card, the habits and
+  the days logged (`getCheckInPeriodAdherence`, the Overview kernel's rules over the saved rows); the
+  AI's food rows (`getCheckInNutritionPeriod`); the answers' wording (`getCheckInAnswers`). The one
+  live answer is whether the goal judged is still the client's goal today (`goalIsCurrent`), which is
+  what "Set new goals" asks. The routes that send a check-in to a browser leave the copy off
+  (`withoutSentSnapshot`, `toClientFacingCheckIn`); the client wires keep their shape.
+- **A sanctioned denormalisation** (CONVENTIONS §8): the copy repeats what the log held for the
+  check-in's readings and, for a check-in sent since, the food rows `period_snapshot` freezes too —
+  one writer, one statement, one computation, so they cannot disagree at Send, and after it the copy
+  is the check-in and the log is the client's history. `period_snapshot` stays, because the client's
+  wires read it.
 
 ### The customisable form (migration 157)
 
@@ -1556,9 +1600,9 @@ as they are — so they carry no key either, and the two steps are unconditional
 is a 16th/15th key and a different feature; `TECHNICAL-DEBT.md` records it.)
 
 **A question is a row, not a string copied onto each form.** Rewording it
-changes the question everywhere it is asked AND relabels every past answer,
-because it is the same question — `check_in_answers` carries no prompt snapshot
-and resolves through the FK. An answered question cannot be deleted
+changes the question everywhere it is asked, because it is the same question —
+`check_in_answers` points at it through the FK — while a sent check-in keeps
+the wording its client saw, in its copy (see "A sent check-in is frozen"). An answered question cannot be deleted
 (`check_in_answers.question_id` refuses it), so `archived_at` is the retirement
 gesture; an archived question leaves every form's view while its answers keep
 resolving. The FK is `ON DELETE NO ACTION`, not `RESTRICT`, deliberately: NO
@@ -1612,7 +1656,7 @@ after its gate and before the photo uploads, remains the authority.
 `form: { fields, questions }`; `POST /api/client/check-ins` accepts optional
 `customAnswers: [{ questionId, answer }]` (≤ `MAX_CHECK_IN_QUESTIONS`).
 `GET /api/client/check-ins/[id]` and `GET /api/check-in/[id]` return
-`customAnswers` with prompts joined — the single-check-in reads only, never the
+`customAnswers` with the wording each question had when the check-in was sent — the single-check-in reads only, never the
 history LIST, which stays a sparse fieldset. A submission carrying a disabled
 field is **stripped, never 400'd** (`applyCheckInForm`, shared by the browser and
 the server): a payload with a disabled value is a client who loaded the form
@@ -1653,10 +1697,12 @@ value, a track and a state column resolved `status` > `paceStatus` > `isOnTrack`
 the distance past target on an overshoot), `On track`, `Behind pace`, `Deadline unrealistic`,
 `Needs attention`, the last four carrying the distance to go — or `No reading yet`, muted, when no
 reading existed as of the check-in's day: the position is the reading as of that day — the
-check-in's own stamped row, else the newest reading before it (see "Goal progress and pace") — never
+check-in's own reading, else the newest reading before it (see "Goal progress and pace") — never
 today's, so a check-in submitted without a weight is judged from the reading before it, and a
 check-in from May is judged as May: against the goal in force on its day, with that day's deadline
-and the days then remaining to it, its track running from the reading on the goal's start day. `paceStatus` judges whether the RATE
+and the days then remaining to it, its track running from the reading on the goal's start day. The
+strip is the goal section the check-in saved when it was sent, so a goal changed or a reading
+corrected since never moves it (see "A sent check-in is frozen"). `paceStatus` judges whether the RATE
 REQUIRED to hit the deadline is safe; `isOnTrack` whether the client is moving towards the goal;
 reading them in that order is what keeps "On track" off a client past a weight-loss target. Body
 fat carries no pace status and falls through the same column, so the two rows cannot reach
@@ -1694,9 +1740,10 @@ client-facing wizard steps with their own importers).
 assembles ONE input per check-in (`CheckInReviewInput`, `types/check-in-review-input.ts`) from the
 page's own reads: the check-in with its answers and highlights, the period's workouts with their logs
 (`getTrainingEventDetailsForPeriod`) and their exercise lines (`getExerciseSummariesForPeriod`), the
-nutrition rows the check-in froze and the kernel over them (`getCheckInNutritionPeriod`), the habit
-figures and the logged days (`getCheckInPeriodAdherence`), the day-form rows (`getDailyLogs`) and the
-comparison behind the goal strip (`buildCheckInComparison`). `buildCheckInReviewPrompt`
+food rows the check-in's copy froze and the kernel over them (`getCheckInNutritionPeriod`), the habit
+figures and the logged days from the same copy (`getCheckInPeriodAdherence`), the day-form rows
+(`getDailyLogs`) and the comparison behind the goal strip (`buildCheckInComparison`, the copy's goal
+section). `buildCheckInReviewPrompt`
 (`utils/ai-prompt-builder.ts`, with `utils/ai-prompt-week.ts` and `utils/ai-prompt-day.ts`) writes it
 out. The client's submit (`triggerAISummaryGeneration`) and the coach's Regenerate route both call the
 same two functions, so a review written at submit and one regenerated later start from the same week;
@@ -1749,11 +1796,10 @@ whole up to `AI_PROMPT_TEXT_LIMIT`, every typed string through `sanitizeForAIPro
 check-in speaks only through the changes above. `utils/ai-prompt-builder.test.ts` pins the assembled
 text for a fixture week.
 
-**The nutrition rows are the frozen ones.** The model reads the rows the check-in froze at send, so an
-old review regenerates against that week as it stood; the page's Nutrition card reads the current plan
-(`getCheckInPeriodAdherence`), so the two agree unless the coach changed the client's targets after the
-check-in was sent — the open item in `docs/CHECK-IN-FINDINGS.md`. Everything else the review is given is
-read live, exactly as the page reads it.
+**The week is the one the check-in saved.** The model reads the food rows, the habits, the days
+logged and the goal section from the check-in's copy, exactly as the page does, so an old review
+regenerates against that week as it stood and the two can never disagree; the workouts, their exercise
+lines and the day-form rows are the client's own logging of a week the Send closed.
 
 **Empty states.** When the AI half is wholly empty the card shows a single placeholder ("No AI
 review yet. Regenerate to write one.") rather than one per block. Regenerate reports a non-OK
@@ -1773,10 +1819,12 @@ not the AI's output.
 compare against"), `timeBetweenCheckIns`, the drift-note fields as of the check-in's day (the reading
 then as `currentWeight`, with the base weight and effective date of the nutrition version covering
 that day), `goalProgress` — position, trend and pace status per target against the goal in force on
-the check-in's day, measured from the goal's start reading, nothing projected, plus `goalIsCurrent` — and seven `changes`: weight, body fat and the
+the check-in's day, measured from the goal's start reading, nothing projected — all from the
+check-in's copy, plus the live `goalIsCurrent` — and seven `changes`: weight, body fat and the
 five wellness metrics, each a signed difference against the previous check-in, present only when
-both check-ins carry the metric — the readings being each check-in's own stamped rows in the
-measurement log, so a reading logged between the two never enters the comparison. Every delta the
+both check-ins carry the metric — the readings being what each check-in sent, from its copy, so a
+reading logged between the two never enters the comparison and a correction moves neither. `previous`
+travels without its copy. Every delta the
 page draws goes through one rule
 (`formatDeltaValue`, `components/check-in/delta-format.ts`): rounded to one decimal like the value
 beside it, coloured by its direction, neutral only at 0.0. **There is no chart series
@@ -1798,10 +1846,10 @@ kernel and the period's workouts ride beside the check-in; the browser folds no 
 counts nothing but that one `summariseTraining` run.
 
 **The figures, and what they divide by.** The review's nutrition and habit
-numbers are computed SERVER-side over the check-in's own reporting period and
+numbers are the check-in's own reporting period as it stood when sent and
 arrive on `GET /api/check-in/[id]` as `periodAdherence`
-(`getCheckInPeriodAdherence` → the shared Overview kernel's
-`getClientAdherenceForRange`). Nutrition is the nutrition kernel's summary
+(`getCheckInPeriodAdherence` over the copy, which the shared Overview kernel's
+`getClientAdherenceForRange` filled at Send). Nutrition is the nutrition kernel's summary
 (`utils/nutrition-period-summary.ts`) plus the rail: days on target over the
 days a TARGET WAS PRESCRIBED — a skipped targeted day is a miss, a day with no
 target is in no ratio, and a period with none reads "No targets set", never

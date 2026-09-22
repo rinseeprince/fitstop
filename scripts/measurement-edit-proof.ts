@@ -17,7 +17,8 @@
  * surface back:
  *
  *   1  removing the newest weight: gone from the series, the current view,
- *      the check-in fold and GET /api/client/progress; the pair recomputed;
+ *      the check-in's own rows in the log and GET /api/client/progress; the
+ *      pair recomputed;
  *      the audit row; the coach's list shows it muted with the remover
  *   2  a double remove → 409; the RPC says already_voided
  *   3  another client's row through this client's URL → 404; the RPC says
@@ -26,8 +27,10 @@
  *   5  restore: back in every read; the pair recomputed; a live row refused
  *   6  editing a check-in's reading IN PLACE: the same row — id, day, source,
  *      stamp and moment kept — with the new value and a later updated_at;
- *      the check-in fold, the day's value, "now" and the client's progress
- *      read all follow it; one live row on the day; the audit row without
+ *      its own row in the log, the day's value, "now" and the client's
+ *      progress read all follow it (a sent check-in keeps what it reported —
+ *      its saved copy, migration 195 — so no check-in follows); one live row
+ *      on the day; the audit row without
  *      the value; an equal edit writes nothing, moves nothing, audits nothing
  *   7  another client's row / a removed row / an out-of-bounds value refused
  *   8  D23 on the database: a reading added after the check-in wins the day;
@@ -282,14 +285,14 @@ async function main(): Promise<void> {
     const voided = await post(coachSession, url(A, w3.id, "void"));
     check("void → 200", voided.status === 200, voided);
     check("void reports the pair recomputed", dataOf(voided)?.energy === "recomputed", dataOf(voided));
-    check("void carries the check-in stamp for the invalidation", dataOf(voided)?.sourceId === STAMP, dataOf(voided));
+    check("void carries the check-in stamp on the wire", dataOf(voided)?.sourceId === STAMP, dataOf(voided));
 
     const seriesAfterVoid = await getMeasurementSeries(A, { metricKeys: ["weight"] });
     check("the series no longer has 20 Apr", seriesAfterVoid.get("weight")?.map((v) => v.date).join(",") === "2026-04-01,2026-04-10", seriesAfterVoid.get("weight")?.map((v) => v.date));
     const currentAfterVoid = await getCurrentMeasurements(A);
     check("the current view moved to 10 Apr (72.2)", currentAfterVoid.weight?.value === 72.2, currentAfterVoid.weight);
     const foldAfterVoid = await getMeasurementsForCheckIns([STAMP]);
-    check("the check-in fold has no weight and still has body fat", foldAfterVoid.get(STAMP)?.weight === undefined && foldAfterVoid.get(STAMP)?.bodyFat === 20.5, foldAfterVoid.get(STAMP));
+    check("the check-in's rows in the log have no weight and still have body fat", foldAfterVoid.get(STAMP)?.weight === undefined && foldAfterVoid.get(STAMP)?.bodyFat === 20.5, foldAfterVoid.get(STAMP));
     const pair1 = await energyPair(A);
     check("the pair recomputed to the next reading", pair1.bmr != null && pair1.bmr !== pair0.bmr, { before: pair0, after: pair1 });
 
@@ -330,7 +333,7 @@ async function main(): Promise<void> {
     check("restore → 200 and the pair recomputed", restored.status === 200 && dataOf(restored)?.energy === "recomputed", restored);
     check("back in the series on 20 Apr", (await getMeasurementSeries(A, { metricKeys: ["weight"] })).get("weight")?.some((v) => v.id === w3.id && v.date === "2026-04-20") === true);
     check("back in the current view", (await getCurrentMeasurements(A)).weight?.id === w3.id);
-    check("back in the check-in fold", (await getMeasurementsForCheckIns([STAMP])).get(STAMP)?.weight === 73.3);
+    check("back in the check-in's rows in the log", (await getMeasurementsForCheckIns([STAMP])).get(STAMP)?.weight === 73.3);
     check("the pair returned to the first computation", (await energyPair(A)).bmr === pair0.bmr, { first: pair0, now: await energyPair(A) });
     const restoreLive = await post(coachSession, url(A, w2.id, "restore"));
     check("restoring a live row → 409", restoreLive.status === 409 && /not been removed/.test(errorOf(restoreLive)), restoreLive);
@@ -341,13 +344,13 @@ async function main(): Promise<void> {
     const before = (await getMeasurementReadings(A)).find((r) => r.id === w3.id)!;
     const edited = await patch(coachSession, rowUrl(A, w3.id), { value: 73.9 });
     check("edit → 200, the same row, written", edited.status === 200 && dataOf(edited)?.updated === true && dataOf(edited)?.id === w3.id, edited);
-    check("edit carries the check-in stamp for the invalidation, and the pair recomputed", dataOf(edited)?.sourceId === STAMP && dataOf(edited)?.energy === "recomputed", dataOf(edited));
+    check("edit carries the check-in stamp on the wire, and the pair recomputed", dataOf(edited)?.sourceId === STAMP && dataOf(edited)?.energy === "recomputed", dataOf(edited));
     const after = (await getMeasurementReadings(A)).find((r) => r.id === w3.id)!;
     check("the row kept its id, day, source, stamp and moment, and changed its value", after.value === 73.9 && after.date === before.date && after.source === "check_in" && after.sourceId === STAMP && after.measuredAt === before.measuredAt, { before, after });
     check("recorded_at is untouched and updated_at moved past it", after.recordedAt === before.recordedAt && after.updatedAt > after.recordedAt && after.updatedAt > before.updatedAt, { before, after });
     const liveOnDay = (await getMeasurementReadings(A)).filter((r) => r.date === "2026-04-20" && r.metricKey === "weight" && !r.voided);
     check("ONE live weight row stands on the day — an edit adds nothing", liveOnDay.length === 1 && liveOnDay[0].id === w3.id, liveOnDay.map((r) => [r.id, r.value]));
-    check("the check-in fold reads the edited value", (await getMeasurementsForCheckIns([STAMP])).get(STAMP)?.weight === 73.9);
+    check("the check-in's row in the log holds the edited value", (await getMeasurementsForCheckIns([STAMP])).get(STAMP)?.weight === 73.9);
     const dayAfterEdit = await dayValueOf(A, "weight", "2026-04-20");
     check("the day's value is the edited row", dayAfterEdit?.value === 73.9 && dayAfterEdit.id === w3.id, dayAfterEdit);
     check("'now' is the edited row", (await getCurrentMeasurements(A)).weight?.id === w3.id && (await getCurrentMeasurements(A)).weight?.value === 73.9);
@@ -381,7 +384,7 @@ async function main(): Promise<void> {
     check("a coach reading added after the check-in wins the day (kernel)", (await dayValueOf(A, "weight", "2026-04-20"))?.id === added.id);
     check("…and 'now' (the view)", (await getCurrentMeasurements(A)).weight?.id === added.id);
     const reEdit = await patch(coachSession, rowUrl(A, w3.id), { value: 73.5 });
-    check("editing the check-in's row changes its value in place, and the check-in reports it", reEdit.status === 200 && dataOf(reEdit)?.updated === true && (await getMeasurementsForCheckIns([STAMP])).get(STAMP)?.weight === 73.5, reEdit);
+    check("editing the check-in's row changes its value in place in the log", reEdit.status === 200 && dataOf(reEdit)?.updated === true && (await getMeasurementsForCheckIns([STAMP])).get(STAMP)?.weight === 73.5, reEdit);
     check("…but the later add keeps the day — the view and the kernel agree — and the pair does not recompute", dataOf(reEdit)?.energy === "not_newest" && (await dayValueOf(A, "weight", "2026-04-20"))?.id === added.id && (await getCurrentMeasurements(A)).weight?.id === added.id && (await getCurrentMeasurements(A)).weight?.value === 74.4, { reEdit, day: await dayValueOf(A, "weight", "2026-04-20"), now: (await getCurrentMeasurements(A)).weight });
     const dayRows = (await getMeasurementReadings(A)).filter((r) => r.date === "2026-04-20" && r.metricKey === "weight" && !r.voided);
     check("two live rows stand on the day, the one written last listed first — the edit moved nothing", dayRows.length === 2 && dayRows[0].id === added.id && dayRows[1].id === w3.id && dayRows[1].value === 73.5, dayRows.map((r) => [r.id, r.value]));

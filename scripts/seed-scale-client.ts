@@ -23,6 +23,7 @@ import { generateTrainingEvents } from "@/services/training-event-service";
 import { listClientGoals } from "@/services/client-goals-service";
 import { addGoal, deleteGoal } from "@/services/client-goal-writes-service";
 import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
+import { fillSentSnapshots } from "@/services/check-in-sent-snapshot-fill";
 import {
   getTodayDateString,
   getDateString,
@@ -188,6 +189,14 @@ async function main() {
   await insertMeasurements(checkInRows, startDate);
   await insertTrainingEvents(sessionIds, args.months);
   await insertJourneyBlocks();
+  // The check-ins are inserted directly, so each gets the copy a sent check-in
+  // saves (migration 195) from the fill — what its review shows, once its
+  // readings, workouts and targets are all in place — before anything reads it.
+  const copies = await fillSentSnapshots({ clientIds: [String(PERF_CLIENT_ID)] });
+  if (copies.failed.length > 0) {
+    throw new Error(`saving the check-ins' copies: ${copies.failed[0].error}`);
+  }
+  console.info(`  saved ${copies.filled} check-in copies`);
 
   const elapsedMs = Date.now() - t0;
   console.log("");

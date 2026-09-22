@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientCheckIns } from "@/services/check-in-service";
+import { withoutSentSnapshot } from "@/lib/mappers";
 import { parsePaginationParams } from "@/lib/api-utils";
 import { decodeCursor, encodeCursor, type CheckInCursor } from "@/lib/cursor";
 import type {
@@ -74,7 +75,8 @@ export async function GET(
       });
 
       const response: GetCheckInsResponse = {
-        checkIns: result.checkIns,
+        // Each saved copy stays on the server, which reads it.
+        checkIns: result.checkIns.map(withoutSentSnapshot),
         total: result.total,
       };
 
@@ -110,7 +112,7 @@ export async function GET(
     });
 
     const response: GetClientCheckInsPageResponse = {
-      checkIns: result.checkIns,
+      checkIns: result.checkIns.map(withoutSentSnapshot),
       nextCursor: result.nextCursor ? encodeCursor(result.nextCursor) : null,
       hasMore: result.nextCursor !== null,
       ...(cursor === undefined ? { total: result.total } : {}),

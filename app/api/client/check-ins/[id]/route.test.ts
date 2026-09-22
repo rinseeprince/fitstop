@@ -23,22 +23,9 @@ vi.mock("@/services/check-in-service", () => ({
   mapExerciseHighlight: (...args: unknown[]) => mapExerciseHighlightMock(...args),
 }));
 
-// What the check-in reported lives in the measurement log, stamped with the
-// check-in's id; the route reads it through the service and emits every key,
-// null where the check-in carried no reading.
-vi.mock("@/services/measurements-service", () => ({
-  getMeasurementsForCheckIns: vi.fn(),
-}));
-
-vi.mock("@/lib/mappers", () => ({
-  mapCheckInRow: (row: { id: string; client_id: string }) => ({
-    id: row.id,
-    clientId: row.client_id,
-    periodStart: "2026-05-08",
-    periodEnd: "2026-05-14",
-    createdAt: "2026-05-14T12:00:00Z",
-  }),
-}));
+// The route maps the row with the REAL mapper: what the check-in reported
+// comes from the copy it saved when it was sent (`sent_snapshot`), never from
+// the measurement log, where a coach may since have corrected the reading.
 
 import { GET } from "./route";
 import { requireClientAuth } from "@/lib/require-client-auth";
@@ -47,9 +34,33 @@ import {
   getCheckInAnswers,
   getCheckInExerciseHighlights,
 } from "@/services/check-in-service";
-import { getMeasurementsForCheckIns } from "@/services/measurements-service";
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
+
+/** A copy a check-in saved when it was sent (lib/check-in/sent-snapshot.ts). */
+const sentCopy = (readings: Record<string, number>, questions: { questionId: string; prompt: string }[] = []) => ({
+  version: 1,
+  day: "2026-05-14",
+  readings: { weight: null, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null, ...readings },
+  standing: { weight: readings.weight ?? null, bodyFat: readings.bodyFat ?? null },
+  goal: null,
+  goalProgress: {},
+  nutritionPlan: null,
+  period: null,
+  questions,
+});
+
+/** The client's own check-in row, as the route selects it. */
+const fetched = (overrides: Record<string, unknown> = {}) => ({
+  id: "ci-1",
+  client_id: "client-1",
+  status: "pending",
+  period_start: "2026-05-08",
+  period_end: "2026-05-14",
+  created_at: "2026-05-14T12:00:00Z",
+  sent_snapshot: sentCopy({}),
+  ...overrides,
+});
 const req = () => new NextRequest("https://t.dev/api/client/check-ins/ci-1");
 
 // Builds the chainable supabaseAdmin.from(...).select().eq().eq().single() mock.
@@ -69,7 +80,6 @@ describe("GET /api/client/check-ins/[id]", () => {
     vi.mocked(requireClientAuth).mockResolvedValue({ ok: true, clientId: "client-1" } as any);
     vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([]);
     vi.mocked(getCheckInAnswers).mockResolvedValue([]);
-    vi.mocked(getMeasurementsForCheckIns).mockResolvedValue(new Map());
     vi.mocked(getTrainingEventDetailsForCheckIn).mockResolvedValue([
       {
         eventId: "e-1",
@@ -86,7 +96,7 @@ describe("GET /api/client/check-ins/[id]", () => {
 
   it("carries the period's own workouts, each with the quality on its log", async () => {
     mockCheckInRow({
-      data: { id: "ci-1", client_id: "client-1", status: "pending", created_at: "2026-05-14T12:00:00Z" },
+      data: fetched(),
       error: null,
     });
 
@@ -118,7 +128,7 @@ describe("GET /api/client/check-ins/[id]", () => {
   // this route sends. Hence an explicit shape assertion.
   it("maps exercise highlights rather than serving the raw row", async () => {
     mockCheckInRow({
-      data: { id: "ci-1", client_id: "client-1", status: "pending", created_at: "2026-05-14T12:00:00Z" },
+      data: fetched(),
       error: null,
     });
     const rawRow = {
@@ -184,61 +194,63 @@ describe("GET /api/client/check-ins/[id]", () => {
       { questionId: "q-a", prompt: "How was sleep?", answer: "badly" },
     ]);
     mockCheckInRow({
-      data: {
-        id: "ci-1",
-        client_id: "client-1",
-        status: "pending",
-        created_at: "2026-05-14T12:00:00Z",
-      },
+      data: fetched({
+        sent_snapshot: sentCopy({}, [
+          { questionId: "00000000-0000-4000-8000-00000000b0b1", prompt: "How was sleep?" },
+        ]),
+      }),
       error: null,
     });
 
     const body = await (await GET(req(), params("ci-1"))).json();
 
-    expect(getCheckInAnswers).toHaveBeenCalledWith("ci-1");
+    // Handed the check-in with its copy, whose wording labels each answer —
+    // a question reworded since never relabels it.
+    expect(getCheckInAnswers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "ci-1",
+        sentSnapshot: expect.objectContaining({
+          questions: [{ questionId: "00000000-0000-4000-8000-00000000b0b1", prompt: "How was sleep?" }],
+        }),
+      })
+    );
     expect(body.data.customAnswers).toEqual([
       { questionId: "q-a", prompt: "How was sleep?", answer: "badly" },
     ]);
   });
 
-  it("emits the check-in's readings from the measurement log, and null for a reading it never carried", async () => {
+  it("emits what the check-in reported, from its saved copy, and null for a reading it never carried", async () => {
     // The RN wire reads this shape: every measurement key present, canonical
     // kg/cm, `null` rather than a missing key when the check-in reported none.
-    vi.mocked(getMeasurementsForCheckIns).mockResolvedValue(
-      new Map([["ci-1", { weight: 80.4, waist: 90 }]])
-    );
     mockCheckInRow({
-      data: { id: "ci-1", client_id: "client-1", status: "pending", created_at: "2026-05-14T12:00:00Z" },
+      data: fetched({ sent_snapshot: sentCopy({ weight: 80.4, waist: 90.6 }) }),
       error: null,
     });
 
     const body = await (await GET(req(), params("ci-1"))).json();
 
-    expect(getMeasurementsForCheckIns).toHaveBeenCalledWith(["ci-1"]);
     expect(body.data.weight).toBe(80.4);
-    expect(body.data.waist).toBe(90);
+    expect(body.data.waist).toBe(90.6);
     for (const key of ["bodyFatPercentage", "hips", "chest", "arms", "thighs"]) {
       expect(body.data).toHaveProperty(key);
       expect(body.data[key]).toBeNull();
     }
+    // The measurement log is never read: a reading a coach corrected there
+    // since cannot reach the client's check-in.
+    expect(fromMock.mock.calls.map((call) => call[0])).toEqual(["check_ins"]);
+    // …and the copy itself is not on the wire.
+    expect(body.data).not.toHaveProperty("sentSnapshot");
+    expect(body.data).not.toHaveProperty("sent_snapshot");
   });
 });
 
 describe("the stored on-target count's denominator", () => {
-  const row = (period_snapshot: unknown) => ({
-    id: "ci-1",
-    client_id: "client-1",
-    status: "pending",
-    created_at: "2026-05-14T12:00:00Z",
-    nutrition_days_on_target: 2,
-    period_snapshot,
-  });
+  const row = (period_snapshot: unknown) => fetched({ nutrition_days_on_target: 2, period_snapshot });
 
   beforeEach(() => {
     vi.mocked(requireClientAuth).mockResolvedValue({ ok: true, clientId: "client-1" } as any);
     vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([]);
     vi.mocked(getCheckInAnswers).mockResolvedValue([]);
-    vi.mocked(getMeasurementsForCheckIns).mockResolvedValue(new Map());
     vi.mocked(getTrainingEventDetailsForCheckIn).mockResolvedValue([]);
   });
 

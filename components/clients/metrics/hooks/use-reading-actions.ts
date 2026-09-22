@@ -2,14 +2,13 @@
 
 import { useCallback, useMemo } from "react";
 import { useInvalidateMeasurementSeries } from "@/hooks/use-measurement-series";
-import { useInvalidateCheckInDetail } from "@/hooks/use-check-in-detail-data";
 import { useInvalidateClientGoals } from "@/hooks/use-client-goals";
 import type { LogRow } from "../metrics-view-types";
 
 /**
  * The three row actions of the measurement log — an edit is a PATCH of the
  * reading, a removal and a restore are POSTs to its two state routes — each
- * followed by the three invalidations a changed reading owes (CONVENTIONS §7):
+ * followed by the invalidations a changed reading owes (CONVENTIONS §7):
  *
  *  - the series area — the Journey's pane and log, the Overview's chart and
  *    status band, all readers of one key;
@@ -17,13 +16,14 @@ import type { LogRow } from "../metrics-view-types";
  *    its "now" readings and the energy pair live there (the record carries no
  *    girth, so a girth leaves it alone) — and the goals area, since a weight or
  *    body fat may be the reading on a goal's start day, which its chips
- *    measure from;
- *  - the check-in the reading reports on, when it carries a stamp: its report,
- *    band and comparison read the stamped row.
+ *    measure from.
+ *
+ * A reading a check-in reported is corrected in the client's log only: the
+ * check-in keeps what it reported (its saved copy, lib/check-in/sent-snapshot.ts;
+ * owner ruling 2026-09-22), so no check-in read is refreshed.
  */
 export function useReadingActions(clientId: string, onClientUpdated?: () => void) {
   const invalidateSeries = useInvalidateMeasurementSeries();
-  const invalidateCheckInDetail = useInvalidateCheckInDetail();
   const invalidateGoals = useInvalidateClientGoals();
 
   const settle = useCallback(
@@ -33,9 +33,8 @@ export function useReadingActions(clientId: string, onClientUpdated?: () => void
         await invalidateGoals(clientId);
         onClientUpdated?.();
       }
-      if (row.sourceId) await invalidateCheckInDetail(row.sourceId);
     },
-    [clientId, invalidateSeries, onClientUpdated, invalidateCheckInDetail, invalidateGoals]
+    [clientId, invalidateSeries, onClientUpdated, invalidateGoals]
   );
 
   const send = useCallback(

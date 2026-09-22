@@ -2,7 +2,7 @@ import { countTargetedDays } from "@/lib/check-in/period-snapshot";
 import type { ActivityLevel, CheckIn, Client, Coach, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
 import type { GoalOnDay } from "@/types/client-goals";
-import type { MeasurementValues } from "@/lib/measurements/keys";
+import { readSentSnapshot, reportedReadings } from "@/lib/check-in/sent-snapshot";
 import { toUnitSystem } from "@/utils/unit-conversions";
 import type {
   CheckInRow,
@@ -14,13 +14,19 @@ import type {
 /**
  * Map a database check-in row to a CheckIn type.
  *
- * A check-in owns no measurement columns: its readings are rows in the
- * measurement log stamped with its id, folded in by the caller
- * (`getMeasurementsForCheckIns`). The seven fields keep their PLACE in the
+ * A sent check-in reports what it saved when it was sent
+ * (`check_ins.sent_snapshot`, lib/check-in/sent-snapshot.ts): its seven
+ * readings are the ones the client reported, never the log's rows as a coach
+ * may since have corrected them — a correction changes the client's log, not a
+ * check-in (owner ruling 2026-09-22). The seven fields keep their PLACE in the
  * object so the JSON a route emits is byte-for-byte what it was — a mapper that
- * assigned them afterwards would move every key. Canonical kg/cm.
+ * assigned them afterwards would move every key. Canonical kg/cm. The copy
+ * itself rides last, for the server's readers; the routes that send a check-in
+ * to a browser leave it off (`withoutSentSnapshot`, `toClientFacingCheckIn`).
  */
-export function mapCheckInRow(row: CheckInRow, measurements: MeasurementValues = {}): CheckIn {
+export function mapCheckInRow(row: CheckInRow): CheckIn {
+  const sentSnapshot = readSentSnapshot(row.sent_snapshot);
+  const measurements = reportedReadings(sentSnapshot);
   return {
     id: row.id,
     clientId: row.client_id,
@@ -62,7 +68,14 @@ export function mapCheckInRow(row: CheckInRow, measurements: MeasurementValues =
     periodSnapshot: row.period_snapshot ?? undefined,
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? new Date().toISOString(),
+    sentSnapshot,
   };
+}
+
+/** A check-in as a coach's browser receives it: everything but the saved copy, which the server reads. */
+export function withoutSentSnapshot<T extends CheckIn>(checkIn: T): Omit<T, "sentSnapshot"> {
+  const { sentSnapshot: _sentSnapshot, ...wire } = checkIn;
+  return wire;
 }
 
 /** The value of one metric in an embedded measurement view, if the client has one. */

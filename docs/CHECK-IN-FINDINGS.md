@@ -94,7 +94,14 @@ is deleting fields from `NutritionPeriodSummary` and the cells that read them
 
 ### 2. Three versions of one check-in
 
-A submitted check-in is represented three ways:
+**Resolved 2026-09-22** (docs/MEASUREMENT-LOG-PLAN.md commit 8d1, first commit; owner ruling: a sent
+check-in is frozen in time). Every check-in now saves a copy of itself in its INSERT
+(`check_ins.sent_snapshot`, migration 195, write-once) — its readings, its goal section, the week's
+food against its targets, its habits, its days logged and its questions' wording — and the review
+page, the AI review and the client's check-in read it, so a plan, setting, goal, habit or reading the
+coach changes afterwards moves none of them. The record of the finding stays below.
+
+A submitted check-in was represented three ways:
 
 | Representation | Written | Read by |
 |---|---|---|

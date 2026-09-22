@@ -9,7 +9,6 @@ import {
   mapExerciseHighlight,
 } from "@/services/check-in-service";
 import { mapCheckInRow } from "@/lib/mappers";
-import { getMeasurementsForCheckIns } from "@/services/measurements-service";
 import type { CheckInExerciseHighlight } from "@/types/check-in";
 
 // GET /api/client/check-ins/[id] - Get specific check-in details for authenticated client
@@ -46,19 +45,19 @@ export async function GET(
     // there is no stored per-session table, and they are the same rows the
     // wizard was given when the client filled this check-in in. The IDOR guard
     // above (eq client_id) already scoped this row to the authenticated client.
-    const [trainingEventDetails, highlightRows, customAnswers, stamped] = await Promise.all([
-      getTrainingEventDetailsForCheckIn(mapCheckInRow(checkIn)),
+    // The check-in as the client sent it: its readings and the wording of the
+    // questions they answered come from the copy it saved, so nothing their
+    // coach changes afterwards moves it.
+    const sent = mapCheckInRow(checkIn);
+    const [trainingEventDetails, highlightRows, customAnswers] = await Promise.all([
+      getTrainingEventDetailsForCheckIn(sent),
       getCheckInExerciseHighlights(id),
       // The client's own answers to the coach's custom questions, read back
       // with their prompts. On the single-check-in read only: the history LIST
       // renders a date, a status and a preview, and embedding a dictionary in
       // a row list is what CONVENTIONS section 8 "Sparse fieldsets" forbids.
-      getCheckInAnswers(id),
-      // What this check-in reported: the measurement-log rows carrying its
-      // stamp. `null` where it carried no reading — the RN wire's shape.
-      getMeasurementsForCheckIns([id]),
+      getCheckInAnswers(sent),
     ]);
-    const readings = stamped.get(id) ?? {};
 
     // getCheckInExerciseHighlights returns RAW snake_case rows (it is a
     // `select("*")` with no mapper), so this route must map them exactly as
@@ -82,15 +81,15 @@ export async function GET(
         stress: checkIn.stress,
         soreness: checkIn.soreness,
         notes: checkIn.notes,
-        // Canonical kg/cm, from the measurement log. Every key is emitted, null
-        // when absent: the RN client reads this shape.
-        weight: readings.weight ?? null,
-        bodyFatPercentage: readings.bodyFat ?? null,
-        waist: readings.waist ?? null,
-        hips: readings.hips ?? null,
-        chest: readings.chest ?? null,
-        arms: readings.arms ?? null,
-        thighs: readings.thighs ?? null,
+        // Canonical kg/cm, as reported. Every key is emitted, null when
+        // absent: the RN client reads this shape.
+        weight: sent.weight ?? null,
+        bodyFatPercentage: sent.bodyFatPercentage ?? null,
+        waist: sent.waist ?? null,
+        hips: sent.hips ?? null,
+        chest: sent.chest ?? null,
+        arms: sent.arms ?? null,
+        thighs: sent.thighs ?? null,
         photoFront: checkIn.photo_front,
         photoSide: checkIn.photo_side,
         photoBack: checkIn.photo_back,

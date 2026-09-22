@@ -6,7 +6,6 @@ import type {
   CheckInReview,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
-import type { CheckInRow } from "@/lib/database-helpers";
 import type { MeasurementValues } from "@/lib/measurements/keys";
 import {
   addDays,
@@ -16,7 +15,8 @@ import {
   getTodayInTimezone,
   resolveCheckInWindow,
 } from "@/lib/date-helpers";
-import { appendMeasurements, getMeasurementsForCheckIns } from "./measurements-service";
+import { appendMeasurements } from "./measurements-service";
+import { buildSentSnapshotAtSend } from "./check-in-sent-snapshot-service";
 import { checkInWeekday } from "@/lib/check-in-week";
 import { UNREVIEWED_CHECK_IN_STATUSES } from "@/lib/constants";
 import { getFrequencyInDays, resolveCheckInDue } from "@/lib/check-in-schedule";
@@ -32,7 +32,7 @@ import { summariseTraining } from "@/lib/training-adherence";
 import { getDailyLogs } from "./daily-logs-service";
 import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
 import { buildPeriodSnapshot } from "@/lib/check-in/period-snapshot";
-import type { PeriodSnapshot } from "@/types/schedule";
+import type { NutritionDay, PeriodSnapshot } from "@/types/schedule";
 import { calculateMetricAverages } from "@/utils/daily-logs-aggregation";
 import { getClientById } from "./client-service";
 
@@ -61,15 +61,6 @@ function measurementValuesFromForm(formData: CheckInFormData): MeasurementValues
   return values;
 }
 
-/**
- * Fold each check-in's readings — the latest live log rows carrying its stamp
- * — into the mapped objects. One query for the whole list, whatever its size.
- */
-export async function foldCheckInMeasurements(rows: CheckInRow[]): Promise<CheckIn[]> {
-  const stamped = await getMeasurementsForCheckIns(rows.map((row) => row.id));
-  return rows.map((row) => mapCheckInRow(row, stamped.get(row.id)));
-}
-
 // Submit a check-in.
 //
 // Session 6.4: daily logs are the single source of truth. The check-in's weekly
@@ -91,15 +82,21 @@ export const submitCheckIn = async (
   // coach-detail derivation reads). The window ends on the check-in day, clamped
   // forward to the activation date for a partial first week.
   const client = await getClientById(clientId);
+  if (!client) throw new Error("Client not found");
+  // ONE clock for the whole submit: the check-in's created_at, the day its
+  // readings are dated, the week it reports on and the copy it saves are all
+  // this instant on the client's calendar.
+  const at = new Date();
+  const day = getTodayDateStringInTimezone(client.timezone, at);
   // Client-local today: the stored period must agree with the gate/form, which
   // both resolve the window on the client's day.
   const { periodStart, periodEnd } = resolveCheckInWindow(
-    getTodayInTimezone(client?.timezone ?? "UTC"),
+    getTodayInTimezone(client.timezone, at),
     // A NULL due date is "no schedule", which resolveCheckInWindow answers with
     // a trailing 7 days ending today. checkInWeekday never returns null, so the
     // no-schedule case is tested here.
-    client?.nextCheckInDue ? checkInWeekday(client) : null,
-    client?.startDate
+    client.nextCheckInDue ? checkInWeekday(client) : null,
+    client.startDate
   );
 
   // Derive the stored columns AND the frozen snapshot from the spine for the
@@ -112,6 +109,7 @@ export const submitCheckIn = async (
   let nutritionDaysOnTarget: number | undefined;
   let adherencePercentage: number | undefined;
   let periodSnapshot: PeriodSnapshot | undefined;
+  let nutritionDays: NutritionDay[] | null = null;
   let mood: number | undefined;
   let energy: number | undefined;
   let sleep: number | undefined;
@@ -153,10 +151,11 @@ export const submitCheckIn = async (
         events,
         // The client's own day: this is their week, and it decides which of its
         // still-scheduled workouts the frozen rows record as missed.
-        getTodayDateStringInTimezone(client?.timezone ?? "UTC")
+        day
       ),
       nutrition.days
     );
+    nutritionDays = nutrition.days;
 
     if (wellnessLogs.length > 0) {
       const averages = calculateMetricAverages(wellnessLogs);
@@ -169,10 +168,38 @@ export const submitCheckIn = async (
     }
   }
 
+  // The check-in as it stands at this moment — what the client reported, the
+  // goal it is judged against and where they stand, the week's food against
+  // its targets, their habits, the days they logged and the questions'
+  // wording — saved in the INSERT below and never changed after (owner ruling
+  // 2026-09-22; migration 195's trigger refuses a change). Every surface of a
+  // sent check-in reads it, so a coach correcting a reading later changes the
+  // client's log, not the check-in.
+  const readings = measurementValuesFromForm(formData);
+  const answeredQuestionIds = [
+    ...new Set(
+      (formData.customAnswers ?? [])
+        .filter((a) => typeof a.answer === "string" && a.answer.trim() !== "")
+        .map((a) => a.questionId)
+    ),
+  ];
+  const sentSnapshot = await buildSentSnapshotAtSend({
+    client,
+    at,
+    day,
+    reported: readings,
+    period: periodStart && periodEnd ? { start: periodStart, end: periodEnd } : null,
+    nutritionDays,
+    answeredQuestionIds,
+  });
+
   const { data, error } = await supabaseAdmin
     .from("check_ins")
     .insert({
       client_id: clientId,
+      // The instant the copy was judged at, so the row and its copy agree on
+      // the day to the millisecond.
+      created_at: at.toISOString(),
       status: "pending",
       // Subjective metrics (DERIVED from wellness_logs over the period)
       mood,
@@ -202,6 +229,7 @@ export const submitCheckIn = async (
       period_end: periodEnd ?? null,
       // The frozen rows — never updated after creation.
       period_snapshot: periodSnapshot ? JSON.parse(JSON.stringify(periodSnapshot)) : null,
+      sent_snapshot: sentSnapshot,
     })
     .select("id")
     .single();
@@ -233,14 +261,13 @@ export const submitCheckIn = async (
   // period-unique constraint. Not swallowed — losing the numbers a client typed
   // is worse than a visible failure — and placed first, so nothing else runs on
   // a check-in whose readings did not land.
-  const readings = measurementValuesFromForm(formData);
   if (Object.keys(readings).length > 0) {
     await appendMeasurements({
       clientId,
       source: "check_in",
       sourceId: checkInId,
-      recordedOn: getTodayDateStringInTimezone(client?.timezone ?? "UTC"),
-      measuredAt: new Date().toISOString(),
+      recordedOn: day,
+      measuredAt: at.toISOString(),
       values: readings,
     });
   }
@@ -270,7 +297,7 @@ export const submitCheckIn = async (
   // within CHECK_IN_GRACE_DAYS, and the coach can set the date by hand. It is
   // deliberately not allowed to fail the submission — the check-in is the
   // client's work, the schedule is bookkeeping.
-  if (client?.nextCheckInDue) {
+  if (client.nextCheckInDue) {
     const live = resolveCheckInDue(client);
     const step = getFrequencyInDays(
       client.checkInFrequency ?? "weekly",
@@ -321,8 +348,7 @@ export const getCheckInById = async (
     return null;
   }
 
-  const [checkIn] = await foldCheckInMeasurements([data]);
-  return checkIn;
+  return mapCheckInRow(data);
 };
 
 // Get all check-ins for a client
@@ -419,7 +445,7 @@ export const getClientCheckIns = async (
     nextCursor = hasMore && last?.created_at ? { createdAt: last.created_at, id: last.id } : null;
   }
 
-  const checkIns = await foldCheckInMeasurements(rows);
+  const checkIns = rows.map((row) => mapCheckInRow(row));
 
   return {
     checkIns,
@@ -537,6 +563,5 @@ export const getPreviousCheckIn = async (
     return null;
   }
 
-  const [previous] = await foldCheckInMeasurements([data]);
-  return previous;
+  return mapCheckInRow(data);
 };

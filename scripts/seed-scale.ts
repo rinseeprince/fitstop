@@ -31,6 +31,7 @@ import {
 } from "./seed/db";
 import { seedUuid, seedEmail, SEED_ID_LO, SEED_ID_HI, SEED_EMAIL_DOMAIN } from "./seed/ids";
 import { generateCoachBundle, fallbackCatalog, type CatalogExercise, type RowStep, type SeedContext } from "./seed/generate";
+import { fillSentSnapshots } from "@/services/check-in-sent-snapshot-fill";
 import { teardown, TEARDOWN_ORDER } from "./seed/teardown";
 import { EXERCISE_POOL } from "./seed/model";
 
@@ -432,6 +433,17 @@ async function main(): Promise<void> {
         onConflict: step.onConflict,
       });
       if (step.mode !== "upsert") progress.add(step.rows.length);
+    }
+
+    // A sent check-in carries the copy it saved when it was sent (migration
+    // 195). These are inserted directly, so each gets the copy the fill saves —
+    // what its review shows — before anything reads it.
+    const seededClientIds = steps.flatMap((step) =>
+      "table" in step && step.table === "clients" ? step.rows.map((row) => String(row.id)) : []
+    );
+    const copies = await fillSentSnapshots({ clientIds: seededClientIds });
+    if (copies.failed.length > 0) {
+      throw new Error(`saving the seeded check-ins' copies: ${copies.failed[0].error}`);
     }
 
     // Persona clients: the invitation row is already in place, so the trigger

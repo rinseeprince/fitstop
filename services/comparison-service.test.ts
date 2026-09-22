@@ -2,18 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('./check-in-service', () => ({
   getCheckInById: vi.fn(),
-  getPreviousCheckIn: vi.fn().mockResolvedValue(null),
-  getClientCheckIns: vi.fn().mockResolvedValue({ checkIns: [] }),
+  getPreviousCheckIn: vi.fn(),
 }))
 
 vi.mock('./client-service', () => ({
   getClientById: vi.fn(),
 }))
 
-// The review's whole view of "then" comes through these reads — the client's
-// goals and their today, the readings as of the check-in's day and on the
-// goal's start day, and the covering nutrition version — so each is scripted
-// per case. Which goal and which deadline a day has is the real timeline.
+// "Set new goals" is the one live question the review asks: is the goal the
+// check-in judged still the client's goal today? Which goal a day has is the
+// real timeline over these goals.
 vi.mock('./client-goals-service', () => ({
   listClientGoals: vi.fn(),
 }))
@@ -22,6 +20,9 @@ vi.mock('./today-service', () => ({
   getClientTodayString: vi.fn(),
 }))
 
+// The reads that composed a goal section before check-ins saved their copy.
+// The review may call none of them; each is scripted to answer with TODAY's
+// state, so a review that reached for one would show a different number.
 vi.mock('./measurements-service', () => ({
   getReadingsAsOf: vi.fn(),
   getReadingsOnDay: vi.fn(),
@@ -31,67 +32,27 @@ vi.mock('./nutrition-plan-service', () => ({
   getNutritionPlanForDate: vi.fn(),
 }))
 
-vi.mock('@/utils/comparison-utils', () => ({
-  calculateMetricChange: vi.fn().mockReturnValue(undefined),
-  calculateDaysBetween: vi.fn().mockReturnValue(7),
-  calculateGoalProgress: vi.fn().mockReturnValue({
-    remaining: 5,
-    percentComplete: 50,
-    isOnTrack: true,
-  }),
-}))
-
-import { getCheckInById, getClientCheckIns } from './check-in-service'
+import { getCheckInById, getPreviousCheckIn } from './check-in-service'
 import { getClientById } from './client-service'
 import { listClientGoals } from './client-goals-service'
 import { getClientTodayString } from './today-service'
 import { getReadingsAsOf, getReadingsOnDay } from './measurements-service'
 import { getNutritionPlanForDate } from './nutrition-plan-service'
-import { calculateGoalProgress } from '@/utils/comparison-utils'
-import { getCheckInComparison } from './comparison-service'
+import { buildCheckInComparison, getCheckInComparison } from './comparison-service'
+import { parseSentSnapshot, type SentSnapshot } from '@/lib/check-in/sent-snapshot'
+import type { CheckIn, Client } from '@/types/check-in'
 import type { ClientGoal } from '@/types/client-goals'
 
-// A check-in submitted on 31 May at noon UTC by a London client, reviewed in
-// September. Every number is distinct so a wrong source shows as a wrong
-// number: the check-in's own reading is 80, today's is 85, the baseline 88,
-// the reading on the goal's start day 86, the goal then 77 and the goal in
-// force today 70.
+// A check-in sent on 31 May by a London client, reviewed in September. Every
+// number is distinct so a wrong source shows as a wrong number: it reported
+// 80.2 kg and 17.1 %, the goal then was 77 kg by 4 July, its start reading
+// 86.3 and the client's baseline 88.4; since then the goal became 70 kg, the
+// weigh-in was corrected to 79.4 and today's reading is 85.6.
 const AT = '2026-05-31T12:00:00+00:00'
-const DAY = '2026-05-31'
 const TODAY = '2026-09-03'
 
-const mockCheckIn = {
-  id: 'ci-1',
-  clientId: 'client-1',
-  weight: 80,
-  bodyFatPercentage: 17,
-  createdAt: AT,
-  mood: 4,
-  energy: 7,
-  sleep: 7,
-  stress: 3,
-}
-
-const mockClient = {
-  id: 'client-1',
-  coachId: 'coach-1',
-  name: 'Test Client',
-  timezone: 'Europe/London',
-  // Today's reading: it may not reach the strip.
-  currentWeight: 85,
-  currentBodyFatPercentage: 16,
-  startingWeight: 88,
-  startingBodyFatPercentage: 20,
-  unitPreference: 'metric' as const,
-}
-
-/**
- * The goal in force on 31 May: started 11 April, replaced on 27 August. Its
- * deadline moved on 20 May and again after the check-in, so 31 May reads the
- * middle one.
- */
 const goalThen: ClientGoal = {
-  id: 'goal-may',
+  id: '00000000-0000-4000-8000-0000000000a1',
   clientId: 'client-1',
   name: 'Lose weight',
   type: 'lose_weight',
@@ -103,327 +64,300 @@ const goalThen: ClientGoal = {
   setBy: 'coach-1',
   createdAt: '2026-04-11T09:00:00+00:00',
   updatedAt: '2026-04-11T09:00:00+00:00',
-  deadlines: [
-    { effectiveOn: '2026-04-11', deadline: '2026-06-20', setBy: 'coach-1' },
-    { effectiveOn: '2026-05-20', deadline: '2026-07-04', setBy: 'coach-1' },
-    { effectiveOn: '2026-06-10', deadline: '2026-08-01', setBy: 'coach-1' },
-  ],
+  deadlines: [{ effectiveOn: '2026-04-11', deadline: '2026-07-04', setBy: 'coach-1' }],
 }
 
-/** The goal in force today, since 27 August. */
+/** The goal in force since 27 August, which replaced the one the check-in judged. */
 const goalNow: ClientGoal = {
   ...goalThen,
-  id: 'goal-aug',
+  id: '00000000-0000-4000-8000-0000000000a2',
   targetWeight: 70,
   targetBodyFatPercentage: 10,
   startsOn: '2026-08-27',
-  createdAt: '2026-08-27T15:23:50.965+00:00',
-  updatedAt: '2026-08-27T15:23:50.965+00:00',
   deadlines: [{ effectiveOn: '2026-08-27', deadline: '2026-12-18', setBy: 'coach-1' }],
 }
 
-/** The goal then with one deadline, set on its start day. */
-const withDeadline = (deadline: string | null): ClientGoal => ({
-  ...goalThen,
-  deadlines: [{ effectiveOn: goalThen.startsOn, deadline, setBy: 'coach-1' }],
-})
-
-/** The check-in's own stamped rows. */
-const readingsThen = {
-  weight: { id: 'w-then', metricKey: 'weight' as const, value: 80, date: DAY, source: 'check_in' as const },
-  bodyFat: { id: 'bf-then', metricKey: 'bodyFat' as const, value: 17, date: DAY, source: 'check_in' as const },
+/** The copy the check-in saved when it was sent (lib/check-in/sent-snapshot.ts). */
+function sentCopy(overrides: Partial<SentSnapshot> = {}): SentSnapshot {
+  return parseSentSnapshot({
+    version: 1,
+    day: '2026-05-31',
+    readings: { weight: 80.2, bodyFat: 17.1, waist: null, hips: null, chest: null, arms: null, thighs: null },
+    standing: { weight: 80.2, bodyFat: 17.1 },
+    goal: {
+      id: goalThen.id,
+      name: goalThen.name,
+      type: goalThen.type,
+      targetWeight: 77,
+      targetBodyFatPercentage: 15,
+      startsOn: '2026-04-11',
+      deadline: '2026-07-04',
+    },
+    goalProgress: {
+      weight: {
+        goal: 77,
+        startingWeight: 88.4,
+        goalStartWeight: 86.3,
+        position: {
+          current: 80.2,
+          remaining: -3.2,
+          percentComplete: 64.8,
+          status: 'approaching',
+          isOnTrack: true,
+          paceStatus: 'behind_pace',
+        },
+      },
+      bodyFat: {
+        goal: 15,
+        startingBodyFat: 20.3,
+        goalStartBodyFat: 18.6,
+        position: {
+          current: 17.1,
+          remaining: -2.1,
+          percentComplete: 41.7,
+          status: 'approaching',
+          isOnTrack: false,
+        },
+      },
+      deadline: { date: '2026-07-04', daysRemaining: 34, isPastDeadline: false },
+    },
+    nutritionPlan: { baseWeightKg: 83.4, effectiveFrom: '2026-05-01' },
+    period: null,
+    questions: [],
+    ...overrides,
+  })
 }
 
-/** The readings on the goal's start day, 11 April. */
-const readingsAtGoalStart = {
-  weight: { id: 'w-start', metricKey: 'weight' as const, value: 86, date: '2026-04-11', source: 'coach_entry' as const },
-  bodyFat: { id: 'bf-start', metricKey: 'bodyFat' as const, value: 19, date: '2026-04-11', source: 'coach_entry' as const },
-}
+const sentCheckIn = (overrides: Partial<CheckIn> = {}): CheckIn =>
+  ({
+    id: 'ci-1',
+    clientId: 'client-1',
+    status: 'pending',
+    weight: 80.2,
+    bodyFatPercentage: 17.1,
+    mood: 4,
+    energy: 7,
+    sleep: 6,
+    stress: 3,
+    soreness: 2,
+    createdAt: AT,
+    updatedAt: AT,
+    sentSnapshot: sentCopy(),
+    ...overrides,
+  }) as CheckIn
 
-/** The nutrition version covering 31 May. */
-const planThen = { id: 'plan-april', base_weight_kg: 84, effective_from: '2026-04-05' }
+/** The check-in before it, a week earlier, with its own copy. */
+const previousCheckIn = {
+  id: 'ci-0',
+  clientId: 'client-1',
+  status: 'reviewed',
+  weight: 81.4,
+  bodyFatPercentage: 17.9,
+  mood: 3,
+  energy: 8,
+  sleep: 5,
+  stress: 4,
+  soreness: 1,
+  createdAt: '2026-05-24T12:00:00+00:00',
+  updatedAt: '2026-05-24T12:00:00+00:00',
+  sentSnapshot: sentCopy({
+    day: '2026-05-24',
+    readings: { weight: 81.4, bodyFat: 17.9, waist: null, hips: null, chest: null, arms: null, thighs: null },
+  }),
+} as CheckIn
+
+const client = {
+  id: 'client-1',
+  coachId: 'coach-1',
+  name: 'Test Client',
+  timezone: 'Europe/London',
+  // Today's reading: it may never reach a sent check-in.
+  currentWeight: 85.6,
+  currentBodyFatPercentage: 16.2,
+  startingWeight: 88.4,
+  startingBodyFatPercentage: 20.3,
+  unitPreference: 'metric' as const,
+} as Client
+
+/** Today's state, which a sent check-in must never read: a corrected weigh-in, a later goal, a re-saved plan. */
+function scriptToday(goals: ClientGoal[]) {
+  vi.mocked(listClientGoals).mockResolvedValue(goals)
+  vi.mocked(getClientTodayString).mockResolvedValue(TODAY)
+  vi.mocked(getReadingsAsOf).mockResolvedValue({
+    weight: { id: 'm-1', metricKey: 'weight', value: 79.4, date: '2026-05-31', source: 'check_in' },
+  })
+  vi.mocked(getReadingsOnDay).mockResolvedValue({
+    weight: { id: 'm-2', metricKey: 'weight', value: 91.7, date: '2026-08-27', source: 'coach_entry' },
+  })
+  vi.mocked(getNutritionPlanForDate).mockResolvedValue({ base_weight_kg: 90.3, effective_from: '2026-05-28' } as never)
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getCheckInById).mockResolvedValue(mockCheckIn as never)
-  vi.mocked(getClientById).mockResolvedValue(mockClient as never)
-  vi.mocked(getClientCheckIns).mockResolvedValue({ checkIns: [mockCheckIn] } as never)
-  vi.mocked(listClientGoals).mockResolvedValue([goalThen, goalNow])
-  vi.mocked(getClientTodayString).mockResolvedValue(TODAY)
-  vi.mocked(getReadingsAsOf).mockResolvedValue(readingsThen)
-  vi.mocked(getReadingsOnDay).mockResolvedValue(readingsAtGoalStart)
-  vi.mocked(getNutritionPlanForDate).mockResolvedValue(planThen as never)
+  vi.mocked(getPreviousCheckIn).mockResolvedValue(previousCheckIn)
+  scriptToday([goalThen, goalNow])
 })
 
-describe("the review reads the check-in's day (commit 8b)", () => {
-  it("judges the reading as of the check-in's day against the goal in force on that day", async () => {
-    const result = await getCheckInComparison('ci-1')
+describe("a sent check-in's goal section is the one it saved", () => {
+  it("shows the goal then, where the client stood and the drift note's plan — whatever the goal and the readings are now", async () => {
+    const { comparison, goalProgress } = await buildCheckInComparison(sentCheckIn(), client)
 
-    // 80 against 77, measured from 86 — the reading on the goal's start day —
-    // downward, as losing weight counts; never today's 85 against today's 70.
-    // Body fat: the type sets no direction for it, so from 19 down to 15.
-    expect(calculateGoalProgress).toHaveBeenCalledWith(80, 77, 86, undefined, -1)
-    expect(calculateGoalProgress).toHaveBeenCalledWith(17, 15, 19, undefined, -1)
-    expect(result.goalProgress.weight?.position?.current).toBe(80)
-    expect(result.goalProgress.weight?.goal).toBe(77)
-    expect(result.goalProgress.bodyFat?.position?.current).toBe(17)
-    expect(result.comparison.client.goalWeight).toBe(77)
-    expect(result.comparison.client.goalBodyFatPercentage).toBe(15)
-    // The deadline in force on 31 May: neither the first nor the one set later.
-    expect(result.comparison.client.goalDeadline).toBe('2026-07-04')
+    const saved = sentCopy()
+    expect(goalProgress).toEqual({ ...saved.goalProgress, goalIsCurrent: false })
+    expect(comparison.client).toEqual({
+      id: 'client-1',
+      name: 'Test Client',
+      goalWeight: 77,
+      goalBodyFatPercentage: 15,
+      goalDeadline: '2026-07-04',
+      currentWeight: 80.2,
+      currentBodyFatPercentage: 17.1,
+      unitPreference: 'metric',
+      nutritionPlanBaseWeightKg: 83.4,
+      nutritionPlanEffectiveDate: '2026-05-01',
+    })
   })
 
-  it("asks for the client's goals and today, the readings as of its day by its stamp, and those on the goal's start day", async () => {
-    await getCheckInComparison('ci-1')
+  it('a goal changed and a weigh-in corrected after Send never move it — only "is it still the goal" answers today', async () => {
+    // Read while the goal it judged was still in force…
+    scriptToday([goalThen])
+    const before = await buildCheckInComparison(sentCheckIn(), client)
 
-    expect(listClientGoals).toHaveBeenCalledWith('client-1')
-    expect(getClientTodayString).toHaveBeenCalledWith('client-1')
-    expect(getReadingsAsOf).toHaveBeenCalledWith('client-1', DAY, 'ci-1')
-    expect(getReadingsOnDay).toHaveBeenCalledWith('client-1', '2026-04-11')
-  })
-
-  it("carries the baseline beside the goal's start: the ribbon counts from one, the strip from the other", async () => {
-    const result = await getCheckInComparison('ci-1')
-
-    expect(result.goalProgress.weight?.startingWeight).toBe(88)
-    expect(result.goalProgress.weight?.goalStartWeight).toBe(86)
-    expect(result.goalProgress.bodyFat?.startingBodyFat).toBe(20)
-    expect(result.goalProgress.bodyFat?.goalStartBodyFat).toBe(19)
-  })
-
-  it("counts days remaining from the check-in's day, not from today", async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-09-03T12:00:00Z'))
-    try {
-      const result = await getCheckInComparison('ci-1')
-
-      // 31 May to 4 July on the client's calendar; today would say -61.
-      expect(result.goalProgress.deadline).toEqual({
-        date: '2026-07-04',
-        daysRemaining: 34,
-        isPastDeadline: false,
-      })
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('bounds the trend to the check-ins up to the one under review', async () => {
-    await getCheckInComparison('ci-1')
-
-    expect(getClientCheckIns).toHaveBeenCalledWith('client-1', { limit: 10, upTo: AT })
-  })
-
-  it("reads the nutrition version covering the check-in's day for the drift note, against the reading then", async () => {
-    const result = await getCheckInComparison('ci-1')
-
-    expect(getNutritionPlanForDate).toHaveBeenCalledWith('client-1', DAY)
-    expect(result.comparison.client.nutritionPlanBaseWeightKg).toBe(84)
-    expect(result.comparison.client.nutritionPlanEffectiveDate).toBe('2026-04-05')
-    // The wire's reading is the reading then, so the strip's drift arithmetic
-    // compares like with like.
-    expect(result.comparison.client.currentWeight).toBe(80)
-    expect(result.comparison.client.currentBodyFatPercentage).toBe(17)
-  })
-
-  it('degrades the drift note, never the page, when the covering-version read fails', async () => {
-    vi.mocked(getNutritionPlanForDate).mockRejectedValue(new Error('boom'))
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    try {
-      const result = await getCheckInComparison('ci-1')
-
-      expect(result.comparison.client.nutritionPlanBaseWeightKg).toBeUndefined()
-      expect(result.goalProgress.weight?.position?.current).toBe(80)
-      expect(errorSpy).toHaveBeenCalled()
-    } finally {
-      errorSpy.mockRestore()
-    }
-  })
-
-  it("marks a goal since replaced as not current, and the one in force on the client's today as current", async () => {
-    const replaced = await getCheckInComparison('ci-1')
-    expect(replaced.goalProgress.goalIsCurrent).toBe(false)
-
-    vi.mocked(listClientGoals).mockResolvedValue([goalThen])
-    const inForce = await getCheckInComparison('ci-1')
-    expect(inForce.goalProgress.goalIsCurrent).toBe(true)
-  })
-
-  it('a goal planned after today does not replace the one in force yet', async () => {
-    const planned: ClientGoal = { ...goalNow, id: 'goal-planned', startsOn: '2026-10-05' }
-    vi.mocked(listClientGoals).mockResolvedValue([goalThen, planned])
-
-    const result = await getCheckInComparison('ci-1')
-
-    expect(result.goalProgress.goalIsCurrent).toBe(true)
-  })
-
-  it('shows no goal for a check-in older than every goal — the client had none then', async () => {
-    // Today's goal (70) started after the check-in; the review must not read it.
-    vi.mocked(listClientGoals).mockResolvedValue([goalNow])
-
-    const result = await getCheckInComparison('ci-1')
-
-    expect(result.goalProgress).toEqual({ goalIsCurrent: false })
-    expect(result.comparison.client.goalWeight).toBeUndefined()
-    expect(result.comparison.client.goalDeadline).toBeUndefined()
-    expect(calculateGoalProgress).not.toHaveBeenCalled()
-    // No goal, no start day to read.
-    expect(getReadingsOnDay).not.toHaveBeenCalled()
-  })
-
-  it("carries the reading then as the baseline, not today's, when the record has none", async () => {
-    vi.mocked(getClientById).mockResolvedValue({
-      ...mockClient,
-      startingWeight: undefined,
-      startingBodyFatPercentage: undefined,
-    } as never)
-
-    const result = await getCheckInComparison('ci-1')
-
-    // Never 85, today's reading. The goal's progress still runs from its start.
-    expect(result.goalProgress.weight?.startingWeight).toBe(80)
-    expect(result.goalProgress.bodyFat?.startingBodyFat).toBe(17)
-    expect(calculateGoalProgress).toHaveBeenCalledWith(80, 77, 86, undefined, -1)
-  })
-
-  it('keeps the row, with no position, when nothing was read on or before the day', async () => {
-    vi.mocked(getReadingsAsOf).mockResolvedValue({})
-
-    const result = await getCheckInComparison('ci-1')
-
-    expect(result.goalProgress.weight).toEqual({ goal: 77, startingWeight: 88, goalStartWeight: 86, position: null })
-    expect(result.goalProgress.bodyFat).toEqual({ goal: 15, startingBodyFat: 20, goalStartBodyFat: 19, position: null })
-    expect(calculateGoalProgress).not.toHaveBeenCalled()
-    expect(result.comparison.client.currentWeight).toBeUndefined()
-  })
-
-  it("takes the check-in's day on the CLIENT's calendar (Kiritimati boundary)", async () => {
-    // UTC+14: a check-in at 12:00 UTC on 9 June was submitted on 10 June there.
-    vi.mocked(getCheckInById).mockResolvedValue({ ...mockCheckIn, createdAt: '2026-06-09T12:00:00Z' } as never)
-    vi.mocked(getClientById).mockResolvedValue({ ...mockClient, timezone: 'Pacific/Kiritimati' } as never)
-
-    const result = await getCheckInComparison('ci-1')
-
-    expect(getReadingsAsOf).toHaveBeenCalledWith('client-1', '2026-06-10', 'ci-1')
-    expect(getNutritionPlanForDate).toHaveBeenCalledWith('client-1', '2026-06-10')
-    // The deadline moved on 10 June: that day reads the new one, 9 June the old.
-    expect(result.comparison.client.goalDeadline).toBe('2026-08-01')
-  })
-
-  it("anchors daysRemaining to the check-in's local day (west-of-UTC boundary)", async () => {
-    // UTC has rolled to 18 June, but a UTC-11 client submitted on the 17th. A
-    // deadline of that day reads 0 days remaining, not -1.
-    vi.mocked(getCheckInById).mockResolvedValue({ ...mockCheckIn, createdAt: '2026-06-18T00:30:00Z' } as never)
-    vi.mocked(getClientById).mockResolvedValue({ ...mockClient, timezone: 'Pacific/Niue' } as never)
-    vi.mocked(listClientGoals).mockResolvedValue([withDeadline('2026-06-17'), goalNow])
-
-    const result = await getCheckInComparison('ci-1')
-
-    expect(result.goalProgress.deadline?.daysRemaining).toBe(0)
-    expect(result.goalProgress.deadline?.isPastDeadline).toBe(false)
-  })
-
-  it('the whole pace path runs in ONE unit — no kg/display mixing', async () => {
-    // Regression guard for the 7.8 rewire, restated for canonical storage
-    // (migration 141): there is no kg↔display round trip at all — the resolver
-    // returns the stored kilograms and the service uses them directly. The
-    // invariant is unchanged: goal and reading must be in the SAME unit before
-    // subtracting. This runs the REAL calculateGoalProgress so the actual
-    // subtraction executes; a stray conversion on one side would swing
-    // `remaining` by ~2.2x and the pace would falsely read "unrealistic".
-    const actual = await vi.importActual<typeof import('@/utils/comparison-utils')>(
-      '@/utils/comparison-utils'
-    )
-    vi.mocked(calculateGoalProgress).mockImplementation(actual.calculateGoalProgress)
-    vi.mocked(listClientGoals).mockResolvedValue([
-      { ...withDeadline('2026-12-01'), targetWeight: 77.4 },
+    // …then the goal is replaced and its deadline moved, the weigh-in is
+    // corrected in the log and the plan re-saved: today's state all differs.
+    scriptToday([
+      { ...goalThen, deadlines: [...goalThen.deadlines, { effectiveOn: '2026-06-02', deadline: '2026-09-30', setBy: 'coach-1' }] },
       goalNow,
     ])
+    const after = await buildCheckInComparison(
+      sentCheckIn(),
+      { ...client, currentWeight: 79.4 } as Client
+    )
 
-    const result = await getCheckInComparison('ci-1')
-    const w = result.goalProgress.weight!
+    const { goalIsCurrent: currentBefore, ...rowsBefore } = before.goalProgress
+    const { goalIsCurrent: currentAfter, ...rowsAfter } = after.goalProgress
+    expect(rowsAfter).toEqual(rowsBefore)
+    expect(after.comparison.client).toEqual(before.comparison.client)
+    expect(after.comparison.client.currentWeight).toBe(80.2)
+    expect(currentBefore).toBe(true)
+    expect(currentAfter).toBe(false)
+  })
 
-    expect(w.goal).toBeCloseTo(77.4, 1)
-    expect(w.position?.remaining).toBeCloseTo(-2.6, 1) // 77.4 - 80, the reading then
-    expect(w.position?.paceStatus).toBe('on_track')
+  it('reads nothing that composes a goal section — no readings, no plan, no trend', async () => {
+    await buildCheckInComparison(sentCheckIn(), client)
+
+    expect(getReadingsAsOf).not.toHaveBeenCalled()
+    expect(getReadingsOnDay).not.toHaveBeenCalled()
+    expect(getNutritionPlanForDate).not.toHaveBeenCalled()
+  })
+
+  it('shows no goal when the check-in judged none, even though the client has one now', async () => {
+    const { comparison, goalProgress } = await buildCheckInComparison(
+      sentCheckIn({ sentSnapshot: sentCopy({ goal: null, goalProgress: {} }) }),
+      client
+    )
+
+    expect(goalProgress).toEqual({ goalIsCurrent: false })
+    expect(comparison.client.goalWeight).toBeUndefined()
+    expect(comparison.client.goalDeadline).toBeUndefined()
+  })
+
+  it('leaves out the drift plan when none covered the check-in day', async () => {
+    const { comparison } = await buildCheckInComparison(
+      sentCheckIn({ sentSnapshot: sentCopy({ nutritionPlan: null }) }),
+      client
+    )
+
+    expect(comparison.client.nutritionPlanBaseWeightKg).toBeUndefined()
+    expect(comparison.client.nutritionPlanEffectiveDate).toBeUndefined()
+    // …so the wire carries neither key, as before copies existed.
+    const wire = JSON.parse(JSON.stringify(comparison.client))
+    expect(wire).not.toHaveProperty('nutritionPlanBaseWeightKg')
+    expect(wire).not.toHaveProperty('nutritionPlanEffectiveDate')
+  })
+
+  it('throws for a check-in with no saved copy rather than inventing its section from today', async () => {
+    await expect(
+      buildCheckInComparison(sentCheckIn({ sentSnapshot: null }), client)
+    ).rejects.toThrow('has no saved copy')
+    expect(getReadingsAsOf).not.toHaveBeenCalled()
   })
 })
 
-// The strip's figures run from the client's reading on the goal's start day, in
-// the direction the goal's type sets. These run the REAL calculateGoalProgress
-// against the mocked reads.
-describe("progress runs from the goal's start, in its type's direction", () => {
-  beforeEach(async () => {
-    const actual = await vi.importActual<typeof import('@/utils/comparison-utils')>(
-      '@/utils/comparison-utils'
-    )
-    vi.mocked(calculateGoalProgress).mockImplementation(actual.calculateGoalProgress)
+describe('"Set new goals" asks whether the goal judged is still the goal today', () => {
+  it('is current while the goal it judged is the one in force on the client\'s today', async () => {
+    scriptToday([goalThen])
+    const { goalProgress } = await buildCheckInComparison(sentCheckIn(), client)
+    expect(goalProgress.goalIsCurrent).toBe(true)
   })
 
-  it("measures percentComplete from the reading on the goal's start day, not the baseline", async () => {
-    const result = await getCheckInComparison('ci-1')
-
-    // 6 of the 9 kg from 86 to 77; the baseline (88) would say 8 of 11.
-    expect(result.goalProgress.weight?.position?.percentComplete).toBe(66.7)
+  it('is not current once a later goal has replaced it', async () => {
+    const { goalProgress } = await buildCheckInComparison(sentCheckIn(), client)
+    expect(goalProgress.goalIsCurrent).toBe(false)
   })
 
-  it("judges a lose-weight goal downward even when its start day's reading sat below the target", async () => {
-    // Started at 76, under the 77 target: by the side of the start 80 would be
-    // past a climb. Losing weight counts down, so 80 is 3 kg short of it.
-    vi.mocked(getReadingsOnDay).mockResolvedValue({
-      ...readingsAtGoalStart,
-      weight: { ...readingsAtGoalStart.weight, value: 76 },
-    })
-
-    const result = await getCheckInComparison('ci-1')
-
-    expect(result.goalProgress.weight?.position?.status).toBe('approaching')
+  it('a goal planned after today does not replace it yet', async () => {
+    scriptToday([goalThen, { ...goalNow, startsOn: '2026-10-19', deadlines: [{ effectiveOn: '2026-10-19', deadline: null, setBy: 'coach-1' }] }])
+    const { goalProgress } = await buildCheckInComparison(sentCheckIn(), client)
+    expect(goalProgress.goalIsCurrent).toBe(true)
+    expect(listClientGoals).toHaveBeenCalledWith('client-1')
+    expect(getClientTodayString).toHaveBeenCalledWith('client-1')
   })
 })
 
-// `isOnTrack` is the strip's fallback state and the ONLY thing the bounded
-// ten-row read feeds. These run the real `calculateGoalProgress` against the
-// mocked reads so the whole path from the set to the flag is under test —
-// delete the read and the first case reads "on track" for a client moving
-// away from the goal.
-describe('the trend behind isOnTrack', () => {
-  beforeEach(async () => {
-    const actual = await vi.importActual<typeof import('@/utils/comparison-utils')>(
-      '@/utils/comparison-utils'
-    )
-    vi.mocked(calculateGoalProgress).mockImplementation(actual.calculateGoalProgress)
-    vi.mocked(listClientGoals).mockResolvedValue([withDeadline(null), goalNow])
+describe('the changes since the last check-in compare what the two check-ins reported', () => {
+  it('differences each figure against the previous check-in, both as they were sent', async () => {
+    const { comparison } = await buildCheckInComparison(sentCheckIn(), client)
+
+    expect(getPreviousCheckIn).toHaveBeenCalledWith('client-1', 'ci-1')
+    expect(comparison.changes).toEqual({
+      weight: -1.2,
+      bodyFatPercentage: -0.8,
+      mood: 1,
+      energy: -1,
+      sleep: 1,
+      stress: -1,
+      soreness: 1,
+    })
+    expect(comparison.timeBetweenCheckIns).toBe(7)
   })
 
-  it('reads false for a client whose check-ins up to this one move AWAY from a loss goal', async () => {
-    const current = { ...mockCheckIn, weight: 82, createdAt: AT }
-    const older = { ...mockCheckIn, id: 'ci-0', weight: 81, createdAt: '2026-05-24T12:00:00+00:00' }
-    vi.mocked(getCheckInById).mockResolvedValue(current as never)
-    vi.mocked(getReadingsAsOf).mockResolvedValue({
-      ...readingsThen,
-      weight: { ...readingsThen.weight, value: 82 },
-    })
-    // Newest first, as the service reads them: +1 kg over the week.
-    vi.mocked(getClientCheckIns).mockResolvedValue({ checkIns: [current, older] } as never)
+  it("sends the previous check-in without its saved copy — the server reads it, the browser does not", async () => {
+    const { comparison } = await buildCheckInComparison(sentCheckIn(), client)
 
-    const result = await getCheckInComparison('ci-1')
-
-    expect(result.goalProgress.weight?.position?.isOnTrack).toBe(false)
+    expect(comparison.previous?.id).toBe('ci-0')
+    expect(comparison.previous?.weight).toBe(81.4)
+    expect(comparison.previous).not.toHaveProperty('sentSnapshot')
   })
 
-  it('reads true while they move TOWARDS it', async () => {
-    const current = { ...mockCheckIn, weight: 79.5, createdAt: AT }
-    const older = { ...mockCheckIn, id: 'ci-0', weight: 81, createdAt: '2026-05-24T12:00:00+00:00' }
-    vi.mocked(getCheckInById).mockResolvedValue(current as never)
-    vi.mocked(getReadingsAsOf).mockResolvedValue({
-      ...readingsThen,
-      weight: { ...readingsThen.weight, value: 79.5 },
-    })
-    vi.mocked(getClientCheckIns).mockResolvedValue({ checkIns: [current, older] } as never)
+  it('a first check-in has nothing to compare against', async () => {
+    vi.mocked(getPreviousCheckIn).mockResolvedValue(null)
+    const { comparison } = await buildCheckInComparison(sentCheckIn(), client)
 
-    const result = await getCheckInComparison('ci-1')
+    expect(comparison.previous).toBeNull()
+    expect(comparison.timeBetweenCheckIns).toBeUndefined()
+    expect(comparison.changes.weight).toBeUndefined()
+  })
+})
 
-    expect(result.goalProgress.weight?.position?.isOnTrack).toBe(true)
+describe('getCheckInComparison', () => {
+  it('reads the check-in and its client, then the same comparison', async () => {
+    vi.mocked(getCheckInById).mockResolvedValue(sentCheckIn())
+    vi.mocked(getClientById).mockResolvedValue(client)
+
+    const { goalProgress } = await getCheckInComparison('ci-1')
+
+    expect(getCheckInById).toHaveBeenCalledWith('ci-1')
+    expect(getClientById).toHaveBeenCalledWith('client-1')
+    expect(goalProgress.weight?.position?.current).toBe(80.2)
+  })
+
+  it('throws for a missing check-in, and for a missing client', async () => {
+    vi.mocked(getCheckInById).mockResolvedValue(null)
+    await expect(getCheckInComparison('ci-404')).rejects.toThrow('Check-in not found')
+
+    vi.mocked(getCheckInById).mockResolvedValue(sentCheckIn())
+    vi.mocked(getClientById).mockResolvedValue(null)
+    await expect(getCheckInComparison('ci-1')).rejects.toThrow('Client not found')
   })
 })

@@ -8,7 +8,6 @@ import {
 } from "@/utils/nutrition-period-summary";
 import type { NutritionDay } from "@/types/schedule";
 import type { CheckIn } from "@/types/check-in";
-import { readPeriodSnapshot } from "@/lib/check-in/period-snapshot";
 
 type NutritionPeriod = {
   /** One row per date — what the check-in freezes. */
@@ -38,20 +37,17 @@ export async function getNutritionPeriod(
 }
 
 /**
- * A check-in's nutrition: its FROZEN rows and the kernel over them when it has
- * them — a submitted check-in reports on the week as it stood at submit, and a
- * plan the coach changes afterwards must not move it — else live over the
- * period, for a row written before the snapshot existed. The AI review reads
- * the rows day by day and the summary beside them, from this one call.
+ * A sent check-in's nutrition: the rows its saved copy froze when it was sent
+ * (lib/check-in/sent-snapshot.ts) and the kernel over them — a plan or a
+ * setting the coach changes afterwards never moves it. The AI review reads the
+ * rows day by day and the summary beside them. A check-in whose week could not
+ * be resolved saved none, as its review shows none.
  */
-export async function getCheckInNutritionPeriod(
-  checkIn: Pick<CheckIn, "clientId" | "periodSnapshot">,
-  startDate: string,
-  endDate: string
-): Promise<NutritionPeriod> {
-  const frozen = readPeriodSnapshot(checkIn.periodSnapshot);
-  if (frozen) {
-    return { days: frozen.nutrition, summary: summarizeNutritionPeriod(frozen.nutrition) };
-  }
-  return getNutritionPeriod(checkIn.clientId, startDate, endDate);
+export function getCheckInNutritionPeriod(
+  checkIn: Pick<CheckIn, "id" | "sentSnapshot">
+): NutritionPeriod {
+  const snapshot = checkIn.sentSnapshot;
+  if (!snapshot) throw new Error(`Check-in ${checkIn.id} has no saved copy`);
+  const days = snapshot.period?.nutrition ?? [];
+  return { days, summary: summarizeNutritionPeriod(days) };
 }
