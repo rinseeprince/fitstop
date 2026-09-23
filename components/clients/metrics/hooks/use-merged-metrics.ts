@@ -18,6 +18,7 @@ import {
   compareLastDays,
   deriveFirstWeekChange,
   deriveHeroStats,
+  MIN_ENTRIES,
   WINDOW_DAYS,
   worstOfLastDays,
   type HeroBaseline,
@@ -116,6 +117,7 @@ function buildCardThree(
   metricId: string,
   points: MetricPoint[],
   clientToday: string,
+  minEntries: number,
   goal: GoalCard
 ): CardThree {
   const kind = cardThreeKind(metricId);
@@ -125,7 +127,13 @@ function buildCardThree(
     case "last90":
       return {
         kind,
-        comparison: compareLastDays(points, clientToday, WINDOW_DAYS.girth, DOWN_SET.has(metricId)),
+        comparison: compareLastDays(
+          points,
+          clientToday,
+          WINDOW_DAYS.girth,
+          DOWN_SET.has(metricId),
+          minEntries
+        ),
       };
     case "lowest":
     case "highest":
@@ -135,8 +143,8 @@ function buildCardThree(
 
 /**
  * A metric's summary off its points — the figures its hero, cards, chart and
- * log read. The cards are every metric's; the Total change and the goal are
- * the pane's own.
+ * log read. The cards are every metric's; how many entries an average needs,
+ * the Total change and the goal are the pane's own.
  */
 function summariseMetric(
   def: MetricDefinition,
@@ -144,7 +152,12 @@ function summariseMetric(
   hero: ReturnType<typeof deriveHeroStats>,
   clientToday: string,
   viewer: UnitSystem,
-  own: { totalChange: MetricSummary["totalChange"]; goal: number | null; goalCard: GoalCard }
+  own: {
+    minEntries: number;
+    totalChange: MetricSummary["totalChange"];
+    goal: number | null;
+    goalCard: GoalCard;
+  }
 ): MetricSummary {
   const downIsGood = DOWN_SET.has(def.id);
   return {
@@ -159,9 +172,9 @@ function summariseMetric(
     totalChange: own.totalChange,
     startsOn: hero?.startsOn ?? null,
     avgRate: hero?.avgRate ?? null,
-    lastWeek: compareLastDays(points, clientToday, WINDOW_DAYS.week, downIsGood),
-    lastMonth: compareLastDays(points, clientToday, WINDOW_DAYS.month, downIsGood),
-    cardThree: buildCardThree(def.id, points, clientToday, own.goalCard),
+    lastWeek: compareLastDays(points, clientToday, WINDOW_DAYS.week, downIsGood, own.minEntries),
+    lastMonth: compareLastDays(points, clientToday, WINDOW_DAYS.month, downIsGood, own.minEntries),
+    cardThree: buildCardThree(def.id, points, clientToday, own.minEntries, own.goalCard),
     goal: own.goal,
   };
 }
@@ -248,6 +261,7 @@ export const usePhysiqueMetrics = (client: Client): MetricPaneData => {
 
       const target = targetFor(def.id);
       return summariseMetric(def, points, hero, clientToday, preference, {
+        minEntries: MIN_ENTRIES.measurement,
         totalChange: hero?.totalChange ?? null,
         goal: target,
         goalCard: goalCardFor(def, target, hero?.current.value ?? null),
@@ -338,7 +352,12 @@ export const useWellnessMetrics = (clientId: string): MetricPaneData => {
         deriveHeroStats(points, "wellness", today),
         clientToday,
         preference,
-        { totalChange: deriveFirstWeekChange(points, clientToday), goal: null, goalCard: NO_GOAL_CARD }
+        {
+          minEntries: MIN_ENTRIES.wellness,
+          totalChange: deriveFirstWeekChange(points, clientToday, MIN_ENTRIES.wellness),
+          goal: null,
+          goalCard: NO_GOAL_CARD,
+        }
       );
     });
 

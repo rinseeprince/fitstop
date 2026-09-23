@@ -224,9 +224,9 @@ describe("MetricsTabContent — Log measurement never shows an old reading", () 
     expect(heroCurrent()).toBeNull();
     expect(screen.getByText("Current").nextElementSibling?.textContent).not.toContain("90");
     // The cards wait with it: their labels — Weight's card 3 is its Goal — and no claim
-    expect(screen.getByText("Last 7 days")).toBeInTheDocument();
+    expect(screen.getByText("Last 7 days avg")).toBeInTheDocument();
     expect(screen.getByText("Goal")).toBeInTheDocument();
-    expect(screen.queryByText(/No entries|No target/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Not enough entries|No target/)).not.toBeInTheDocument();
     await act(async () => {
       refetch.resolve({ success: true, data: NEW_SERIES });
       await refetch.promise;

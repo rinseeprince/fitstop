@@ -165,13 +165,23 @@ describe("averageInWindow", () => {
     ];
 
     // (7.4 + 8.2 + 5.9) / 3 = 7.1666… — shown, and so returned, as 7.2
-    expect(averageInWindow(points, "2026-07-10", "2026-07-16")).toEqual({ average: 7.2, count: 3 });
+    expect(averageInWindow(points, "2026-07-10", "2026-07-16")).toBe(7.2);
   });
 
   it("gives an empty window no average, never a zero", () => {
     const points = [pt("2026-07-01", 4.6), pt("2026-07-30", 5.2)];
 
-    expect(averageInWindow(points, "2026-07-10", "2026-07-16")).toEqual({ average: null, count: 0 });
+    expect(averageInWindow(points, "2026-07-10", "2026-07-16")).toBeNull();
+  });
+
+  it("gives no average below the minimum — a wellness score needs three entries", () => {
+    const two = [pt("2026-07-11", 6.1), pt("2026-07-14", 7.9)];
+
+    expect(averageInWindow(two, "2026-07-10", "2026-07-16", 3)).toBeNull();
+    // (6.1 + 7.9 + 8.6) / 3 = 7.53…
+    expect(averageInWindow([...two, pt("2026-07-15", 8.6)], "2026-07-10", "2026-07-16", 3)).toBe(7.5);
+    // A measurement's one reading is its average
+    expect(averageInWindow(two.slice(0, 1), "2026-07-10", "2026-07-16")).toBe(6.1);
   });
 });
 
@@ -192,8 +202,8 @@ describe("compareLastDays", () => {
     const comparison = compareLastDays(points, today, 7, false);
 
     // 12.75 / 3 = 4.25, shown as 4.3; 10 / 2 = 5.0
-    expect(comparison.current).toEqual({ average: 4.3, count: 3 });
-    expect(comparison.previous).toEqual({ average: 5, count: 2 });
+    expect(comparison.current).toBe(4.3);
+    expect(comparison.previous).toBe(5);
     expect(comparison.change).toEqual({ amount: -0.7, trend: "down", tone: "bad" });
     expect(comparison.days).toBe(7);
   });
@@ -206,8 +216,8 @@ describe("compareLastDays", () => {
       false
     );
 
-    expect(comparison.current.average).toBe(4.3);
-    expect(comparison.previous.average).toBe(5);
+    expect(comparison.current).toBe(4.3);
+    expect(comparison.previous).toBe(5);
     expect(comparison.change?.amount).toBe(-0.7);
   });
 
@@ -218,8 +228,16 @@ describe("compareLastDays", () => {
   it("has no change when the window before is empty — the average stands alone", () => {
     const comparison = compareLastDays(points.slice(3), today, 7, false);
 
-    expect(comparison.current).toEqual({ average: 4.3, count: 3 });
-    expect(comparison.previous).toEqual({ average: null, count: 0 });
+    expect(comparison.current).toBe(4.3);
+    expect(comparison.previous).toBeNull();
+    expect(comparison.change).toBeNull();
+  });
+
+  it("holds both windows to the minimum: three entries this week, two the week before, no change", () => {
+    const comparison = compareLastDays(points, today, 7, false, 3);
+
+    expect(comparison.current).toBe(4.3);
+    expect(comparison.previous).toBeNull();
     expect(comparison.change).toBeNull();
   });
 });
@@ -266,6 +284,8 @@ describe("worstOfLastDays", () => {
 
 describe("deriveFirstWeekChange", () => {
   const today = "2026-07-20";
+  // The Wellness hero's minimum: three entries in each week
+  const MIN = 3;
 
   it("compares the last 7 days' average with the client's first week of entries", () => {
     const points = [
@@ -279,13 +299,14 @@ describe("deriveFirstWeekChange", () => {
       pt("2026-07-13", 1),
       // The last 7 days: 14–20 Jul
       pt("2026-07-14", 6),
+      pt("2026-07-16", 4),
       pt("2026-07-19", 7),
     ];
 
-    // 16 / 3 = 5.33…, shown 5.3; 13 / 2 = 6.5 — never the last entry minus the first (7 − 3)
-    expect(deriveFirstWeekChange(points, today)).toEqual({
+    // 16 / 3 = 5.33…, shown 5.3; 17 / 3 = 5.67…, shown 5.7 — never the last entry minus the first (7 − 3)
+    expect(deriveFirstWeekChange(points, today, MIN)).toEqual({
       kind: "firstWeek",
-      delta: 1.2,
+      delta: 0.4,
       firstWeekOf: "2026-06-01",
     });
   });
@@ -293,25 +314,45 @@ describe("deriveFirstWeekChange", () => {
   it("is too soon to compare while the first week and the last 7 days share a day", () => {
     // First entry 8 Jul, 12 days before today: its week, 8–14 Jul, ends on
     // the last week's first day. From 7 Jul, 13 days back, the weeks part.
-    const recent = [pt("2026-07-15", 6), pt("2026-07-18", 9)];
+    const recent = [pt("2026-07-15", 6), pt("2026-07-17", 2), pt("2026-07-18", 9)];
 
-    expect(deriveFirstWeekChange([pt("2026-07-08", 4), ...recent], today)).toEqual({ kind: "tooSoon" });
-    // (4 + 5) / 2 = 4.5 against (6 + 9) / 2 = 7.5
+    expect(deriveFirstWeekChange([pt("2026-07-08", 4), ...recent], today, MIN)).toEqual({
+      kind: "tooSoon",
+    });
+    // (4 + 3 + 8) / 3 = 5.0 against (6 + 2 + 9) / 3 = 5.67…, shown 5.7
     expect(
-      deriveFirstWeekChange([pt("2026-07-07", 4), pt("2026-07-12", 5), ...recent], today)
-    ).toEqual({ kind: "firstWeek", delta: 3, firstWeekOf: "2026-07-07" });
+      deriveFirstWeekChange(
+        [pt("2026-07-07", 4), pt("2026-07-10", 3), pt("2026-07-12", 8), ...recent],
+        today,
+        MIN
+      )
+    ).toEqual({ kind: "firstWeek", delta: 0.7, firstWeekOf: "2026-07-07" });
   });
 
-  it("has no change to show when nothing was logged in the last 7 days", () => {
-    expect(deriveFirstWeekChange([pt("2026-06-01", 3), pt("2026-07-13", 1)], today)).toEqual({
-      kind: "noRecentEntries",
+  it("has not enough entries when the last 7 days hold fewer than three", () => {
+    expect(deriveFirstWeekChange([pt("2026-06-01", 3), pt("2026-07-13", 1)], today, MIN)).toEqual({
+      kind: "notEnoughEntries",
     });
     // Said the same way for a client whose first entry is recent
-    expect(deriveFirstWeekChange([pt("2026-07-10", 2)], today)).toEqual({ kind: "noRecentEntries" });
+    expect(deriveFirstWeekChange([pt("2026-07-10", 2)], today, MIN)).toEqual({
+      kind: "notEnoughEntries",
+    });
+    const firstWeek = [pt("2026-06-01", 3), pt("2026-06-02", 5), pt("2026-06-04", 8)];
+    expect(
+      deriveFirstWeekChange([...firstWeek, pt("2026-07-15", 6), pt("2026-07-18", 9)], today, MIN)
+    ).toEqual({ kind: "notEnoughEntries" });
+  });
+
+  it("has not enough entries for good when the first week held fewer than three", () => {
+    const lastWeek = [pt("2026-07-15", 6), pt("2026-07-17", 2), pt("2026-07-18", 9)];
+
+    expect(
+      deriveFirstWeekChange([pt("2026-06-01", 3), pt("2026-06-05", 5), ...lastWeek], today, MIN)
+    ).toEqual({ kind: "notEnoughEntries" });
   });
 
   it("is null with no entry at all", () => {
-    expect(deriveFirstWeekChange([], today)).toBeNull();
+    expect(deriveFirstWeekChange([], today, MIN)).toBeNull();
   });
 });
 

@@ -4,8 +4,6 @@ import { render, screen, cleanup } from "@testing-library/react";
 import { MetricHero } from "./metric-hero";
 import type { MetricSummary } from "./metrics-view-types";
 
-const NO_ENTRIES = { average: null, count: 0 };
-
 function metric(overrides: Partial<MetricSummary> = {}): MetricSummary {
   return {
     id: "weight",
@@ -19,8 +17,8 @@ function metric(overrides: Partial<MetricSummary> = {}): MetricSummary {
     totalChange: null,
     startsOn: null,
     avgRate: null,
-    lastWeek: { days: 7, current: NO_ENTRIES, previous: NO_ENTRIES, change: null },
-    lastMonth: { days: 30, current: NO_ENTRIES, previous: NO_ENTRIES, change: null },
+    lastWeek: { days: 7, current: null, previous: null, change: null },
+    lastMonth: { days: 30, current: null, previous: null, change: null },
     cardThree: { kind: "goal", goal: { status: "none" } },
     goal: null,
     ...overrides,
@@ -76,7 +74,7 @@ describe("MetricHero — total change", () => {
     expect(screen.getByText("since the week of 1 Apr")).toBeInTheDocument();
   });
 
-  it("says a wellness change has no last week to stand on when nothing was logged in the last 7 days", () => {
+  it("says so when a week holds too few entries to average", () => {
     render(
       <MetricHero
         metric={metric({
@@ -84,13 +82,13 @@ describe("MetricHero — total change", () => {
           name: "Sleep",
           tab: "wellness",
           unit: "/10",
-          totalChange: { kind: "noRecentEntries" },
+          totalChange: { kind: "notEnoughEntries" },
         })}
         {...PROPS}
       />
     );
 
-    expect(screen.getByText("No entries in the last 7 days")).toBeInTheDocument();
+    expect(screen.getByText("Not enough entries")).toBeInTheDocument();
     expect(screen.queryByText(/since the week of/)).not.toBeInTheDocument();
   });
 

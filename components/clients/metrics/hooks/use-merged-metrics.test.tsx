@@ -122,7 +122,9 @@ describe("useWellnessMetrics — the client's daily log, nothing else", () => {
     expect(sleep.latest).toEqual({ value: 3, date: "2026-09-18", daysAgo: 2 });
     expect(sleep.entryCount).toBe(3);
     // The last 30 days, 21 Aug–19 Sep: (6 + 8 + 3) / 3 = 5.67, shown 5.7
-    expect(sleep.lastMonth.current).toEqual({ average: 5.7, count: 3 });
+    expect(sleep.lastMonth.current).toBe(5.7);
+    // The last 7 days, 13–19 Sep, hold one night: a wellness average needs three
+    expect(sleep.lastWeek.current).toBeNull();
 
     expect(byId("mood").points.map((p) => p.value)).toEqual([4]);
     expect(byId("energy").points).toEqual([]);
@@ -165,33 +167,17 @@ describe("useWellnessMetrics — the client's daily log, nothing else", () => {
   it("ends every window on the client's today, never the device's", () => {
     // Client's today 19 Sep: the last 7 days are 13–19 Sep, the 7 before 6–12
     // Sep. Counted from the device's 20 Sep, 13 Sep would fall in the week
-    // before and the figures would read 2.0 against 9.0.
-    wellness = {
-      series: {
-        ...WELLNESS,
-        sleep: [day("2026-09-06", 5, "w-4"), day("2026-09-13", 9, "w-5"), day("2026-09-17", 2, "w-6")],
-      },
-      isLoading: false,
-      isError: false,
-    };
-    const { result } = renderHook(() => useWellnessMetrics(CLIENT_ID));
-    const sleep = result.current.metrics.find((m) => m.id === "sleep")!;
-
-    expect(sleep.lastWeek.current).toEqual({ average: 5.5, count: 2 });
-    expect(sleep.lastWeek.previous).toEqual({ average: 5, count: 1 });
-    expect(sleep.lastWeek.change).toMatchObject({ amount: 0.5, trend: "up", tone: "good" });
-  });
-
-  it("gives the hero's Total change as the last 7 days against the first week", () => {
+    // before and leave this week two nights — not enough for an average.
     wellness = {
       series: {
         ...WELLNESS,
         sleep: [
-          day("2026-09-01", 6, "w-10"),
-          day("2026-09-07", 9, "w-11"),
-          day("2026-09-10", 3, "w-12"),
-          day("2026-09-13", 8, "w-13"),
-          day("2026-09-19", 1, "w-14"),
+          day("2026-09-06", 5, "w-4"),
+          day("2026-09-08", 8, "w-5"),
+          day("2026-09-10", 6, "w-6"),
+          day("2026-09-13", 9, "w-7"),
+          day("2026-09-15", 3, "w-8"),
+          day("2026-09-17", 10, "w-9"),
         ],
       },
       isLoading: false,
@@ -200,9 +186,35 @@ describe("useWellnessMetrics — the client's daily log, nothing else", () => {
     const { result } = renderHook(() => useWellnessMetrics(CLIENT_ID));
     const sleep = result.current.metrics.find((m) => m.id === "sleep")!;
 
-    // First week 1–7 Sep: 7.5. Last 7 days 13–19 Sep: 4.5. Never the last
-    // entry minus the first (1 − 6).
-    expect(sleep.totalChange).toEqual({ kind: "firstWeek", delta: -3, firstWeekOf: "2026-09-01" });
+    // 22 / 3 = 7.33…, shown 7.3, against 19 / 3 = 6.33…, shown 6.3
+    expect(sleep.lastWeek.current).toBe(7.3);
+    expect(sleep.lastWeek.previous).toBe(6.3);
+    expect(sleep.lastWeek.change).toMatchObject({ amount: 1, trend: "up", tone: "good" });
+  });
+
+  it("gives the hero's Total change as the last 7 days against the first week", () => {
+    wellness = {
+      series: {
+        ...WELLNESS,
+        sleep: [
+          day("2026-09-01", 6, "w-10"),
+          day("2026-09-04", 2, "w-11"),
+          day("2026-09-07", 9, "w-12"),
+          day("2026-09-10", 3, "w-13"),
+          day("2026-09-13", 8, "w-14"),
+          day("2026-09-16", 5, "w-15"),
+          day("2026-09-19", 1, "w-16"),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const { result } = renderHook(() => useWellnessMetrics(CLIENT_ID));
+    const sleep = result.current.metrics.find((m) => m.id === "sleep")!;
+
+    // First week 1–7 Sep: 17 / 3, shown 5.7. Last 7 days 13–19 Sep: 14 / 3,
+    // shown 4.7. Never the last entry minus the first (1 − 6).
+    expect(sleep.totalChange).toEqual({ kind: "firstWeek", delta: -1, firstWeekOf: "2026-09-01" });
   });
 
   it("makes card 3 the worst score of the last 30 days — the lowest, the highest where down is good", () => {
@@ -230,6 +242,8 @@ describe("usePhysiqueMetrics — the measurement log, nothing else", () => {
 
     const weight = result.current.metrics.find((m) => m.id === "weight")!;
     expect(weight.latest).toEqual({ value: 83.9, date: "2026-09-18", daysAgo: 2 });
+    // A measurement counts from one reading: a weekly weigh-in is its week's average
+    expect(weight.lastWeek.current).toBe(83.9);
     expect(result.current.logRows.map((row) => row.value)).toEqual([83.9]);
     expect(result.current.metrics.map((m) => m.id)).not.toContain("sleep");
     expect(result.current).toMatchObject({ isLoading: false, isError: false });
@@ -265,8 +279,8 @@ describe("usePhysiqueMetrics — the measurement log, nothing else", () => {
       kind: "last90",
       comparison: {
         days: 90,
-        current: { average: 87.9, count: 2 },
-        previous: { average: 91.4, count: 1 },
+        current: 87.9,
+        previous: 91.4,
         change: { amount: -3.5, trend: "down", tone: "good" },
       },
     });

@@ -14,11 +14,11 @@ import type { CardThree, CardThreeKind, GoalCard, MetricSummary } from "./metric
 import type { TrendDirection } from "@/types/check-in";
 
 // Three white cards under the hero, each with one label and one window for
-// every client: the last 7 days and the last 30 days — averages of the entries
+// every client: the last 7 days' and the last 30 days' averages of the entries
 // dated in a window ending the client's today, each against the window before
-// it and saying how many entries it stands on — and card 3, fixed per metric
-// (D31). Anatomy copied from exercise-kpi-strip.tsx; the change is toned by
-// the metric's good direction (TONE_TEXT), not hardcoded teal.
+// it — on a wellness score, an average needs three entries — and card 3, fixed
+// per metric (D31). Anatomy copied from exercise-kpi-strip.tsx; the change is
+// toned by the metric's good direction (TONE_TEXT), not hardcoded teal.
 
 type MetricStatCardsProps = {
   metric: MetricSummary;
@@ -61,17 +61,16 @@ function DashValue() {
   );
 }
 
-const fromEntries = (count: number) => `from ${count} ${count === 1 ? "entry" : "entries"}`;
+/** An average card's heading: what the big number is, over which days. */
+const averageLabel = (days: number) => `Last ${days} days avg`;
 
-/** The change, arrow first, then the average it is taken against. A flex line,
- *  as exercise-kpi-strip's: an icon inside inline text sets the text's baseline. */
+/** The change, arrow first, against the same span before. A flex line, as
+ *  exercise-kpi-strip's: an icon inside inline text sets the text's baseline. */
 function ChangeLine({
   change,
-  previous,
   days,
 }: {
   change: NonNullable<WindowComparison["change"]>;
-  previous: number;
   days: number;
 }) {
   const TrendIcon = TREND_ICON[change.trend];
@@ -79,33 +78,30 @@ function ChangeLine({
     <p className={cn(SUB_MONO_CLASS, "flex flex-wrap items-center gap-x-1")}>
       <TrendIcon strokeWidth={1.5} className={cn("h-3 w-3 shrink-0", TONE_TEXT[change.tone])} />
       <span className={cn("font-medium", TONE_TEXT[change.tone])}>{formatSigned(change.amount)}</span>
-      <span>
-        vs {previous.toFixed(1)} the {days} days before
-      </span>
+      <span>vs the previous {days} days</span>
     </p>
   );
 }
 
 /** Cards 1 and 2, and card 3 on a girth: a window's average against the window before it. */
 function WindowCard({ comparison, unit }: { comparison: WindowComparison; unit: string }) {
-  const { days, current, previous, change } = comparison;
+  const { days, current, change } = comparison;
   return (
     <CardShell>
-      <p className={LABEL_CLASS}>Last {days} days</p>
-      {current.average == null ? (
+      <p className={LABEL_CLASS}>{averageLabel(days)}</p>
+      {current == null ? (
         <>
           <DashValue />
-          <p className={SUB_SANS_CLASS}>No entries in the last {days} days</p>
+          <p className={SUB_SANS_CLASS}>Not enough entries</p>
         </>
       ) : (
         <>
-          <CardValue value={current.average.toFixed(1)} unit={unit} />
-          {change && previous.average != null ? (
-            <ChangeLine change={change} previous={previous.average} days={days} />
+          <CardValue value={current.toFixed(1)} unit={unit} />
+          {change ? (
+            <ChangeLine change={change} days={days} />
           ) : (
-            <p className={SUB_SANS_CLASS}>no entries the {days} days before</p>
+            <p className={SUB_SANS_CLASS}>Not enough entries in the previous {days} days</p>
           )}
-          <p className={SUB_MONO_CLASS}>{fromEntries(current.count)}</p>
         </>
       )}
     </CardShell>
@@ -117,7 +113,7 @@ const CARD_THREE_LABEL: Record<CardThreeKind, string> = {
   goal: "Goal",
   lowest: `Lowest in ${WINDOW_DAYS.month} days`,
   highest: `Highest in ${WINDOW_DAYS.month} days`,
-  last90: `Last ${WINDOW_DAYS.girth} days`,
+  last90: averageLabel(WINDOW_DAYS.girth),
 };
 
 /** Weight and body fat: the target in force on the client's today, and how far the newest reading is from it. */
@@ -203,8 +199,8 @@ export function MetricStatCards({ metric }: MetricStatCardsProps) {
  */
 export function MetricStatCardsPending({ cardThree }: { cardThree: CardThreeKind }) {
   const labels = [
-    `Last ${WINDOW_DAYS.week} days`,
-    `Last ${WINDOW_DAYS.month} days`,
+    averageLabel(WINDOW_DAYS.week),
+    averageLabel(WINDOW_DAYS.month),
     CARD_THREE_LABEL[cardThree],
   ];
   return (
@@ -215,9 +211,6 @@ export function MetricStatCardsPending({ cardThree }: { cardThree: CardThreeKind
           <CardValue value={<TextSkeleton className={cn("w-14", PENDING_FILL)} />} />
           <p className={SUB_MONO_CLASS}>
             <TextSkeleton className={cn("w-32", PENDING_FILL)} />
-          </p>
-          <p className={SUB_MONO_CLASS}>
-            <TextSkeleton className={cn("w-20", PENDING_FILL)} />
           </p>
         </CardShell>
       ))}

@@ -12,7 +12,6 @@ import { MetricSwitcher } from "./metric-switcher";
 import { formatShortDate, formatSigned, SOURCE_LABELS } from "./metrics-format";
 import type { MetricSummary } from "./metrics-view-types";
 import { TextSkeleton } from "@/components/text-skeleton";
-import { WINDOW_DAYS } from "@/utils/metric-derived-stats";
 
 type MetricHeroProps = {
   /** null = the metrics read is still in flight: the band renders pending
@@ -177,16 +176,14 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
             source), `Starts …` while the start date is still ahead; for a
             wellness score, the last 7 days' average against the client's
             first week of entries (D32), once the two weeks no longer share a
-            day. */}
+            day and each holds enough entries. */}
         <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.07)]">
           <p className={STAT_LABEL_DARK_CLASS}>Total change</p>
-          {totalChange?.kind === "noRecentEntries" || totalChange?.kind === "tooSoon" ? (
+          {totalChange?.kind === "notEnoughEntries" || totalChange?.kind === "tooSoon" ? (
             <>
               <p className={EMPTY_VALUE_CLASS}>—</p>
               <p className={SUB_SANS_CLASS}>
-                {totalChange.kind === "tooSoon"
-                  ? "Too soon to compare"
-                  : `No entries in the last ${WINDOW_DAYS.week} days`}
+                {totalChange.kind === "tooSoon" ? "Too soon to compare" : "Not enough entries"}
               </p>
             </>
           ) : totalChange ? (

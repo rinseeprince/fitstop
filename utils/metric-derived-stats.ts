@@ -101,31 +101,37 @@ export function deriveHeroStats(
 // ---------------------------------------------------------------------------
 // The windows the Journey's cards read (docs/MEASUREMENT-LOG-PLAN.md commit
 // 9a): fixed windows of days ending the client's today (D30), so a card keeps
-// one label and one window for every client, compares averages and never one
-// entry against another, and says how many entries its average stands on.
+// one label and one window for every client and compares averages, never one
+// entry against another.
 
 /** The windows, in days: the last week (card 1, the Wellness hero), the last
  *  30 days (card 2, a wellness score's card 3) and a girth's card 3 (D31). */
 export const WINDOW_DAYS = { week: 7, month: 30, girth: 90 } as const;
 
+/**
+ * How many entries an average needs (owner, 2026-09-24): a wellness score is
+ * a daily log, so one night never stands for a week; a measurement counts
+ * from one reading, since a weekly weigh-in is a normal rhythm.
+ */
+export const MIN_ENTRIES = { wellness: 3, measurement: 1 } as const;
+
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 /**
- * A metric's entries dated inside a window, both ends included: how many, and
- * their average to one decimal — the figure a card shows. No entries, no
- * average.
+ * The average, to one decimal — the figure a card shows — of a metric's
+ * entries dated inside a window, both ends included; null when the window
+ * holds fewer than `minEntries`, or none.
  */
-export type WindowAverage = { average: number | null; count: number };
-
 export function averageInWindow(
   points: readonly MetricPoint[],
   from: string,
-  to: string
-): WindowAverage {
+  to: string,
+  minEntries: number = MIN_ENTRIES.measurement
+): number | null {
   const inside = points.filter((p) => p.date >= from && p.date <= to);
-  if (inside.length === 0) return { average: null, count: 0 };
+  if (inside.length === 0 || inside.length < minEntries) return null;
   const sum = inside.reduce((total, p) => total + p.value, 0);
-  return { average: round1(sum / inside.length), count: inside.length };
+  return round1(sum / inside.length);
 }
 
 /** A move between two averages, toned by the metric's good direction. */
@@ -145,9 +151,11 @@ const windowStart = (today: string, days: number): string => addDaysToDate(today
 /** The last `days` days ending the client's today, against the `days` before them. */
 export type WindowComparison = {
   days: number;
-  current: WindowAverage;
-  previous: WindowAverage;
-  /** Between the two averages; null unless both windows hold an entry. */
+  /** The window's average; null when it holds too few entries. */
+  current: number | null;
+  /** The average of the same span before it; null when it holds too few. */
+  previous: number | null;
+  /** Between the two averages; null unless both have one. */
   change: AverageChange | null;
 };
 
@@ -155,18 +163,18 @@ export function compareLastDays(
   points: readonly MetricPoint[],
   today: string,
   days: number,
-  downIsGood: boolean
+  downIsGood: boolean,
+  minEntries: number = MIN_ENTRIES.measurement
 ): WindowComparison {
-  const current = averageInWindow(points, windowStart(today, days), today);
+  const current = averageInWindow(points, windowStart(today, days), today, minEntries);
   const previous = averageInWindow(
     points,
     windowStart(today, 2 * days),
-    addDaysToDate(today, -days)
+    addDaysToDate(today, -days),
+    minEntries
   );
   const change =
-    current.average != null && previous.average != null
-      ? changeBetween(current.average, previous.average, downIsGood)
-      : null;
+    current != null && previous != null ? changeBetween(current, previous, downIsGood) : null;
   return { days, current, previous, change };
 }
 
@@ -196,28 +204,29 @@ export function worstOfLastDays(
  * the average of the client's first week of entries — their first entry's day
  * and the 6 after — dated by that first day. Too soon while the two weeks
  * share a day, which they do until the first entry is 13 days old (owner,
- * 2026-09-23); null with no entry at all.
+ * 2026-09-23); not enough entries when either week holds fewer than
+ * `minEntries` — a first week that did is so for good; null with no entry at all.
  */
 type FirstWeekChange =
   | { kind: "firstWeek"; delta: number; firstWeekOf: string }
   | { kind: "tooSoon" }
-  | { kind: "noRecentEntries" };
+  | { kind: "notEnoughEntries" };
 
 export function deriveFirstWeekChange(
   points: readonly MetricPoint[],
-  today: string
+  today: string,
+  minEntries: number
 ): FirstWeekChange | null {
   if (points.length === 0) return null;
   const firstWeekOf = points[0].date;
   const firstWeekEnd = addDaysToDate(firstWeekOf, WINDOW_DAYS.week - 1);
   const lastWeekStart = windowStart(today, WINDOW_DAYS.week);
-  const lastWeek = averageInWindow(points, lastWeekStart, today);
-  if (lastWeek.average == null) return { kind: "noRecentEntries" };
+  const lastWeek = averageInWindow(points, lastWeekStart, today, minEntries);
+  if (lastWeek == null) return { kind: "notEnoughEntries" };
   if (firstWeekEnd >= lastWeekStart) return { kind: "tooSoon" };
-  const firstWeek = averageInWindow(points, firstWeekOf, firstWeekEnd);
-  // Unreachable — the first week holds the first entry — and here for the type.
-  if (firstWeek.average == null) return null;
-  return { kind: "firstWeek", delta: round1(lastWeek.average - firstWeek.average), firstWeekOf };
+  const firstWeek = averageInWindow(points, firstWeekOf, firstWeekEnd, minEntries);
+  if (firstWeek == null) return { kind: "notEnoughEntries" };
+  return { kind: "firstWeek", delta: round1(lastWeek - firstWeek), firstWeekOf };
 }
 
 /** The hero's Total change, per pane: since the start (Physique), since the first week (Wellness). */

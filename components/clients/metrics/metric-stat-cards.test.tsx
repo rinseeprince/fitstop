@@ -120,17 +120,19 @@ describe("MetricStatCards — the same three cards for every way a client logs",
 
     const { first, second, third } = renderCards("physique", "weight");
 
-    expect(within(first).getByText("Last 7 days")).toBeInTheDocument();
+    // 79.8 against 81.2 the week before
+    expect(within(first).getByText("Last 7 days avg")).toBeInTheDocument();
     expect(within(first).getByText("79.8")).toBeInTheDocument();
     expect(within(first).getByText("-1.4")).toBeInTheDocument();
-    expect(within(first).getByText("vs 81.2 the 7 days before")).toBeInTheDocument();
-    expect(within(first).getByText("from 7 entries")).toBeInTheDocument();
+    expect(within(first).getByText("vs the previous 7 days")).toBeInTheDocument();
 
-    expect(within(second).getByText("Last 30 days")).toBeInTheDocument();
+    // 82.1 against 88.1 the 30 days before
+    expect(within(second).getByText("Last 30 days avg")).toBeInTheDocument();
     expect(within(second).getByText("82.1")).toBeInTheDocument();
     expect(within(second).getByText("-6.0")).toBeInTheDocument();
-    expect(within(second).getByText("vs 88.1 the 30 days before")).toBeInTheDocument();
-    expect(within(second).getByText("from 30 entries")).toBeInTheDocument();
+    expect(within(second).getByText("vs the previous 30 days")).toBeInTheDocument();
+    // No card says how many entries it stands on (owner, 2026-09-24)
+    expect(screen.queryByText(/^from \d/)).not.toBeInTheDocument();
 
     expect(within(third).getByText("Goal")).toBeInTheDocument();
     expect(within(third).getByText("76.5")).toBeInTheDocument();
@@ -164,18 +166,16 @@ describe("MetricStatCards — the same three cards for every way a client logs",
     const { first, second, third } = renderCards("physique", "weight");
 
     // (83.1 + 82.7 + 82.6) / 3 = 82.8, against (83.9 + 83.3) / 2 = 83.6
-    expect(within(first).getByText("Last 7 days")).toBeInTheDocument();
+    expect(within(first).getByText("Last 7 days avg")).toBeInTheDocument();
     expect(within(first).getByText("82.8")).toBeInTheDocument();
     expect(within(first).getByText("-0.8")).toBeInTheDocument();
-    expect(within(first).getByText("vs 83.6 the 7 days before")).toBeInTheDocument();
-    expect(within(first).getByText("from 3 entries")).toBeInTheDocument();
+    expect(within(first).getByText("vs the previous 7 days")).toBeInTheDocument();
 
     // 837.2 / 10 = 83.72, shown 83.7, against 684.7 / 8 = 85.59, shown 85.6
-    expect(within(second).getByText("Last 30 days")).toBeInTheDocument();
+    expect(within(second).getByText("Last 30 days avg")).toBeInTheDocument();
     expect(within(second).getByText("83.7")).toBeInTheDocument();
     expect(within(second).getByText("-1.9")).toBeInTheDocument();
-    expect(within(second).getByText("vs 85.6 the 30 days before")).toBeInTheDocument();
-    expect(within(second).getByText("from 10 entries")).toBeInTheDocument();
+    expect(within(second).getByText("vs the previous 30 days")).toBeInTheDocument();
 
     expect(within(third).getByText("Goal")).toBeInTheDocument();
     expect(within(third).getByText("6.1 kg to go")).toBeInTheDocument();
@@ -195,16 +195,15 @@ describe("MetricStatCards — the same three cards for every way a client logs",
 
     const { first, second, third } = renderCards("physique", "weight");
 
-    expect(within(first).getByText("Last 7 days")).toBeInTheDocument();
-    expect(within(first).getByText("No entries in the last 7 days")).toBeInTheDocument();
-    expect(within(first).queryByText(/entr(y|ies)$/)).not.toBeInTheDocument();
+    expect(within(first).getByText("Last 7 days avg")).toBeInTheDocument();
+    expect(within(first).getByText("Not enough entries")).toBeInTheDocument();
 
-    // One entry each side: an average of one, and it says so
-    expect(within(second).getByText("Last 30 days")).toBeInTheDocument();
+    // One weigh-in each side: a measurement's one reading is its average,
+    // 86.8 against 86.2
+    expect(within(second).getByText("Last 30 days avg")).toBeInTheDocument();
     expect(within(second).getByText("86.8")).toBeInTheDocument();
     expect(within(second).getByText("+0.6")).toBeInTheDocument();
-    expect(within(second).getByText("vs 86.2 the 30 days before")).toBeInTheDocument();
-    expect(within(second).getByText("from 1 entry")).toBeInTheDocument();
+    expect(within(second).getByText("vs the previous 30 days")).toBeInTheDocument();
 
     expect(within(third).getByText("Goal")).toBeInTheDocument();
     expect(within(third).getByText("10.3 kg to go")).toBeInTheDocument();
@@ -225,22 +224,46 @@ describe("MetricStatCards — the same three cards for every way a client logs",
     const { first, second, third } = renderCards("physique", "weight");
 
     // (83.8 + 83.4 + 83.2) / 3 = 83.47, shown 83.5, against (84.3 + 84.9) / 2 = 84.6
-    expect(within(first).getByText("Last 7 days")).toBeInTheDocument();
+    expect(within(first).getByText("Last 7 days avg")).toBeInTheDocument();
     expect(within(first).getByText("83.5")).toBeInTheDocument();
     expect(within(first).getByText("-1.1")).toBeInTheDocument();
-    expect(within(first).getByText("vs 84.6 the 7 days before")).toBeInTheDocument();
-    expect(within(first).getByText("from 3 entries")).toBeInTheDocument();
+    expect(within(first).getByText("vs the previous 7 days")).toBeInTheDocument();
 
     // 419.6 / 5 = 83.92, shown 83.9 — nothing the 30 days before to compare with
-    expect(within(second).getByText("Last 30 days")).toBeInTheDocument();
+    expect(within(second).getByText("Last 30 days avg")).toBeInTheDocument();
     expect(within(second).getByText("83.9")).toBeInTheDocument();
-    expect(within(second).getByText("no entries the 30 days before")).toBeInTheDocument();
-    expect(within(second).getByText("from 5 entries")).toBeInTheDocument();
+    expect(within(second).getByText("Not enough entries in the previous 30 days")).toBeInTheDocument();
     expect(within(second).queryByText(/^vs /)).not.toBeInTheDocument();
 
     expect(within(third).getByText("Goal")).toBeInTheDocument();
     expect(within(third).getByText("6.7 kg to go")).toBeInTheDocument();
     expect(screen.queryByText("Latest")).not.toBeInTheDocument();
+  });
+
+  it("a wellness score logged a few times a week: an average needs three entries", () => {
+    wellness = {
+      ...wellness,
+      sleep: [
+        // The 30 days before: two nights
+        logged("2026-08-12", 3),
+        logged("2026-08-15", 10),
+        // The last 30 days, two of them in the last 7
+        logged("2026-08-25", 5),
+        logged("2026-09-02", 8),
+        logged("2026-09-09", 9),
+        logged("2026-09-12", 7),
+        logged("2026-09-16", 4),
+      ],
+    };
+
+    const { first, second } = renderCards("wellness", "sleep");
+
+    expect(within(first).getByText("Last 7 days avg")).toBeInTheDocument();
+    expect(within(first).getByText("Not enough entries")).toBeInTheDocument();
+
+    // 33 / 5 = 6.6 — the two nights before it are not enough to compare with
+    expect(within(second).getByText("6.6")).toBeInTheDocument();
+    expect(within(second).getByText("Not enough entries in the previous 30 days")).toBeInTheDocument();
   });
 });
 
@@ -296,11 +319,10 @@ describe("MetricStatCards — card 3 is fixed per metric", () => {
     const { third } = renderCards("physique", "waist");
 
     // (90.3 + 89.1) / 2 = 89.7, against 92.6 — the last 90 days are 20 Jun–17 Sep
-    expect(within(third).getByText("Last 90 days")).toBeInTheDocument();
+    expect(within(third).getByText("Last 90 days avg")).toBeInTheDocument();
     expect(within(third).getByText("89.7")).toBeInTheDocument();
     expect(within(third).getByText("-2.9")).toBeInTheDocument();
-    expect(within(third).getByText("vs 92.6 the 90 days before")).toBeInTheDocument();
-    expect(within(third).getByText("from 2 entries")).toBeInTheDocument();
+    expect(within(third).getByText("vs the previous 90 days")).toBeInTheDocument();
   });
 
   it("body fat with a goal that sets no target for it: No target", () => {
@@ -362,11 +384,11 @@ describe("MetricStatCardsPending — before the series lands", () => {
   it("draws the three cards with their labels and claims nothing", () => {
     const { container } = render(<MetricStatCardsPending cardThree="highest" />);
 
-    expect(screen.getByText("Last 7 days")).toBeInTheDocument();
-    expect(screen.getByText("Last 30 days")).toBeInTheDocument();
+    expect(screen.getByText("Last 7 days avg")).toBeInTheDocument();
+    expect(screen.getByText("Last 30 days avg")).toBeInTheDocument();
     expect(screen.getByText("Highest in 30 days")).toBeInTheDocument();
-    expect(screen.queryByText(/No entries|No target|from \d/)).not.toBeInTheDocument();
-    // A value and two lines under it on every card, each pending
-    expect(container.querySelectorAll("[data-slot='skeleton']")).toHaveLength(9);
+    expect(screen.queryByText(/Not enough entries|No entries|No target/)).not.toBeInTheDocument();
+    // A value and the line under it on every card, each pending
+    expect(container.querySelectorAll("[data-slot='skeleton']")).toHaveLength(6);
   });
 });
