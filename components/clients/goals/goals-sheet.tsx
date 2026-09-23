@@ -106,13 +106,15 @@ export function GoalsSheet({
   const openForm = (goalId: string | null) =>
     setEditing((previousForm) => ({ goalId, opening: (previousForm?.opening ?? 0) + 1 }));
 
-  // The goals table is not on screen here, so landing is done when it returns:
-  // the answer and the closing sheet render together — a save closes the sheet.
-  const onSaved = (answer: ClientGoalsOverview) => {
-    void writes.land(answer);
+  // A save closes the sheet (CONVENTIONS §3), its answer landed in the same
+  // tick — the goals table is not on screen, so landing is done when it returns.
+  const onSaved = (answer: ClientGoalsOverview | null) => {
+    if (answer) {
+      void writes.land(answer);
+      toast.success("Goal saved");
+    }
     setEditing(null);
     onOpenChange(false);
-    toast.success("Goal saved");
   };
 
   const confirmDelete = async (subject: DeleteGoalSubject) => {

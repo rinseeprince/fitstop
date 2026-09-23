@@ -17,8 +17,9 @@ import { GoalRefusal, type GoalWrites } from "./use-goal-writes";
  * Save makes the writes the goal model calls for (`goalSaveWrites`). A write
  * the date rules refuse leaves the form open with the rule's sentence, for as
  * long as the fields and the planned goals are as they were when refused. The
- * last write's answer goes to `onSaved`, which lands it and closes the form in
- * one tick; the first of two writes lands at once.
+ * last write's answer goes to `onSaved` — null when there was nothing to write
+ * — which lands it and closes the sheet in one tick; the first of two writes
+ * lands at once.
  */
 export function GoalForm({
   stored,
@@ -38,7 +39,8 @@ export function GoalForm({
   readings: { weight: number | null; bodyFat: number | null };
   writes: GoalWrites;
   idPrefix: string;
-  onSaved: (answer: ClientGoalsOverview) => void;
+  /** A save went through — null when there was nothing to write. */
+  onSaved: (answer: ClientGoalsOverview | null) => void;
   onCancel: () => void;
 }) {
   const { preference } = useUnits();
@@ -86,7 +88,7 @@ export function GoalForm({
   const send = async (checked: GoalDraft) => {
     const planWrites = goalSaveWrites({ stored, draft: checked, today: clientToday });
     if (planWrites.length === 0) {
-      onCancel();
+      onSaved(null);
       return;
     }
     setBusy(true);

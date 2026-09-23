@@ -454,12 +454,22 @@ describe("the goals sheet — editing a goal", () => {
     expect(saveButton()).toBeEnabled();
   });
 
-  it("closes the form without a write when nothing changed, and leaves the sheet open", async () => {
+  it("closes the sheet without a write when nothing changed, and says nothing was saved", async () => {
     const user = renderSheet();
     await user.click(screen.getByRole("button", { name: "Edit Peak" }));
     await user.click(saveButton());
 
     expect(api.run).not.toHaveBeenCalled();
+    expect(api.land).not.toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("closes only the form on Cancel, leaving the sheet open", async () => {
+    const user = renderSheet();
+    await user.click(screen.getByRole("button", { name: "Edit Peak" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
     expect(formOpen()).toBe(false);
     expect(onOpenChange).not.toHaveBeenCalled();
   });
