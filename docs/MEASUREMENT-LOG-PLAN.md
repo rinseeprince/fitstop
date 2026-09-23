@@ -927,6 +927,101 @@ check:service-key, npm run check:rls. Commit directly to main. Then replace this
 line with SHIPPED, the hash and the date, and hand me a browser smokelist.
 ```
 
+### Commit 8d4 — `fix(goals): every goal surface says what is true — a goal without a target, direction before speed, hand-typed calories, the met goal's note`
+
+**STATUS: NOT STARTED. Owner decisions 2026-09-24, after a review of the goal docs against the code: D33–D36 answered as recommended (D35 option B, D36 option A). Independent of commits 10 and 11.**
+
+What is there today, by grep (2026-09-24):
+- **A goal with no target** (maintain, event prep, general fitness — `GOAL_TYPE_SETTINGS`) gives the check-in's goal section no rows. `check-in-goal-strip.tsx` then shows its empty state, "No goals have been set for {name} yet. Set goals in the client profile to track progress here.", and `utils/ai-prompt-week.ts` tells the AI "Goal: none set as of this check-in". The check-in's saved copy holds the goal all the same.
+- **The verdict** (`resolveGoalRowState`, `lib/check-in/review-figures.ts`) reads status, then pace, then trend. With a deadline, a weight row short of its target always has a pace (`lib/check-in/goal-pace.ts`: the required weekly rate against 1% of bodyweight — "On track" up to 1×, "Behind pace" up to 1.5×, else "Deadline unrealistic", which it also reads from the deadline day on). So "On track" means only that the required rate is safe, even for a client moving away from the target. With fewer than two readings `calculateGoalProgress` (`utils/comparison-utils.ts`) answers `isOnTrack: true`. The saved copy holds the numbers (`goalProgress`) and the words are composed at read, so a sent check-in's words follow this rule.
+- **Hand-typed calories**: every version records the goal in force on its first day, `custom_macros_enabled` ones included (`services/nutrition-plan-orchestrator.ts`), and the out-of-date rule (`lib/nutrition/nutrition-out-of-date.ts`) judges them all. `nutrition-out-of-date-notice.tsx` then says "…the calories still aim for {goal}" of calories the coach typed.
+- **The goal box's footer** (`goalFooter`, `review-figures.ts`) gives "Goal met - consider setting a new target." only while the judged goal is still in force (`goalIsCurrent`); otherwise the 3 kg nutrition note can run, beside rows that all read "Reached".
+- **Needing no decision**:
+  - The client app's Goals & Progress card (`components/client-portal/metrics/goals-section.tsx`) says "X to go" past the target, where every coach surface uses `goalProgressChip` (`lib/goals/goal-chip.ts`).
+  - The nutrition drawer prices maintenance for a deadline before its Starts on (`deadline_passed`, `services/nutrition-service.ts`), and its targets block (`nutrition-targets-block.tsx`) gives the reason "The goal weight matches the client's current weight".
+  - Stale words: the goals route's comment ("the goal before today's"), and `lib/validations/client.ts`'s goal-deadline comment, which names the coach's today where the routes use the client's.
+  - `getClientCheckIns`' `upTo` has no production caller, and `comparison.client`'s `goalWeight` / `goalBodyFatPercentage` / `goalDeadline` are read by nothing.
+
+- **D33 — a goal with no target.** When the check-in's judged goal sets no target, the goal box shows the goal itself: its name, its type where the name doesn't say it (`goalTypeBesideName`), and its deadline under the type's label (`GOAL_TYPE_SETTINGS.deadlineLabel`). "No target to track progress against" stands where the rows would be. The AI prompt states the goal, its type and its deadline, and that it has no target. "No goals have been set for {name} yet." appears only when no goal was in force on the check-in's day, and its link opens the goals sheet (`?editGoals=1`, the route "Set new goals" already takes).
+- **D34 — direction before speed** (`resolveGoalRowState`):
+  - Reached, as now.
+  - Moving away from the target → "Moving away · {x} to go" (attention).
+  - Moving towards it → the pace's words ("On track", "Behind pace", "Deadline unrealistic").
+  - Fewer than two check-ins carrying the metric → "Too early to tell · {x} to go" (neutral); `calculateGoalProgress` answers no trend rather than `true`.
+  - The deadline passed without the target → "Deadline passed · {x} to go" (attention).
+
+  Body fat carries no pace, so direction alone decides it. The AI prompt reads the same words. A sent check-in's words follow the rule from its saved numbers: a no-trend `isOnTrack` is saved as null from this commit on, and a copy saved before reads as it did (grep the copy's shape at execution).
+- **D35 — hand-typed calories (option B).** A `custom_macros_enabled` version whose goal differs gets a true notice, with the same button: "The goal changed on {day}. These calories were set by hand — check they still fit." (a planned goal's variant: "From {day} the goal changes. These calories were set by hand — check they still fit."). Calculated versions keep today's sentence.
+- **D36 — the met goal's note (option A).** When every judged row reads "Reached", the footer shows the goal-met note while the goal is still in force, and nothing otherwise — never the nutrition note.
+- **Needing no decision**:
+  - The client app's card uses `goalProgressChip`'s words.
+  - The drawer's targets block names a passed deadline as the reason; the Goal line already shows the goal.
+  - The two stale comments are corrected.
+  - `upTo` and its test go.
+  - `comparison.client`'s three goal fields go, after grepping every consumer including the RN reference (`docs/CLIENT-APP-REFERENCE.md`); if anything outside the review page reads them, they stay.
+- Tests, each with a mutation:
+  - The goal box and the AI prompt for a goal with no target (mutation: the empty state).
+  - Every verdict case: away, towards with each pace, too early, deadline passed, body fat without a pace (mutations: pace before direction; `isOnTrack` defaulting to true).
+  - The hand-typed notice against the calculated one (mutation: one sentence for both).
+  - The footer with every row reached and the goal replaced (mutation: the nutrition note).
+  - The client app's card past its target (mutation: "to go").
+  - The drawer's reason for a passed deadline (mutation: the old sentence).
+
+  Every fixture number distinct.
+- Docs, current shape only: ARCHITECTURE → "Goal progress and pace" (the goal strip's state column), "Nutrition plan versions" (the out-of-date notice on hand-typed calories), the nutrition builder's Goal line and targets block ("Builder flows"), and the coach review surface's goal section ("none set" / "none in force", the footer, the comparison payload).
+- **Scope rule.** The files this commit may touch: `lib/check-in/review-figures.ts`, `lib/check-in/goal-pace.ts`, `utils/comparison-utils.ts`, `utils/ai-prompt-week.ts`, `components/clients/check-ins/check-in-goal-strip.tsx`, `lib/nutrition/nutrition-out-of-date.ts`, `components/clients/nutrition/nutrition-out-of-date-notice.tsx`, the drawer's targets block, `components/client-portal/metrics/goals-section.tsx`, `services/check-in-service.ts` (`upTo` only), `services/comparison-service.ts` (the three fields only), the goals route's comment, `lib/validations/client.ts`'s comment, their tests, the two docs. No migration: the saved copy is JSONB and changes only in the null above.
+
+| # | Decision | Answer (owner, 2026-09-24) |
+|---|---|---|
+| D33 | A goal with no target on the check-in | Show the goal itself; "No goals have been set" only when there is none |
+| D34 | The goal box's verdict | Direction first, then speed; "Too early to tell" and "Deadline passed" |
+| D35 | Hand-typed calories after a goal change | B: a true notice — "These calories were set by hand — check they still fit" |
+| D36 | A nutrition note beside a met goal | A: none — when every goal reads "Reached", only the goal-met note, and only while the goal is in force |
+
+```text
+Build commit 8d4 of docs/MEASUREMENT-LOG-PLAN.md §6, every goal surface saying what is true.
+You have my go: don't show me a plan; build it, and stop only for a decision the entry
+doesn't answer. D33–D36 are answered in its table.
+
+Read these first, and only these:
+- CONVENTIONS.md, whole.
+- docs/MEASUREMENT-LOG-PLAN.md: the §6 entries for commits 8d1 and 8d4.
+- docs/ARCHITECTURE.md: "Client Goals & Body Metrics" through "Goal progress and pace";
+  "Nutrition plan versions + per-version daily-targets template"; "Builder flows"; "A sent
+  check-in is frozen"; "The coach review surface".
+- docs/newdesignsystem.md: "Mono = numbers only", "Empty state", "Loading & async states".
+Open another section only when something you touch points to it. Read the code you change
+or call. Don't read old transcripts or superseded plans.
+
+A goal with no target reads as "No goals have been set" on the check-in and as "none set"
+to the AI; "On track" can sit on a client moving away from their target; calories the
+coach typed are told they "still aim for" a goal; a nutrition note can sit beside rows
+that all read "Reached"; the client app says "to go" past the target. This commit makes
+each of those say what is true, as the entry's four answers and its no-decision list set
+out.
+
+Job: what the entry lists; the deletions, each grepped at execution time for a surviving
+caller; the tests and their mutations; the docs: current shape only, fewest words. The
+scope rule is a hard boundary. Where a doc states a rule this commit contradicts, change
+the doc and list it in the handover.
+
+Working method: edit files with the Edit tool, not shell scripts. Run the full suite with
+the other gates once the build and its docs are done, and again after the review's fixes,
+not in between. When the gates are green, start an independent review of the whole diff,
+docs included, and write the smoke seed and the smokelist while it runs; fix what it
+finds, then rerun the gates. Mutations for the new logic only. Seed only what the smoke
+can't set up in the app.
+
+Rules: every fixture number distinct; cp backups before mutating, never git stash or git
+checkout --; gates: npx tsc --noEmit, npx eslint ., npx vitest run, npm run
+check:labels, npx knip, npm run check:service-key. Commit directly to main. Then replace
+this entry's STATUS line with SHIPPED, the hash and the date, and hand me a browser
+smokelist: the goal box for a goal with no target; a client moving away from their target
+with a safe deadline; a client with one check-in; a deadline passed short of the target;
+an old check-in whose met goal was since replaced; hand-typed calories after a goal
+change; the client app's goal card past its target; the drawer with a passed deadline.
+```
+
 ### Commit 9 — `refactor(journey): the Wellness pane reads its series — the merge, the check-in pager and the dialog's wellness keys go`
 
 **STATUS: SHIPPED `055ae48d`, 2026-09-23 — smoke PASSED.** No migration. Owner rulings at plan review: the entries service's wellness branch and `listMetricEntries` go here with their tests (unreachable once the key type narrowed), with the POST's wellness audit branch; `useWellnessSeries` refetches on focus; the doc lines this commit made false are rewritten here. Also: the value ranges lose the integer flag only the wellness keys used; `MetricPoint` loses `source` and `note` (nothing read them once the merge went); the dialog is always seeded with one of its seven metrics; TECHNICAL-DEBT's two wellness-store items became one dead-store item. Files touched: `components/clients/metrics/**` (three new tests), `hooks/use-check-in-data.ts`, `hooks/use-metric-entries.ts` (deleted), `hooks/use-wellness-series.ts`, `app/api/clients/[id]/metric-entries/route.ts`, `lib/metrics/metric-entry-definitions.ts`, `lib/validations/metric-entries.ts`, `utils/metric-points.ts`, their tests; beyond the list, by those rulings: `services/metric-entries-service.ts`, `types/metric-entries.ts`, `lib/wellness/keys.ts`, `utils/metric-derived-stats.ts`, their tests; docs: ARCHITECTURE, TECHNICAL-DEBT, this plan (commit 10's entry). No reader in commit 7's inventory touched. 14 mutations, 14 killed.**
