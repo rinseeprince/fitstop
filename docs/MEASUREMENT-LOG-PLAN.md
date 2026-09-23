@@ -929,7 +929,7 @@ line with SHIPPED, the hash and the date, and hand me a browser smokelist.
 
 ### Commit 9 — `refactor(journey): the Wellness pane reads its series — the merge, the check-in pager and the dialog's wellness keys go`
 
-**STATUS: SHIPPED `055ae48d`, 2026-09-23 — smoke owed.** No migration. Owner rulings at plan review: the entries service's wellness branch and `listMetricEntries` go here with their tests (unreachable once the key type narrowed), with the POST's wellness audit branch; `useWellnessSeries` refetches on focus; the doc lines this commit made false are rewritten here. Also: the value ranges lose the integer flag only the wellness keys used; `MetricPoint` loses `source` and `note` (nothing read them once the merge went); the dialog is always seeded with one of its seven metrics; TECHNICAL-DEBT's two wellness-store items became one dead-store item. Files touched: `components/clients/metrics/**` (three new tests), `hooks/use-check-in-data.ts`, `hooks/use-metric-entries.ts` (deleted), `hooks/use-wellness-series.ts`, `app/api/clients/[id]/metric-entries/route.ts`, `lib/metrics/metric-entry-definitions.ts`, `lib/validations/metric-entries.ts`, `utils/metric-points.ts`, their tests; beyond the list, by those rulings: `services/metric-entries-service.ts`, `types/metric-entries.ts`, `lib/wellness/keys.ts`, `utils/metric-derived-stats.ts`, their tests; docs: ARCHITECTURE, TECHNICAL-DEBT, this plan (commit 10's entry). No reader in commit 7's inventory touched. 14 mutations, 14 killed.**
+**STATUS: SHIPPED `055ae48d`, 2026-09-23 — smoke PASSED.** No migration. Owner rulings at plan review: the entries service's wellness branch and `listMetricEntries` go here with their tests (unreachable once the key type narrowed), with the POST's wellness audit branch; `useWellnessSeries` refetches on focus; the doc lines this commit made false are rewritten here. Also: the value ranges lose the integer flag only the wellness keys used; `MetricPoint` loses `source` and `note` (nothing read them once the merge went); the dialog is always seeded with one of its seven metrics; TECHNICAL-DEBT's two wellness-store items became one dead-store item. Files touched: `components/clients/metrics/**` (three new tests), `hooks/use-check-in-data.ts`, `hooks/use-metric-entries.ts` (deleted), `hooks/use-wellness-series.ts`, `app/api/clients/[id]/metric-entries/route.ts`, `lib/metrics/metric-entry-definitions.ts`, `lib/validations/metric-entries.ts`, `utils/metric-points.ts`, their tests; beyond the list, by those rulings: `services/metric-entries-service.ts`, `types/metric-entries.ts`, `lib/wellness/keys.ts`, `utils/metric-derived-stats.ts`, their tests; docs: ARCHITECTURE, TECHNICAL-DEBT, this plan (commit 10's entry). No reader in commit 7's inventory touched. 14 mutations, 14 killed.**
 
 - `components/clients/metrics/hooks/use-merged-metrics.ts`: the Wellness pane's points come from `useWellnessSeries` through the same `seriesPoints` the Physique pane uses (a wellness point carries no source; the seam fills the point shape's `source` with `client_log` and `note` with null until the shapes are unified — grep at execution time whether `MetricPoint` still needs them); `useAllClientCheckIns`, `useMetricEntries` and `buildMetricPoints` leave the hook; `isLoading` / `isError` are the two series; `logMeasurement` handles physique keys only and invalidates the measurement area, with `onClientUpdated` for weight and body fat as now. Wellness `LogRow`s are one per day already (the series is day-values), with no source column, no note and no row action — the client's log is theirs; the "Before start" split stays physique-only (D20).
 - The dialog (`log-measurement-dialog.tsx`): physique keys only. `METRIC_ENTRY_KEYS` narrows to `MEASUREMENT_KEYS` and `MetricEntryKey` to `MeasurementKey` (the zod enum in `lib/validations/metric-entries.ts` then refuses a wellness key on the wire — no writer survives); the wellness rows of `METRIC_VALUE_RANGES` and `METRIC_ENTRY_CONVERSION` go; `DOWN_IS_GOOD` keeps stress and soreness under `MeasurementKey | WellnessKey` for the Journey's derived stats. The Wellness pane's rail offers no "Log measurement".
@@ -968,6 +968,73 @@ this commit's STATUS line with SHIPPED, the hash and the date, and hand me a bro
 smokelist: the Wellness pane for a client with daily logs (the chart's density, the hero's
 week comparison), its log rows without actions, the dialog's seven keys, and the Physique
 pane unchanged.
+```
+
+### Commit 9a — `feat(journey): the metric cards read fixed windows — averages to the client's today, each with its entry count`
+
+**STATUS: NOT STARTED. After commit 9; independent of 10 and 11. Owner decision 2026-09-23, after commit 9's smoke: a card keeps one label and one window for every client, compares averages and never one entry against another, and says how many entries each average stands on; the Wellness hero's total change compares averages too (D20 superseded for that figure). D30–D32 are open.**
+
+What is there today, by grep (2026-09-23): the three cards under the Journey's hero (`metric-stat-cards.tsx`, filled by `summariseMetric` in `use-merged-metrics.ts` from `utils/metric-derived-stats.ts`, which nothing else calls) change what they measure with the client's data:
+- **card 1**, `deriveWindowChange`: "30-day change" is the latest entry minus the ONE entry nearest 30 days before it — either side, however far. It falls back to "Since {first date}" when the history is shorter. A gap turns it into a shorter change under the same label: Sam Kalepa's sleep on DEV compares 3 Sep's 4 with 21 Aug's 6 (nothing logged 11 Jun–20 Aug), a 13-day change read as a month;
+- **card 2**, `deriveWeekComparison`: the averages of the last 7 days and the 7 before, counted back from the BROWSER's today (`getTodayDateString`), else "Latest" when either week is empty;
+- **card 3**: "Goal" for weight or body fat with a goal target, else "Best" (`deriveBest`, the first day the best value was reached);
+- **the Wellness hero's Total change** (`deriveHeroStats` without a journey): the latest entry minus the first, "since {first date}" — one day against one day.
+
+One night's score can swing cards 1 and 3 and the hero, and a coach cannot tell which measure a card is showing.
+
+- **One kernel for windows** (pure, beside the derivations it replaces): the average and the count of a metric's entries dated inside a window, both ends included; no entries → no average. Averages show one decimal, and a change is the difference of the two averages AS SHOWN, so the three figures on a card always agree (4.3 vs 5.0 reads −0.7, never −0.8 from 4.25). Physique values are already converted to the viewer's units when the points are built.
+- **Card 1 — Last 7 days**: the average of the entries dated the client's today and the 6 days before; under it "vs {average} the 7 days before" with an arrow toned by the metric's good direction (`DOWN_IS_GOOD`), and "from N entries". An empty week reads "No entries in the last 7 days"; an empty week before shows the average alone, with "no entries the 7 days before".
+- **Card 2 — Last 30 days**: the same over the last 30 days and the 30 before.
+- **Card 3 — fixed per metric (D31)**: weight and body fat, **Goal** — the target and how far the newest reading is from it, "No target" when the goal in force has none for that metric. The five wellness scores, **Lowest in 30 days** — the worst score of the last 30 days (the highest for stress and soreness) and the day it was logged. The five girths, per D31.
+- **The Wellness hero's Total change**: the last 7 days' average against the average of the client's first 7 days of entries (their first entry's day and the 6 after), "since the week of {date}"; an empty last week reads "No entries in the last 7 days" (D32). The Physique hero is unchanged: Current, since start against the baseline and Avg rate are D4's figures.
+- **The windows end on the client's today** (D30).
+- Deleted, each grepped at execution time: `deriveWindowChange`, `deriveWeekComparison`, `deriveBest` and their tests, the `sinceFirst` kind, and `MetricSummary`'s `change30d` / `week` / `best`, replaced by the window figures.
+- Tests, each with a mutation: the kernel — both ends included (mutation: exclusive end), an empty window gives no average (mutation: 0), the change taken between the shown averages (mutation: the unrounded difference, on 4.25 against 5.0). The cards — one fixture per logging pattern: daily, 2–3 a week, stopped logging (Sam's shape), a history shorter than 30 days. Every card keeps its label on all four (mutation: bring back the "Latest" fallback); the empty wording and the entry counts; card 3 per metric kind (mutation: "Best"). The Wellness hero — first week against last week (mutation: last entry minus first). The client's today — the windows end on it, not on the browser's (mutation: `getTodayDateString`). Every fixture number distinct.
+- Docs, current shape only: ARCHITECTURE → one clause in the Journey row of "Client page tab structure" (the three cards and the Wellness hero's total change), and the `clientToday` fields if D30 = A.
+- **Scope rule.** Files this commit may touch: `components/clients/metrics/**`, `utils/metric-derived-stats.ts` and its test, the two series routes, services and payload types (D30 = A only), the two docs. No Overview reader, no check-in surface, no client-app read.
+
+| # | Decision | Recommendation | Why, and the alternatives |
+|---|---|---|---|
+| D30 | Which "today" the windows end on | **A: the client's today, served on both series payloads** — an additive `clientToday` on `GET …/measurement-series` and `GET …/wellness-series`, resolved by `getClientTodayString` | The series are dated on the client's calendar, and every other "today" on the coach's client page is the client's (the goals read, the blocks). Alternatives: the browser's today, as now — no wire change, but a day off whenever coach and client sit in different time zones; the `clientToday` the blocks payload already carries — no wire change, but the cards would wait on the blocks read and change with it |
+| D31 | Card 3 on the five girths, which no goal targets | **Last 90 days**: the same average against the 90 days before, with its count | Girths are measured every few weeks, so the 7- and 30-day cards will often be empty for them; 90 days is where a girth's trend shows, in the same grammar. Alternatives: the wellness card, "Highest in 30 days" (a girth's bad direction) — one card for every metric without a goal, but little a coach reasons from; "Goal — No target", always — honest but permanently empty |
+| D32 | The Wellness hero's Total change | **First week against last week**: the average of the client's first 7 days of entries against the last 7 days' | The same 7-day grain as card 1, so the hero reads "from their first week to this one". Alternative: the first 30 days against the last 30 — steadier for a sparse logger, slower to show a change |
+
+```text
+Read CONVENTIONS.md in full; from docs/ARCHITECTURE.md read "Client page tab structure"
+(the Journey row) and "The client's origin"; from docs/MEASUREMENT-LOG-PLAN.md read §6
+commit 9a, and D4 and D20 where it points to them. Open another section only when
+something you touch points to it. Plan for my review before writing anything. Read my
+answers to D30–D32; if one is blank, stop and ask.
+
+The Journey's three metric cards change what they measure with the client's data — a
+"30-day change" that can compare two days 13 days apart, a "Last 7 days" that turns into
+"Latest", a single best day — so a coach cannot tell which measure a card is showing, and
+one night's score can swing them. This commit gives every card one label and one window
+for every client: averages over fixed windows ending the client's today, each saying how
+many entries it stands on; card 3 fixed per metric; the Wellness hero's total change
+compares averages too. Where ARCHITECTURE or CONVENTIONS state a rule that contradicts
+this commit, do not silently follow it and do not silently override it: list each
+contradiction with the doc line and what the plan says instead, and I will review before
+you write.
+
+Job: Commit 9a of docs/MEASUREMENT-LOG-PLAN.md §6 — `feat(journey): the metric cards read
+fixed windows`. Build exactly what that section lists: the windows kernel, the three
+cards, the Wellness hero's total change, the client's today per D30; the deletions, each
+grepped at execution time for a surviving caller; the tests and their mutations; the
+docs, current shape only. The scope rule is a hard boundary.
+
+Working method: the Edit tool, not shell scripts, for code edits; the full suite with the
+gates after the build and again after the review's fixes only; an independent review of
+the whole diff, docs included, running while you write the seed and the smokelist;
+mutations for the new logic only; seed only what the app can't set up.
+
+Rules: every fixture number distinct; cp backups before mutating, never git stash or git
+checkout --; gates: npx tsc --noEmit, npx eslint ., npx vitest run, npm run
+check:labels, npx knip, npm run check:service-key. Commit directly to main. Then replace
+this commit's STATUS line with SHIPPED, the hash and the date, and hand me a browser
+smokelist: the cards and the Wellness hero for a client who logs daily, one who logs 2–3
+times a week, and one who stopped logging (Sam Kalepa); a girth; a weight with a goal
+target; the Physique hero unchanged.
 ```
 
 ### Commit 10 — `chore(wellness): coach wellness logging retired — the entries table, its writer and its readers go`
