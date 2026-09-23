@@ -10,7 +10,6 @@ import { useCanonicalInput, useHeightInput } from "@/hooks/use-unit-inputs";
 import { formatWeight } from "@/utils/unit-conversions";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import type { Client } from "@/types/check-in";
-import type { GoalOnDay } from "@/types/client-goals";
 
 /**
  * The client details form, behind the details sheet.
@@ -22,11 +21,11 @@ import type { GoalOnDay } from "@/types/client-goals";
  *
  * The form is react-hook-form + zodResolver per CONVENTIONS §3. Two families of
  * field are deliberately NOT in the zod schema: height, because it is composite
- * for an imperial viewer, and every unit-bearing weight, because
+ * for an imperial viewer, and the unit-bearing start weight, because
  * `useCanonicalInput`/`useHeightInput` own the conversion AND the
  * untouched-field guard that keeps a focus-through an exact no-op.
  *
- * The four writes below are NOT a transaction. See `submit`.
+ * The three writes below are NOT a transaction. See `submit`.
  */
 
 export const UNSET = "unset";
@@ -64,26 +63,12 @@ const profileFormSchema = z
       .refine((v) => v === "" || (Number(v) >= 3 && Number(v) <= 60), {
         message: "Body fat must be between 3% and 60%",
       }),
-    // Goal fields. Goal WEIGHT is not here — it is unit-bearing, so
-    // `useCanonicalInput` owns it and its untouched-field guard, exactly as
-    // height is kept out for the same reason.
-    goalBodyFatPercentage: z
-      .string()
-      .refine((v) => v === "" || (Number(v) >= 3 && Number(v) <= 60), {
-        message: "Body fat must be between 3% and 60%",
-      }),
-    goalDeadline: z.string().refine(isoDate, { message: "Use a valid date" }),
   });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
-/**
- * Seeds come from TWO records, deliberately. The profile fields are on `clients`;
- * the goal fields are the goal in force on the client's today, as stored — never
- * a resolved `EffectiveGoal` — so each box holds exactly the target the coach
- * set, and an empty one means none.
- */
-function toDefaults(client: Client, goal: GoalOnDay | null): ProfileFormValues {
+/** Seeds from the client record. */
+function toDefaults(client: Client): ProfileFormValues {
   return {
     name: client.name,
     email: client.email,
@@ -100,9 +85,6 @@ function toDefaults(client: Client, goal: GoalOnDay | null): ProfileFormValues {
       client.startingBodyFatPercentage != null
         ? String(client.startingBodyFatPercentage)
         : "",
-    goalBodyFatPercentage:
-      goal?.targetBodyFatPercentage != null ? String(goal.targetBodyFatPercentage) : "",
-    goalDeadline: goal?.deadline ?? "",
   };
 }
 
@@ -120,12 +102,7 @@ async function sendJson(method: "PATCH" | "PUT", url: string, body: unknown): Pr
 
 export type ClientProfileEdit = ReturnType<typeof useClientProfileEdit>;
 
-export function useClientProfileEdit(
-  client: Client,
-  onSaved: () => void,
-  /** The goal in force on the client's today; null = none. */
-  goal: GoalOnDay | null
-) {
+export function useClientProfileEdit(client: Client, onSaved: () => void) {
   const { preference } = useUnits();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -137,19 +114,16 @@ export function useClientProfileEdit(
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
-    defaultValues: toDefaults(client, goal),
+    defaultValues: toDefaults(client),
   });
 
   const height = useHeightInput(preference, client.height);
-  // Collected in the coach's unit, converted on submit. `commit` is
-  // `isPristine ? seed : canonical` compared on the SEEDED STRING, which is what
-  // makes a focus-through an exact no-op: 100 kg seeds an imperial coach as
-  // "220.5" and re-parses to 100.017, so a form that re-parsed whatever sat in
-  // the box would drift the stored goal on every save (CONVENTIONS §20).
-  const goalWeight = useCanonicalInput(preference, goal?.targetWeight, "weight");
-  // The BASELINE weight, same treatment as the goal weight: collected in the
-  // coach's unit, guarded on the seeded string so a focus-through is an exact
-  // no-op (CONVENTIONS §20). Saving it appends a reading dated on the start
+  // The BASELINE weight: collected in the coach's unit, converted on submit.
+  // `commit` is `isPristine ? seed : canonical` compared on the SEEDED STRING,
+  // which is what makes a focus-through an exact no-op: 100 kg seeds an
+  // imperial coach as "220.5" and re-parses to 100.017, so a form that
+  // re-parsed whatever sat in the box would drift the stored value on every
+  // save (CONVENTIONS §20). Saving it appends a reading dated on the start
   // date, which the derived baseline then reads.
   //
   // The CURRENT weight is not here. It is the newest reading in the
@@ -163,26 +137,16 @@ export function useClientProfileEdit(
   // next one and a background revalidation cannot overwrite a live edit.
   const { reset } = form;
   const resetHeight = height.reset;
-  const resetGoalWeight = goalWeight.reset;
   const resetStartWeight = startWeight.reset;
   useEffect(() => {
     if (isEditing) {
-      reset(toDefaults(client, goal));
+      reset(toDefaults(client));
       resetHeight(client.height);
-      resetGoalWeight(goal?.targetWeight);
       resetStartWeight(client.startingWeight);
       setIsCustomTdee(client.tdeeManualOverride === true);
       setCustomTdee(client.tdee != null ? String(Math.round(client.tdee)) : "");
     }
-  }, [
-    isEditing,
-    client,
-    goal,
-    reset,
-    resetHeight,
-    resetGoalWeight,
-    resetStartWeight,
-  ]);
+  }, [isEditing, client, reset, resetHeight, resetStartWeight]);
 
   // The live preview runs the SAME pure calculator the server writes with, so
   // what the coach is shown while typing cannot disagree with what is stored.
@@ -260,7 +224,7 @@ export function useClientProfileEdit(
   if (
     client.startingBodyFatPercentage != null &&
     watched.startingBodyFatPercentage !== "" &&
-    watched.startingBodyFatPercentage !== toDefaults(client, goal).startingBodyFatPercentage
+    watched.startingBodyFatPercentage !== toDefaults(client).startingBodyFatPercentage
   ) {
     // An emptied box is not on this list: `clearedMeasurement` refuses it
     // before the confirm, so the dialog only ever names a replacement.
@@ -280,17 +244,6 @@ export function useClientProfileEdit(
       });
       return;
     }
-    // A goal weight can be changed but never removed: `updateGoalsSchema` has it
-    // `.optional()` and NOT `.nullable()`, so there is no payload that clears it.
-    // Emptying the box silently doing nothing would be the worse answer.
-    if (!goalWeight.isPristine && goalWeight.commit == null) {
-      toast.error("Save failed", {
-        description: goalWeight.hasParseError
-          ? "Enter a goal weight above 0, or put the previous value back."
-          : "A goal weight can't be removed — change it instead.",
-      });
-      return;
-    }
     if (clearedMeasurement) {
       toast.error("Save failed", {
         description: `A ${clearedMeasurement} can't be left blank — change it instead.`,
@@ -300,7 +253,7 @@ export function useClientProfileEdit(
 
     setIsSaving(true);
     // Which writes have already committed when something later throws. These
-    // four calls are NOT a transaction, so the error has to say what survived
+    // three calls are NOT a transaction, so the error has to say what survived
     // rather than implying nothing did.
     let committed = false;
     try {
@@ -319,12 +272,12 @@ export function useClientProfileEdit(
       if (values.dateOfBirth !== "") profile.dateOfBirth = values.dateOfBirth;
 
       // The two BASELINE measurements, each sent only when it actually changed —
-      // the same seeded-string guard as height and goal weight, for the same
-      // reason: display rounding is lossy, so re-sending an untouched box
-      // would drift the stored value on every save. Both route server-side to
+      // the same seeded-string guard as height, for the same reason: display
+      // rounding is lossy, so re-sending an untouched box would drift the
+      // stored value on every save. Both route server-side to
       // `recordClientStart`, the single writer that also moves the metric
       // entries dated on the start date.
-      const seededNow = toDefaults(client, goal);
+      const seededNow = toDefaults(client);
       if (!startWeight.isPristine) profile.startingWeight = startWeight.commit;
       // A blank never reaches here — `clearedMeasurement` refused it above —
       // so a changed box always holds a number.
@@ -372,39 +325,12 @@ export function useClientProfileEdit(
         });
       }
 
-      // The goal, LAST and only when it actually changed.
-      //
-      // **The change detection is load-bearing, not an optimisation.** The PUT
-      // compares what it is sent with the goal in force exactly: a target that
-      // differs makes a new goal from today (or rewrites today's, if it started
-      // today), and for a client with no goal any PUT creates one. So an
-      // untouched field is never re-sent — an imperial coach's goal weight
-      // re-parsed through its rounded display would differ from the stored one
-      // and replace the client's goal on a save that changed a phone number.
-      // Each field is compared against the value it was SEEDED from; the weight
-      // compares through `commit`'s seeded-string guard rather than an epsilon.
-      const seeded = toDefaults(client, goal);
-      const goalPayload: Record<string, number | string | null> = {};
-      if (!goalWeight.isPristine) {
-        goalPayload.goalWeight = goalWeight.commit;
-      }
-      if (values.goalBodyFatPercentage !== seeded.goalBodyFatPercentage) {
-        goalPayload.goalBodyFatPercentage =
-          values.goalBodyFatPercentage === "" ? null : Number(values.goalBodyFatPercentage);
-      }
-      if (values.goalDeadline !== seeded.goalDeadline) {
-        goalPayload.goalDeadline = values.goalDeadline || null;
-      }
-      if (Object.keys(goalPayload).length > 0) {
-        await sendJson("PUT", `/api/clients/${client.id}/goals`, goalPayload);
-      }
-
       onSaved();
       setIsEditing(false);
       toast.success("Client updated");
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Something went wrong";
-      // Four sequential writes, no transaction. Reporting a bare "Save failed"
+      // Three sequential writes, no transaction. Reporting a bare "Save failed"
       // after the client details already committed tells the coach to redo an
       // edit that is already stored.
       toast.error(committed ? "Partly saved" : "Save failed", {
@@ -456,7 +382,6 @@ export function useClientProfileEdit(
     },
     form,
     height,
-    goalWeight,
     startWeight,
     autoEnergy: autoEnergyReady,
     customTdee,

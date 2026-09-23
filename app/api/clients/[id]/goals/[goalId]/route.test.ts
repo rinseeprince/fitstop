@@ -54,7 +54,7 @@ describe("/api/clients/[id]/goals/[goalId]", () => {
     vi.clearAllMocks();
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
     vi.mocked(getClientTodayString).mockResolvedValue("2026-09-22");
-    vi.mocked(getGoalsOverview).mockResolvedValue({ current: null, planned: [] });
+    vi.mocked(getGoalsOverview).mockResolvedValue({ current: null, planned: [], previous: null, clientToday: "2026-10-07" });
   });
 
   describe("PATCH", () => {

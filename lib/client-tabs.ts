@@ -37,14 +37,13 @@ export type ClientTab = (typeof CLIENT_TABS)[number]["value"]
  * `exerciseId`, which the destination prefers over `exerciseName`).
  */
 /**
- * One-shot: opens the Overview's client-details sheet on arrival, then strips
- * itself. Written by the check-in review's "Set new goals" (the goal editor is
- * that sheet, mounted only on the Overview tab), consumed by
- * `client-overview-tab.tsx`.
+ * One-shot: opens the Overview's goals sheet on arrival, then strips itself.
+ * Written by the check-in review's "Set new goals" (the sheet is mounted only
+ * on the Overview tab), consumed by `client-overview-tab.tsx`.
  *
  * Named here so the writer and the reader cannot spell it differently.
  */
-export const OPEN_PROFILE_EDITOR_PARAM = "editProfile"
+export const OPEN_GOALS_SHEET_PARAM = "editGoals"
 
 export function buildClientTabUrl(
   clientId: string,

@@ -14,12 +14,14 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => mockParams.current,
 }));
 
-import { useProfileEditorTrip } from "./use-profile-editor-trip";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { useGoalsSheetTrip } from "./use-goals-sheet-trip";
 
 function arriveWith(query: string) {
   mockParams.current = new URLSearchParams(query);
   const onOpen = vi.fn();
-  const utils = renderHook(() => useProfileEditorTrip(onOpen));
+  const utils = renderHook(() => useGoalsSheetTrip(onOpen));
   return { onOpen, ...utils };
 }
 
@@ -28,9 +30,9 @@ beforeEach(() => {
   mockPathname.current = "/clients/c1";
 });
 
-describe("useProfileEditorTrip", () => {
-  it("opens the editor when the param arrives", () => {
-    const { onOpen } = arriveWith("tab=overview&editProfile=1");
+describe("useGoalsSheetTrip", () => {
+  it("opens the goals sheet when the param arrives", () => {
+    const { onOpen } = arriveWith("tab=overview&editGoals=1");
 
     expect(onOpen).toHaveBeenCalledOnce();
   });
@@ -38,7 +40,7 @@ describe("useProfileEditorTrip", () => {
   it("STRIPS the param, keeping the rest of the query", () => {
     // The whole query rides across every tab change, and Radix remounts this
     // tab on every visit — a param left behind re-opens the sheet each time.
-    arriveWith("tab=overview&editProfile=1&journey=blocks");
+    arriveWith("tab=overview&editGoals=1&journey=blocks");
 
     expect(replace).toHaveBeenCalledWith("/clients/c1?tab=overview&journey=blocks", {
       scroll: false,
@@ -55,7 +57,7 @@ describe("useProfileEditorTrip", () => {
   });
 
   it("ignores a value that is not the one it writes", () => {
-    const { onOpen } = arriveWith("tab=overview&editProfile=yes");
+    const { onOpen } = arriveWith("tab=overview&editGoals=yes");
 
     expect(onOpen).not.toHaveBeenCalled();
   });
@@ -64,7 +66,7 @@ describe("useProfileEditorTrip", () => {
     // The effect re-runs on any re-render before `router.replace` lands, and
     // the param is still there — without the guard it re-opens a sheet the
     // coach may already have closed.
-    const { onOpen, rerender } = arriveWith("tab=overview&editProfile=1");
+    const { onOpen, rerender } = arriveWith("tab=overview&editGoals=1");
 
     rerender();
     rerender();
@@ -74,8 +76,18 @@ describe("useProfileEditorTrip", () => {
   });
 
   it("drops the ? when the param was the only thing in the query", () => {
-    arriveWith("editProfile=1");
+    arriveWith("editGoals=1");
 
     expect(replace).toHaveBeenCalledWith("/clients/c1", { scroll: false });
+  });
+});
+
+// The check-in review's "Set new goals" lands here: the Overview tab answers
+// the trip by opening its goals sheet.
+describe("the Overview answers the trip", () => {
+  it("opens the goals sheet with it", () => {
+    const tab = readFileSync(join(__dirname, "..", "components", "clients", "client-overview-tab.tsx"), "utf8");
+    expect(tab).toMatch(/useGoalsSheetTrip\(openGoalsSheet\)/);
+    expect(tab).toMatch(/const openGoalsSheet = useCallback\(\(\) => showGoalsSheet\(client\.id\)/);
   });
 });

@@ -138,9 +138,8 @@ export function DetailsGroups({
   const { form } = edit;
   const weightUnit = formatWeight(0, preference).unit;
 
-  // The sheet offers no past day for a deadline: the native `min` makes those
-  // days unclickable rather than picked. (The goal functions themselves refuse
-  // only a deadline before the goal's start.)
+  // The sheet offers no past day for the next check-in: the native `min` makes
+  // those days unclickable rather than picked.
   const todayString = getTodayDateString();
 
   // Activation owns the start date; a client still being set up has none to
@@ -430,102 +429,65 @@ export function DetailsGroups({
         </Grid>
       </Card>
 
-      <SectionLabel label="Goals & energy" />
+      <SectionLabel label="Energy" />
       <Card>
         <Grid cols={2}>
-          <Field label="Goal weight">
-            <UnitInput
-              ariaLabel="Goal weight"
-              value={edit.goalWeight.value}
-              onChange={edit.goalWeight.setValue}
-              unit={weightUnit}
+          {/* BMR has no editor here: the pair recomputes server-side from the
+              profile whenever an input to it changes. */}
+          <Field label="BMR">
+            <ReadOnly
+              value={client.bmr ? String(Math.round(client.bmr)) : "—"}
+              note="cal/day"
             />
           </Field>
-          <Field label="Goal body fat">
-            <UnitInput
-              ariaLabel="Goal body fat percentage"
-              value={form.watch("goalBodyFatPercentage")}
-              onChange={(v) => form.setValue("goalBodyFatPercentage", v)}
-              unit="%"
-            />
+          <Field
+            label="TDEE"
+            hint={
+              edit.customTdeeBelowBmr && edit.autoEnergy ? (
+                <span className="text-[11px] text-[#c06060]">
+                  Can&apos;t be below BMR ({edit.autoEnergy.bmr})
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => edit.setIsCustomTdee(!edit.isCustomTdee)}
+                  className="self-start text-[11px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]"
+                >
+                  {edit.isCustomTdee
+                    ? `Reset to calculated${edit.autoEnergy ? ` (${edit.autoEnergy.tdee})` : ""}`
+                    : "Set a custom TDEE"}
+                </button>
+              )
+            }
+          >
+            {edit.isCustomTdee ? (
+              <UnitInput
+                ariaLabel="Custom TDEE"
+                value={edit.customTdee}
+                onChange={edit.setCustomTdee}
+                unit="cal"
+              />
+            ) : (
+              <ReadOnly
+                value={edit.autoEnergy ? String(edit.autoEnergy.tdee) : "—"}
+                note="calculated"
+              />
+            )}
           </Field>
         </Grid>
-        <div className="mt-3.5 border-t border-[rgba(13,148,136,0.06)] pt-3.5">
-          <Grid cols={2}>
-            <Field label="Deadline">
-              <Input
-                aria-label="Goal deadline"
-                type="date"
-                min={todayString}
-                value={form.watch("goalDeadline")}
-                onChange={(e) => form.setValue("goalDeadline", e.target.value)}
-                className={cn(MONO_INPUT_CLASS, FOCUS_RING, "h-8 text-[12.5px]")}
-              />
-            </Field>
-          </Grid>
-        </div>
-        <div className="mt-3.5 border-t border-[rgba(13,148,136,0.06)] pt-3.5">
-          <Grid cols={2}>
-            {/* BMR has no editor here: the pair recomputes server-side from the
-                profile whenever an input to it changes. */}
-            <Field label="BMR">
-              <ReadOnly
-                value={client.bmr ? String(Math.round(client.bmr)) : "—"}
-                note="cal/day"
-              />
-            </Field>
-            <Field
-              label="TDEE"
-              hint={
-                edit.customTdeeBelowBmr && edit.autoEnergy ? (
-                  <span className="text-[11px] text-[#c06060]">
-                    Can&apos;t be below BMR ({edit.autoEnergy.bmr})
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => edit.setIsCustomTdee(!edit.isCustomTdee)}
-                    className="self-start text-[11px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]"
-                  >
-                    {edit.isCustomTdee
-                      ? `Reset to calculated${edit.autoEnergy ? ` (${edit.autoEnergy.tdee})` : ""}`
-                      : "Set a custom TDEE"}
-                  </button>
-                )
-              }
-            >
-              {edit.isCustomTdee ? (
-                <UnitInput
-                  ariaLabel="Custom TDEE"
-                  value={edit.customTdee}
-                  onChange={edit.setCustomTdee}
-                  unit="cal"
-                />
-              ) : (
-                <ReadOnly
-                  value={edit.autoEnergy ? String(edit.autoEnergy.tdee) : "—"}
-                  note="calculated"
-                />
-              )}
-            </Field>
-          </Grid>
-        </div>
 
         {/* What saving ACTUALLY does. The nutrition plan snapshots its calorie
             targets and the TDEE it was built from (services/nutrition-plan-service.ts),
-            so nothing here moves a target — a goal that prices differently
-            leaves the plan out of date, which the nutrition card, the Nutrition
-            tab and the drawer say (NutritionOutOfDateNotice). Saying the
-            targets recalculate would be a comfortable lie. */}
+            so nothing here moves a target. Saying the targets recalculate would
+            be a comfortable lie. */}
         <div className="mt-4 flex items-start gap-2.5 rounded-[6px] bg-[rgba(245,158,11,0.07)] px-3 py-2.5">
           <AlertTriangle
             className="mt-px h-[15px] w-[15px] shrink-0 text-[#d97706]"
             strokeWidth={1.5}
           />
           <p className="text-[11.5px] leading-[1.5] text-[#d97706]">
-            Saving records a new goal and refreshes this client&apos;s BMR and TDEE. Their
-            nutrition plan keeps the targets it was built with — the Nutrition tab will offer to
-            regenerate it. Logged history is unchanged.
+            Saving refreshes this client&apos;s BMR and TDEE. Their nutrition plan keeps the
+            targets it was built with. Logged history is unchanged.
           </p>
         </div>
       </Card>

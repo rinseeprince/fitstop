@@ -5,8 +5,10 @@ import { ClientActivationBanner } from "@/components/clients/client-activation-b
 import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClientProfileEdit } from "@/components/clients/overview/use-client-profile-edit";
-import { useProfileEditorTrip } from "@/hooks/use-profile-editor-trip";
+import { useGoalsSheetTrip } from "@/hooks/use-goals-sheet-trip";
+import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
+import { GoalsSheet } from "@/components/clients/goals/goals-sheet";
 import { AdherenceCard } from "@/components/clients/overview/adherence-card";
 import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
 import { CurrentPlanSection } from "@/components/clients/overview/current-plan-section";
@@ -71,7 +73,12 @@ export function ClientOverviewTab({
     isMarkingSeen,
   } = useOverviewBrief(client.id);
   const { summary, isLoading: summaryLoading } = useOverviewPlanSummary(client.id);
-  const { current: currentGoal, isLoading: goalLoading } = useClientGoals(client.id);
+  const {
+    current: currentGoal,
+    planned: plannedGoals,
+    isLoading: goalLoading,
+    isError: goalFailed,
+  } = useClientGoals(client.id);
   const invalidateGoals = useInvalidateClientGoals();
   const invalidateSeries = useInvalidateMeasurementSeries();
   const clearNutritionGoal = useClearNutritionGoal();
@@ -104,9 +111,25 @@ export function ClientOverviewTab({
 
   const wellnessDates = useMemo(() => trailingDates(WELLNESS_WINDOW_DAYS), []);
 
-  // The goal in force on the client's today, resolved once for the band and the
-  // chart — by the same resolver the server's goal readers use.
+  // The goal in force on the client's today, resolved for the chart's goal line
+  // by the same resolver the server's goal readers use.
   const effectiveGoal = useMemo(() => resolveEffectiveGoal(currentGoal), [currentGoal]);
+
+  // The newest readings, which the goals sheet's form warns against.
+  const latestReadings = useMemo(
+    () => ({
+      weight: series?.weight[series.weight.length - 1]?.value ?? null,
+      bodyFat: series?.bodyFat[series.bodyFat.length - 1]?.value ?? null,
+    }),
+    [series]
+  );
+
+  // The goals sheet: local state, opened by the goal card's pencil and by the
+  // check-in review's "Set new goals". Each opening mounts it fresh.
+  const goalsSheet = useDialogSubject<string>();
+  const { show: showGoalsSheet } = goalsSheet;
+  const openGoalsSheet = useCallback(() => showGoalsSheet(client.id), [showGoalsSheet, client.id]);
+  useGoalsSheetTrip(openGoalsSheet);
 
   const goToTab = useCallback(
     (tab: ClientTab, extraParams?: Record<string, string>) =>
@@ -124,14 +147,13 @@ export function ClientOverviewTab({
     void mutateBrief();
   }, [onClientUpdated, mutateBrief]);
 
-  // A sheet save touches FOUR areas, so it has to refresh all four: the goals
-  // read behind the band, the client record everything else derives from, the
-  // chart's series — correcting a recorded start weight routes to
-  // `recordClientStart`, which MOVES the metric entries dated on the start date,
-  // so the chart's first point changes under a save that never looked like a
-  // measurement, and so can the goal's start reading the chips measure from —
-  // and how nutrition follows the goal: the goal, the weight and the energy
-  // pair are what the drawer prices and the out-of-date rule judges.
+  // A sheet save touches FOUR areas, so it has to refresh all four: the client
+  // record everything else derives from, the chart's series — correcting a
+  // recorded start weight routes to `recordClientStart`, which MOVES the metric
+  // entries dated on the start date, so the chart's first point changes under a
+  // save that never looked like a measurement — the goals read, whose goal
+  // start reading the chips measure from can move with it, and how nutrition
+  // follows the goal: the weight and the energy pair are what the drawer prices.
   const handleSaved = useCallback(() => {
     void invalidateGoals(client.id);
     void invalidateSeries(client.id);
@@ -139,16 +161,12 @@ export function ClientOverviewTab({
     handleClientUpdated();
   }, [invalidateGoals, invalidateSeries, clearNutritionGoal, client.id, handleClientUpdated]);
 
-  const edit = useClientProfileEdit(client, handleSaved, currentGoal);
+  const edit = useClientProfileEdit(client, handleSaved);
 
   // The activation card's Client-profile row opens the same sheet as the rail's
   // pencil. It used to also scroll the page, because the editor it opened was
   // the section below and could be off screen — an overlay needs no such help.
   const openProfileEditor = edit.start;
-
-  // A one-shot arrival param — the check-in review's "Set new goals" sends the
-  // coach here, because this sheet is the only goal editor.
-  useProfileEditorTrip(edit.start);
 
   const handleMarkSeen = useCallback(() => {
     void markSeen();
@@ -215,9 +233,11 @@ export function ClientOverviewTab({
           facts, so there is no period for a rail to name. */}
       <StatusBand
         client={client}
-        goal={effectiveGoal}
-        goalStart={currentGoal}
+        goal={currentGoal}
+        nextGoal={plannedGoals[0] ?? null}
+        onEditGoals={openGoalsSheet}
         goalPending={goalLoading}
+        goalFailed={goalFailed}
         series={series}
         seriesPending={seriesLoading}
         chart={
@@ -307,6 +327,17 @@ export function ClientOverviewTab({
         client={client}
         checkInTiming={brief?.checkInTiming ?? null}
         edit={edit}
+      />
+
+      <GoalsSheet
+        key={`goals-sheet-${goalsSheet.openKey}`}
+        clientId={client.id}
+        clientName={client.name}
+        open={goalsSheet.open}
+        onOpenChange={(open) => {
+          if (!open) goalsSheet.close();
+        }}
+        readings={latestReadings}
       />
 
       <DeleteNoteDialog

@@ -37,7 +37,7 @@ const NO_PLANNED: GoalOnDay[] = [];
 const NO_HISTORY: PastGoal[] = [];
 
 export function useClientGoals(clientId: string) {
-  const { data, error, isLoading } = useSWR<{ success: boolean; data: ClientGoalsOverview }>(
+  const { data, error, isLoading, mutate } = useSWR<{ success: boolean; data: ClientGoalsOverview }>(
     clientId ? clientGoalsKey(clientId) : null,
     swrFetcher,
     SWR_OPTS
@@ -46,8 +46,13 @@ export function useClientGoals(clientId: string) {
   return {
     current: data?.data.current ?? null,
     planned: data?.data.planned ?? NO_PLANNED,
+    previous: data?.data.previous ?? null,
+    clientToday: data?.data.clientToday ?? null,
     isLoading,
-    isError: !!error,
+    // Failed only with nothing to show: a refetch that fails over goals
+    // already read — or seeded by a write — leaves them on screen.
+    isError: !!error && !data,
+    retry: () => void mutate(),
   };
 }
 
@@ -64,7 +69,22 @@ export function useClientGoalHistory(clientId: string, enabled: boolean) {
     SWR_OPTS
   );
 
-  return { history: data?.data ?? NO_HISTORY, isLoading, isError: !!error };
+  return { history: data?.data ?? NO_HISTORY, isLoading, isError: !!error && !data };
+}
+
+/**
+ * Writes a goal write's OWN response — every goal route answers with the goals
+ * as they now stand — into the goals read, with no refetch. The caller closes
+ * its surface in the same tick, so the two land in one render and no frame
+ * shows the goal it just changed (CONVENTIONS §7, `useSeedClientBlocks`).
+ */
+export function useSeedClientGoals() {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    (clientId: string, overview: ClientGoalsOverview) =>
+      mutate(clientGoalsKey(clientId), { success: true, data: overview }, { revalidate: false }),
+    [mutate]
+  );
 }
 
 /**
@@ -77,6 +97,20 @@ export function useInvalidateClientGoals() {
   return useCallback(
     (clientId: string) =>
       mutate((key) => typeof key === "string" && key.startsWith(clientGoalsKey(clientId))),
+    [mutate]
+  );
+}
+
+/**
+ * Drops a client's cached goal history, refetching it if mounted — for a goal
+ * write that lands its own answer in the goals read (`useSeedClientGoals`),
+ * which a refetch would only repeat. The history's next open starts from its
+ * loading state, never on the list the write changed.
+ */
+export function useClearClientGoalHistory() {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    (clientId: string) => mutate(clientGoalHistoryKey(clientId), undefined, { revalidate: true }),
     [mutate]
   );
 }

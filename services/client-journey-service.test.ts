@@ -2,14 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./client-blocks-service", () => ({ listBlocks: vi.fn() }));
 vi.mock("./client-goals-service", () => ({ getGoalForDate: vi.fn() }));
-vi.mock("./measurements-service", () => ({ getMeasurementSeries: vi.fn() }));
+vi.mock("./measurements-service", () => ({
+  getMeasurementSeries: vi.fn(),
+  getCurrentMeasurements: vi.fn(),
+  getReadingsOnDay: vi.fn(),
+}));
 vi.mock("./nutrition-plan-service", () => ({
   listNutritionPlanNotesInRange: vi.fn(),
 }));
 
 import { listBlocks } from "./client-blocks-service";
 import { getGoalForDate } from "./client-goals-service";
-import { getMeasurementSeries } from "./measurements-service";
+import { getCurrentMeasurements, getMeasurementSeries, getReadingsOnDay } from "./measurements-service";
 import { listNutritionPlanNotesInRange } from "./nutrition-plan-service";
 import { getClientJourney } from "./client-journey-service";
 import type { ClientBlock } from "@/types/client-blocks";
@@ -78,6 +82,8 @@ function mockWeightSeries(values: DayValue[]) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getGoalForDate).mockResolvedValue(null);
+  vi.mocked(getCurrentMeasurements).mockResolvedValue({});
+  vi.mocked(getReadingsOnDay).mockResolvedValue({});
   vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([]);
   mockWeightSeries([]);
 });
@@ -171,12 +177,23 @@ describe("getClientJourney", () => {
     expect(journey).toEqual({
       clientToday: TODAY,
       blocks: [],
-      goal: { weightKg: null, deadline: null },
+      goal: {
+        weightKg: null,
+        deadline: null,
+        name: null,
+        type: null,
+        bodyFatPercentage: null,
+        description: null,
+        readings: null,
+      },
       currentWeightKg: null,
       currentBlockNotes: null,
     });
     expect(getMeasurementSeries).not.toHaveBeenCalled();
     expect(listNutritionPlanNotesInRange).not.toHaveBeenCalled();
+    // No goal in force, so no reading is read for one.
+    expect(getCurrentMeasurements).not.toHaveBeenCalled();
+    expect(getReadingsOnDay).not.toHaveBeenCalled();
   });
 
   it("ships the goal in force on the client's today: its weight target and that day's deadline, in kg, untouched", async () => {
@@ -190,7 +207,7 @@ describe("getClientJourney", () => {
     // Asked with the client's today — the day this read is anchored on — so a
     // goal planned for tomorrow is not the one shipped.
     expect(getGoalForDate).toHaveBeenCalledWith(CLIENT_ID, TODAY);
-    expect(journey.goal).toEqual({ weightKg: 85.5, deadline: "2026-12-01" });
+    expect(journey.goal).toMatchObject({ weightKg: 85.5, deadline: "2026-12-01" });
   });
 
   it("a goal with no weight target ships weightKg null; no deadline ships null", async () => {
@@ -201,7 +218,53 @@ describe("getClientJourney", () => {
 
     const journey = await getClientJourney(CLIENT_ID, TODAY);
 
-    expect(journey.goal).toEqual({ weightKg: null, deadline: null });
+    expect(journey.goal).toMatchObject({ weightKg: null, deadline: null, bodyFatPercentage: 15 });
+  });
+
+  // The client's goal card (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d2), on
+  // every client with a goal, block or no block: optional fields added beside
+  // the two the wire always carried.
+  it("ships what the goal card shows, with the readings its progress runs from and to — block or no block", async () => {
+    vi.mocked(getGoalForDate).mockResolvedValue(
+      goalOnDay({
+        name: "Lean out",
+        targetWeight: 78.6,
+        targetBodyFatPercentage: 19.4,
+        description: "Feel fit for the wedding",
+        startsOn: "2026-07-06",
+        deadline: "2026-11-27",
+      })
+    );
+    vi.mocked(getCurrentMeasurements).mockResolvedValue({
+      weight: { id: "r-9", metricKey: "weight", value: 82.7, date: "2026-08-11", source: "check_in" },
+      bodyFat: { id: "r-10", metricKey: "bodyFat", value: 22.3, date: "2026-08-11", source: "check_in" },
+    });
+    vi.mocked(getReadingsOnDay).mockResolvedValue({
+      weight: { id: "r-4", metricKey: "weight", value: 86.1, date: "2026-07-05", source: "coach_entry" },
+    });
+
+    for (const blocks of [[], [block()]]) {
+      vi.mocked(listBlocks).mockResolvedValue(blocks);
+      const journey = await getClientJourney(CLIENT_ID, TODAY);
+
+      expect(journey.goal).toEqual({
+        weightKg: 78.6,
+        deadline: "2026-11-27",
+        name: "Lean out",
+        type: "lose_weight",
+        bodyFatPercentage: 19.4,
+        description: "Feel fit for the wedding",
+        readings: {
+          weightKg: 82.7,
+          bodyFatPercentage: 22.3,
+          startWeightKg: 86.1,
+          startBodyFatPercentage: null,
+        },
+      });
+    }
+    // The start readings are the goal's own start day's.
+    expect(getReadingsOnDay).toHaveBeenCalledWith(CLIENT_ID, "2026-07-06");
+    expect(getCurrentMeasurements).toHaveBeenCalledWith(CLIENT_ID);
   });
 
   // These pin the POLICY on the wire rather than in a renderer. GET

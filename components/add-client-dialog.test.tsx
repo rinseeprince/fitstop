@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { AddClientDialog } from "./add-client-dialog";
@@ -22,6 +22,9 @@ class ResizeObserverMock {
   disconnect() {}
 }
 globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+Element.prototype.scrollIntoView = () => {};
+Element.prototype.hasPointerCapture = () => false;
+Element.prototype.releasePointerCapture = () => {};
 
 function mockCreateOk() {
   return vi.spyOn(globalThis, "fetch").mockResolvedValue({
@@ -159,5 +162,82 @@ describe("AddClientDialog", () => {
 
     expect(await screen.findByText(/a current weight is required/i)).toBeInTheDocument();
     expect(createBody(fetchSpy)).toBeNull();
+  });
+
+  // The manual add sets the client's first goal with the goals sheet's fields
+  // (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d2); it starts on their today.
+  describe("the first goal", () => {
+    async function manual(weight = "93.6") {
+      const user = await openDialog();
+      await user.click(screen.getByText("Set up manually"));
+      await user.type(screen.getByLabelText(/^name/i), "Samuel James");
+      await user.type(screen.getByLabelText(/email/i), "sam@example.com");
+      await user.type(screen.getByLabelText("Current weight (kg)"), weight);
+      return user;
+    }
+
+    async function chooseType(name: string) {
+      fireEvent.keyDown(screen.getByRole("combobox", { name: "Goal type" }), { key: "ArrowDown" });
+      fireEvent.keyDown(await screen.findByRole("option", { name }), { key: "Enter" });
+    }
+
+    it("is none by default, and asks for what its type uses once one is chosen — never a start day", async () => {
+      await manual();
+      expect(screen.getByRole("combobox", { name: "Goal type" })).toHaveTextContent("No goal");
+      expect(screen.queryByLabelText("Target weight (kg)")).not.toBeInTheDocument();
+
+      await chooseType("Lose weight");
+      expect(screen.getByLabelText("Target weight (kg)")).toBeInTheDocument();
+      expect(screen.getByLabelText("Deadline")).toBeInTheDocument();
+      expect(screen.getByLabelText("Description")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Starts")).not.toBeInTheDocument();
+    });
+
+    it("sends the goal with the client", async () => {
+      const fetchSpy = mockCreateOk();
+      const user = await manual();
+      await chooseType("Lose weight");
+      await user.type(screen.getByLabelText("Target weight (kg)"), "86.9");
+      fireEvent.change(screen.getByLabelText("Deadline"), { target: { value: "2027-02-05" } });
+      await user.type(screen.getByLabelText("Description"), "Back into my suits");
+      await user.click(screen.getByRole("button", { name: /add client/i }));
+
+      await waitFor(() => expect(createBody(fetchSpy)).not.toBeNull());
+      expect(createBody(fetchSpy)?.goal).toEqual({
+        type: "lose_weight",
+        name: "Lose weight",
+        targetWeight: 86.9,
+        targetBodyFatPercentage: null,
+        description: "Back into my suits",
+        deadline: "2027-02-05",
+      });
+    });
+
+    it("sends no goal while the type is No goal", async () => {
+      const fetchSpy = mockCreateOk();
+      const user = await manual();
+      await user.click(screen.getByRole("button", { name: /add client/i }));
+
+      await waitFor(() => expect(createBody(fetchSpy)).not.toBeNull());
+      expect(createBody(fetchSpy)).not.toHaveProperty("goal");
+    });
+
+    it("refuses a goal without the target its type needs, and says so", async () => {
+      const fetchSpy = mockCreateOk();
+      const user = await manual();
+      await chooseType("Build muscle");
+      await user.click(screen.getByRole("button", { name: /add client/i }));
+
+      expect(await screen.findByText("Enter a target weight")).toBeInTheDocument();
+      expect(createBody(fetchSpy)).toBeNull();
+    });
+
+    it("warns when the target points the other way from the weight typed above", async () => {
+      const user = await manual("70.4");
+      await chooseType("Lose weight");
+      await user.type(screen.getByLabelText("Target weight (kg)"), "72.8");
+
+      expect(screen.getByText("This target is above their current weight (70.4 kg).")).toBeInTheDocument();
+    });
   });
 });

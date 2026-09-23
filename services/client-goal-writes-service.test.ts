@@ -1,44 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ClientGoal } from "@/types/client-goals";
 
-vi.mock("./supabase-admin", () => ({ supabaseAdmin: { rpc: vi.fn() } }));
-vi.mock("./today-service", () => ({ getClientTodayString: vi.fn() }));
-vi.mock("./measurements-service", () => ({ getReadingsOnDay: vi.fn() }));
-vi.mock("./client-goals-service", () => ({ listClientGoals: vi.fn() }));
+const { query } = vi.hoisted(() => ({
+  query: { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn() },
+}));
+vi.mock("./supabase-admin", () => ({ supabaseAdmin: { rpc: vi.fn(), from: vi.fn(() => query) } }));
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getClientTodayString } from "./today-service";
-import { getReadingsOnDay } from "./measurements-service";
-import { listClientGoals } from "./client-goals-service";
 import {
   addGoal,
+  editGoal,
   GoalWriteError,
-  saveDetailsSheetGoal,
   setGoalDeadline,
   toGoalWriteError,
 } from "./client-goal-writes-service";
 
 const rpc = vi.mocked(supabaseAdmin.rpc);
 const TODAY = "2026-09-22";
-
-function goal(overrides: Partial<ClientGoal>): ClientGoal {
-  return {
-    id: "goal-running",
-    clientId: "client-3",
-    name: "Lose weight",
-    type: "lose_weight",
-    targetWeight: 74.5,
-    targetBodyFatPercentage: 16,
-    description: "Feel lighter on the bike",
-    startsOn: "2026-07-01",
-    source: "intake",
-    setBy: null,
-    createdAt: "2026-07-01T09:00:00Z",
-    updatedAt: "2026-07-01T09:00:00Z",
-    deadlines: [{ effectiveOn: "2026-07-01", deadline: "2026-12-18", setBy: null }],
-    ...overrides,
-  };
-}
 
 function rpcReturns(data: unknown) {
   rpc.mockResolvedValue({ data, error: null } as never);
@@ -118,91 +95,86 @@ describe("the write calls", () => {
     await expect(
       setGoalDeadline({ goalId: "goal-old", clientId: "client-3", today: TODAY, setBy: "coach-5", deadline: "2026-12-02" })
     ).rejects.toMatchObject({ code: "ended" });
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
   });
 });
 
-describe("the details sheet's save", () => {
+// A deadline that runs into the next goal is refused with that goal's name and
+// start; its own deadline is read after, since a move past the new deadline
+// keeps it (lib/goals/goal-write-response.ts).
+describe("a refusal that runs into the next goal", () => {
+  const RUNS_INTO_TAPER = {
+    message: 'deadline_after_next:{"goalId" : "goal-taper", "name" : "Taper", "startsOn" : "2026-12-14"}',
+  };
+  const FIELDS = {
+    type: "lose_weight" as const,
+    name: "Cut",
+    targetWeight: 77.6,
+    targetBodyFatPercentage: null,
+    description: null,
+    deadline: "2026-12-19",
+  };
+  const WRITES: Array<[string, () => Promise<unknown>]> = [
+    [
+      "add",
+      () => addGoal({ ...FIELDS, clientId: "client-3", today: TODAY, startsOn: "2026-10-26", source: "coach", setBy: "coach-5" }),
+    ],
+    [
+      "edit",
+      () => editGoal({ ...FIELDS, goalId: "goal-cut", clientId: "client-3", today: TODAY, startsOn: "2026-10-26", setBy: "coach-5" }),
+    ],
+    [
+      "deadline",
+      () => setGoalDeadline({ goalId: "goal-cut", clientId: "client-3", today: TODAY, setBy: "coach-5", deadline: "2026-12-19" }),
+    ],
+  ];
+
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
-    vi.mocked(getReadingsOnDay).mockResolvedValue({
-      weight: { id: "r1", metricKey: "weight", value: 79.6, date: "2026-09-20", source: "check_in" },
+    query.select.mockReturnValue(query);
+    query.eq.mockReturnValue(query);
+    rpc.mockResolvedValue({ data: null, error: RUNS_INTO_TAPER } as never);
+  });
+
+  for (const [kind, write] of WRITES) {
+    it(`${kind}: carries the next goal's own deadline, its newest, read scoped to the client`, async () => {
+      query.maybeSingle.mockResolvedValue({
+        data: {
+          client_goal_deadlines: [
+            { effective_on: "2026-12-14", deadline: "2027-01-08" },
+            { effective_on: "2026-12-21", deadline: "2027-01-29" },
+          ],
+        },
+        error: null,
+      });
+
+      const refused = await write().catch((error: unknown) => error);
+      expect(refused).toBeInstanceOf(GoalWriteError);
+      expect(refused).toMatchObject({
+        code: "deadline_after_next",
+        conflict: { goalId: "goal-taper", name: "Taper", startsOn: "2026-12-14", deadline: "2027-01-29" },
+      });
+      expect(supabaseAdmin.from).toHaveBeenCalledWith("client_goals");
+      expect(query.eq).toHaveBeenCalledWith("id", "goal-taper");
+      expect(query.eq).toHaveBeenCalledWith("client_id", "client-3");
     });
-  });
+  }
 
-  it("records a deadline-only change against today's goal", async () => {
-    vi.mocked(listClientGoals).mockResolvedValue([goal({})]);
-    rpcReturns(true);
-    const saved = await saveDetailsSheetGoal("client-3", { goalDeadline: "2027-01-15" }, "coach-5");
-    expect(saved).toEqual({ wrote: "deadline", goalId: "goal-running" });
-    expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith("set_client_goal_deadline", expect.objectContaining({ p_deadline: "2027-01-15" }));
-  });
-
-  it("writes nothing when nothing differs from today's goal", async () => {
-    vi.mocked(listClientGoals).mockResolvedValue([goal({})]);
-    const saved = await saveDetailsSheetGoal("client-3", { goalWeight: 74.5, goalDeadline: "2026-12-18" }, "coach-5");
-    expect(saved).toEqual({ wrote: "nothing", goalId: "goal-running" });
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it("makes a new goal from today when a target changes, typed and named from its targets, keeping the deadline", async () => {
-    vi.mocked(listClientGoals).mockResolvedValue([goal({})]);
-    rpcReturns("goal-from-today");
-    const saved = await saveDetailsSheetGoal("client-3", { goalWeight: 83.2 }, "coach-5");
-    expect(saved).toEqual({ wrote: "create", goalId: "goal-from-today" });
-    expect(rpc).toHaveBeenCalledWith("add_client_goal", {
-      p_client_id: "client-3",
-      p_today: TODAY,
-      p_starts_on: TODAY,
-      p_type: "build_muscle",
-      p_name: "Build muscle",
-      p_source: "coach",
-      p_set_by: "coach-5",
-      p_target_weight: 83.2,
-      p_target_body_fat_percentage: 16,
-      p_deadline: "2026-12-18",
+  it("carries no deadline for a next goal that has none", async () => {
+    query.maybeSingle.mockResolvedValue({
+      data: { client_goal_deadlines: [{ effective_on: "2026-12-14", deadline: null }] },
+      error: null,
     });
+    const refused = (await WRITES[0][1]().catch((error: unknown) => error)) as GoalWriteError;
+    expect(refused.conflict).toMatchObject({ goalId: "goal-taper" });
+    expect(refused.conflict?.deadline).toBeUndefined();
   });
 
-  it("corrects today's goal in place when it started today", async () => {
-    vi.mocked(listClientGoals).mockResolvedValue([
-      goal({}),
-      goal({ id: "goal-today", startsOn: TODAY, deadlines: [{ effectiveOn: TODAY, deadline: null, setBy: null }] }),
-    ]);
-    rpcReturns(true);
-    const saved = await saveDetailsSheetGoal("client-3", { goalBodyFatPercentage: null }, "coach-5");
-    expect(saved).toEqual({ wrote: "edit", goalId: "goal-today" });
-    expect(rpc).toHaveBeenCalledWith("edit_client_goal", {
-      p_goal_id: "goal-today",
-      p_client_id: "client-3",
-      p_today: TODAY,
-      p_type: "lose_weight",
-      p_name: "Lose weight",
-      p_starts_on: TODAY,
-      p_set_by: "coach-5",
-      p_target_weight: 74.5,
-      p_description: "Feel lighter on the bike",
-    });
-  });
-
-  it("gives a client with no goal their first, from today", async () => {
-    vi.mocked(listClientGoals).mockResolvedValue([]);
-    rpcReturns("goal-first");
-    await saveDetailsSheetGoal("client-3", { goalWeight: 72.9, goalDeadline: "2027-02-26" }, "coach-5");
-    expect(rpc).toHaveBeenCalledWith(
-      "add_client_goal",
-      expect.objectContaining({ p_type: "lose_weight", p_starts_on: TODAY, p_deadline: "2027-02-26" })
-    );
-  });
-
-  it("leaves a planned goal out of today's", async () => {
-    vi.mocked(listClientGoals).mockResolvedValue([
-      goal({}),
-      goal({ id: "goal-planned", startsOn: "2026-10-12", targetWeight: 70.1 }),
-    ]);
-    rpcReturns(true);
-    await saveDetailsSheetGoal("client-3", { goalDeadline: null }, "coach-5");
-    expect(rpc).toHaveBeenCalledWith("set_client_goal_deadline", expect.objectContaining({ p_goal_id: "goal-running" }));
+  // A refusal it can't complete never offers a move it can't vouch for.
+  it("fails plainly when the next goal's deadline can't be read", async () => {
+    query.maybeSingle.mockResolvedValue({ data: null, error: { message: "statement timeout" } });
+    const failed = await WRITES[1][1]().catch((error: unknown) => error);
+    expect(failed).not.toBeInstanceOf(GoalWriteError);
+    expect((failed as Error).message).toMatch(/statement timeout/);
   });
 });

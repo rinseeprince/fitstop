@@ -70,6 +70,27 @@ export function useInvalidateCheckInDetail() {
   );
 }
 
+/**
+ * Drops every cached check-in comparison and refetches the one on screen — for
+ * a goal write. A comparison carries whether the goal a check-in was judged
+ * against is still the client's (`goalIsCurrent`), the one live answer on a
+ * sent check-in, and a definite one: "Set new goals" shows on it. CLEARED, not
+ * revalidated (CONVENTIONS §7). Every client's: a comparison is keyed by its
+ * check-in alone.
+ */
+export function useClearCheckInComparisons() {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    () =>
+      mutate(
+        (key) => typeof key === "string" && /^\/api\/check-in\/[^/]+\/comparison$/.test(key),
+        undefined,
+        { revalidate: true }
+      ),
+    [mutate]
+  );
+}
+
 function useCheckInDetail(checkInId: string | null) {
   const { data, error, isLoading, mutate } = useSWR<CheckInWithClient>(
     checkInId ? checkInDetailKey(checkInId) : null,

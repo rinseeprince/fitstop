@@ -1,4 +1,5 @@
 import type { BlockWeekOfTotal } from "@/lib/blocks/block-derivations";
+import type { GoalType } from "@/lib/goals/goal-types";
 import type { BlockState } from "@/types/client-blocks";
 import type { NutritionPlanNote } from "@/types/nutrition-plan-notes";
 
@@ -22,13 +23,30 @@ export interface ClientJourneyBlock {
   weekOfTotal: BlockWeekOfTotal | null;
 }
 
-/** The goal in force on the client's today (`client_goals`), resolved through
- *  resolveEffectiveGoal, with that day's deadline — the one client wire that
- *  carries the deadline. A planned goal is not here before its day. A null
- *  weightKg means maintenance — render no goal line. */
+/** The readings a goal's progress is judged from (kg, %): the client's newest,
+ *  and the ones on the goal's start day, which its progress runs from. */
+export interface ClientJourneyGoalReadings {
+  weightKg: number | null;
+  bodyFatPercentage: number | null;
+  startWeightKg: number | null;
+  startBodyFatPercentage: number | null;
+}
+
+/** The goal in force on the client's today (`client_goals`), with that day's
+ *  deadline — the one client wire that carries the deadline. A planned goal is
+ *  not here before its day. `weightKg` is resolved through
+ *  resolveEffectiveGoal: null means maintenance. The rest are what the
+ *  client's goal card shows — optional on the wire, all null when no goal is
+ *  in force; `description` is the goal's own words, the client's for the goal
+ *  their questionnaire set. */
 interface ClientJourneyGoal {
   weightKg: number | null;
   deadline: string | null;
+  name?: string | null;
+  type?: GoalType | null;
+  bodyFatPercentage?: number | null;
+  description?: string | null;
+  readings?: ClientJourneyGoalReadings | null;
 }
 
 /**
@@ -66,7 +84,7 @@ export interface ClientJourney {
   /** Unarchived blocks in date order. */
   blocks: ClientJourneyBlock[];
   goal: ClientJourneyGoal;
-  /** Latest merged-series weight (kg) overall; the "to go" lines' left side. */
+  /** The newest weight (kg), from the day-values; null for a client with no blocks. */
   currentWeightKg: number | null;
   /** See the type doc: the shape is the policy. `null` = no current block. */
   currentBlockNotes: ClientJourneyCurrentBlockNotes | null;

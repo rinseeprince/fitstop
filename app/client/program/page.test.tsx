@@ -34,6 +34,12 @@ vi.mock("@/components/client-portal/program/journey-section", () => ({
   JourneySection: () => <div data-testid="journey-section" />,
 }));
 
+vi.mock("@/components/client-portal/program/goal-card", () => ({
+  GoalCard: ({ goal }: { goal?: { name?: string | null } }) => (
+    <div data-testid="goal-card">{goal?.name}</div>
+  ),
+}));
+
 type SWRState = {
   data?: unknown;
   error?: unknown;
@@ -181,6 +187,31 @@ describe("ProgramPage", () => {
     expect(screen.getByText("No program yet")).toBeInTheDocument();
   });
 
+  // The goal left the block card (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d2):
+  // every client with a goal sees it, block or no block.
+  it("mounts the goal card first, from the journey's goal, whether or not there are blocks", () => {
+    setSWR({
+      "/api/client/training-plan": {
+        data: { success: true, data: makeTrainingPlan() },
+      },
+      "/api/client/nutrition-plan": { data: { success: true, data: null } },
+      "/api/client/journey": {
+        data: {
+          success: true,
+          data: { clientToday: "2026-08-12", blocks: [], goal: { weightKg: 71.9, deadline: null, name: "Trim down" } },
+        },
+      },
+    });
+    render(<ProgramPage />);
+
+    const card = screen.getByTestId("goal-card");
+    expect(card).toHaveTextContent("Trim down");
+    expect(
+      card.compareDocumentPosition(screen.getByTestId("journey-section")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("a journey fetch failure drops only the section — the plan cards stay", () => {
     setSWR({
       "/api/client/training-plan": {
@@ -192,6 +223,7 @@ describe("ProgramPage", () => {
     render(<ProgramPage />);
 
     expect(screen.queryByTestId("journey-section")).toBeNull();
+    expect(screen.queryByTestId("goal-card")).toBeNull();
     expect(screen.getByTestId("training-plan-card")).toBeInTheDocument();
     expect(screen.queryByText(/couldn't load your program/i)).toBeNull();
   });

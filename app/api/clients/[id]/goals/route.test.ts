@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
-import { GET, POST, PUT } from "./route";
+import { GET, POST } from "./route";
 
 vi.mock("@/lib/rate-limit", () => ({ coachApiRateLimit: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/csrf-protection", () => ({ requireCSRFProtection: vi.fn().mockResolvedValue(null) }));
@@ -16,7 +16,7 @@ vi.mock("@/services/client-goal-writes-service", () => {
       super(message);
     }
   }
-  return { GoalWriteError, addGoal: vi.fn(), saveDetailsSheetGoal: vi.fn() };
+  return { GoalWriteError, addGoal: vi.fn() };
 });
 vi.mock("@/services/today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("@/services/audit-log-service", () => ({ recordAuditEvent: vi.fn().mockResolvedValue(undefined) }));
@@ -24,12 +24,17 @@ vi.mock("@/services/audit-log-service", () => ({ recordAuditEvent: vi.fn().mockR
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getGoalsOverview } from "@/services/client-goals-service";
-import { addGoal, GoalWriteError, saveDetailsSheetGoal } from "@/services/client-goal-writes-service";
+import { addGoal, GoalWriteError } from "@/services/client-goal-writes-service";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 
 const params = { params: Promise.resolve({ id: "client-1" }) };
-const OVERVIEW = { current: { id: "goal-now", name: "Lose weight" }, planned: [] };
+const OVERVIEW = {
+  current: { id: "goal-now", name: "Lose weight" },
+  planned: [],
+  previous: null,
+  clientToday: "2026-09-22",
+};
 
 function request(method: string, body?: unknown) {
   return new NextRequest("http://localhost:3000/api/clients/client-1/goals", {
@@ -49,7 +54,7 @@ describe("/api/clients/[id]/goals", () => {
   });
 
   describe("GET", () => {
-    it("answers today's goal and the planned ones, uncached", async () => {
+    it("answers today's goal, the planned ones, the one before and the client's today, uncached", async () => {
       const response = await GET(request("GET"), params);
       expect(response.status).toBe(200);
       expect(response.headers.get("Cache-Control")).toBe("no-store");
@@ -102,9 +107,17 @@ describe("/api/clients/[id]/goals", () => {
 
     it("plans a goal from a later day under the coach's name for it", async () => {
       vi.mocked(addGoal).mockResolvedValue("goal-planned");
-      await POST(request("POST", { type: "recomposition", name: "Summer recomp", startsOn: "2026-10-26" }), params);
+      await POST(
+        request("POST", {
+          type: "recomposition",
+          name: "Summer recomp",
+          targetBodyFatPercentage: 17.5,
+          startsOn: "2026-10-26",
+        }),
+        params
+      );
       expect(addGoal).toHaveBeenCalledWith(
-        expect.objectContaining({ startsOn: "2026-10-26", name: "Summer recomp" })
+        expect.objectContaining({ startsOn: "2026-10-26", name: "Summer recomp", targetBodyFatPercentage: 17.5 })
       );
       expect(recordAuditEvent).toHaveBeenCalledWith(
         expect.objectContaining({ metadata: { startsOn: "2026-10-26", planned: true } })
@@ -114,6 +127,14 @@ describe("/api/clients/[id]/goals", () => {
     it("refuses a type that is not one of the six before writing", async () => {
       const response = await POST(request("POST", { type: "fat_loss" }), params);
       expect(response.status).toBe(400);
+      expect(addGoal).not.toHaveBeenCalled();
+    });
+
+    it("refuses a goal without the target its type needs, before writing", async () => {
+      const noWeight = await POST(request("POST", { type: "lose_weight", targetBodyFatPercentage: 19.5 }), params);
+      expect(noWeight.status).toBe(400);
+      const noBodyFat = await POST(request("POST", { type: "recomposition", targetWeight: 73.4 }), params);
+      expect(noBodyFat.status).toBe(400);
       expect(addGoal).not.toHaveBeenCalled();
     });
 
@@ -138,40 +159,6 @@ describe("/api/clients/[id]/goals", () => {
       expect(body.error).toBe("The deadline runs into Peak, which starts 9 Nov. Move Peak to 21 Nov or delete it.");
       expect(body.fixes).toHaveLength(2);
       expect(recordAuditEvent).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("PUT (the details sheet)", () => {
-    it("saves the sheet's changed fields and audits what the save did", async () => {
-      vi.mocked(saveDetailsSheetGoal).mockResolvedValue({ wrote: "deadline", goalId: "goal-now" });
-      const response = await PUT(request("PUT", { goalDeadline: "2027-03-12" }), params);
-      expect(response.status).toBe(200);
-      expect(saveDetailsSheetGoal).toHaveBeenCalledWith("client-1", { goalDeadline: "2027-03-12" }, "coach-1");
-      expect(recordAuditEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ action: "goal.deadline", targetId: "goal-now" })
-      );
-    });
-
-    it("audits a new goal as a create and a corrected one as an update", async () => {
-      vi.mocked(saveDetailsSheetGoal).mockResolvedValueOnce({ wrote: "create", goalId: "goal-a" });
-      await PUT(request("PUT", { goalWeight: 77.7 }), params);
-      vi.mocked(saveDetailsSheetGoal).mockResolvedValueOnce({ wrote: "edit", goalId: "goal-b" });
-      await PUT(request("PUT", { goalWeight: 77.9 }), params);
-      expect(vi.mocked(recordAuditEvent).mock.calls.map(([event]) => event.action)).toEqual([
-        "goal.create",
-        "goal.update",
-      ]);
-    });
-
-    it("audits nothing when nothing was written", async () => {
-      vi.mocked(saveDetailsSheetGoal).mockResolvedValue({ wrote: "nothing", goalId: "goal-now" });
-      await PUT(request("PUT", { goalBodyFatPercentage: 14 }), params);
-      expect(recordAuditEvent).not.toHaveBeenCalled();
-    });
-
-    it("refuses an empty body", async () => {
-      expect((await PUT(request("PUT", {}), params)).status).toBe(400);
-      expect(saveDetailsSheetGoal).not.toHaveBeenCalled();
     });
   });
 });

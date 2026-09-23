@@ -59,6 +59,7 @@ import { getCoachTodayString, getClientTodayString } from './today-service'
 import { addGoal } from './client-goal-writes-service'
 import type { MeasurementReading } from '@/lib/measurements/day-values'
 import {
+  CreateClientInputError,
   createClient,
   getClientsForCoach,
   getClientById,
@@ -182,7 +183,7 @@ describe('Client Service', () => {
         name: 'Test Client',
         email: 'test@example.com',
         currentWeight: 180,
-        goalWeight: 170,
+        goal: { type: 'lose_weight', targetWeight: 170 },
       } as any)
 
       expect(result.id).toBe('client-123')
@@ -294,7 +295,7 @@ describe('Client Service', () => {
         name: 'Test Client',
         email: 'test@example.com',
         currentWeight: 81.6466,
-        goalWeight: 77.1107,
+        goal: { type: 'lose_weight', targetWeight: 77.1107 },
         height: 180.34,
       } as any)
 
@@ -367,7 +368,7 @@ describe('Client Service', () => {
       expect(appendMeasurements).not.toHaveBeenCalled()
     })
 
-    it("sets the first goal from the CLIENT's today, typed and named from its target against the weight the coach entered", async () => {
+    it("sets the first goal the form set from the new client's today — its type, name, targets, deadline and words", async () => {
       const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
 
@@ -375,59 +376,92 @@ describe('Client Service', () => {
         name: 'Test Client',
         email: 'test@example.com',
         currentWeight: 93.4,
-        goalWeight: 86.2,
+        goal: {
+          type: 'lose_weight',
+          name: 'Lean out',
+          targetWeight: 86.2,
+          deadline: '2026-12-11',
+          description: 'Fit into the suit',
+        },
       })
 
-      // The client's calendar (2026-09-01), not the coach's (2026-09-02).
-      expect(getClientTodayString).toHaveBeenCalledWith('client-123')
+      // A client with no timezone of their own yet reads today on their
+      // coach's calendar (getClientTodayString's fallback), so the one day read
+      // before the row existed starts the goal — no second read after it.
+      expect(getClientTodayString).not.toHaveBeenCalled()
       expect(addGoal).toHaveBeenCalledWith({
         clientId: 'client-123',
-        today: '2026-09-01',
-        startsOn: '2026-09-01',
+        today: '2026-09-02',
+        startsOn: '2026-09-02',
         source: 'coach',
         setBy: 'coach-456',
         type: 'lose_weight',
-        name: 'Lose weight',
+        name: 'Lean out',
         targetWeight: 86.2,
         targetBodyFatPercentage: null,
-        description: null,
-        deadline: null,
+        description: 'Fit into the suit',
+        deadline: '2026-12-11',
       })
     })
 
-    it('types a target above the weight entered as building muscle, and a body-fat target alone as a recomp', async () => {
+    // Checked before the insert: a refused goal leaves no client behind for the
+    // coach's retry to collide with.
+    it("refuses a goal whose deadline falls before the new client's today, writing nothing", async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      const refused = await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+        currentWeight: 85.3,
+        goal: { type: 'lose_weight', targetWeight: 80.9, deadline: '2026-09-01' },
+      }).catch((error: unknown) => error)
+
+      expect(refused).toBeInstanceOf(CreateClientInputError)
+      expect((refused as Error).message).toBe("The goal's deadline can't be before 2 Sept.")
+      expect(supabaseAdmin.from).not.toHaveBeenCalled()
+      expect(appendMeasurements).not.toHaveBeenCalled()
+      expect(addGoal).not.toHaveBeenCalled()
+    })
+
+    it("takes a deadline on the new client's today itself", async () => {
       const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
 
       await createClient('coach-456', {
         name: 'Test Client',
         email: 'test@example.com',
-        currentWeight: 64.8,
-        goalWeight: 70.3,
+        currentWeight: 92.1,
+        goal: { type: 'lose_weight', targetWeight: 87.4, deadline: '2026-09-02' },
       })
+
+      expect(addGoal).toHaveBeenCalledWith(expect.objectContaining({ startsOn: '2026-09-02', deadline: '2026-09-02' }))
+    })
+
+    it("names a goal from its type when the form gives it no name, and leaves out what it did not set", async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
       await createClient('coach-456', {
         name: 'Test Client',
         email: 'test@example.com',
         currentWeight: 101.7,
-        goalBodyFatPercentage: 19.5,
+        goal: { type: 'recomposition', targetBodyFatPercentage: 19.5 },
       })
 
-      expect(addGoal).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ type: 'build_muscle', name: 'Build muscle', targetWeight: 70.3 })
-      )
-      expect(addGoal).toHaveBeenNthCalledWith(
-        2,
+      expect(addGoal).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'recomposition',
           name: 'Recomp',
           targetWeight: null,
           targetBodyFatPercentage: 19.5,
+          description: null,
+          deadline: null,
         })
       )
     })
 
-    it('sets no goal when the form carried no target', async () => {
+    it('sets no goal when the form set none', async () => {
       const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
 
@@ -449,8 +483,7 @@ describe('Client Service', () => {
         name: 'Test Client',
         email: 'test@example.com',
         currentWeight: 79.6,
-        goalWeight: 74.2,
-        goalBodyFatPercentage: 16.8,
+        goal: { type: 'lose_weight', targetWeight: 74.2, targetBodyFatPercentage: 16.8 },
       })
 
       expect(client.goalId).toBe('goal-31')
@@ -488,7 +521,7 @@ describe('Client Service', () => {
           name: 'Test Client',
           email: 'test@example.com',
           currentWeight: 97.3,
-          goalWeight: 90.6,
+          goal: { type: 'lose_weight', targetWeight: 90.6 },
         })
       ).rejects.toThrow('goal write failed')
     })

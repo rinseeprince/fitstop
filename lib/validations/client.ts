@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GOAL_BODY_FAT_MAX, GOAL_BODY_FAT_MIN, WEIGHT_KG_MAX, WEIGHT_KG_MIN } from "@/lib/constants";
+import { firstGoalSchema } from "@/lib/validations/client-goals";
 
 // Weights are KILOGRAMS and lengths are CENTIMETRES on this wire, always.
 //
@@ -30,19 +30,10 @@ export const createClientSchema = z.object({
   gender: z.enum(["male", "female", "other"]).optional(),
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").optional(),
 
-  // The client's first goal's targets — the goal's own bounds, the same as
-  // every goal write (lib/validations/client-goals.ts), so a target the goal
-  // table refuses is refused here, before the client row exists.
-  goalWeight: z
-    .number()
-    .min(WEIGHT_KG_MIN, `Goal weight must be at least ${WEIGHT_KG_MIN} kg`)
-    .max(WEIGHT_KG_MAX, `Goal weight must be at most ${WEIGHT_KG_MAX} kg`)
-    .optional(),
-  goalBodyFatPercentage: z
-    .number()
-    .min(GOAL_BODY_FAT_MIN, `Goal body fat must be between ${GOAL_BODY_FAT_MIN} and ${GOAL_BODY_FAT_MAX}%`)
-    .max(GOAL_BODY_FAT_MAX, `Goal body fat must be between ${GOAL_BODY_FAT_MIN} and ${GOAL_BODY_FAT_MAX}%`)
-    .optional(),
+  // The client's first goal, from their today — the same fields and rules as
+  // every goal write (lib/validations/client-goals.ts), so a goal the goal
+  // functions refuse is refused here, before the client row exists.
+  goal: firstGoalSchema.optional(),
 
   // Initial current metrics
   currentWeight: z.number().positive("Current weight must be positive").optional(),

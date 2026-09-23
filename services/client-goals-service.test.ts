@@ -124,6 +124,33 @@ describe("the goals read", () => {
     expect(overview.planned.map((g) => [g.id, g.deadline])).toEqual([["g8", "2027-01-08"]]);
   });
 
+  // The goals sheet floors a goal's start on the client's today, and the
+  // delete confirm names the goal a delete of today's puts back in force.
+  it("carries the client's today and the goal before today's, as it ended", async () => {
+    returns([
+      row("g16", "2026-01-05", { name: "Base" }),
+      row("g13", "2026-04-13", { name: "Maintain", type: "maintain", target_weight: null }),
+      row("g14", "2026-07-27"),
+    ]);
+    vi.mocked(getReadingsOnDay).mockResolvedValue({});
+    const overview = await getGoalsOverview("client-8");
+    expect(overview.clientToday).toBe("2026-09-22");
+    expect(overview.current?.id).toBe("g14");
+    // The one just before today's, never an older one.
+    expect(overview.previous).toMatchObject({ id: "g13", name: "Maintain", endsOn: "2026-07-26" });
+  });
+
+  it("has no goal before today's when today's is the first, and still carries the client's today", async () => {
+    returns([row("g15", "2026-05-18")]);
+    vi.mocked(getReadingsOnDay).mockResolvedValue({});
+    const withOne = await getGoalsOverview("client-8");
+    expect(withOne.previous).toBeNull();
+
+    returns([]);
+    const withNone = await getGoalsOverview("client-8");
+    expect(withNone).toEqual({ current: null, planned: [], previous: null, clientToday: "2026-09-22" });
+  });
+
   it("gives no current goal before the first one starts, and reads no readings", async () => {
     returns([row("g9", "2026-10-05")]);
     const overview = await getGoalsOverview("client-8");

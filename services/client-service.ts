@@ -18,10 +18,11 @@ import {
 } from "@/services/measurements-service";
 import { recordClientStart } from "@/services/client-start-service";
 import { addGoal } from "@/services/client-goal-writes-service";
-import { GOAL_TYPE_SETTINGS, goalTypeFromTargets } from "@/lib/goals/goal-types";
+import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import { getClientTodayString, getCoachTodayString } from "@/services/today-service";
+import { formatDateOnlyShort } from "@/lib/date-helpers";
 
 // Every read that maps to a `Client` carries the two measurement views, so the
 // four reading fields are filled in the same round trip as the row.
@@ -53,6 +54,14 @@ const calculateEngagement = (lastCheckInDate: string | null): "high" | "medium" 
 };
 
 
+/** A new client the request's own values refuse, before anything is written: the route answers 400 with the message. */
+export class CreateClientInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CreateClientInputError";
+  }
+}
+
 // Create a new client. `goalId` is the first goal's, when the form set one, for
 // the route's audit.
 export const createClient = async (
@@ -60,6 +69,18 @@ export const createClient = async (
   clientData: CreateClientInput
 ): Promise<Client & { inviteSent?: boolean; goalId?: string }> => {
   const isIntakeMode = clientData.setupMode === "intake";
+
+  // The new client's today, which dates their first reading and starts their
+  // first goal. With no timezone of their own yet it is the coach's — the
+  // fallback `getClientTodayString` takes — so it is read once, before the
+  // row exists: a goal whose deadline falls before it is refused while
+  // nothing has been written, and the goal starts on the very day checked.
+  const today = await getCoachTodayString(coachId);
+  if (clientData.goal?.deadline != null && clientData.goal.deadline < today) {
+    throw new CreateClientInputError(
+      `The goal's deadline can't be before ${formatDateOnlyShort(today)}.`
+    );
+  }
 
   // No conversion here. The payload is already canonical: the add-client form
   // collects in the coach's own display units and converts before submitting
@@ -147,7 +168,7 @@ export const createClient = async (
     const appended = await appendMeasurements({
       clientId: client.id,
       source: "intake",
-      recordedOn: await getCoachTodayString(coachId),
+      recordedOn: today,
       values: { weight: currentWeightKg, bodyFat: clientData.currentBodyFatPercentage },
     });
     // The INSERT's returned row carries no embeds, so without this the
@@ -156,34 +177,26 @@ export const createClient = async (
     client.currentBodyFatPercentage = appended.rows.bodyFat?.value;
   }
 
-  // The first goal, when the form carried a target: it starts on the client's
-  // today, through the one goal writer. The form has no type to pick, so the
-  // type comes from the targets against the weight the coach just entered, and
-  // the name from the type; the form has no deadline either. It THROWS, like
-  // the reading above: the client row stands and the request reports failure,
-  // rather than a 201 for a client whose goal was never set.
+  // The first goal, when the form set one: it starts on the client's today,
+  // through the one goal writer, with the form's type, name, targets, deadline
+  // and description. It THROWS, like the reading above: the client row stands
+  // and the request reports failure, rather than a 201 for a client whose goal
+  // was never set.
   let goalId: string | undefined;
-  if (clientData.goalWeight !== undefined || clientData.goalBodyFatPercentage !== undefined) {
-    const targetWeight = clientData.goalWeight ?? null;
-    const targetBodyFatPercentage = clientData.goalBodyFatPercentage ?? null;
-    const type = goalTypeFromTargets({
-      targetWeight,
-      targetBodyFatPercentage,
-      reading: currentWeightKg ?? null,
-    });
-    const today = await getClientTodayString(client.id);
+  const goal = clientData.goal;
+  if (goal) {
     goalId = await addGoal({
       clientId: client.id,
       today,
       startsOn: today,
       source: "coach",
       setBy: coachId,
-      type,
-      name: GOAL_TYPE_SETTINGS[type].name,
-      targetWeight,
-      targetBodyFatPercentage,
-      description: null,
-      deadline: null,
+      type: goal.type,
+      name: goal.name ?? GOAL_TYPE_SETTINGS[goal.type].name,
+      targetWeight: goal.targetWeight ?? null,
+      targetBodyFatPercentage: goal.targetBodyFatPercentage ?? null,
+      description: goal.description ?? null,
+      deadline: goal.deadline ?? null,
     });
   }
 

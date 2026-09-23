@@ -3,17 +3,20 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getGoalsOverview } from "@/services/client-goals-service";
-import { addGoal, saveDetailsSheetGoal } from "@/services/client-goal-writes-service";
+import { addGoal } from "@/services/client-goal-writes-service";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { goalWriteErrorResponse, type GoalWriteAttempt } from "@/lib/goals/goal-write-response";
-import { addGoalSchema, updateGoalsSchema } from "@/lib/validations/client-goals";
+import { addGoalSchema } from "@/lib/validations/client-goals";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** Today's goal — with the readings its progress runs from — and the planned ones. */
+/**
+ * Today's goal — with the readings its progress runs from — the planned ones,
+ * the goal before today's, and the client's today.
+ */
 export async function GET(request: NextRequest, { params }: Params) {
   const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
@@ -92,64 +95,6 @@ export async function POST(request: NextRequest, { params }: Params) {
     return NextResponse.json(
       { success: true, data: await getGoalsOverview(clientId) },
       { status: 201 }
-    );
-  } catch (error) {
-    return goalWriteErrorResponse(error, attempt);
-  }
-}
-
-/**
- * The client details sheet's goal fields, until commit 8d2 gives the goal its
- * own sheet: a target change makes a new goal from today (or corrects today's
- * goal), a deadline change is recorded against today's goal.
- */
-export async function PUT(request: NextRequest, { params }: Params) {
-  const rateLimitResult = await coachApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
-
-  let attempt: GoalWriteAttempt = {};
-  try {
-    const { id: clientId } = await params;
-    const auth = await requireCoachOwnsClient(clientId, request);
-    if (!auth.authorized) return auth.response;
-
-    const validation = updateGoalsSchema.safeParse(await request.json().catch(() => null));
-    if (!validation.success) {
-      return NextResponse.json(
-        { success: false, error: "Invalid input", details: validation.error.errors },
-        { status: 400 }
-      );
-    }
-    attempt = { deadline: validation.data.goalDeadline };
-
-    const saved = await saveDetailsSheetGoal(clientId, validation.data, auth.coachId);
-
-    const action =
-      saved.wrote === "create"
-        ? AUDIT_ACTIONS.GOAL_CREATE
-        : saved.wrote === "edit"
-          ? AUDIT_ACTIONS.GOAL_UPDATE
-          : saved.wrote === "deadline"
-            ? AUDIT_ACTIONS.GOAL_DEADLINE
-            : null;
-    if (action && saved.goalId) {
-      void recordAuditEvent({
-        actorId: auth.coachId,
-        actorRole: "trainer",
-        action,
-        targetTable: "client_goals",
-        targetId: saved.goalId,
-        clientId,
-        request,
-      });
-    }
-
-    return NextResponse.json(
-      { success: true, data: await getGoalsOverview(clientId) },
-      { status: 200 }
     );
   } catch (error) {
     return goalWriteErrorResponse(error, attempt);

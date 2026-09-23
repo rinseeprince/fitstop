@@ -185,6 +185,7 @@
   - Success: `toast.success("Session saved")`; a consequence, when there is one, as `{ description }`.
   - Failure: `toast.error("Save failed", { description: "What went wrong" })`.
   - A confirmation with no verdict: plain `toast("Nothing to clear")` (no icon).
+  - An outcome that can be taken back carries Undo for as long as the undo holds: `toast.success("Goal deleted", { duration: GOAL_UNDO_WINDOW_MS, action: { label: "Undo", onClick } })`.
   - Exactly one toaster — `components/ui/sonner.tsx`, mounted by `app/layout.tsx`. Never mount a second, never restyle a toast at a call site; `components/toaster-ownership.test.ts` scans for both. Copy rules: `docs/newdesignsystem.md` → Toasts.
 
   ## 4. File Size Limits

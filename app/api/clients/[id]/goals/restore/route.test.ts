@@ -42,7 +42,7 @@ describe("POST /api/clients/[id]/goals/restore", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-10" });
-    vi.mocked(getGoalsOverview).mockResolvedValue({ current: null, planned: [] });
+    vi.mocked(getGoalsOverview).mockResolvedValue({ current: null, planned: [], previous: null, clientToday: "2026-10-07" });
   });
 
   it("puts back the signed copy for this client and audits it", async () => {

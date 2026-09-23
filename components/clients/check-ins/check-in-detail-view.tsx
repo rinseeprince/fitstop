@@ -16,7 +16,7 @@ import { CheckInGoalStrip } from "./check-in-goal-strip";
 import { useCheckInDetailData } from "@/hooks/use-check-in-detail-data";
 import { summariseTraining } from "@/lib/training-adherence";
 import { toCheckInReview } from "@/lib/check-in/to-review";
-import { OPEN_PROFILE_EDITOR_PARAM, type ClientTab } from "@/lib/client-tabs";
+import { OPEN_GOALS_SHEET_PARAM, type ClientTab } from "@/lib/client-tabs";
 import type { Client } from "@/types/check-in";
 
 type CheckInDetailViewProps = {
@@ -178,11 +178,11 @@ export const CheckInDetailView = ({
               goalProgress={comparisonData.goalProgress}
               clientName={clientName}
               clientData={comparisonData.comparison.client}
-              // The goal editor is the Overview's details sheet. `checkIn: null`
-              // goes with it so Back does not land on a review left behind.
+              // The goals sheet is the Overview's. `checkIn: null` goes with
+              // it so Back does not land on a review left behind.
               onSetNewGoals={() =>
                 onTabChange("overview", {
-                  [OPEN_PROFILE_EDITOR_PARAM]: "1",
+                  [OPEN_GOALS_SHEET_PARAM]: "1",
                   checkIn: null,
                 })
               }

@@ -38,6 +38,7 @@ const SURFACES: { file: string; derived: RegExp[]; latches?: string[] }[] = [
   { file: "components/clients/metrics/edit-reading-dialog.tsx", derived: [/open=\{row\s*!==?\s*null\}/], latches: ["prevOpen"] },
   { file: "components/clients/metrics/remove-reading-dialog.tsx", derived: [/open=\{row\s*!==?\s*null\}/], latches: ["prevOpen"] },
   { file: "components/clients/nutrition/calendar/nutrition-edit-targets-dialog.tsx", derived: [], latches: ["latchedDays"] },
+  { file: "components/clients/goals/delete-goal-dialog.tsx", derived: [/open=\{subject\s*!==?\s*null\}/], latches: ["prevOpen"] },
 ];
 
 // Each host keeps its subjects with the hook, and no close nulls one.
@@ -52,6 +53,9 @@ const HOSTS: { file: string; nulled: string[] }[] = [
   { file: "components/clients/training/training-history-table.tsx", nulled: ["setChartColumn(null)", "setSelectedSessionLogId(null)"] },
   { file: "components/clients/metrics/metrics-tab-content.tsx", nulled: ["setEditingReading(null)", "setRemovingReading(null)"] },
   { file: "hooks/use-nutrition-calendar-editing.ts", nulled: ["setEditorOpen(false)"] },
+  { file: "components/clients/goals/goals-sheet.tsx", nulled: ["setDeleteTarget(null)"] },
+  { file: "components/clients/goals/goal-form.tsx", nulled: ["setDeleteTarget(null)"] },
+  { file: "components/clients/client-overview-tab.tsx", nulled: ["setGoalsSheetOpen(false)"] },
 ];
 
 describe("a dialog's subject outlives its close", () => {
@@ -83,5 +87,10 @@ describe("a dialog's subject outlives its close", () => {
     const exercises = read("components/clients/training/program-builder/library-exercise-list.tsx");
     expect(exercises).toContain("key={`exercise-form-${formDialog.openKey}`}");
     expect(read("components/programs/exercise-form-dialog.tsx")).not.toMatch(/useEffect\s*\(/);
+  });
+
+  it("the goal delete confirm is keyed by the opening in both its hosts", () => {
+    expect(read("components/clients/goals/goals-sheet.tsx")).toContain("key={`delete-goal-${deleteDialog.openKey}`}");
+    expect(read("components/clients/goals/goal-form.tsx")).toContain("key={`delete-fix-${deleteConfirm.openKey}`}");
   });
 });

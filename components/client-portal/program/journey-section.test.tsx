@@ -1,13 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-
-// Required, not optional: units-context imports auth-context, which constructs
-// the browser Supabase client at module load and throws without env vars. Any
-// test rendering a component that calls useUnits() must stub this module.
-const useUnitsMock = vi.fn();
-vi.mock("@/contexts/units-context", () => ({
-  useUnits: () => useUnitsMock(),
-}));
 
 import { JourneySection } from "./journey-section";
 import type { ClientJourney, ClientJourneyBlock } from "@/types/client-journey";
@@ -37,15 +29,10 @@ const journey = (overrides: Partial<ClientJourney> = {}): ClientJourney => ({
 
 beforeEach(() => {
   cleanup();
-  useUnitsMock.mockReturnValue({
-    preference: "metric",
-    isLoading: false,
-    error: null,
-  });
 });
 
 describe("JourneySection", () => {
-  it("renders the current block: name, focus, week line, time-progress bar, the goal line — never a block target", () => {
+  it("renders the current block: name, focus, week line, time-progress bar — never a target or the goal", () => {
     const { container } = render(<JourneySection journey={journey()} />);
 
     expect(screen.getByText("Build")).toBeInTheDocument();
@@ -56,37 +43,9 @@ describe("JourneySection", () => {
     const fill = container.querySelector("div[style]") as HTMLElement;
     expect(fill.style.width).toBe("50%");
 
-    expect(screen.getByText("Your goal:")).toBeInTheDocument();
-    expect(
-      screen.getByText(/85\.0 kg by 1 Dec, 4\.9 kg to go/)
-    ).toBeInTheDocument();
-    // A block carries no target: the goal is the client's, and the only line.
-    expect(screen.queryByText("This block:")).not.toBeInTheDocument();
-    expect(screen.getAllByText(/to go/)).toHaveLength(1);
-  });
-
-  it("omits the goal line on maintenance", () => {
-    render(
-      <JourneySection
-        journey={journey({ goal: { weightKg: null, deadline: null } })}
-      />
-    );
-
-    expect(screen.queryByText("Your goal:")).not.toBeInTheDocument();
-  });
-
-  it("drops the 'to go' tail when no current weight exists; the deadline clause when none is set", () => {
-    render(
-      <JourneySection
-        journey={journey({
-          currentWeightKg: null,
-          goal: { weightKg: 85, deadline: null },
-        })}
-      />
-    );
-
-    expect(screen.getByText("85.0 kg")).toBeInTheDocument();
-    expect(screen.queryByText(/to go/)).not.toBeInTheDocument();
+    // The goal is the client's own card (goal-card.tsx), block or no block.
+    expect(screen.queryByText(/Your goal/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/to go|kg/)).not.toBeInTheDocument();
   });
 
   it("finished blocks: name, dates and weeks — no weight figure", () => {
@@ -121,23 +80,8 @@ describe("JourneySection", () => {
     expect(screen.getByText("Base")).toBeInTheDocument();
     expect(screen.getByText(/1 Jun – 28 Jun · 4 weeks/)).toBeInTheDocument();
     expect(screen.getByText("Intro")).toBeInTheDocument();
-    // No current block, so no goal line either: nothing on the section is a weight.
+    // Nothing on the section is a weight.
     expect(screen.queryByText(/kg/)).not.toBeInTheDocument();
-  });
-
-  it("renders weights in the viewer's unit (imperial)", () => {
-    useUnitsMock.mockReturnValue({
-      preference: "imperial",
-      isLoading: false,
-      error: null,
-    });
-
-    render(<JourneySection journey={journey()} />);
-
-    // current 89.9 kg → 198.2 lbs; goal 85 kg → 187.4 lbs.
-    expect(
-      screen.getByText(/187\.4 lbs by 1 Dec, 10\.8 lbs to go/)
-    ).toBeInTheDocument();
   });
 
   it("renders nothing when the journey holds only future blocks", () => {

@@ -2,20 +2,18 @@
 
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { goalState } from "@/lib/goals/goal-state";
-import { goalDirection, type GoalMetric, type GoalType } from "@/lib/goals/goal-types";
-import { containsDigit } from "@/components/clients/metrics/metrics-format";
+import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { deadlineRemaining, formatDateOnlyShort } from "./overview-format";
 import { InlineMono } from "./overview-primitives";
 import { GoalHistoryPopover } from "./goal-history-popover";
+import { BAND_DIVIDER, BAND_VALUE_CLASS, GoalCell, TargetCell } from "./goal-cells";
 import {
   MONO,
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { Client } from "@/types/check-in";
-import type { CurrentGoal } from "@/types/client-goals";
+import type { CurrentGoal, GoalOnDay } from "@/types/client-goals";
 import type { MeasurementSeries } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { TextSkeleton } from "@/components/text-skeleton";
@@ -24,12 +22,12 @@ import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 
 /**
  * Where this client stands: the progression chart beside the four facts that
- * describe a destination rather than a period.
+ * describe a destination rather than a period — the goal card (the goal, its
+ * targets and its deadline) and the energy pair.
  *
  * Nothing in this band is windowed. The chart runs the client's whole journey
- * and the four cells are structural — goal targets, the energy pair and the
- * deadline describe a client rather than a period. The Signals card below is
- * the page's one trailing-window surface, and it names its own fortnight.
+ * and the four cells are structural — they describe a client rather than a
+ * period.
  *
  * The footer's lifetime delta keeps its `Since start:` prefix anyway: it is a
  * range figure sitting among four that are not, and the prefix is what tells
@@ -38,16 +36,15 @@ import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 type StatusBandProps = {
   client: Client;
   /**
-   * The goal in force on the client's today, resolved by the tab: both targets
-   * and the deadline the cells show.
+   * The goal in force on the client's today, as stored, with the client's
+   * readings on its start day — which its chips measure from, in the direction
+   * its type sets. null = no goal in force.
    */
-  goal: EffectiveGoal;
-  /**
-   * Where that goal's progress runs from: its type, which decides the direction
-   * it is approached in, and the client's readings on its start day (kg, %).
-   * The goal chips measure from here. null = no goal in force.
-   */
-  goalStart: Pick<CurrentGoal, "type" | "startReadings"> | null;
+  goal: CurrentGoal | null;
+  /** The goal planned next, soonest first; null = none planned. */
+  nextGoal: GoalOnDay | null;
+  /** Opens the goals sheet. */
+  onEditGoals: () => void;
   /**
    * The progression chart, mounted by the tab so the band stays presentational
    * and the chart's own SWR read stays out of it.
@@ -63,10 +60,12 @@ type StatusBandProps = {
    */
   series: MeasurementSeries | null;
   onOpenMetrics: () => void;
-  /** The goal read is still in flight: the three goal-backed cells render
-   *  pending instead of claiming "Not set" — unresolved is never rendered as
-   *  empty (docs/newdesignsystem.md → "Loading & async states"). */
+  /** The goal read is still in flight: the three goal cells render pending
+   *  instead of claiming "Not set" — unresolved is never rendered as empty
+   *  (docs/newdesignsystem.md → "Loading & async states"). */
   goalPending?: boolean;
+  /** The goal read failed: the goal cells say so rather than "Not set". */
+  goalFailed?: boolean;
   /** The series read is still in flight: the chips and the pill render pending. */
   seriesPending?: boolean;
 };
@@ -82,15 +81,6 @@ function baselineOf(series: MeasurementSeries | null, key: "weight" | "bodyFat")
   return series?.baseline?.[key]?.value;
 }
 
-const DIVIDER = "border-[rgba(255,255,255,0.07)]";
-
-type ChipTone = "positive" | "warning";
-
-const GOAL_CHIP_TONE: Record<ChipTone, string> = {
-  positive: "bg-[rgba(13,148,136,0.15)] text-[#0d9488]",
-  warning: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
-};
-
 function formatDelta(current?: number, start?: number): string | null {
   if (current == null || start == null) return null;
   const delta = current - start;
@@ -98,66 +88,19 @@ function formatDelta(current?: number, start?: number): string | null {
 }
 
 /**
- * Goal chip copy. `goalState` reports reached / beyond / gap, judged in the
- * direction the goal is approached: the goal type's where it decides one, else
- * the side of the goal's start reading the target sits on (`goalDirection`).
- * "Under" vs "over" follows that same direction, so a goal with none — no type
- * direction and no start reading — can only read reached or to go.
- *
- * `start`, `current` and `goal` in one unit, any unit: converting never moves a
- * reading to the other side of its target, so the direction holds.
- */
-function goalChip({
-  type,
-  metric,
-  start,
-  current,
-  goal,
-  unit,
-}: {
-  type: GoalType | undefined;
-  metric: GoalMetric;
-  start: number | undefined;
-  current: number | undefined;
-  goal: number | undefined;
-  unit: string;
-}): { text: string; tone: ChipTone } | null {
-  if (goal == null) return null;
-  const direction = goalDirection(type, metric, goal, start);
-  const state = goalState({ start: start ?? null, current: current ?? null, goal, direction });
-  if (!state) return null;
-
-  if (state.state === "reached") return { text: "Goal reached", tone: "positive" };
-
-  const amount = `${state.amount.toFixed(1)}${unit === "%" ? "%" : ` ${unit}`}`;
-  if (state.state === "beyond") {
-    return { text: `${amount} ${direction < 0 ? "under" : "over"} goal`, tone: "positive" };
-  }
-  return { text: `${amount} to go`, tone: "warning" };
-}
-
-/**
  * One value tier for the whole band: 18px mono semibold, StatStrip's number
  * tier (overview-primitives.tsx), so the dark band reads at the same scale as
- * the white cards rather than a size of its own.
- *
- * The deadline used to sit a tier below on the argument that a date the coach
- * typed is not a headline. It reads as an afterthought beside three 18px
- * figures, and it is one of the four facts this band exists to state — so it
- * matches them (owner call, 2026-08-28).
- *
- * `font-semibold` overrides STAT_VALUE_DARK_CLASS's `font-bold` (cn merges),
- * which was written for the 24-32px heroes.
+ * the white cards rather than a size of its own. The deadline matches the
+ * figures: it is one of the facts this band exists to state (owner call,
+ * 2026-08-28). `font-semibold` overrides STAT_VALUE_DARK_CLASS's `font-bold`
+ * (cn merges), which was written for the 24-32px heroes.
  */
-const VALUE_CLASS = "text-[18px] font-semibold";
-
 function BandCell({
   label,
   value,
   unit,
   sub,
   subIsNumeric = true,
-  chip,
   borderClass,
   emptyLabel = "Not set",
   pending = false,
@@ -168,7 +111,6 @@ function BandCell({
   sub?: string;
   /** Word-only sub-lines stay sans, the divider grammar's rule for metas. */
   subIsNumeric?: boolean;
-  chip?: { text: string; tone: ChipTone } | null;
   /**
    * Which edges this cell draws, spelled per cell rather than derived from an
    * index: the band reflows from four columns to two, so "has a cell to my
@@ -182,16 +124,16 @@ function BandCell({
   pending?: boolean;
 }) {
   return (
-    <div className={cn("min-w-0 px-5 py-4", DIVIDER, borderClass)}>
+    <div className={cn("min-w-0 px-5 py-4", BAND_DIVIDER, borderClass)}>
       <p className={STAT_LABEL_DARK_CLASS}>{label}</p>
       <div className="mt-1">
         {pending ? (
-          <span className={cn(STAT_VALUE_DARK_CLASS, VALUE_CLASS, "leading-tight")}>
+          <span className={cn(STAT_VALUE_DARK_CLASS, BAND_VALUE_CLASS, "leading-tight")}>
             <TextSkeleton className="w-14" />
           </span>
         ) : value ? (
           <>
-            <span className={cn(STAT_VALUE_DARK_CLASS, VALUE_CLASS, "leading-tight")}>
+            <span className={cn(STAT_VALUE_DARK_CLASS, BAND_VALUE_CLASS, "leading-tight")}>
               {value}
             </span>
             {unit && (
@@ -214,18 +156,6 @@ function BandCell({
           {sub}
         </p>
       )}
-      {chip && !pending && (
-        <span
-          className={cn(
-            // CHIP_NEUTRAL_CLASS's geometry (10px / px-1.5 / py-px), tinted.
-            "mt-1 inline-block rounded-[4px] px-1.5 py-px text-[10px] font-medium",
-            GOAL_CHIP_TONE[chip.tone],
-            containsDigit(chip.text) && MONO
-          )}
-        >
-          {chip.text}
-        </span>
-      )}
     </div>
   );
 }
@@ -233,11 +163,13 @@ function BandCell({
 export function StatusBand({
   client,
   goal,
-  goalStart,
+  nextGoal,
+  onEditGoals,
   chart,
   series,
   onOpenMetrics,
   goalPending = false,
+  goalFailed = false,
   seriesPending = false,
 }: StatusBandProps) {
   // Body weights convert freely — formatWeight, never formatLoad.
@@ -250,28 +182,6 @@ export function StatusBand({
   const currentWeight = kg(newestOf(series, "weight"));
   const baselineBodyFat = baselineOf(series, "bodyFat");
   const currentBodyFat = newestOf(series, "bodyFat");
-  const goalWeight = kg(goal.goalWeightKg);
-  const goalBodyFat = goal.goalBodyFatPercentage ?? undefined;
-
-  // The chips measure from the goal's start, the pill from the client's.
-  const weightChip = goalChip({
-    type: goalStart?.type,
-    metric: "weight",
-    start: kg(goalStart?.startReadings.weight),
-    current: currentWeight,
-    goal: goalWeight,
-    unit: weightUnit,
-  });
-  const bfChip = goalChip({
-    type: goalStart?.type,
-    metric: "bodyFat",
-    start: goalStart?.startReadings.bodyFat ?? undefined,
-    current: currentBodyFat,
-    goal: goalBodyFat,
-    unit: "%",
-  });
-  // The chips need both reads; the deadline cell only the goal.
-  const chipPending = goalPending || seriesPending;
 
   // Deltas between the DISPLAYED values, so the footer reconciles with the
   // numbers the chart shows.
@@ -282,7 +192,8 @@ export function StatusBand({
     bfDelta && `${bfDelta}%`,
   ].filter(Boolean);
 
-  const remaining = goal.deadline ? deadlineRemaining(goal.deadline, client.timezone) : null;
+  const deadline = goal?.deadline ?? null;
+  const remaining = deadline ? deadlineRemaining(deadline, client.timezone) : null;
   // Every "since start" figure waits for the start date; the big numbers above
   // do not (they are "now", the newest reading of any date).
   const startsAhead =
@@ -299,23 +210,26 @@ export function StatusBand({
           structural; the divider between them is the boundary the Progression
           rail's control does and does not reach. */}
       <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <div className={cn("border-b lg:border-b-0 lg:border-r", DIVIDER)}>{chart}</div>
+        <div className={cn("border-b lg:border-b-0 lg:border-r", BAND_DIVIDER)}>{chart}</div>
 
         <div className="grid grid-cols-2">
-          <BandCell
-            label="Goal weight"
-            value={goalWeight?.toFixed(1)}
-            unit={weightUnit}
-            chip={weightChip}
-            pending={chipPending}
+          <GoalCell
+            goal={goal}
+            nextGoal={nextGoal}
+            pending={goalPending}
+            failed={goalFailed}
+            onEditGoals={onEditGoals}
           />
-          <BandCell
-            label="Goal body fat"
-            value={goalBodyFat?.toFixed(1)}
-            unit="%"
-            chip={bfChip}
+          {/* The chips need both reads; the goal and deadline cells only the goal. */}
+          <TargetCell
+            goal={goal}
+            currentWeight={currentWeight}
+            currentBodyFat={currentBodyFat}
+            toDisplayWeight={kg}
+            weightUnit={weightUnit}
+            pending={goalPending || seriesPending}
+            failed={goalFailed}
             borderClass="border-l"
-            pending={chipPending}
           />
           <BandCell
             label="BMR"
@@ -326,17 +240,18 @@ export function StatusBand({
             borderClass="border-t"
           />
           <BandCell
-            label="Deadline"
-            value={goal.deadline ? formatDateOnlyShort(goal.deadline) : undefined}
+            label={goal ? GOAL_TYPE_SETTINGS[goal.type].deadlineLabel : "Deadline"}
+            value={deadline ? formatDateOnlyShort(deadline) : undefined}
             sub={remaining?.text}
             subIsNumeric={remaining?.isNumeric ?? false}
             borderClass="border-l border-t"
+            emptyLabel={goalFailed ? "—" : "Not set"}
             pending={goalPending}
           />
         </div>
       </div>
 
-      <div className={cn("flex items-center gap-4 border-t px-5 py-3", DIVIDER)}>
+      <div className={cn("flex items-center gap-4 border-t px-5 py-3", BAND_DIVIDER)}>
         {startsAhead && client.startDate ? (
           <span className="rounded-[4px] bg-[rgba(255,255,255,0.06)] px-2 py-0.5 text-[10.5px] text-[rgba(255,255,255,0.55)]">
             Starts<InlineMono>{formatDateOnlyShort(client.startDate)}</InlineMono>

@@ -1,5 +1,28 @@
 # Technical Debt Tracker
 
+## A restored goal skips the deadline rules
+
+Logged: 2026-09-23 (commit 8d2, from its independent review).
+
+`restore_client_goal` (migration 193) refuses only `exists` and `day_taken`. It does not run the two
+deadline guards every other goal write does — `deadline_after_next` (a deadline on or after the next
+goal's start) and `previous_deadline` (a planned start on or before the previous goal's deadline).
+So an Undo can put back a goal the rules would refuse to add.
+
+**How it is reached:** on the goals sheet, a coach deletes a planned goal from its row, then — inside
+the undo window — gives the goal before it a deadline past the deleted goal's start (allowed: it is
+gone), then presses Undo. The planned goal comes back beside a deadline that runs into it: the goal
+card reads "Next: Peak from 10 Oct" under a deadline of 20 Oct, and every later edit of Peak is
+refused with `previous_deadline` until the coach ends that deadline. The delete a refusal offers as
+a fix carries no Undo for exactly this reason — putting that goal back would bring back the clash
+the delete settled.
+
+**Fix:** `restore_client_goal` runs the same two guards and refuses with their codes; the restore
+route already turns a refusal into its sentence and fixes (`goalWriteErrorResponse`). It is a
+migration, so it waited for the next one.
+
+---
+
 ## A moved workout leaves its log's stored date behind
 
 Logged: 2026-09-17 (training upgrade, commit 9).
@@ -52,19 +75,19 @@ Two design constraints that survive with it: the stored deficit is **intent, not
 
 ---
 
-## The two goal targets contradict each other on the coach Overview status card
+## A goal's two targets can contradict each other on the goal cards
 
 Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it). Narrowed 2026-09-02: the check-in review page no longer contradicts itself — its goal strip resolves weight and body fat through one state column (`status` > `paceStatus` > `isOnTrack`, `components/clients/check-ins/check-in-goal-strip.tsx`), so its two rows cannot reach different verdicts about one client.
 
 `goal_weight` and `goal_body_fat_percentage` are solved independently and reconciled by nobody:
 
-- **Coach Overview status card** renders teal "Goal reached" on the goal-weight cell beside amber "4.0% to go" on the goal-body-fat cell — two chips from the same helper (`lib/goals/goal-state.ts` via `client-status-card.tsx`), computed side by side, never compared.
+- **The coach's goal card and the client's** render teal "Goal reached" on the weight target beside amber "4.0% to go" on the body-fat target — two chips from the same helper (`lib/goals/goal-chip.ts`, in `components/clients/overview/goal-cells.tsx` and `components/client-portal/program/goal-card.tsx`), computed side by side, never compared. A goal carries two targets only when it already held both — the questionnaire's, or one the coach kept: the goal form asks for the one its type needs.
 
 Compounding it: **`isOnTrack` defaults to `true`** when there is no average change (`calculateGoalProgress` in `utils/comparison-utils.ts`, guarded by `if (avgChange && avgChange !== 0)`), so a client with fewer than two recent check-ins carrying the metric reads "On track" on the check-in goal strip no matter how far off they are.
 
 Fixing the card means choosing which target is the headline, or making the summary read both. There is no lean-mass model in the repo, so the two targets cannot be reconciled arithmetically.
 
-**Next step (2026-09-02):** the Overview chips adopt `deriveGoalProgress` (`lib/goals/goal-progress.ts`) — the kernel the check-in goal strip resolves through, fed by the client record's current reading — in place of `lib/goals/goal-state.ts`, so both surfaces read one position and `goal-state.ts` goes. The headline-vs-both question above stays the owner's; the kernel only guarantees the two pages agree about each target.
+**Next step (2026-09-02):** the goal cards' chips adopt `deriveGoalProgress` (`lib/goals/goal-progress.ts`) — the kernel the check-in goal strip resolves through, fed by the client record's current reading — in place of `lib/goals/goal-state.ts`, so every surface reads one position and `goal-state.ts` goes. The headline-vs-both question above stays the owner's; the kernel only guarantees the two pages agree about each target.
 
 ---
 

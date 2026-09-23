@@ -119,7 +119,7 @@ const WRITERS: Writer[] = [
     method: "replace",
   },
   {
-    file: "hooks/use-profile-editor-trip.ts",
+    file: "hooks/use-goals-sheet-trip.ts",
     from: "useEffect(() => {",
     to: "}, [searchParams",
     method: "replace",

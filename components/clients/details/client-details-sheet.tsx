@@ -28,8 +28,8 @@ import type { CheckInTiming } from "@/types/coach-brief";
  * white-bodied sheet recipe — the body is railed groups of white cards, and a
  * white body would erase the rails.
  *
- * **Save is four sequential, non-transactional requests** (profile → TDEE →
- * check-in config → goals), which is why `useClientProfileEdit` distinguishes
+ * **Save is three sequential, non-transactional requests** (profile → TDEE →
+ * check-in config), which is why `useClientProfileEdit` distinguishes
  * "Save failed" from "Partly saved". A single button hides that; the toast is
  * the only thing that can tell the coach an edit already landed.
  */
@@ -50,7 +50,7 @@ export function ClientDetailsSheet({
       open={edit.isEditing}
       onOpenChange={(open) => {
         // A save in flight must finish; closing under it would leave the coach
-        // unable to read which of the four writes landed.
+        // unable to read which of the three writes landed.
         if (!open && !edit.isSaving) edit.cancel();
       }}
     >
@@ -61,7 +61,7 @@ export function ClientDetailsSheet({
       >
         <SheetTitle className="sr-only">Edit {client.name}</SheetTitle>
         <SheetDescription className="sr-only">
-          Contact details, profile, check-in schedule, baseline measurements, goals and energy.
+          Contact details, profile, check-in schedule, baseline measurements and energy.
         </SheetDescription>
 
         <header className="flex shrink-0 items-center gap-3.5 bg-[#0f2027] px-5 py-4">

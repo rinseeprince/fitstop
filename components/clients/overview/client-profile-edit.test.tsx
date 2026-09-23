@@ -5,7 +5,6 @@ import userEvent from "@testing-library/user-event";
 import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
 import { IdentityRow } from "./identity-row";
 import { useClientProfileEdit } from "./use-client-profile-edit";
-import type { GoalOnDay } from "@/types/client-goals";
 import type { Client } from "@/types/check-in";
 import type { UnitSystem } from "@/utils/unit-conversions";
 
@@ -52,8 +51,8 @@ function makeClient(overrides: Partial<Client> = {}): Client {
  * the identity row's pencil; the Client rail that used to carry it went with
  * the Overview shell rebuild.
  */
-function Harness({ client, goal }: { client: Client; goal: GoalOnDay | null }) {
-  const edit = useClientProfileEdit(client, vi.fn(), goal);
+function Harness({ client }: { client: Client }) {
+  const edit = useClientProfileEdit(client, vi.fn());
   return (
     <>
       <IdentityRow
@@ -83,28 +82,8 @@ function confirmCancel() {
     .getByRole("button", { name: /^cancel$/i });
 }
 
-/** The goal in force on the client's today, as the goals read returns it. */
-function makeGoal(overrides: Partial<GoalOnDay> = {}): GoalOnDay {
-  return {
-    id: "goal-1",
-    clientId: "client-1",
-    name: "Lose weight",
-    type: "lose_weight",
-    targetWeight: 82,
-    targetBodyFatPercentage: null,
-    description: null,
-    startsOn: "2026-01-01",
-    source: "coach",
-    setBy: "coach-1",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    deadline: "2026-12-01",
-    ...overrides,
-  };
-}
-
-async function openEditor(client = makeClient(), goal: GoalOnDay | null = makeGoal()) {
-  render(<Harness client={client} goal={goal} />);
+async function openEditor(client = makeClient()) {
+  render(<Harness client={client} />);
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: /edit client details/i }));
   return user;
@@ -115,12 +94,6 @@ function profilePatch(spy: ReturnType<typeof mockFetchOk>) {
   const call = spy.mock.calls.find(
     ([url, init]) => init?.method === "PATCH" && /\/api\/clients\/[^/]+$/.test(String(url))
   );
-  return call ? (JSON.parse(call[1]?.body as string) as Record<string, unknown>) : null;
-}
-
-/** The PUT to /goals, if the save issued one. */
-function goalPut(spy: ReturnType<typeof mockFetchOk>) {
-  const call = spy.mock.calls.find(([url]) => String(url).endsWith("/goals"));
   return call ? (JSON.parse(call[1]?.body as string) as Record<string, unknown>) : null;
 }
 
@@ -150,7 +123,7 @@ describe("the client details sheet", () => {
   });
 
   it("shows the value when idle and an input once editing starts", async () => {
-    render(<Harness client={makeClient()} goal={makeGoal()} />);
+    render(<Harness client={makeClient()} />);
     expect(screen.queryByLabelText("Phone")).not.toBeInTheDocument();
 
     const user = userEvent.setup();
@@ -271,7 +244,7 @@ describe("the client details sheet", () => {
     it("does not rewrite an untouched measurement", async () => {
       // Display rounding is lossy, so re-sending a pre-populated box would
       // drift the stored value on EVERY save — the §20 rule that made the
-      // seeded-string guard load-bearing for height and goal weight.
+      // seeded-string guard load-bearing for height and the start weight.
       const fetchSpy = mockFetchOk();
       const user = await openEditor(MEASURED);
 
@@ -480,20 +453,20 @@ describe("the client details sheet", () => {
     });
   });
 
-  // Task 0b.4 — the goal is edited here now, not in the nutrition drawer.
-  describe("the goal", () => {
-    it("seeds its three boxes from the goal in force", async () => {
-      await openEditor(makeClient(), makeGoal({ targetBodyFatPercentage: 19.5 }));
+  // The goal has its own sheet, behind the Overview goal card's pencil
+  // (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d2).
+  describe("the goal is not edited here", () => {
+    it("shows no goal field, and its energy group keeps BMR and TDEE", async () => {
+      await openEditor();
 
-      expect(screen.getByLabelText("Goal weight")).toHaveValue("82");
-      expect(screen.getByLabelText("Goal body fat percentage")).toHaveValue("19.5");
-      expect(screen.getByLabelText("Goal deadline")).toHaveValue("2026-12-01");
+      expect(screen.queryByLabelText(/goal/i)).toBeNull();
+      expect(screen.queryByText(/goal/i)).toBeNull();
+      expect(screen.getByText("Energy")).toBeInTheDocument();
+      expect(screen.getByText("BMR")).toBeInTheDocument();
+      expect(screen.getByText("TDEE")).toBeInTheDocument();
     });
 
-    // THE load-bearing one. A goal PUT whose targets differ from the goal in
-    // force makes a new goal from today, and one for a client with no goal
-    // creates one — so a save that never touched the goal must not send it.
-    it("is not written at all when nothing about it changed", async () => {
+    it("a save writes no goal", async () => {
       const fetchSpy = mockFetchOk();
       const user = await openEditor();
 
@@ -501,87 +474,7 @@ describe("the client details sheet", () => {
       await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-      expect(goalPut(fetchSpy)).toBeNull();
-    });
-
-    it("sends only the field that changed", async () => {
-      const fetchSpy = mockFetchOk();
-      const user = await openEditor();
-
-      const deadline = screen.getByLabelText("Goal deadline");
-      await user.clear(deadline);
-      await user.type(deadline, "2027-03-01");
-      await user.click(screen.getByRole("button", { name: /save changes/i }));
-
-      await waitFor(() => expect(goalPut(fetchSpy)).not.toBeNull());
-      expect(goalPut(fetchSpy)).toEqual({ goalDeadline: "2027-03-01" });
-    });
-
-    it("clears an emptied deadline with an explicit null", async () => {
-      const fetchSpy = mockFetchOk();
-      const user = await openEditor();
-
-      await user.clear(screen.getByLabelText("Goal deadline"));
-      await user.click(screen.getByRole("button", { name: /save changes/i }));
-
-      await waitFor(() => expect(goalPut(fetchSpy)).not.toBeNull());
-      expect(goalPut(fetchSpy)).toEqual({ goalDeadline: null });
-    });
-
-    // Native bounds: the sheet sets a deadline from today on, so earlier days
-    // are unclickable. Today is the floor, and nothing composes into it.
-    it("greys out days before today on the deadline", async () => {
-      await openEditor();
-
-      const today = new Date();
-      const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
-        today.getDate()
-      ).padStart(2, "0")}`;
-      expect(screen.getByLabelText("Goal deadline")).toHaveAttribute("min", iso);
-    });
-
-    // A goal has no start of its own (docs/MEASUREMENT-LOG-PLAN.md commit 8bb):
-    // the window a nutrition deficit is spread over begins at the day the plan
-    // takes effect, picked in the nutrition drawer. Nothing here asks for one.
-    it("has no Goal start field", async () => {
-      await openEditor();
-
-      expect(screen.queryByLabelText("Goal start date")).toBeNull();
-      expect(screen.queryByText("Goal start")).toBeNull();
-    });
-
-    describe("an imperial coach", () => {
-      beforeEach(() => {
-        preference.current = "imperial";
-      });
-
-      // The §20 no-op. 82 kg seeds as "180.8" and re-parses to 82.00568, so a
-      // form that re-parsed whatever sat in the box would drift the stored goal
-      // on every unrelated save. `commit` compares the SEEDED STRING instead.
-      it("does not rewrite an untouched goal weight", async () => {
-        const fetchSpy = mockFetchOk();
-        const user = await openEditor();
-
-        await user.type(screen.getByLabelText("Phone"), "123");
-        await user.click(screen.getByRole("button", { name: /save changes/i }));
-
-        await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-        expect(goalPut(fetchSpy)).toBeNull();
-      });
-
-      it("converts an edited goal weight back to kilograms", async () => {
-        const fetchSpy = mockFetchOk();
-        const user = await openEditor();
-
-        const weight = screen.getByLabelText("Goal weight");
-        await user.clear(weight);
-        await user.type(weight, "176.4");
-        await user.click(screen.getByRole("button", { name: /save changes/i }));
-
-        await waitFor(() => expect(goalPut(fetchSpy)).not.toBeNull());
-        // 176.4 lb = 80.0 kg. The point is that it converted at all.
-        expect(goalPut(fetchSpy)?.goalWeight as number).toBeCloseTo(80, 1);
-      });
+      expect(fetchSpy.mock.calls.some(([url]) => String(url).includes("/goals"))).toBe(false);
     });
   });
 });

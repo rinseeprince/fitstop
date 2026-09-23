@@ -11,8 +11,10 @@ import { FOCUS_RING } from '@/components/clients/training/program-builder/builde
  *
  * Mounted once, by the root layout. A call site does `import { toast } from
  * "sonner"` and calls it directly — `toast.success(title, { description })`,
- * `toast.error(…)`, a plain `toast(title)` for a confirmation with no verdict —
- * there is no hook and no second toaster (docs/newdesignsystem.md → Toasts).
+ * `toast.error(…)`, a plain `toast(title)` for a confirmation with no verdict,
+ * and `action: { label: "Undo", onClick }` on the one toast that can take its
+ * outcome back — there is no hook and no second toaster
+ * (docs/newdesignsystem.md → Toasts).
  *
  * Why Sonner: a Radix toast is a DismissableLayer, so a modal opened after it
  * wrote `pointer-events: none` onto it — a toast under a drawer could not be
@@ -71,6 +73,14 @@ export function Toaster() {
           // shows; its width and colour still come from the token alone.
           closeButton: cn(
             'left-auto! right-2! top-2! h-6! w-6! transform-none! rounded-[4px]! border-0! bg-transparent! text-[#93b0b4]! hover:text-[#5a7d82]!',
+            FOCUS_RING,
+            'focus-visible:shadow-none!',
+          ),
+          // A teal text action at the card's end (Undo). Sonner's own button
+          // rules are off with the card; its margin and focus shadow are not,
+          // so both are re-asserted, as on the close button.
+          actionButton: cn(
+            'ml-auto! shrink-0 cursor-pointer rounded-[4px] px-2 py-1 text-[13px] font-medium text-[#0d9488] transition-colors hover:bg-[rgba(13,148,136,0.08)] hover:text-[#0b7f75]',
             FOCUS_RING,
             'focus-visible:shadow-none!',
           ),

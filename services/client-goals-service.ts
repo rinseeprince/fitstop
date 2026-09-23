@@ -97,7 +97,8 @@ export async function getCurrentGoal(clientId: string): Promise<GoalOnDay | null
 
 /**
  * The coach's goal read: today's goal — with the client's readings on its
- * start day, which its progress runs from — and the goals planned after it.
+ * start day, which its progress runs from — the goals planned after it, the
+ * goal before today's, and the client's today.
  */
 export async function getGoalsOverview(clientId: string): Promise<ClientGoalsOverview> {
   const [today, goals] = await Promise.all([
@@ -106,7 +107,8 @@ export async function getGoalsOverview(clientId: string): Promise<ClientGoalsOve
   ]);
   const goal = goalOnDay(goals, today);
   const planned = plannedGoals(goals, today);
-  if (!goal) return { current: null, planned };
+  const previous = pastGoals(goals, today)[0] ?? null;
+  if (!goal) return { current: null, planned, previous, clientToday: today };
 
   const readings = await getReadingsOnDay(clientId, goal.startsOn);
   return {
@@ -118,6 +120,8 @@ export async function getGoalsOverview(clientId: string): Promise<ClientGoalsOve
       },
     },
     planned,
+    previous,
+    clientToday: today,
   };
 }
 

@@ -5,19 +5,15 @@ import {
   type GoalConflict,
   type GoalRefusalCode,
 } from "@/services/client-goal-writes-service";
+import type { GoalFix } from "@/types/client-goals";
 
 /**
  * A goal write's refusal as the response every goal route sends: a sentence a
  * coach can act on, the function's code, and — for the two deadline guards —
  * the goal in the way and the fixes offered rather than a dead end: move the
- * next goal past the new deadline or delete it; or end the previous goal's
- * deadline the day before the new start.
+ * next goal past the new deadline, where its own deadline allows, or delete
+ * it; or end the previous goal's deadline the day before the new start.
  */
-
-type GoalFix =
-  | { kind: "move_goal"; goalId: string; name: string; startsOn: string }
-  | { kind: "delete_goal"; goalId: string; name: string }
-  | { kind: "end_deadline"; goalId: string; name: string; deadline: string };
 
 /** What the refused write asked for, where a fix is worked out from it. */
 export type GoalWriteAttempt = { startsOn?: string; deadline?: string | null };
@@ -43,21 +39,23 @@ function describe(
   switch (code) {
     case "deadline_after_next": {
       if (!conflict?.startsOn) break;
+      const starts = formatDateOnlyShort(conflict.startsOn);
+      // The day after the new deadline — a move there keeps the next goal's
+      // own deadline, so it is offered only where that deadline allows.
+      const moveTo = attempt.deadline ? addDaysToDateString(attempt.deadline, 1) : null;
+      const canMove = moveTo !== null && (conflict.deadline == null || conflict.deadline >= moveTo);
       const fixes: GoalFix[] = [];
-      if (attempt.deadline) {
-        fixes.push({
-          kind: "move_goal",
-          goalId: conflict.goalId,
-          name: conflict.name,
-          startsOn: addDaysToDateString(attempt.deadline, 1),
-        });
+      if (canMove) {
+        fixes.push({ kind: "move_goal", goalId: conflict.goalId, name: conflict.name, startsOn: moveTo });
       }
       fixes.push({ kind: "delete_goal", goalId: conflict.goalId, name: conflict.name });
-      const move = attempt.deadline
-        ? `Move ${conflict.name} to ${formatDateOnlyShort(addDaysToDateString(attempt.deadline, 1))} or delete it.`
-        : `Move ${conflict.name} or delete it.`;
+      const offer = canMove
+        ? `Move ${conflict.name} to ${formatDateOnlyShort(moveTo)} or delete it.`
+        : moveTo
+          ? `Set a deadline before ${starts}, or delete ${conflict.name}.`
+          : `Move ${conflict.name} or delete it.`;
       return {
-        message: `The deadline runs into ${conflict.name}, which starts ${formatDateOnlyShort(conflict.startsOn)}. ${move}`,
+        message: `The deadline runs into ${conflict.name}, which starts ${starts}. ${offer}`,
         fixes,
       };
     }

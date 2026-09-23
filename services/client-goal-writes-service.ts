@@ -1,11 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { getClientTodayString } from "./today-service";
-import { getReadingsOnDay } from "./measurements-service";
-import { listClientGoals } from "./client-goals-service";
-import { goalAsOf, goalOnDay } from "@/lib/goals/goal-timeline";
-import { GOAL_TYPE_SETTINGS, goalTypeFromTargets, type GoalType } from "@/lib/goals/goal-types";
+import type { GoalType } from "@/lib/goals/goal-types";
 import type { Database, Json } from "@/types/database";
-import type { GoalOnDay, GoalSource } from "@/types/client-goals";
+import type { GoalSource } from "@/types/client-goals";
 
 /**
  * Every write of a goal (migration 193; docs/MEASUREMENT-LOG-PLAN.md §6 commit
@@ -34,7 +30,12 @@ export const GOAL_REFUSAL_CODES = [
 
 export type GoalRefusalCode = (typeof GOAL_REFUSAL_CODES)[number];
 
-/** The goal a deadline guard ran into: the next goal's start, or the previous goal's deadline. */
+/**
+ * The goal a deadline guard ran into. `deadline_after_next`: the next goal,
+ * with its start and — added here, absent when it has none — its own
+ * deadline, which says whether it can move past the new one.
+ * `previous_deadline`: the previous goal, with its deadline.
+ */
 export type GoalConflict = {
   goalId: string;
   name: string;
@@ -85,6 +86,33 @@ export function toGoalWriteError(error: { message: string }): Error {
   return new GoalWriteError(code, detail);
 }
 
+/**
+ * A `deadline_after_next` refusal with the next goal's own deadline added —
+ * the function names the goal in the way and its start, and moving it past
+ * the new deadline is a fix only where its deadline allows. The next goal is
+ * always a planned one, whose one deadline entry is dated its start; read
+ * scoped to the client. Any other error passes through.
+ */
+async function withNextGoalDeadline(error: Error, clientId: string): Promise<Error> {
+  if (!(error instanceof GoalWriteError) || error.code !== "deadline_after_next" || !error.conflict) {
+    return error;
+  }
+  const { data, error: readError } = await supabaseAdmin
+    .from("client_goals")
+    .select("client_goal_deadlines(effective_on, deadline)")
+    .eq("id", error.conflict.goalId)
+    .eq("client_id", clientId)
+    .maybeSingle();
+  if (readError) return new Error(`Goal write failed: ${readError.message}`);
+  const latest = [...(data?.client_goal_deadlines ?? [])].sort((a, b) =>
+    a.effective_on < b.effective_on ? 1 : -1
+  )[0];
+  return new GoalWriteError(error.code, error.message, {
+    ...error.conflict,
+    deadline: latest?.deadline ?? undefined,
+  });
+}
+
 /** What a goal is: its type, name, targets, description and deadline. */
 export type GoalFields = {
   type: GoalType;
@@ -123,7 +151,7 @@ export async function addGoal(
   if (input.deadline != null) args.p_deadline = input.deadline;
 
   const { data, error } = await supabaseAdmin.rpc("add_client_goal", args);
-  if (error) throw toGoalWriteError(error);
+  if (error) throw await withNextGoalDeadline(toGoalWriteError(error), input.clientId);
   return data;
 }
 
@@ -152,7 +180,7 @@ export async function editGoal(
   if (input.deadline != null) args.p_deadline = input.deadline;
 
   const { data, error } = await supabaseAdmin.rpc("edit_client_goal", args);
-  if (error) throw toGoalWriteError(error);
+  if (error) throw await withNextGoalDeadline(toGoalWriteError(error), input.clientId);
   return data;
 }
 
@@ -173,7 +201,7 @@ export async function setGoalDeadline(input: {
   if (input.deadline != null) args.p_deadline = input.deadline;
 
   const { data, error } = await supabaseAdmin.rpc("set_client_goal_deadline", args);
-  if (error) throw toGoalWriteError(error);
+  if (error) throw await withNextGoalDeadline(toGoalWriteError(error), input.clientId);
   return data;
 }
 
@@ -214,100 +242,4 @@ export async function restoreGoal(input: { clientId: string; copy: Json }): Prom
   });
   if (error) throw toGoalWriteError(error);
   return data;
-}
-
-/** The goal fields the client details sheet sends, until commit 8d2 replaces them. */
-export type DetailsSheetGoalEdit = {
-  goalWeight?: number;
-  goalBodyFatPercentage?: number | null;
-  goalDeadline?: string | null;
-};
-
-export type DetailsSheetGoalSave = {
-  /** What the save did: a new goal, today's goal corrected, a deadline recorded, or nothing. */
-  wrote: "create" | "edit" | "deadline" | "nothing";
-  goalId: string | null;
-};
-
-/**
- * The details sheet's save, until 8d2 gives the goal its own sheet. The sheet
- * sends only the fields the coach changed; the rest are today's goal's.
- * Changing a target makes a new goal from today — or corrects today's goal
- * when it started today — typed from its targets, since the sheet has no type
- * to pick; changing only the deadline records it against today's goal.
- */
-export async function saveDetailsSheetGoal(
-  clientId: string,
-  edit: DetailsSheetGoalEdit,
-  coachId: string
-): Promise<DetailsSheetGoalSave> {
-  const [today, goals] = await Promise.all([
-    getClientTodayString(clientId),
-    listClientGoals(clientId),
-  ]);
-  const found = goalOnDay(goals, today);
-  const current: GoalOnDay | null = found ? goalAsOf(found, today) : null;
-
-  const targetWeight =
-    edit.goalWeight !== undefined ? edit.goalWeight : current?.targetWeight ?? null;
-  const targetBodyFatPercentage =
-    edit.goalBodyFatPercentage !== undefined
-      ? edit.goalBodyFatPercentage
-      : current?.targetBodyFatPercentage ?? null;
-  const deadline = edit.goalDeadline !== undefined ? edit.goalDeadline : current?.deadline ?? null;
-
-  if (
-    current &&
-    targetWeight === current.targetWeight &&
-    targetBodyFatPercentage === current.targetBodyFatPercentage
-  ) {
-    if (deadline === current.deadline) return { wrote: "nothing", goalId: current.id };
-    const changed = await setGoalDeadline({
-      goalId: current.id,
-      clientId,
-      today,
-      setBy: coachId,
-      deadline,
-    });
-    return { wrote: changed ? "deadline" : "nothing", goalId: current.id };
-  }
-
-  const readings = await getReadingsOnDay(clientId, today);
-  const type = goalTypeFromTargets({
-    targetWeight,
-    targetBodyFatPercentage,
-    reading: readings.weight?.value ?? null,
-  });
-
-  if (current && current.startsOn === today) {
-    const changed = await editGoal({
-      goalId: current.id,
-      clientId,
-      today,
-      startsOn: today,
-      setBy: coachId,
-      type,
-      name: type === current.type ? current.name : GOAL_TYPE_SETTINGS[type].name,
-      targetWeight,
-      targetBodyFatPercentage,
-      description: current.description,
-      deadline,
-    });
-    return { wrote: changed ? "edit" : "nothing", goalId: current.id };
-  }
-
-  const goalId = await addGoal({
-    clientId,
-    today,
-    startsOn: today,
-    source: "coach",
-    setBy: coachId,
-    type,
-    name: GOAL_TYPE_SETTINGS[type].name,
-    targetWeight,
-    targetBodyFatPercentage,
-    description: null,
-    deadline,
-  });
-  return { wrote: "create", goalId };
 }

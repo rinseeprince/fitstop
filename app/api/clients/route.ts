@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, getClientsForCoach } from "@/services/client-service";
+import { CreateClientInputError, createClient, getClientsForCoach } from "@/services/client-service";
 import { createClientSchema } from "@/lib/validations/client";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -89,6 +89,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ client: clientData, inviteSent }, { status: 201 });
   } catch (error) {
+    // A value the request itself carries that can't stand — said, and nothing written.
+    if (error instanceof CreateClientInputError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     console.error("Error creating client:", error);
 
     // Handle duplicate email error

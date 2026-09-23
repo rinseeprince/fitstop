@@ -50,4 +50,18 @@ export type ClientGoalsOverview = {
   current: CurrentGoal | null;
   /** Soonest first, each with the deadline it will start with. */
   planned: GoalOnDay[];
+  /** The goal before today's — the one a delete of today's goal puts back in force. */
+  previous: PastGoal | null;
+  /** The client's calendar day, which a goal's start is floored on. */
+  clientToday: string;
 };
+
+/**
+ * A fix a refused goal write offers (lib/goals/goal-write-response.ts): move
+ * the goal in the way past the new deadline or delete it; or end the previous
+ * goal's deadline the day before the new start.
+ */
+export type GoalFix =
+  | { kind: "move_goal"; goalId: string; name: string; startsOn: string }
+  | { kind: "delete_goal"; goalId: string; name: string }
+  | { kind: "end_deadline"; goalId: string; name: string; deadline: string };

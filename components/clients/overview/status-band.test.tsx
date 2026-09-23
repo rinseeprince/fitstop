@@ -3,10 +3,8 @@ import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { StatusBand } from "./status-band";
-import type { GoalType } from "@/lib/goals/goal-types";
-import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { Client } from "@/types/check-in";
-import type { CurrentGoal } from "@/types/client-goals";
+import type { CurrentGoal, GoalOnDay } from "@/types/client-goals";
 import type { MeasurementSeries, MeasurementSeriesPoint } from "@/types/coach-overview";
 
 // Required, not optional: units-context imports auth-context, which constructs
@@ -26,31 +24,40 @@ const BASE: Client = {
   timezone: "UTC",
 };
 
-// The goal in force arrives resolved: the tab runs resolveEffectiveGoal on it
-// and hands the band the targets and the deadline.
-const NO_GOAL: EffectiveGoal = {
-  goalWeightKg: null,
-  goalBodyFatPercentage: null,
-  deadline: null,
-};
-
-const goalOf = (overrides: Partial<EffectiveGoal>): EffectiveGoal => ({
-  ...NO_GOAL,
-  ...overrides,
-});
-
 /**
- * The same goal's type and the client's readings on its start day — what the
- * chips measure from. A reading left out is one the client does not have.
+ * The goal in force as the goals read returns it: its type, its targets, its
+ * deadline, and the client's readings on its start day — what the chips
+ * measure from. A reading left out is one the client does not have.
  */
-function startOf(
-  type: GoalType,
-  readings: { weight?: number; bodyFat?: number } = {}
-): Pick<CurrentGoal, "type" | "startReadings"> {
+function goalOf(
+  overrides: Partial<Omit<CurrentGoal, "startReadings">> & {
+    start?: { weight?: number; bodyFat?: number };
+  } = {}
+): CurrentGoal {
+  const { start = {}, ...fields } = overrides;
   return {
-    type,
-    startReadings: { weight: readings.weight ?? null, bodyFat: readings.bodyFat ?? null },
+    id: "goal-in-force",
+    clientId: "client-1",
+    name: "Lose weight",
+    type: "lose_weight",
+    targetWeight: null,
+    targetBodyFatPercentage: null,
+    description: null,
+    startsOn: "2026-06-01",
+    source: "coach",
+    setBy: "coach-1",
+    createdAt: "2026-06-01T08:00:00Z",
+    updatedAt: "2026-06-01T08:00:00Z",
+    deadline: null,
+    ...fields,
+    startReadings: { weight: start.weight ?? null, bodyFat: start.bodyFat ?? null },
   };
+}
+
+/** A goal planned after today's. */
+function plannedOf(name: string, startsOn: string): GoalOnDay {
+  const { startReadings: _startReadings, ...goal } = goalOf({ id: `goal-${name}`, name, startsOn });
+  return goal;
 }
 
 const point = (date: string, value: number): MeasurementSeriesPoint => ({
@@ -101,8 +108,9 @@ function seriesOf(readings: { weight?: Readings; bodyFat?: Readings } = {}): Mea
 // The band renders whatever chart it is handed; the chart's own behaviour is
 // pinned by progression-chart.test.tsx.
 const PROPS = {
-  goal: NO_GOAL,
-  goalStart: null,
+  goal: null,
+  nextGoal: null,
+  onEditGoals: vi.fn(),
   chart: <div data-testid="chart" />,
   onOpenMetrics: vi.fn(),
   series: seriesOf(),
@@ -119,8 +127,7 @@ describe("StatusBand — goal chips", () => {
         client={BASE}
         {...PROPS}
         series={seriesOf({ weight: { current: 89 } })}
-        goal={goalOf({ goalWeightKg: 85 })}
-        goalStart={startOf("lose_weight", { weight: 94 })}
+        goal={goalOf({ type: "lose_weight", targetWeight: 85, start: { weight: 94 } })}
       />
     );
 
@@ -133,8 +140,7 @@ describe("StatusBand — goal chips", () => {
         client={BASE}
         {...PROPS}
         series={seriesOf({ weight: { current: 83.03 } })}
-        goal={goalOf({ goalWeightKg: 83 })}
-        goalStart={startOf("lose_weight", { weight: 96 })}
+        goal={goalOf({ type: "lose_weight", targetWeight: 83, start: { weight: 96 } })}
       />
     );
 
@@ -147,8 +153,7 @@ describe("StatusBand — goal chips", () => {
         client={BASE}
         {...PROPS}
         series={seriesOf({ weight: { current: 81.5 } })}
-        goal={goalOf({ goalWeightKg: 84 })}
-        goalStart={startOf("lose_weight", { weight: 97 })}
+        goal={goalOf({ type: "lose_weight", targetWeight: 84, start: { weight: 97 } })}
       />
     );
 
@@ -161,8 +166,7 @@ describe("StatusBand — goal chips", () => {
         client={BASE}
         {...PROPS}
         series={seriesOf({ weight: { current: 77.5 } })}
-        goal={goalOf({ goalWeightKg: 74 })}
-        goalStart={startOf("build_muscle", { weight: 68 })}
+        goal={goalOf({ type: "build_muscle", targetWeight: 74, start: { weight: 68 } })}
       />
     );
 
@@ -177,8 +181,7 @@ describe("StatusBand — goal chips", () => {
         client={BASE}
         {...PROPS}
         series={seriesOf({ weight: { current: 86.2 } })}
-        goal={goalOf({ goalWeightKg: 87 })}
-        goalStart={startOf("lose_weight")}
+        goal={goalOf({ type: "lose_weight", targetWeight: 87 })}
       />
     );
 
@@ -191,8 +194,7 @@ describe("StatusBand — goal chips", () => {
         client={BASE}
         {...PROPS}
         series={seriesOf({ bodyFat: { current: 21.7 } })}
-        goal={goalOf({ goalBodyFatPercentage: 22.5 })}
-        goalStart={startOf("recomposition")}
+        goal={goalOf({ type: "recomposition", targetBodyFatPercentage: 22.5 })}
       />
     );
 
@@ -200,15 +202,13 @@ describe("StatusBand — goal chips", () => {
   });
 
   it("with no direction — a type that decides none, no start reading — reads only to go or reached", () => {
-    const goal = goalOf({ goalWeightKg: 78.5 });
-    const goalStart = startOf("general_fitness");
+    const goal = goalOf({ type: "general_fitness", name: "General fitness", targetWeight: 78.5 });
     const { rerender } = render(
       <StatusBand
         client={BASE}
         {...PROPS}
         series={seriesOf({ weight: { current: 81 } })}
         goal={goal}
-        goalStart={goalStart}
       />
     );
     expect(screen.getByText("2.5 kg to go")).toBeInTheDocument();
@@ -220,7 +220,6 @@ describe("StatusBand — goal chips", () => {
         {...PROPS}
         series={seriesOf({ weight: { current: 75.5 } })}
         goal={goal}
-        goalStart={goalStart}
       />
     );
     expect(screen.getByText("3.0 kg to go")).toBeInTheDocument();
@@ -231,7 +230,6 @@ describe("StatusBand — goal chips", () => {
         {...PROPS}
         series={seriesOf({ weight: { current: 78.54 } })}
         goal={goal}
-        goalStart={goalStart}
       />
     );
     expect(screen.getByText("Goal reached")).toBeInTheDocument();
@@ -243,8 +241,7 @@ describe("StatusBand — goal chips", () => {
         client={BASE}
         {...PROPS}
         series={seriesOf({ bodyFat: { current: 20.5 } })}
-        goal={goalOf({ goalBodyFatPercentage: 18.5 })}
-        goalStart={startOf("lose_weight", { bodyFat: 25.5 })}
+        goal={goalOf({ type: "lose_weight", targetBodyFatPercentage: 18.5, start: { bodyFat: 25.5 } })}
       />
     );
 
@@ -261,7 +258,7 @@ describe("StatusBand — goal chips", () => {
     );
 
     expect(screen.queryByText(/to go|goal reached|under goal|over goal/i)).not.toBeInTheDocument();
-    // Goal weight, goal body fat and the deadline.
+    // The goal, its target and the deadline.
     expect(screen.getAllByText("Not set")).toHaveLength(3);
   });
 });
@@ -280,8 +277,7 @@ describe("StatusBand — the chips start at the goal's start, the pill at the ba
           weight: { baseline: 88.5, current: 82 },
           bodyFat: { baseline: 30.5, current: 20.8 },
         })}
-        goal={goalOf({ goalWeightKg: 80.5, goalBodyFatPercentage: 19.5 })}
-        goalStart={startOf("general_fitness", { weight: 76.5, bodyFat: 17.5 })}
+        goal={goalOf({ type: "general_fitness", targetWeight: 80.5, targetBodyFatPercentage: 19.5, start: { weight: 76.5, bodyFat: 17.5 } })}
       />
     );
 
@@ -314,8 +310,7 @@ describe("StatusBand — no reading comes from the client record", () => {
           weight: { baseline: 92.5, current: 88 },
           bodyFat: { baseline: 26.5, current: 23 },
         })}
-        goal={goalOf({ goalWeightKg: 86 })}
-        goalStart={startOf("lose_weight")}
+        goal={goalOf({ type: "lose_weight", targetWeight: 86 })}
       />
     );
 
@@ -341,7 +336,7 @@ describe("StatusBand — no reading comes from the client record", () => {
         {...PROPS}
         series={null}
         seriesPending
-        goal={goalOf({ goalWeightKg: 79.5 })}
+        goal={goalOf({ targetWeight: 79.5 })}
       />
     );
 
@@ -361,8 +356,94 @@ describe("StatusBand — the chart/cells split", () => {
     // The band is presentational: the tab fetches the series and passes both
     // the chart and the payload in, so the band never grows a read of its own.
     expect(screen.getByTestId("chart")).toBeInTheDocument();
-    expect(screen.getByText("Goal weight")).toBeInTheDocument();
+    expect(screen.getByText("Goal")).toBeInTheDocument();
+    expect(screen.getByText("Target")).toBeInTheDocument();
     expect(screen.getByText("Deadline")).toBeInTheDocument();
+  });
+});
+
+// The goal card (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d2): the goal's name,
+// its type where the name does not say it, what is planned next, its targets
+// and its deadline, and the pencil to the goals sheet.
+describe("StatusBand — the goal card", () => {
+  it("names the goal, with its type beside a name of the coach's own", () => {
+    render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        goal={goalOf({ name: "Lean out", type: "lose_weight", targetWeight: 79.2 })}
+      />
+    );
+
+    expect(screen.getByText("Lean out")).toBeInTheDocument();
+    expect(screen.getByText("Lose weight")).toBeInTheDocument();
+  });
+
+  it("says the type once when the name is the type's own", () => {
+    render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        goal={goalOf({ name: "Build muscle", type: "build_muscle", targetWeight: 91.4 })}
+      />
+    );
+
+    expect(screen.getAllByText("Build muscle")).toHaveLength(1);
+  });
+
+  it("says what is planned next, with or without a goal in force", () => {
+    const { rerender } = render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        goal={goalOf({ name: "Lean out", targetWeight: 79.2 })}
+        nextGoal={plannedOf("Build", "2026-11-02")}
+      />
+    );
+    expect(screen.getByText("Next: Build from 2 Nov")).toBeInTheDocument();
+
+    rerender(<StatusBand client={BASE} {...PROPS} nextGoal={plannedOf("Peak", "2027-01-18")} />);
+    expect(screen.getByText("Next: Peak from 18 Jan")).toBeInTheDocument();
+  });
+
+  it("reads No target for a goal that has none, and Event day for event prep", () => {
+    render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        goal={goalOf({ name: "Race day", type: "event_prep", deadline: "2026-12-05" })}
+      />
+    );
+
+    expect(screen.getByText("No target")).toBeInTheDocument();
+    expect(screen.getByText("Event day")).toBeInTheDocument();
+    expect(screen.queryByText("Deadline")).not.toBeInTheDocument();
+  });
+
+  it("opens the goals sheet from its pencil", async () => {
+    const user = userEvent.setup();
+    const onEditGoals = vi.fn();
+    render(<StatusBand client={BASE} {...PROPS} onEditGoals={onEditGoals} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit goals" }));
+    expect(onEditGoals).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the goal could not be loaded rather than Not set when the read failed", () => {
+    render(<StatusBand client={BASE} {...PROPS} goalFailed />);
+
+    expect(screen.getByText("Couldn't load the goal")).toBeInTheDocument();
+    expect(screen.queryByText("Not set")).not.toBeInTheDocument();
+  });
+
+  it("renders the goal pending while its read is in flight", () => {
+    const { container } = render(
+      <StatusBand client={BASE} {...PROPS} goalPending nextGoal={plannedOf("Build", "2026-11-02")} />
+    );
+
+    expect(screen.queryByText("Not set")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Next:/)).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThanOrEqual(3);
   });
 });
 

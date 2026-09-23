@@ -166,7 +166,7 @@ describe("useClearNutritionGoal", () => {
 describe("every writer of a goal, a reading or a plan clears these reads", () => {
   const ROOT = join(__dirname, "..");
   const SCAN_DIRS = ["app", "components", "hooks"];
-  const GOAL_INVALIDATORS = ["useInvalidateClientGoals()", "useClearClientGoals()"];
+  const GOAL_INVALIDATORS = ["useInvalidateClientGoals()", "useClearClientGoals()", "useSeedClientGoals()"];
   const OWNERS = new Set(["hooks/use-client-goals.ts", "hooks/use-nutrition-goal.ts"]);
   const PLAN_WRITERS = [
     "hooks/use-nutrition-builder.ts",
@@ -210,10 +210,11 @@ describe("every writer of a goal, a reading or a plan clears these reads", () =>
       if (!callsTheClearer(source)) violations.push(rel);
     }
 
-    // The details sheet's save, the Journey's Log measurement and reading
-    // actions, and the intake sync's two surfaces: a scan matching fewer has
-    // lost its subject.
-    expect(writers.length).toBeGreaterThanOrEqual(5);
+    // The details sheet's save, the goals sheet's writes, the Journey's Log
+    // measurement and reading actions, and the intake sync's two surfaces: a
+    // scan matching fewer has lost its subject.
+    expect(writers).toContain("components/clients/goals/use-goal-writes.ts");
+    expect(writers.length).toBeGreaterThanOrEqual(6);
     expect(violations).toEqual([]);
   });
 

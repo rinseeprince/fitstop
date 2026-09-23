@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 
+import { GoalCard } from "@/components/client-portal/program/goal-card";
 import { JourneySection } from "@/components/client-portal/program/journey-section";
 import { NutritionPlanCard } from "@/components/client-portal/program/nutrition-plan-card";
 import { TrainingPlanCard } from "@/components/client-portal/program/training-plan-card";
@@ -129,12 +130,13 @@ export default function ProgramPage() {
 
   const trainingPlan = trainingPlanData?.data ?? null;
   const nutritionPlan = nutritionPlanData?.data ?? null;
-  // A journey fetch failure only drops this section (the page's per-card
-  // error posture); the plan cards below stay useful.
+  // A journey fetch failure only drops the goal and the blocks (the page's
+  // per-card error posture); the plan cards below stay useful.
   const journey = !journeyError ? (journeyData?.data ?? null) : null;
 
   return (
     <div className="flex flex-col gap-2 pb-6">
+      {journey && <GoalCard goal={journey.goal} />}
       {journey && <JourneySection journey={journey} />}
       {!trainingPlan && !nutritionPlan ? (
         <EmptyProgram />

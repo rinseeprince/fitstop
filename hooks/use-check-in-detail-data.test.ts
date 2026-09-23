@@ -15,6 +15,7 @@ import {
   checkInDetailKey,
   resolveCheckInDetailWindow,
   useCheckInDetailData,
+  useClearCheckInComparisons,
   useInvalidateCheckInDetail,
 } from "./use-check-in-detail-data";
 import { getDateString } from "@/lib/date-helpers";
@@ -59,6 +60,30 @@ describe("useInvalidateCheckInDetail", () => {
     expect(filter("/api/check-in/ci-10")).toBe(false);
     expect(filter("/api/check-ins/unreviewed")).toBe(false);
     expect(filter(null)).toBe(false);
+  });
+});
+
+// A goal write changes whether a sent check-in's goal is still the client's
+// (`goalIsCurrent`) — the one live answer on a comparison, and the one that
+// offers "Set new goals". Cleared, never merely revalidated.
+describe("useClearCheckInComparisons", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("clears every cached comparison and refetches, and touches nothing else", async () => {
+    const mutate = vi.fn().mockResolvedValue(undefined);
+    mockUseSWRConfig.mockReturnValue({ mutate });
+    const { result } = renderHook(() => useClearCheckInComparisons());
+    await result.current();
+
+    const [filter, data, opts] = mutate.mock.calls[0] as [(key: unknown) => boolean, unknown, unknown];
+    expect(filter("/api/check-in/ci-3/comparison")).toBe(true);
+    expect(filter("/api/check-in/ci-44/comparison")).toBe(true);
+    expect(filter("/api/check-in/ci-3")).toBe(false);
+    expect(filter("/api/check-in/ci-3/comparison/extra")).toBe(false);
+    expect(filter("/api/check-ins/unreviewed")).toBe(false);
+    expect(filter(undefined)).toBe(false);
+    expect(data).toBeUndefined();
+    expect(opts).toEqual({ revalidate: true });
   });
 });
 

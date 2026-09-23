@@ -349,6 +349,10 @@ rejected afterwards — a coach should never be able to select a day the app wil
 - **Only bound what is genuinely impossible.** A past *deadline* is refused, so it is bounded; a
   past *start date* is a real thing to record, so it is not. Greying out a legitimate day is the
   same defect in the other direction.
+- **A day a rule refuses with a fix on offer stays pickable.** On the goal form, a deadline past a
+  planned goal's start and a planned start on or before the current goal's deadline are refused
+  with the fix (move or delete the planned goal; end that deadline the day before) — the refusal
+  is what offers it.
 
 A date changed from an icon rather than a field is the "Date picker popover" (Overlays) — the same bound, greyed in its calendar.
 
@@ -358,8 +362,10 @@ Shipped references: `components/clients/nutrition/builder/nutrition-settings-for
 DISABLED on the block's first available day rather than bounded, and the field's empty state is a
 bare dash; one shared picker, `components/clients/metrics/blocks/block-start-picker.tsx`), `components/clients/metrics/blocks/block-form.tsx` (blocks — composes two bounds
 into one `min`, plus a `max`), `components/clients/metrics/log-measurement-dialog.tsx`
-(`max={today}` — a measurement cannot be logged in the future), and the Overview status card's
-goal deadline.
+(`max={today}` — a measurement cannot be logged in the future), and the goal form
+(`components/clients/goals/goal-fields.tsx` — Starts floored on the client's today, the deadline on
+the goal's start; on the manual Add client, whose goal starts the day the client is added, the
+deadline on today).
 
 ---
 
@@ -560,6 +566,7 @@ Reference: `components/clients/training/calendar/delete-event-dialog.tsx`. Use t
 - Success: `toast.success("Session saved")` — a consequence, when there is one, as `{ description }`.
 - Failure: `toast.error("Save failed", { description: reason })` — the reason as the description, in plain words.
 - A confirmation with no verdict (`Nothing to clear`): plain `toast("Nothing to clear")` — no icon.
+- An outcome that can be taken back (`Goal deleted`): `action: { label: "Undo", onClick }`, a teal text action at the card's end, up for as long as the undo holds (`GOAL_UNDO_WINDOW_MS`) rather than 5 s.
 - Title: a short sans fragment stating the outcome — `Session saved`, `Week cleared`, `"{name}" updated`. Quote user-named things with `"…"`.
 - Description (optional): one plain sans sentence of consequence — `Programs that already use a copy of this session are unchanged.`
 - Never: markup, mono spans, raw error strings, IDs, or dates set in mono. Toast text obeys the prose rule above in full.

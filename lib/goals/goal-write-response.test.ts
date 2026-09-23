@@ -42,6 +42,43 @@ describe("a goal write's refusal", () => {
     ]);
   });
 
+  // The move keeps the next goal's own deadline, which may not fall before its
+  // new start: the move is offered where that deadline allows it, the delete
+  // always.
+  it("offers the move where the next goal's own deadline allows it, to the day", async () => {
+    const { body } = await answer(
+      new GoalWriteError("deadline_after_next", "{}", {
+        goalId: "goal-bulk",
+        name: "Bulk",
+        startsOn: "2026-11-09",
+        deadline: "2026-11-24",
+      }),
+      { deadline: "2026-11-23" }
+    );
+    expect(body.error).toBe("The deadline runs into Bulk, which starts 9 Nov. Move Bulk to 24 Nov or delete it.");
+    expect(body.fixes).toEqual([
+      { kind: "move_goal", goalId: "goal-bulk", name: "Bulk", startsOn: "2026-11-24" },
+      { kind: "delete_goal", goalId: "goal-bulk", name: "Bulk" },
+    ]);
+  });
+
+  it("offers no move when the next goal's deadline falls before the day it would move to", async () => {
+    const { status, body } = await answer(
+      new GoalWriteError("deadline_after_next", "{}", {
+        goalId: "goal-race",
+        name: "Race",
+        startsOn: "2026-10-19",
+        deadline: "2026-10-31",
+      }),
+      { deadline: "2026-11-06" }
+    );
+    expect(status).toBe(409);
+    expect(body.error).toBe(
+      "The deadline runs into Race, which starts 19 Oct. Set a deadline before 19 Oct, or delete Race."
+    );
+    expect(body.fixes).toEqual([{ kind: "delete_goal", goalId: "goal-race", name: "Race" }]);
+  });
+
   it("offers to end the previous goal's deadline the day before the new start", async () => {
     const { status, body } = await answer(
       new GoalWriteError("previous_deadline", "{}", {

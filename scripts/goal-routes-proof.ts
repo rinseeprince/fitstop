@@ -1,7 +1,7 @@
 /**
  * Request-level proof of the goal routes (docs/MEASUREMENT-LOG-PLAN.md §6
- * commit 8d) against the linked DEV database through a running `next dev`:
- * the full coach chain, every write, its audit row, and the undo.
+ * commits 8d and 8d2) against the linked DEV database through a running
+ * `next dev`: the full coach chain, every write, its audit row, and the undo.
  *
  *   npx tsx scripts/goal-routes-proof.ts
  *
@@ -11,22 +11,23 @@
  * at the end (their goals go with them, ON DELETE CASCADE; their audit rows are
  * removed last). Every fixture number is distinct.
  *
- *   1  a fresh client has no goal
- *   2  a goal set from today: 201, current, its start reading, audited
+ *   1  a fresh client has no goal, and the read carries the client's today
+ *   2  a goal set from today: 201, current, its start reading, audited; one missing its type's target is refused
  *   3  planning inside the current goal's deadline is refused, offering to end it the day before
  *   4  the offered fix: the deadline ended the day before — audited
  *   5  the planned goal is set, and stays out of today's
  *   6  a planned goal moves, whole — audited
- *   7  a deadline running into the planned goal is refused, offering move or delete
+ *   7  a deadline running into the planned goal is refused, offering move or delete — delete alone where its own deadline won't allow the move
  *   8  a rename — audited
  *   9  delete hands back an undo; the goal is gone — audited
  *  10  the undo puts it back exactly — audited; a second undo is refused
  *  11  a tampered, a foreign and an expired undo are refused
- *  12  today's goal is corrected in place from the details sheet — audited
- *  13  a goal that started before today refuses an edit
+ *  12  today's goal is corrected in place, rewritten whole — audited
+ *  13  a goal that started before today refuses an edit; a new target is a new goal from today, and the goal before it is named
  *  14  another coach's client is 404; another client's goal through this URL is 404 and stays
  *  15  a write without the Origin the CSRF check reads is refused
- *  16  the manual Add client sets the first goal from today, typed from its targets — audited
+ *  16  the manual Add client sets the first goal from today, with the form's type, name, target, deadline and words — audited;
+ *      a deadline before the new client's today is a 400 that leaves no client
  */
 import "./env-bootstrap";
 
@@ -51,8 +52,10 @@ function check(label: string, ok: boolean, detail?: unknown): void {
 }
 
 type Overview = {
-  current: { id: string; name: string; type: string; targetWeight: number | null; deadline: string | null; startsOn: string; startReadings: { weight: number | null } } | null;
+  current: { id: string; name: string; type: string; targetWeight: number | null; deadline: string | null; description: string | null; startsOn: string; startReadings: { weight: number | null } } | null;
   planned: Array<{ id: string; name: string; startsOn: string; deadline: string | null; description: string | null }>;
+  previous: { id: string; name: string; endsOn: string } | null;
+  clientToday: string;
 };
 type Body = { success: boolean; data: Overview & { undo?: string }; error?: string; code?: string; fixes?: unknown[] };
 
@@ -113,8 +116,11 @@ async function main(): Promise<void> {
     console.info("1. A fresh client has no goal");
     const fresh = await call("GET", goals);
     check("no current goal, nothing planned", fresh.status === 200 && fresh.body.data.current === null && fresh.body.data.planned.length === 0, fresh);
+    check("the read carries the client's today, and no goal before one", fresh.body.data.clientToday === today && fresh.body.data.previous === null, fresh.body.data);
 
     console.info("2. A goal set from today");
+    const untargeted = await call("POST", goals, { type: "lose_weight", deadline: day(64) });
+    check("a goal missing the target its type needs is refused, before any write", untargeted.status === 400 && (await auditedTimes(A, "goal.create", 0)), untargeted);
     const set = await call("POST", goals, { type: "lose_weight", targetWeight: 71.3, deadline: day(64) });
     const current = set.body.data?.current;
     check("201, today's goal, named from its type", set.status === 201 && current?.startsOn === today && current?.name === "Lose weight", set);
@@ -149,6 +155,16 @@ async function main(): Promise<void> {
     console.info("7. A deadline running into the planned goal");
     const into = await call("PUT", `${goals}/${currentId}/deadline`, { deadline: day(40) });
     check("409, offering to move it past the deadline or delete it", into.status === 409 && into.body.code === "deadline_after_next" && JSON.stringify(into.body.fixes).includes(day(41)) && JSON.stringify(into.body.fixes).includes("delete_goal"), into);
+    // The planned goal's own deadline is day(97): a move to day(101) would put
+    // its start after it, so the refusal offers the delete alone.
+    const beyond = await call("PUT", `${goals}/${currentId}/deadline`, { deadline: day(100) });
+    const beyondFixes = JSON.stringify(beyond.body.fixes);
+    check(
+      "no move where the planned goal's own deadline falls before the day it would move to — the delete alone",
+      beyond.status === 409 && beyond.body.code === "deadline_after_next" && !beyondFixes.includes("move_goal") &&
+        beyondFixes.includes("delete_goal") && (beyond.body.error ?? "").includes("Set a deadline before"),
+      beyond
+    );
 
     console.info("8. A rename");
     const renamed = await call("PUT", `${goals}/${plannedId}/name`, { name: "Summer build", description: "Add size" });
@@ -183,10 +199,15 @@ async function main(): Promise<void> {
     const expired = await call("POST", `${goals}/restore`, { undo: late });
     check("an expired undo is refused as too late", expired.status === 410, expired);
 
-    console.info("12. Today's goal corrected from the details sheet");
-    const sheet = await call("PUT", goals, { goalWeight: 70.2 });
-    check("200, corrected in place — the same goal, the new target", sheet.status === 200 && sheet.body.data.current?.id === currentId && sheet.body.data.current?.targetWeight === 70.2, sheet);
+    console.info("12. Today's goal corrected in place");
+    const sheet = await call("PATCH", `${goals}/${currentId}`, {
+      type: "lose_weight", name: "Lean out", targetWeight: 70.2, targetBodyFatPercentage: null,
+      description: "Race weight for spring", startsOn: today, deadline: day(29),
+    });
+    check("200, corrected in place — the same goal, the new target, name and words", sheet.status === 200 && sheet.body.data.current?.id === currentId && sheet.body.data.current?.targetWeight === 70.2 && sheet.body.data.current?.name === "Lean out" && sheet.body.data.current?.description === "Race weight for spring", sheet);
     check("audited as goal.update", await auditedTimes(A, "goal.update", 2));
+    const sheetPut = await call("PUT", goals, { goalWeight: 70.9 });
+    check("the details sheet's goal PUT is gone", sheetPut.status === 405, sheetPut.status);
 
     console.info("13. A goal that started before today");
     const { data: pastGoalId } = await supabaseAdmin.rpc("add_client_goal", {
@@ -198,6 +219,15 @@ async function main(): Promise<void> {
       type: "lose_weight", name: "Lose weight", targetWeight: 63.7, targetBodyFatPercentage: null, description: null, startsOn: day(-12), deadline: null,
     });
     check("refused: it changes only its deadline and name", started.status === 409 && (started.json as Body).code === "started", started.json);
+    // The goals sheet sends a started goal's new target as a new goal from today.
+    const renewed = await send(session, "POST", `/api/clients/${B}/goals`, { type: "lose_weight", targetWeight: 63.7 });
+    const renewedData = (renewed.json as Body).data;
+    check(
+      "a new target is a new goal from today; the one before ran to yesterday and is named",
+      renewed.status === 201 && renewedData.current?.startsOn === today && renewedData.current?.targetWeight === 63.7 &&
+        renewedData.previous?.id === pastId && renewedData.previous?.endsOn === day(-1),
+      renewedData
+    );
 
     console.info("14. Ownership");
     const { data: foreignClient } = await supabaseAdmin
@@ -219,7 +249,7 @@ async function main(): Promise<void> {
       email: `goal-routes-proof-add-${stamp}@fixture.local`,
       setupMode: "manual",
       currentWeight: 91.8,
-      goalWeight: 84.2,
+      goal: { type: "lose_weight", name: "Spring cut", targetWeight: 84.2, deadline: day(88), description: "Fit into the suit" },
     });
     const addedId = (added.json as { client?: { id?: string } } | null)?.client?.id;
     if (addedId) made.push(addedId);
@@ -227,12 +257,29 @@ async function main(): Promise<void> {
     if (addedId) {
       const firstGoal = (await send(session, "GET", `/api/clients/${addedId}/goals`)).json as Body;
       check(
-        "its first goal starts today, typed from its target against the weight it was given",
-        firstGoal.data.current?.startsOn === today && firstGoal.data.current?.type === "lose_weight" && firstGoal.data.current?.targetWeight === 84.2,
+        "its first goal starts today, with the form's type, name, target, deadline and words",
+        firstGoal.data.current?.startsOn === today && firstGoal.data.current?.type === "lose_weight" &&
+          firstGoal.data.current?.name === "Spring cut" && firstGoal.data.current?.targetWeight === 84.2 &&
+          firstGoal.data.current?.deadline === day(88) && firstGoal.data.current?.description === "Fit into the suit",
         firstGoal.data
       );
       check("audited as goal.create", await auditedTimes(addedId, "goal.create", 1));
     }
+    const lateEmail = `goal-routes-proof-late-${stamp}@fixture.local`;
+    const pastDeadline = await send(session, "POST", "/api/clients", {
+      name: "Goal routes proof D",
+      email: lateEmail,
+      setupMode: "manual",
+      currentWeight: 93.6,
+      goal: { type: "lose_weight", targetWeight: 88.1, deadline: day(-1) },
+    });
+    const { data: lateRows } = await supabaseAdmin.from("clients").select("id").eq("email", lateEmail);
+    for (const row of lateRows ?? []) made.push(row.id);
+    check(
+      "a deadline before the new client's today is a 400 naming the day, and no client is written",
+      pastDeadline.status === 400 && pastDeadline.text.includes("deadline can't be before") && (lateRows ?? []).length === 0,
+      pastDeadline.text.slice(0, 300)
+    );
 
     console.info("15. CSRF");
     const noOrigin = await fetch(`${PROOF_BASE}${goals}`, {

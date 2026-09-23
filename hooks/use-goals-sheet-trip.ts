@@ -2,11 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { OPEN_PROFILE_EDITOR_PARAM } from "@/lib/client-tabs";
+import { OPEN_GOALS_SHEET_PARAM } from "@/lib/client-tabs";
 
 /**
  * The Overview's half of a one-shot trip: another tab sent the coach here to
- * edit the client's profile, and this opens that sheet on arrival.
+ * set the client's goals, and this opens the goals sheet on arrival.
  *
  * The same two properties `useJourneyRoundTrip` documents, and both are bugs if
  * dropped:
@@ -25,7 +25,7 @@ import { OPEN_PROFILE_EDITOR_PARAM } from "@/lib/client-tabs";
  * Narrower than `useJourneyRoundTrip` on purpose: there is no return leg, and
  * the destination is a single sheet rather than one of several surfaces.
  */
-export function useProfileEditorTrip(onOpen: () => void): void {
+export function useGoalsSheetTrip(onOpen: () => void): void {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -36,13 +36,13 @@ export function useProfileEditorTrip(onOpen: () => void): void {
 
   useEffect(() => {
     if (consumed.current) return;
-    if (searchParams.get(OPEN_PROFILE_EDITOR_PARAM) !== "1") return;
+    if (searchParams.get(OPEN_GOALS_SHEET_PARAM) !== "1") return;
 
     consumed.current = true;
     onOpen();
 
     const next = new URLSearchParams(searchParams.toString());
-    next.delete(OPEN_PROFILE_EDITOR_PARAM);
+    next.delete(OPEN_GOALS_SHEET_PARAM);
     const query = next.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [searchParams, pathname, router, onOpen]);

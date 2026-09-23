@@ -14,7 +14,9 @@
  *
  * Sam's recordings must be byte-identical: the profile's copy and the goal
  * agree for him. The fixture's must keep their shape — its copy held a stale
- * 170 kg against the goal's 77.1. `PATCH /api/client/settings` is a write: it
+ * 170 kg against the goal's 77.1. A wire may also gain fields (commit 8d2 gave
+ * the journey's goal the client's goal card): every recorded value kept and
+ * nothing lost is additive, and passes as such. `PATCH /api/client/settings` is a write: it
  * sends the client's own timezone back, a no-op that still moves the client's
  * `updatedAt` — which the next recording's `/api/client/me` then reads — so
  * that one key is masked on those two wires before comparing.
@@ -101,6 +103,24 @@ function keyTree(value: unknown, prefix = ""): Set<string> {
   return out;
 }
 
+/** Whether every value `before` holds is in `after` unchanged — `after` may only add keys. */
+function keptIn(before: unknown, after: unknown): boolean {
+  if (Array.isArray(before)) {
+    return (
+      Array.isArray(after) &&
+      before.length === after.length &&
+      before.every((item, index) => keptIn(item, after[index]))
+    );
+  }
+  if (before !== null && typeof before === "object") {
+    if (after === null || typeof after !== "object" || Array.isArray(after)) return false;
+    return Object.entries(before as Record<string, unknown>).every(
+      ([key, value]) => key in (after as Record<string, unknown>) && keptIn(value, (after as Record<string, unknown>)[key])
+    );
+  }
+  return before === after;
+}
+
 function diff(before: string, after: string): void {
   const a = join(OUT_ROOT, before);
   const b = join(OUT_ROOT, after);
@@ -129,6 +149,11 @@ function diff(before: string, after: string): void {
     const added = [...kb].filter((k) => !ka.has(k));
     if (!exact && removed.length === 0 && added.length === 0) {
       console.info(`≈ ${name}: values differ, every field and type kept`);
+      continue;
+    }
+    if (keptIn(JSON.parse(ta), JSON.parse(tb))) {
+      const gained = added.filter((key) => !key.includes(":"));
+      console.info(`+ ${name}: every recorded value kept; gained ${gained.join(", ")}`);
       continue;
     }
     failures += 1;

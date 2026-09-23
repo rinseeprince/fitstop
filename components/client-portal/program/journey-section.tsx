@@ -1,48 +1,13 @@
 "use client";
 
-import { useUnits } from "@/contexts/units-context";
-import { formatWeight, type UnitSystem } from "@/utils/unit-conversions";
 import { formatBlockDate } from "@/lib/blocks/block-format";
 import { daysBetween } from "@/utils/metric-points";
 import type { ClientJourney, ClientJourneyBlock } from "@/types/client-journey";
 
 // The client's journey view on the Program tab: the current block (name,
-// focus, week-of-total, time progress, the long-term goal) and the
-// finished blocks — the same wording as the coach's Journey list, rendered
-// in the client's own unit.
-
-/** Converted to the viewer's unit and rounded to 1dp, so the "to go" line
- *  subtracts two displayed numbers. */
-function displayWeight(kg: number, preference: UnitSystem): number {
-  return Number(formatWeight(kg, preference).value.toFixed(1));
-}
-
-/** "89.0 kg by 6 Sep, 0.9 kg to go" — the target-line tail after its label. */
-function targetPhrase(
-  targetKg: number,
-  by: string | null,
-  currentKg: number | null,
-  preference: UnitSystem,
-  unit: string
-): string {
-  const target = displayWeight(targetKg, preference);
-  let phrase = `${target.toFixed(1)} ${unit}`;
-  if (by) phrase += ` by ${formatBlockDate(by)}`;
-  if (currentKg != null) {
-    const toGo = Math.abs(displayWeight(currentKg, preference) - target);
-    phrase += `, ${toGo.toFixed(1)} ${unit} to go`;
-  }
-  return phrase;
-}
-
-function TargetLine({ label, phrase }: { label: string; phrase: string }) {
-  return (
-    <p className="text-xs">
-      <span className="font-medium text-foreground">{label}</span>{" "}
-      <span className="font-mono-display text-muted-foreground">{phrase}</span>
-    </p>
-  );
-}
+// focus, week-of-total, time progress) and the finished blocks — the same
+// wording as the coach's Journey list. The client's goal is its own card
+// (goal-card.tsx).
 
 /**
  * The coach's notes about the plan changes inside this block.
@@ -79,13 +44,9 @@ function CoachNotes({ notes }: { notes: ClientJourney["currentBlockNotes"] }) {
 function CurrentBlockCard({
   block,
   journey,
-  preference,
-  unit,
 }: {
   block: ClientJourneyBlock;
   journey: ClientJourney;
-  preference: UnitSystem;
-  unit: string;
 }) {
   // The elapsed fraction, clamped to [0, 1] and anchored on the wire's
   // clientToday — never the device day.
@@ -111,20 +72,6 @@ function CurrentBlockCard({
           style={{ width: `${fraction * 100}%` }}
         />
       </div>
-      <div className="mt-3 space-y-1">
-        {journey.goal.weightKg != null && (
-          <TargetLine
-            label="Your goal:"
-            phrase={targetPhrase(
-              journey.goal.weightKg,
-              journey.goal.deadline,
-              journey.currentWeightKg,
-              preference,
-              unit
-            )}
-          />
-        )}
-      </div>
       <CoachNotes notes={journey.currentBlockNotes} />
     </div>
   );
@@ -145,9 +92,6 @@ function FinishedBlockRow({ block }: { block: ClientJourneyBlock }) {
 }
 
 export function JourneySection({ journey }: { journey: ClientJourney }) {
-  const { preference } = useUnits();
-  const unit = formatWeight(0, preference).unit;
-
   const current = journey.blocks.find((b) => b.state === "current") ?? null;
   const finished = journey.blocks.filter((b) => b.state === "past");
   if (!current && finished.length === 0) return null;
@@ -155,12 +99,7 @@ export function JourneySection({ journey }: { journey: ClientJourney }) {
   return (
     <div className="flex flex-col gap-2">
       {current && (
-        <CurrentBlockCard
-          block={current}
-          journey={journey}
-          preference={preference}
-          unit={unit}
-        />
+        <CurrentBlockCard block={current} journey={journey} />
       )}
       {finished.length > 0 && (
         <div className="flex flex-col gap-2">

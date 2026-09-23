@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Loader2, UserPlus } from "lucide-react";
 import { UseFormReturn } from "react-hook-form";
 import {
@@ -21,16 +21,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SectionLabel } from "@/components/programs/shared/section-label";
+import { GoalFields } from "@/components/clients/goals/goal-fields";
+import { useGoalDraft, type GoalDraftErrors } from "@/components/clients/goals/use-goal-draft";
 import { useUnits } from "@/contexts/units-context";
 import { useCanonicalInput, useHeightInput } from "@/hooks/use-unit-inputs";
+import { getTodayDateString } from "@/lib/date-helpers";
+import { goalBody } from "@/lib/goals/goal-form";
 import { formatLength, formatWeight } from "@/utils/unit-conversions";
 import type { CreateClientInput } from "@/lib/validations/client";
 
 // Every number this form submits is CANONICAL — kilograms and centimetres —
-// and the coach types in whichever units they prefer. The unit <Select>s that
-// used to sit beside Height and Goal Weight are gone: they described the
-// payload rather than the reader, so two coaches sharing a client could
-// disagree about what the same stored number meant.
+// and the coach types in whichever units they prefer. The client's first goal
+// takes the goals sheet's fields (components/clients/goals/goal-fields.tsx)
+// and starts on their today.
 
 type AddClientManualFormProps = {
   form: UseFormReturn<CreateClientInput>;
@@ -52,11 +56,8 @@ export function AddClientManualForm({ form, onSubmit, onBack, pending }: AddClie
     form.getValues("currentWeight"),
     "weight",
   );
-  const goalWeight = useCanonicalInput(
-    preference,
-    form.getValues("goalWeight"),
-    "weight",
-  );
+  const goal = useGoalDraft({ preference, stored: null });
+  const [goalErrors, setGoalErrors] = useState<GoalDraftErrors>({});
 
   // The RHF fields hold canonical values; these inputs hold the coach's display
   // string. Pushing the conversion through on each keystroke keeps zodResolver
@@ -68,13 +69,23 @@ export function AddClientManualForm({ form, onSubmit, onBack, pending }: AddClie
   useEffect(() => {
     setValue("currentWeight", currentWeight.commit ?? undefined);
   }, [currentWeight.commit, setValue]);
-  useEffect(() => {
-    setValue("goalWeight", goalWeight.commit ?? undefined);
-  }, [goalWeight.commit, setValue]);
+  // The goal's own checks first — a target the type needs, or one that does not
+  // read or is out of bounds, says so in the coach's unit — and only a checked
+  // goal is sent, none while the type is "No goal"; then the form's checks.
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    const checked = goal.type ? goal.toDraft({ asksStart: false }) : null;
+    setGoalErrors(checked?.errors ?? {});
+    if (checked?.errors) {
+      event.preventDefault();
+      return;
+    }
+    setValue("goal", checked ? goalBody(checked.draft) : undefined);
+    void form.handleSubmit(onSubmit)(event);
+  };
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={submit} className="space-y-4">
         <FormField
           control={form.control}
           name="name"
@@ -268,47 +279,21 @@ export function AddClientManualForm({ form, onSubmit, onBack, pending }: AddClie
           />
         </div>
 
-        {/* Goal Metrics */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormItem>
-            <FormLabel>Goal weight ({weightUnit})</FormLabel>
-            <FormControl>
-              <Input
-                inputMode="decimal"
-                placeholder={preference === "imperial" ? "150" : "68"}
-                value={goalWeight.value}
-                onChange={(e) => goalWeight.setValue(e.target.value)}
-              />
-            </FormControl>
-            {goalWeight.hasParseError && (
-              <p className="text-xs text-[#c06060]">Enter a weight above 0</p>
-            )}
-          </FormItem>
-
-          <FormField
-            control={form.control}
-            name="goalBodyFatPercentage"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Goal body fat %</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    placeholder="15"
-                    {...field}
-                    value={field.value ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      field.onChange(value === "" ? undefined : parseFloat(value));
-                    }}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+        <div>
+          <SectionLabel label="Goal" />
+          <GoalFields
+            draft={goal}
+            errors={goalErrors}
+            readings={{
+              weight: currentWeight.canonical,
+              bodyFat: form.watch("currentBodyFatPercentage") ?? null,
+            }}
+            asksStart={false}
+            startMin={getTodayDateString()}
+            deadlineMin={getTodayDateString()}
+            allowNoGoal
+            idPrefix="add-client-goal"
           />
-
         </div>
 
         <div className="flex gap-2 pt-2">

@@ -173,10 +173,10 @@ describe("CheckInDetailView", () => {
     expect(screen.queryByText(/Failed to load check-in data/i)).not.toBeInTheDocument();
   });
 
-  it("Set new goals crosses to the Overview editor and clears the open check-in", async () => {
-    // The goal editor is the Overview's details sheet. Cross-tab navigation
-    // must go through the handler, and `checkIn: null` stops Back landing on a
-    // review the coach has left.
+  it("Set new goals crosses to the Overview's goals sheet and clears the open check-in", async () => {
+    // The goals sheet is the Overview's. Cross-tab navigation must go through
+    // the handler, and `checkIn: null` stops Back landing on a review the coach
+    // has left.
     const user = userEvent.setup();
     mockDetailData.mockReturnValue(loaded);
     const { onTabChange } = renderView();
@@ -184,7 +184,7 @@ describe("CheckInDetailView", () => {
     await user.click(screen.getByRole("button", { name: "set new goals" }));
 
     expect(onTabChange).toHaveBeenCalledWith("overview", {
-      editProfile: "1",
+      editGoals: "1",
       checkIn: null,
     });
   });

@@ -7,7 +7,7 @@ import {
   WEIGHT_KG_MAX,
   WEIGHT_KG_MIN,
 } from "@/lib/constants";
-import { GOAL_TYPES } from "@/lib/goals/goal-types";
+import { GOAL_TYPE_SETTINGS, GOAL_TYPES, type GoalType } from "@/lib/goals/goal-types";
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 const dateMessage = "Date must be in YYYY-MM-DD format";
@@ -24,28 +24,63 @@ const targetBodyFat = z.number().min(GOAL_BODY_FAT_MIN).max(GOAL_BODY_FAT_MAX);
 const name = z.string().trim().min(1).max(GOAL_NAME_MAX);
 const description = z.string().trim().max(GOAL_DESCRIPTION_MAX);
 
-/** A goal from today, or planned from a later day. The name defaults to the type's. */
-export const addGoalSchema = z.object({
+/**
+ * The target a goal's type needs — a weight to lose weight or build muscle, a
+ * body fat for a recomp. Any other target is the coach's to add or leave out.
+ */
+function requireTheTypesTarget(
+  goal: { type: GoalType; targetWeight?: number | null; targetBodyFatPercentage?: number | null },
+  ctx: z.RefinementCtx
+): void {
+  const settings = GOAL_TYPE_SETTINGS[goal.type];
+  if (settings.target === "weight" && goal.targetWeight == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["targetWeight"],
+      message: `A ${settings.name} goal needs a target weight`,
+    });
+  }
+  if (settings.target === "bodyFat" && goal.targetBodyFatPercentage == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["targetBodyFatPercentage"],
+      message: `A ${settings.name} goal needs a target body fat`,
+    });
+  }
+}
+
+const goalFields = z.object({
   type: z.enum(GOAL_TYPES),
   name: name.optional(),
   targetWeight: targetWeight.nullable().optional(),
   targetBodyFatPercentage: targetBodyFat.nullable().optional(),
   description: description.nullable().optional(),
-  /** Absent = today. */
-  startsOn: day.optional(),
   deadline: day.nullable().optional(),
 });
 
+/** A client's first goal on the manual Add client: it starts on their today. */
+export const firstGoalSchema = goalFields.superRefine(requireTheTypesTarget);
+
+/** A goal from today, or planned from a later day. The name defaults to the type's. */
+export const addGoalSchema = goalFields
+  .extend({
+    /** Absent = today. */
+    startsOn: day.optional(),
+  })
+  .superRefine(requireTheTypesTarget);
+
 /** A planned goal, or today's, rewritten whole — every field as it should stand. */
-export const editGoalSchema = z.object({
-  type: z.enum(GOAL_TYPES),
-  name,
-  targetWeight: targetWeight.nullable(),
-  targetBodyFatPercentage: targetBodyFat.nullable(),
-  description: description.nullable(),
-  startsOn: day,
-  deadline: day.nullable(),
-});
+export const editGoalSchema = z
+  .object({
+    type: z.enum(GOAL_TYPES),
+    name,
+    targetWeight: targetWeight.nullable(),
+    targetBodyFatPercentage: targetBodyFat.nullable(),
+    description: description.nullable(),
+    startsOn: day,
+    deadline: day.nullable(),
+  })
+  .superRefine(requireTheTypesTarget);
 
 export const goalDeadlineSchema = z.object({ deadline: day.nullable() });
 
@@ -53,18 +88,3 @@ export const renameGoalSchema = z.object({ name, description: description.nullab
 
 /** The signed copy a delete handed out. */
 export const restoreGoalSchema = z.object({ undo: z.string().min(1).max(20_000) });
-
-/**
- * The client details sheet's goal fields, until commit 8d2 moves the goal to
- * its own sheet: a partial update, at least one field. `goalWeight` cannot be
- * cleared here (the sheet refuses it too); the other two accept null.
- */
-export const updateGoalsSchema = z
-  .object({
-    goalWeight: targetWeight.optional(),
-    goalBodyFatPercentage: targetBodyFat.nullable().optional(),
-    goalDeadline: day.nullable().optional(),
-  })
-  .refine((data) => Object.values(data).some((v) => v !== undefined), {
-    message: "At least one field must be provided",
-  });
