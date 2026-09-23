@@ -80,7 +80,7 @@ describe("NutritionOutOfDateNotice", () => {
     expect(onSetFrom).toHaveBeenCalledWith("2026-10-19");
   });
 
-  it("in the drawer, whose own button regenerates, today's problem moves Starts on instead", () => {
+  it("without Regenerate, today's problem offers Set nutrition from today", () => {
     const onSetFrom = vi.fn();
     render(<NutritionOutOfDateNotice outOfDate={fromToday} clientToday={TODAY} onSetFrom={onSetFrom} />);
 

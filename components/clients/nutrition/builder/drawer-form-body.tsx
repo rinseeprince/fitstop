@@ -128,11 +128,8 @@ export function DrawerFormBody() {
             <NutritionOutOfDateNotice
               outOfDate={outOfDate}
               clientToday={clientToday}
-              // The drawer's own button is the regenerate; the notice only
-              // moves Starts on to its day, and says nothing to do once it is.
-              onSetFrom={
-                builder.effectiveFrom !== outOfDate.fromDay ? builder.setStartsOn : undefined
-              }
+              // No action here: Starts on sits right above it and the drawer's
+              // own button is the regenerate (owner, 2026-09-23).
               onClose={() => void closeOutOfDate(builder.client.id, outOfDate)}
             />
           )}

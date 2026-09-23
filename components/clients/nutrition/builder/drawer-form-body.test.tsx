@@ -149,7 +149,7 @@ describe("DrawerFormBody — the Goal line is the Starts on day's goal", () => {
   });
 });
 
-describe("DrawerFormBody — the out-of-date notice moves Starts on", () => {
+describe("DrawerFormBody — the out-of-date notice", () => {
   const later: NutritionOutOfDate = {
     versionId: "v-run",
     fromDay: "2026-10-19",
@@ -158,17 +158,8 @@ describe("DrawerFormBody — the out-of-date notice moves Starts on", () => {
     goalName: "Build",
   };
 
-  it("offers Set nutrition from that day, which moves Starts on to it", () => {
+  it("says it with no action of its own — Starts on sits right above it", () => {
     outOfDateState.outOfDate = later;
-    render(<DrawerFormBody />);
-
-    screen.getByRole("button", { name: "Set nutrition from 19 Oct" }).click();
-    expect(setStartsOn).toHaveBeenCalledWith("2026-10-19");
-  });
-
-  it("has nothing to offer once Starts on is that day, and never a Regenerate of its own", () => {
-    outOfDateState.outOfDate = later;
-    builder.effectiveFrom = "2026-10-19";
     render(<DrawerFormBody />);
 
     expect(
