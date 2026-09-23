@@ -173,6 +173,18 @@ describe("GoalsPane — the table", () => {
     // An ended goal: reached, on the first day a reading met it
     expect(within(rowOf("Cut")).getByText("4 May – 28 June")).toBeInTheDocument();
     expect(within(rowOf("Cut")).getByText("Reached 10 June")).toBeInTheDocument();
+    // The weight: where today's goal stands now, and what an ended one ended at
+    expect(screen.getAllByRole("columnheader").map((heading) => heading.textContent)).toEqual([
+      "Goal",
+      "Dates",
+      "Deadline",
+      "Target",
+      "Weight",
+      "Result",
+      "Actions",
+    ]);
+    expect(within(rowOf("Build")).getByText("83.7 kg")).toBeInTheDocument();
+    expect(within(rowOf("Cut")).getByText("80.3 kg")).toBeInTheDocument();
   });
 
   it("claims no result until the readings it is worked out from land", async () => {
@@ -184,6 +196,7 @@ describe("GoalsPane — the table", () => {
     expect(within(rowOf("Lean out")).getByText("Planned")).toBeInTheDocument();
     expect(screen.queryByText("Reached 10 June")).toBeNull();
     expect(screen.queryByText("0.9 kg to go")).toBeNull();
+    expect(screen.queryByText("83.7 kg")).toBeNull();
     expect(screen.queryByText("No reading")).toBeNull();
 
     await act(async () => {

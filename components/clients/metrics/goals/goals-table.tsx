@@ -32,7 +32,8 @@ import { GoalLines } from "./goal-lines";
 
 /**
  * The Journey's goals table: a row per goal, planned first — its name, its
- * dates, its deadline, its targets and its result — each opening onto what
+ * dates, its deadline, its targets, the weight it ended at (today's goal: the
+ * newest) and its result — each opening onto what
  * happened during it. Which rows are open is local: a row is a disclosure,
  * not a place, and a click opens or closes it in one update.
  */
@@ -139,7 +140,20 @@ function Result({
   );
 }
 
-const COLUMNS = 6;
+/** A row's figures from the readings: its result and the weight it ended at, or today's. */
+export type GoalRowFigures = { lines: GoalResultLine[]; weight: number | null };
+
+function Weight({ figures, failed, unit }: { figures: GoalRowFigures | null; failed: boolean; unit: string }) {
+  if (figures === null) return failed ? <Dash /> : <Skeleton className="h-4 w-16" />;
+  if (figures.weight === null) return <Dash />;
+  return (
+    <span className={cn(MONO_CELL_CLASS, TEXT_PRIMARY)}>
+      {figures.weight.toFixed(1)} {unit}
+    </span>
+  );
+}
+
+const COLUMNS = 7;
 
 function GoalsTableHeader() {
   return (
@@ -149,6 +163,7 @@ function GoalsTableHeader() {
         <TableHead>Dates</TableHead>
         <TableHead>Deadline</TableHead>
         <TableHead>Target</TableHead>
+        <TableHead>Weight</TableHead>
         <TableHead>Result</TableHead>
         <TableHead>
           <span className="sr-only">Actions</span>
@@ -166,8 +181,8 @@ export function GoalsTable({
   onDelete,
 }: {
   rows: GoalHistoryRow[];
-  /** A row's result; null while the readings it is worked out from load. */
-  resultOf: (row: GoalHistoryRow) => GoalResultLine[] | null;
+  /** A row's figures; null while the readings they are worked out from load. */
+  resultOf: (row: GoalHistoryRow) => GoalRowFigures | null;
   resultsFailed: boolean;
   viewer: UnitSystem;
   onDelete: (row: GoalHistoryRow) => void;
@@ -188,6 +203,7 @@ export function GoalsTable({
       <TableBody>
         {rows.map((row) => {
           const isOpen = open.has(row.id);
+          const figures = resultOf(row);
           const type = goalTypeBesideName(row.type, row.name);
           return (
             <Fragment key={row.id}>
@@ -233,7 +249,10 @@ export function GoalsTable({
                   <Targets row={row} viewer={viewer} />
                 </TableCell>
                 <TableCell>
-                  <Result lines={resultOf(row)} failed={resultsFailed} weightUnit={weightUnit} />
+                  <Weight figures={figures} failed={resultsFailed} unit={weightUnit} />
+                </TableCell>
+                <TableCell>
+                  <Result lines={figures?.lines ?? null} failed={resultsFailed} weightUnit={weightUnit} />
                 </TableCell>
                 <TableCell>
                   <RowActions

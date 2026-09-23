@@ -11,15 +11,15 @@ import { useClientGoalHistory, useClientGoals } from "@/hooks/use-client-goals";
 import { useMeasurementSeries } from "@/hooks/use-measurement-series";
 import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { useUnits } from "@/contexts/units-context";
-import { goalResult, type GoalResultLine } from "@/lib/goals/goal-result";
+import { goalEndWeight, goalResult } from "@/lib/goals/goal-result";
 import { formatWeight } from "@/utils/unit-conversions";
 import type { GoalHistoryRow } from "@/types/client-goals";
-import { GoalsTable, GoalsTableSkeleton } from "./goals-table";
+import { GoalsTable, GoalsTableSkeleton, type GoalRowFigures } from "./goals-table";
 
 /**
  * The Journey's Goals pane (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d3): every
- * goal, planned first, with its result and what happened during it, and a
- * delete on each row.
+ * goal, planned first, with the weight it ended at (today's goal: the newest),
+ * its result and what happened during it, and a delete on each row.
  *
  * Three reads: the goals table (`GET …/goals/history`), the measurement series
  * each result is worked out from, and the goals read — today's goal's start
@@ -50,12 +50,12 @@ export function GoalsPane({ clientId }: { clientId: string }) {
   );
 
   const resultOf = useCallback(
-    (row: GoalHistoryRow): GoalResultLine[] | null => {
+    (row: GoalHistoryRow): GoalRowFigures | null => {
       const isToday = row.status === "current";
       if (row.status !== "planned" && (!readings || (isToday && goalLoading))) return null;
       // Today's goal measures from the start the goals read carries, as the card does.
       const start = isToday && current?.id === row.id ? current.startReadings : null;
-      return goalResult(
+      const lines = goalResult(
         {
           type: row.type,
           status: row.status,
@@ -76,6 +76,7 @@ export function GoalsPane({ clientId }: { clientId: string }) {
         readings ?? { weight: [], bodyFat: [] },
         weightUnit
       );
+      return { lines, weight: goalEndWeight(row, readings?.weight ?? []) };
     },
     [readings, goalLoading, current, preference, weightUnit]
   );

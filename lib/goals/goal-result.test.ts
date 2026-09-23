@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { goalProgressChip } from "./goal-chip";
-import { goalResult, type ReadingDays } from "./goal-result";
+import { goalEndWeight, goalResult, type ReadingDays } from "./goal-result";
 
 // A day in another year carries its year, so today is pinned.
 beforeEach(() => {
@@ -212,5 +212,22 @@ describe("goalResult — a goal with no targets", () => {
     expect(goalResult({ ...maintain, status: "current", endsOn: null }, weights(days(["2026-04-30", 83.2])), "kg")).toEqual([
       { kind: "noReading" },
     ]);
+  });
+});
+
+describe("goalEndWeight — the weight a goal ended at, or today's", () => {
+  const readings = days(["2026-04-30", 83.2], ["2026-06-12", 82.1], ["2026-07-08", 81.5]);
+
+  it("is the reading standing on an ended goal's last day", () => {
+    expect(goalEndWeight({ status: "ended", endsOn: "2026-06-28" }, readings)).toBe(82.1);
+  });
+
+  it("is the newest reading for today's goal", () => {
+    expect(goalEndWeight({ status: "current", endsOn: null }, readings)).toBe(81.5);
+  });
+
+  it("is none for a planned goal, and without a reading", () => {
+    expect(goalEndWeight({ status: "planned", endsOn: null }, readings)).toBeNull();
+    expect(goalEndWeight({ status: "ended", endsOn: "2026-04-29" }, readings)).toBeNull();
   });
 });

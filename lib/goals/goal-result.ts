@@ -103,6 +103,13 @@ function endedVerdict(
   };
 }
 
+/** The weight a goal ended at — the reading standing on its last day — or, for today's goal, the newest; none for a planned goal. */
+export function goalEndWeight(goal: Pick<ResultGoal, "status" | "endsOn">, days: ReadingDays): number | null {
+  if (goal.status === "planned") return null;
+  if (goal.status === "ended" && goal.endsOn) return asOf(days, goal.endsOn);
+  return days[days.length - 1]?.value ?? null;
+}
+
 export function goalResult(
   goal: ResultGoal,
   readings: Record<GoalMetric, ReadingDays>,
