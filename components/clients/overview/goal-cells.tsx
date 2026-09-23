@@ -201,18 +201,21 @@ export function TargetCell({
       ) : rows.length === 0 ? (
         <span className={EMPTY_CLASS}>No target</span>
       ) : (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2">
           {rows.map((row) => (
-            <div key={row.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <span>
-                <span className={cn(STAT_VALUE_DARK_CLASS, BAND_VALUE_CLASS, "leading-tight")}>
-                  {row.value}
-                </span>
-                <span className="ml-1 text-[11px] font-normal text-[rgba(255,255,255,0.30)]">
-                  {row.unit}
-                </span>
+            <div key={row.key}>
+              <span className={cn(STAT_VALUE_DARK_CLASS, BAND_VALUE_CLASS, "leading-tight")}>
+                {row.value}
               </span>
-              {row.chip && <GoalChip chip={row.chip} />}
+              <span className="ml-1 text-[11px] font-normal text-[rgba(255,255,255,0.30)]">
+                {row.unit}
+              </span>
+              {/* Under its target, where the band's other cells put their second line. */}
+              {row.chip && (
+                <div className="mt-1">
+                  <GoalChip chip={row.chip} />
+                </div>
+              )}
             </div>
           ))}
         </div>

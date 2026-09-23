@@ -135,6 +135,22 @@ describe("StatusBand — goal chips", () => {
     expect(screen.getByText("4.0 kg to go")).toBeInTheDocument();
   });
 
+  it("puts the chip on its own line under its target, not beside it", () => {
+    render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        series={seriesOf({ weight: { current: 89 } })}
+        goal={goalOf({ type: "lose_weight", targetWeight: 85, start: { weight: 94 } })}
+      />
+    );
+
+    const line = screen.getByText("4.0 kg to go").parentElement;
+    expect(line?.tagName).toBe("DIV");
+    expect(line?.textContent).toBe("4.0 kg to go");
+    expect(line?.previousElementSibling?.textContent).toBe("kg");
+  });
+
   it("reached: says so once the client lands within the tolerance of the goal", () => {
     render(
       <StatusBand
