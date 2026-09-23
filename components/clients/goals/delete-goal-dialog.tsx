@@ -83,7 +83,7 @@ export function DeleteGoalDialog({
         {subject && <p className="text-sm text-[#5a7d82]">{consequence(subject)}</p>}
 
         {typedConfirm && (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-4">
             <Label htmlFor="delete-goal-typed">Type {CONFIRM_WORD} to confirm</Label>
             <Input
               id="delete-goal-typed"
