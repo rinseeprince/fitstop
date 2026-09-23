@@ -32,7 +32,6 @@ const params = { params: Promise.resolve({ id: "client-1" }) };
 const OVERVIEW = {
   current: { id: "goal-now", name: "Lose weight" },
   planned: [],
-  previous: null,
   clientToday: "2026-09-22",
 };
 
@@ -146,7 +145,7 @@ describe("/api/clients/[id]/goals", () => {
       expect(requireCoachOwnsClient).not.toHaveBeenCalled();
     });
 
-    it("answers a deadline guard with the sentence and the fixes", async () => {
+    it("answers a deadline guard with the sentence that says what would clear it", async () => {
       vi.mocked(addGoal).mockRejectedValue(
         new GoalWriteError("deadline_after_next", "{}", { goalId: "goal-peak", name: "Peak", startsOn: "2026-11-09" })
       );
@@ -157,7 +156,7 @@ describe("/api/clients/[id]/goals", () => {
       expect(response.status).toBe(409);
       const body = await response.json();
       expect(body.error).toBe("The deadline runs into Peak, which starts 9 Nov. Move Peak to 21 Nov or delete it.");
-      expect(body.fixes).toHaveLength(2);
+      expect(body).not.toHaveProperty("fixes");
       expect(recordAuditEvent).not.toHaveBeenCalled();
     });
   });

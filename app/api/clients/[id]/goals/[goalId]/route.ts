@@ -4,7 +4,6 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getGoalsOverview } from "@/services/client-goals-service";
 import { deleteGoal, editGoal } from "@/services/client-goal-writes-service";
-import { signGoalUndo } from "@/services/goal-undo-token";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
@@ -67,11 +66,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   }
 }
 
-/**
- * A goal hard-deleted — any goal; the goal before it covers its days again.
- * The response carries a signed copy of exactly what was deleted, which
- * `POST …/goals/restore` accepts until it expires.
- */
+/** A goal hard-deleted — any goal; the goal before it covers its days again. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
@@ -84,8 +79,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
-    const copy = await deleteGoal({ goalId, clientId });
-    const undo = signGoalUndo(clientId, copy);
+    await deleteGoal({ goalId, clientId });
 
     void recordAuditEvent({
       actorId: auth.coachId,
@@ -97,10 +91,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       request,
     });
 
-    return NextResponse.json({
-      success: true,
-      data: { ...(await getGoalsOverview(clientId)), undo: undo.token, undoExpiresAt: undo.expiresAt },
-    });
+    return NextResponse.json({ success: true, data: await getGoalsOverview(clientId) });
   } catch (error) {
     return goalWriteErrorResponse(error);
   }

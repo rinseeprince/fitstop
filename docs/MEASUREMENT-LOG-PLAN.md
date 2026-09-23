@@ -879,7 +879,7 @@ browser smokelist.
 - **Journey → Goals** (`?journey=goals`): a row per goal, planned ones first, each with its dates, its targets and its **result**. A row opens to show its deadline changes, each nutrition version during it with its calories and what it was built for, the programs placed, replaced or ended during it, and the habits added, stopped or restarted during it — in date order.
 - **The result is derived, never stored:** reached, with the first day the target was met; else how far it got when the goal ended; else missed by so much at its deadline, when the deadline passed while the goal ran. A goal still running shows its progress, a planned one shows "Planned", a goal with no targets shows the weight change over its days. It uses the same verdict as the goal card, so the two cannot disagree, and a corrected weigh-in corrects it.
 - **One small migration** records a habit's events — added, stopped, restarted — written by the habit saves, because a stop has no date today and a restart re-dates the habit. Nothing else is recorded: nutrition versions and training placements already carry their own dates, and the owner does not want every program edit recorded.
-- **A goal can be deleted from a row,** with the same confirm and undo as the sheet, and the Overview's Goal-history popover becomes a link to this pane.
+- **A goal can be deleted from a row,** with the same confirm as the sheet, and the Overview's Goal-history popover becomes a link to this pane.
 
 ```text
 Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commits 8d and 8d3
@@ -891,7 +891,7 @@ version during it with its calories and what it was built for, the programs plac
 ended during it, and the habits added, stopped or restarted during it. The result is worked out
 from the measurement log, never stored, through the same verdict the goal card uses: reached with
 the day it was met, else how far it got when the goal ended, else missed by X at its deadline. A
-goal can be deleted from a row with the same confirm and undo as the goals sheet, and the
+goal can be deleted from a row with the same confirm as the goals sheet, and the
 Overview's Goal-history popover becomes a link here.
 
 It takes one small migration: a habit's events — added, stopped, restarted — written by the habit

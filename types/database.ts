@@ -3299,7 +3299,7 @@ export type Database = {
       }
       delete_client_goal: {
         Args: { p_client_id: string; p_goal_id: string }
-        Returns: Json
+        Returns: undefined
       }
       edit_client_goal: {
         Args: {
@@ -3436,10 +3436,6 @@ export type Database = {
           p_name: string
         }
         Returns: boolean
-      }
-      restore_client_goal: {
-        Args: { p_client_id: string; p_copy: Json }
-        Returns: string
       }
       restore_measurement: {
         Args: { p_client_id: string; p_id: string }

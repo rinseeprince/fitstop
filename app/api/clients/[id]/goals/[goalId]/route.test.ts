@@ -18,14 +18,12 @@ vi.mock("@/services/client-goal-writes-service", () => {
   }
   return { GoalWriteError, editGoal: vi.fn(), deleteGoal: vi.fn() };
 });
-vi.mock("@/services/goal-undo-token", () => ({ signGoalUndo: vi.fn() }));
 vi.mock("@/services/today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("@/services/audit-log-service", () => ({ recordAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getGoalsOverview } from "@/services/client-goals-service";
 import { deleteGoal, editGoal, GoalWriteError } from "@/services/client-goal-writes-service";
-import { signGoalUndo } from "@/services/goal-undo-token";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 
@@ -54,7 +52,7 @@ describe("/api/clients/[id]/goals/[goalId]", () => {
     vi.clearAllMocks();
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
     vi.mocked(getClientTodayString).mockResolvedValue("2026-09-22");
-    vi.mocked(getGoalsOverview).mockResolvedValue({ current: null, planned: [], previous: null, clientToday: "2026-10-07" });
+    vi.mocked(getGoalsOverview).mockResolvedValue({ current: null, planned: [], clientToday: "2026-10-07" });
   });
 
   describe("PATCH", () => {
@@ -93,35 +91,29 @@ describe("/api/clients/[id]/goals/[goalId]", () => {
       expect((await response.json()).code).toBe("started");
     });
 
-    it("offers to end the previous goal's deadline when a planned start runs into it", async () => {
+    it("says a planned start runs into the previous goal's deadline, and where that deadline could end", async () => {
       vi.mocked(editGoal).mockRejectedValue(
         new GoalWriteError("previous_deadline", "{}", { goalId: "goal-4", name: "Cut", deadline: "2026-10-17" })
       );
       const body = await (await PATCH(request("PATCH", EDIT), params)).json();
-      expect(body.fixes).toEqual([{ kind: "end_deadline", goalId: "goal-4", name: "Cut", deadline: "2026-10-02" }]);
+      expect(body.error).toBe("Cut's deadline is 17 Oct. End that deadline on 2 Oct, or start this goal after it.");
     });
   });
 
   describe("DELETE", () => {
-    it("deletes the goal and hands back a signed copy for the undo", async () => {
-      const copy = { goal: { id: "goal-5" }, deadlines: [] };
-      vi.mocked(deleteGoal).mockResolvedValue(copy);
-      vi.mocked(signGoalUndo).mockReturnValue({ token: "signed.copy", expiresAt: "2026-09-22T18:30:30.000Z" });
+    it("deletes the goal and answers with the goals as they stand", async () => {
+      vi.mocked(deleteGoal).mockResolvedValue(undefined);
       const response = await DELETE(request("DELETE"), params);
       expect(response.status).toBe(200);
       expect(deleteGoal).toHaveBeenCalledWith({ goalId: "goal-5", clientId: "client-2" });
-      expect(signGoalUndo).toHaveBeenCalledWith("client-2", copy);
-      expect((await response.json()).data).toMatchObject({
-        undo: "signed.copy",
-        undoExpiresAt: "2026-09-22T18:30:30.000Z",
-      });
+      expect((await response.json()).data).toEqual({ current: null, planned: [], clientToday: "2026-10-07" });
       expect(recordAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: "goal.delete", targetId: "goal-5" }));
     });
 
     it("answers another client's goal as not found", async () => {
       vi.mocked(deleteGoal).mockRejectedValue(new GoalWriteError("not_found", "x"));
       expect((await DELETE(request("DELETE"), params)).status).toBe(404);
-      expect(signGoalUndo).not.toHaveBeenCalled();
+      expect(recordAuditEvent).not.toHaveBeenCalled();
     });
 
     it("deletes nothing for another coach's client", async () => {

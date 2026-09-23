@@ -185,7 +185,6 @@
   - Success: `toast.success("Session saved")`; a consequence, when there is one, as `{ description }`.
   - Failure: `toast.error("Save failed", { description: "What went wrong" })`.
   - A confirmation with no verdict: plain `toast("Nothing to clear")` (no icon).
-  - An outcome that can be taken back carries Undo for as long as the undo holds: `toast.success("Goal deleted", { duration: GOAL_UNDO_WINDOW_MS, action: { label: "Undo", onClick } })`.
   - Exactly one toaster — `components/ui/sonner.tsx`, mounted by `app/layout.tsx`. Never mount a second, never restyle a toast at a call site; `components/toaster-ownership.test.ts` scans for both. Copy rules: `docs/newdesignsystem.md` → Toasts.
 
   ## 4. File Size Limits
@@ -581,7 +580,7 @@
   - **Dictionaries sync via their own delta endpoint.** The exercise catalog is the canonical example: `GET /api/client/exercises/catalog?since=<ISO>` returns a sparse fieldset of rows with `updated_at` after `since` (omit `since` for a full resync). It is complete-by-construction past the ~1000-row PostgREST cap (pages internally on the tie-safe `(updated_at, id)` cursor); deletes are invisible to the delta, so a periodic full resync catches them.
 
   ### Soft deletes
-  - User-created data uses soft delete, never hard delete. **Two deliberate exceptions are hard-deleted:** a coach's note — the coach's own scratch text (`docs/ARCHITECTURE.md` → "client_notes table") — and a **goal**, which nothing references: a check-in or a nutrition version keeps its own copy of what it needs, and the delete hands the coach a signed copy of exactly what it removed for an Undo that puts it back (`docs/ARCHITECTURE.md` → "client_goals table")
+  - User-created data uses soft delete, never hard delete. **Two deliberate exceptions are hard-deleted:** a coach's note — the coach's own scratch text (`docs/ARCHITECTURE.md` → "client_notes table") — and a **goal**, which nothing references: a check-in or a nutrition version keeps its own copy of what it needs (`docs/ARCHITECTURE.md` → "client_goals table")
   - **is_active pattern**: Training sessions, exercises, and daily habits use `is_active = false`. Always filter by `.eq("is_active", true)` in read queries
   - **Status-based lifecycle**: Entities with richer states use a status column instead of is_active. The lifecycle is **not uniform across entities** — match the one already in place:
     - **Training plans** moved to **date-range coexistence** (events-as-SOT): many provenance `training_plans` rows coexist, there is **no `planned`/promotion concept**, and "active" is resolved **by date** (the row whose `[effective_from, effective_until]` covers today — both ends stored, migration 167), not `status='active'`. Placement is additive on the past and supersedes the future: the RPC caps every earlier live program at the day before the new start and archives one that started on the same day (it never ran a day of its own), and the service then removes the earlier programs' scheduled days from the start onward, logged days detached. Nothing before the new start is touched.

@@ -46,7 +46,6 @@ export function useClientGoals(clientId: string) {
   return {
     current: data?.data.current ?? null,
     planned: data?.data.planned ?? NO_PLANNED,
-    previous: data?.data.previous ?? null,
     clientToday: data?.data.clientToday ?? null,
     isLoading,
     // Failed only with nothing to show: a refetch that fails over goals

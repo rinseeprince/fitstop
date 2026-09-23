@@ -54,7 +54,6 @@ const HOSTS: { file: string; nulled: string[] }[] = [
   { file: "components/clients/metrics/metrics-tab-content.tsx", nulled: ["setEditingReading(null)", "setRemovingReading(null)"] },
   { file: "hooks/use-nutrition-calendar-editing.ts", nulled: ["setEditorOpen(false)"] },
   { file: "components/clients/goals/goals-sheet.tsx", nulled: ["setDeleteTarget(null)"] },
-  { file: "components/clients/goals/goal-form.tsx", nulled: ["setDeleteTarget(null)"] },
   { file: "components/clients/client-overview-tab.tsx", nulled: ["setGoalsSheetOpen(false)"] },
 ];
 
@@ -89,8 +88,7 @@ describe("a dialog's subject outlives its close", () => {
     expect(read("components/programs/exercise-form-dialog.tsx")).not.toMatch(/useEffect\s*\(/);
   });
 
-  it("the goal delete confirm is keyed by the opening in both its hosts", () => {
+  it("the goal delete confirm is keyed by the opening, so each opens with its typed box empty", () => {
     expect(read("components/clients/goals/goals-sheet.tsx")).toContain("key={`delete-goal-${deleteDialog.openKey}`}");
-    expect(read("components/clients/goals/goal-form.tsx")).toContain("key={`delete-fix-${deleteConfirm.openKey}`}");
   });
 });

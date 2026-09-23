@@ -8,6 +8,7 @@ vi.mock("./supabase-admin", () => ({ supabaseAdmin: { rpc: vi.fn(), from: vi.fn(
 import { supabaseAdmin } from "./supabase-admin";
 import {
   addGoal,
+  deleteGoal,
   editGoal,
   GoalWriteError,
   setGoalDeadline,
@@ -96,6 +97,15 @@ describe("the write calls", () => {
       setGoalDeadline({ goalId: "goal-old", clientId: "client-3", today: TODAY, setBy: "coach-5", deadline: "2026-12-02" })
     ).rejects.toMatchObject({ code: "ended" });
     expect(supabaseAdmin.from).not.toHaveBeenCalled();
+  });
+
+  it("deletes through its function, and throws the function's refusal", async () => {
+    rpcReturns(null);
+    await deleteGoal({ goalId: "goal-gone", clientId: "client-3" });
+    expect(rpc).toHaveBeenCalledWith("delete_client_goal", { p_goal_id: "goal-gone", p_client_id: "client-3" });
+
+    rpc.mockResolvedValue({ data: null, error: { message: "not_found: goal goal-gone is not this client's" } } as never);
+    await expect(deleteGoal({ goalId: "goal-gone", clientId: "client-3" })).rejects.toMatchObject({ code: "not_found" });
   });
 });
 

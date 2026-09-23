@@ -96,8 +96,7 @@ export function GoalsSheet({
   readings: { weight: number | null; bodyFat: number | null };
 }) {
   const { preference } = useUnits();
-  const { current, planned, previous, clientToday, isLoading, isError, retry } =
-    useClientGoals(clientId);
+  const { current, planned, clientToday, isLoading, isError, retry } = useClientGoals(clientId);
   const writes = useGoalWrites(clientId);
   // Which goal's form is open — null plans a new one — and a count that mounts
   // every opening of a form fresh.
@@ -114,10 +113,9 @@ export function GoalsSheet({
   };
 
   const confirmDelete = async (subject: DeleteGoalSubject) => {
-    const answer = await writes.remove(subject.goal.id);
-    writes.land(answer);
+    writes.land(await writes.remove(subject.goal.id));
     deleteDialog.close();
-    writes.announceDeleted(answer.undo);
+    toast.success("Goal deleted");
   };
 
   const form = (stored: GoalOnDay | null) =>
@@ -127,7 +125,6 @@ export function GoalsSheet({
           key={`goal-form-${editing.opening}`}
           stored={stored}
           clientToday={clientToday}
-          clientName={clientName}
           planned={planned}
           readings={readings}
           writes={writes}
@@ -148,13 +145,7 @@ export function GoalsSheet({
         isCurrent={isCurrent}
         preference={preference}
         onEdit={() => openForm(goal.id)}
-        onDelete={() =>
-          deleteDialog.show({
-            goal,
-            isCurrent,
-            previousName: isCurrent ? (previous?.name ?? null) : null,
-          })
-        }
+        onDelete={() => deleteDialog.show({ goal, isCurrent })}
       />
     );
 
@@ -256,7 +247,6 @@ export function GoalsSheet({
           key={`delete-goal-${deleteDialog.openKey}`}
           open={deleteDialog.open}
           subject={deleteDialog.subject}
-          clientName={clientName}
           onOpenChange={(next) => {
             if (!next) deleteDialog.close();
           }}

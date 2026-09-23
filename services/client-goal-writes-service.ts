@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { GoalType } from "@/lib/goals/goal-types";
-import type { Database, Json } from "@/types/database";
+import type { Database } from "@/types/database";
 import type { GoalSource } from "@/types/client-goals";
 
 /**
@@ -10,7 +10,7 @@ import type { GoalSource } from "@/types/client-goals";
  * enforces the date rules and writes nothing when nothing changed. A refusal
  * comes back as a `GoalWriteError` carrying the function's code — and, for the
  * two deadline guards, the goal in the way — which the routes turn into a
- * sentence and the fix they offer (`lib/goals/goal-write-response.ts`).
+ * sentence (`lib/goals/goal-write-response.ts`).
  */
 
 type Functions = Database["public"]["Functions"];
@@ -25,7 +25,6 @@ export const GOAL_REFUSAL_CODES = [
   "previous_deadline",
   "started",
   "ended",
-  "exists",
 ] as const;
 
 export type GoalRefusalCode = (typeof GOAL_REFUSAL_CODES)[number];
@@ -88,8 +87,8 @@ export function toGoalWriteError(error: { message: string }): Error {
 
 /**
  * A `deadline_after_next` refusal with the next goal's own deadline added —
- * the function names the goal in the way and its start, and moving it past
- * the new deadline is a fix only where its deadline allows. The next goal is
+ * the function names the goal in the way and its start, and the refusal
+ * suggests moving it past the new deadline only where its deadline allows. The next goal is
  * always a planned one, whose one deadline entry is dated its start; read
  * scoped to the client. Any other error passes through.
  */
@@ -224,22 +223,11 @@ export async function renameGoal(input: {
   return data;
 }
 
-/** A goal hard-deleted. Returns exactly what was deleted, for the undo. */
-export async function deleteGoal(input: { goalId: string; clientId: string }): Promise<Json> {
-  const { data, error } = await supabaseAdmin.rpc("delete_client_goal", {
+/** A goal hard-deleted, with its deadlines. */
+export async function deleteGoal(input: { goalId: string; clientId: string }): Promise<void> {
+  const { error } = await supabaseAdmin.rpc("delete_client_goal", {
     p_goal_id: input.goalId,
     p_client_id: input.clientId,
   });
   if (error) throw toGoalWriteError(error);
-  return data;
-}
-
-/** A deleted goal put back exactly, from the copy its delete returned. */
-export async function restoreGoal(input: { clientId: string; copy: Json }): Promise<string> {
-  const { data, error } = await supabaseAdmin.rpc("restore_client_goal", {
-    p_client_id: input.clientId,
-    p_copy: input.copy,
-  });
-  if (error) throw toGoalWriteError(error);
-  return data;
 }

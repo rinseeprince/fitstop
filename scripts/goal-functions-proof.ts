@@ -1,5 +1,5 @@
 /**
- * Proof of every rule of the six goal functions (migration 193;
+ * Proof of every rule of the goal functions (migrations 193 and 198;
  * docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d), on the linked DEV database,
  * inside ONE transaction that is rolled back — nothing it writes survives.
  *
@@ -20,32 +20,36 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PERF_COACH_ID } from "./perf-fixtures";
 
-const MIGRATION = readFileSync(
-  join(process.cwd(), "supabase", "migrations", "193_goals_one_row_per_goal.sql"),
-  "utf8"
+/** The migrations that define the goal functions, oldest first. */
+const MIGRATIONS = ["193_goals_one_row_per_goal.sql", "198_goal_delete_is_final.sql"].map((file) =>
+  readFileSync(join(process.cwd(), "supabase", "migrations", file), "utf8")
 );
+
+const CREATE_FUNCTION = /CREATE (OR REPLACE )?FUNCTION public\.\w+\(/;
 
 const TODAY = "2026-09-22";
 const C = "0a0a0193-0000-4000-8000-00000000c001";
 const OTHER = "0a0a0193-0000-4000-8000-00000000c002";
 const G1 = "0a0a0193-0000-4000-8000-00000000a001";
 const G2 = "0a0a0193-0000-4000-8000-00000000a002";
-const G3 = "0a0a0193-0000-4000-8000-00000000a003";
 
 type FunctionName =
   | "add_client_goal"
   | "edit_client_goal"
   | "set_client_goal_deadline"
   | "rename_client_goal"
-  | "delete_client_goal"
-  | "restore_client_goal";
+  | "delete_client_goal";
 
-/** The migration's text of one function, from CREATE to its closing $$;. */
+/** One function's live text — its latest definition — from CREATE to its closing $$;. */
 function functionText(name: FunctionName): string {
-  const start = MIGRATION.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
-  const end = MIGRATION.indexOf("\n$$;", start);
-  if (start < 0 || end < 0) throw new Error(`No ${name} in the migration`);
-  return MIGRATION.slice(start, end + "\n$$;".length);
+  const header = new RegExp(`CREATE (OR REPLACE )?FUNCTION public\\.${name}\\(`);
+  for (const migration of [...MIGRATIONS].reverse()) {
+    const match = header.exec(migration);
+    if (!match) continue;
+    const end = migration.indexOf("\n$$;", match.index);
+    return migration.slice(match.index, end + "\n$$;".length);
+  }
+  throw new Error(`No ${name} in the migrations`);
 }
 
 type Edit = { from: string; to: string };
@@ -65,7 +69,7 @@ function plantedCopy(tag: string, planted: Bug): { sql: string; name: string } {
   const name = `pg_temp.${planted.fn}_${tag.toLowerCase()}`;
   return {
     name,
-    sql: text.replace(`CREATE OR REPLACE FUNCTION public.${planted.fn}(`, `CREATE FUNCTION ${name}(`),
+    sql: text.replace(CREATE_FUNCTION, `CREATE FUNCTION ${name}(`),
   };
 }
 
@@ -301,50 +305,29 @@ const RULES: Rule[] = [
   },
   {
     id: "R19",
-    says: "delete removes the goal and its deadlines, and hands back both",
+    says: "delete removes the goal and its deadlines",
     fn: "delete_client_goal",
     check: (fn) =>
       goal(C, G1, "2026-08-10", [["2026-08-10", "2026-11-30"], ["2026-09-01", "2026-12-14"]]) + `
-  v_copy := ${fn}(p_goal_id => '${G1}', p_client_id => '${C}');
-  ok := v_copy->'goal'->>'id' = '${G1}' AND jsonb_array_length(v_copy->'deadlines') = 2
-        AND NOT EXISTS (SELECT 1 FROM public.client_goals WHERE id = '${G1}')
+  PERFORM ${fn}(p_goal_id => '${G1}', p_client_id => '${C}');
+  ok := NOT EXISTS (SELECT 1 FROM public.client_goals WHERE id = '${G1}')
         AND NOT EXISTS (SELECT 1 FROM public.client_goal_deadlines WHERE goal_id = '${G1}');
-  msg := v_copy::text;`,
-    bug: bug("delete_client_goal", "  DELETE FROM client_goals WHERE id = p_goal_id;", "  PERFORM 1;"),
+  msg := 'goal or deadlines left';`,
+    bug: bug("delete_client_goal", "  DELETE FROM client_goals WHERE id = p_goal_id AND client_id = p_client_id;", "  PERFORM 1;"),
   },
   {
     id: "R20",
-    says: "restore puts the goal back exactly — the same id, fields and deadlines",
-    fn: "restore_client_goal",
-    check: (fn) =>
-      goal(C, G1, "2026-08-10", [["2026-08-10", "2026-11-30"], ["2026-09-01", "2026-12-14"]]) + `
-  v_before := (SELECT to_jsonb(g) FROM public.client_goals g WHERE id = '${G1}') || jsonb_build_object('entries', ${entries(G1)});
-  v_copy := public.delete_client_goal(p_goal_id => '${G1}', p_client_id => '${C}');
-  PERFORM ${fn}(p_client_id => '${C}', p_copy => v_copy);
-  v_after := (SELECT to_jsonb(g) FROM public.client_goals g WHERE id = '${G1}') || jsonb_build_object('entries', ${entries(G1)});
-  ok := v_after = v_before; msg := coalesce(v_after::text, 'not back');`,
-    bug: bug("restore_client_goal", "    INSERT INTO client_goal_deadlines\n    SELECT * FROM jsonb_populate_recordset(NULL::client_goal_deadlines, COALESCE(p_copy->'deadlines', '[]'::jsonb))\n     WHERE goal_id = v_goal.id;", "    PERFORM 1;"),
-  },
-  {
-    id: "R21",
-    says: "restore is refused when another goal now starts on its day",
-    fn: "restore_client_goal",
-    check: (fn) =>
-      goal(C, G1, "2026-08-10", [["2026-08-10", null]]) + `
-  v_copy := public.delete_client_goal(p_goal_id => '${G1}', p_client_id => '${C}');` +
-      goal(C, G3, "2026-08-10", [["2026-08-10", null]]) +
-      refusal(`${fn}(p_client_id => '${C}', p_copy => v_copy)`, "day_taken"),
-    bug: bug("restore_client_goal", "  IF EXISTS (SELECT 1 FROM client_goals WHERE client_id = p_client_id AND starts_on = v_goal.starts_on) THEN", "  IF false THEN"),
-  },
-  {
-    id: "R22",
     says: "another client's goal is not found, and stays",
     fn: "delete_client_goal",
     check: (fn) =>
       goal(OTHER, G2, "2026-10-05", [["2026-10-05", null]]) +
       refusal(`${fn}(p_goal_id => '${G2}', p_client_id => '${C}')`, "not_found") +
       `\n  ok := ok AND EXISTS (SELECT 1 FROM public.client_goals WHERE id = '${G2}');`,
-    bug: bug("delete_client_goal", "   WHERE id = p_goal_id AND client_id = p_client_id\n   FOR UPDATE;", "   WHERE id = p_goal_id\n   FOR UPDATE;"),
+    bug: bug(
+      "delete_client_goal",
+      "  DELETE FROM client_goals WHERE id = p_goal_id AND client_id = p_client_id;",
+      "  DELETE FROM client_goals WHERE id = p_goal_id;"
+    ),
   },
 ];
 
@@ -372,7 +355,6 @@ DECLARE
   msg TEXT := '';
   v_id UUID;
   v_changed BOOLEAN;
-  v_copy JSONB;
   v_before JSONB;
   v_after JSONB;
 BEGIN
@@ -413,9 +395,9 @@ function buildSql(): string {
     parts.push(block(rule.id, "planted bug", rule.check(planted.name)));
   }
 
-  parts.push(block("R23", "live", GRANT_CHECK));
+  parts.push(block("R21", "live", GRANT_CHECK));
   parts.push("GRANT INSERT ON public.client_goals TO service_role;");
-  parts.push(block("R23", "planted bug", GRANT_CHECK));
+  parts.push(block("R21", "planted bug", GRANT_CHECK));
 
   parts.push("SELECT rule, variant, passed, detail FROM proof_results ORDER BY n;");
   parts.push("ROLLBACK;");
@@ -437,7 +419,7 @@ function run(): void {
   const parsed = JSON.parse(raw.slice(start)) as { rows: ResultRow[] };
 
   const says = new Map(RULES.map((rule) => [rule.id, rule.says]));
-  says.set("R23", "the server may read the goal tables and write them only through the functions");
+  says.set("R21", "the server may read the goal tables and write them only through the functions");
   let failures = 0;
   for (const id of [...says.keys()]) {
     const live = parsed.rows.find((r) => r.rule === id && r.variant === "live");

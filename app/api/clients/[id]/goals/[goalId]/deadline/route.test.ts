@@ -42,7 +42,7 @@ describe("PUT /api/clients/[id]/goals/[goalId]/deadline", () => {
     vi.clearAllMocks();
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-6" });
     vi.mocked(getClientTodayString).mockResolvedValue("2026-09-22");
-    vi.mocked(getGoalsOverview).mockResolvedValue({ current: null, planned: [], previous: null, clientToday: "2026-10-07" });
+    vi.mocked(getGoalsOverview).mockResolvedValue({ current: null, planned: [], clientToday: "2026-10-07" });
   });
 
   it("records the deadline against the goal from the client's today and audits it", async () => {

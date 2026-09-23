@@ -85,6 +85,3 @@ export const editGoalSchema = z
 export const goalDeadlineSchema = z.object({ deadline: day.nullable() });
 
 export const renameGoalSchema = z.object({ name, description: description.nullable() });
-
-/** The signed copy a delete handed out. */
-export const restoreGoalSchema = z.object({ undo: z.string().min(1).max(20_000) });

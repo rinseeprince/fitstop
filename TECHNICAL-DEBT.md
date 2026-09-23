@@ -1,28 +1,5 @@
 # Technical Debt Tracker
 
-## A restored goal skips the deadline rules
-
-Logged: 2026-09-23 (commit 8d2, from its independent review).
-
-`restore_client_goal` (migration 193) refuses only `exists` and `day_taken`. It does not run the two
-deadline guards every other goal write does — `deadline_after_next` (a deadline on or after the next
-goal's start) and `previous_deadline` (a planned start on or before the previous goal's deadline).
-So an Undo can put back a goal the rules would refuse to add.
-
-**How it is reached:** on the goals sheet, a coach deletes a planned goal from its row, then — inside
-the undo window — gives the goal before it a deadline past the deleted goal's start (allowed: it is
-gone), then presses Undo. The planned goal comes back beside a deadline that runs into it: the goal
-card reads "Next: Peak from 10 Oct" under a deadline of 20 Oct, and every later edit of Peak is
-refused with `previous_deadline` until the coach ends that deadline. The delete a refusal offers as
-a fix carries no Undo for exactly this reason — putting that goal back would bring back the clash
-the delete settled.
-
-**Fix:** `restore_client_goal` runs the same two guards and refuses with their codes; the restore
-route already turns a refusal into its sentence and fixes (`goalWriteErrorResponse`). It is a
-migration, so it waited for the next one.
-
----
-
 ## A moved workout leaves its log's stored date behind
 
 Logged: 2026-09-17 (training upgrade, commit 9).

@@ -16,7 +16,6 @@ import type { ClientGoalsOverview } from "@/types/client-goals";
 const OVERVIEW: ClientGoalsOverview = {
   current: null,
   planned: [],
-  previous: null,
   clientToday: "2026-10-12",
 };
 
@@ -74,15 +73,9 @@ describe("useClientGoals", () => {
     expect(renderHook(() => useClientGoals("client-6")).result.current.isError).toBe(true);
   });
 
-  it("hands over the client's today and the goal before today's once the read lands", () => {
+  it("hands over the client's today once the read lands", () => {
     mockUseSWR.mockReturnValue({
-      data: {
-        success: true,
-        data: {
-          ...OVERVIEW,
-          previous: { id: "g-old", name: "Maintain", endsOn: "2026-10-04" },
-        },
-      },
+      data: { success: true, data: OVERVIEW },
       error: undefined,
       isLoading: false,
       mutate: vi.fn(),
@@ -90,12 +83,11 @@ describe("useClientGoals", () => {
     const { result } = renderHook(() => useClientGoals("client-6"));
 
     expect(result.current.clientToday).toBe("2026-10-12");
-    expect(result.current.previous).toMatchObject({ name: "Maintain" });
   });
 
   it("claims nothing while the read is in flight", () => {
     const { result } = renderHook(() => useClientGoals("client-6"));
 
-    expect(result.current).toMatchObject({ current: null, previous: null, clientToday: null, isLoading: true });
+    expect(result.current).toMatchObject({ current: null, clientToday: null, isLoading: true });
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
@@ -7,9 +7,9 @@ import { DeleteGoalDialog, type DeleteGoalSubject } from "./delete-goal-dialog";
 
 // A goal's delete confirm: it takes `open` apart from the goal it names, so a
 // closing card keeps the name and the sentence while it fades (CONVENTIONS §7 →
-// "No frame disagrees").
+// "No frame disagrees"). The current goal's delete is typed.
 
-const SUBJECT: DeleteGoalSubject = {
+const PLANNED: DeleteGoalSubject = {
   goal: {
     id: "goal-trim",
     clientId: "client-5",
@@ -26,7 +26,11 @@ const SUBJECT: DeleteGoalSubject = {
     deadline: null,
   },
   isCurrent: false,
-  previousName: null,
+};
+
+const CURRENT: DeleteGoalSubject = {
+  goal: { ...PLANNED.goal, id: "goal-base", name: "Base", startsOn: "2026-07-13" },
+  isCurrent: true,
 };
 
 // jsdom computes no animation, so Radix unmounts a closing card at once. Radix
@@ -51,28 +55,47 @@ afterEach(() => {
 });
 
 describe("DeleteGoalDialog", () => {
-  it("names the goal and its day, and confirms with the verb", () => {
+  it("names a planned goal and its day, and deletes it at a click", () => {
     const onConfirm = vi.fn().mockResolvedValue(undefined);
-    render(
-      <DeleteGoalDialog open subject={SUBJECT} clientName="Sam Lee" onOpenChange={vi.fn()} onConfirm={onConfirm} />
-    );
+    render(<DeleteGoalDialog open subject={PLANNED} onOpenChange={vi.fn()} onConfirm={onConfirm} />);
 
     expect(screen.getByRole("heading").textContent).toBe("Delete Trim?");
     expect(screen.getByText("Deletes Trim, planned from 23 Nov.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Type DELETE to confirm")).not.toBeInTheDocument();
     screen.getByRole("button", { name: "Delete goal" }).click();
-    expect(onConfirm).toHaveBeenCalledWith(SUBJECT);
+    expect(onConfirm).toHaveBeenCalledWith(PLANNED);
+  });
+
+  // The current goal can't be put back as it was, so its delete is typed.
+  it("deletes the current goal only once DELETE is typed", () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    render(<DeleteGoalDialog open subject={CURRENT} onOpenChange={vi.fn()} onConfirm={onConfirm} />);
+
+    expect(
+      screen.getByText(
+        "Base is the current goal. Deleting it can't be undone: set again, it starts from today and its progress counts from today's weight."
+      )
+    ).toBeInTheDocument();
+    const cta = screen.getByRole("button", { name: "Delete goal" });
+    expect(cta).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), { target: { value: "delete" } });
+    expect(cta).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), { target: { value: "DELETE" } });
+    expect(cta).toBeEnabled();
+    cta.click();
+    expect(onConfirm).toHaveBeenCalledWith(CURRENT);
   });
 
   it("is closed whenever `open` is false, even with a goal to name", () => {
-    render(
-      <DeleteGoalDialog open={false} subject={SUBJECT} clientName="Sam Lee" onOpenChange={vi.fn()} onConfirm={vi.fn()} />
-    );
+    render(<DeleteGoalDialog open={false} subject={PLANNED} onOpenChange={vi.fn()} onConfirm={vi.fn()} />);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("still names its goal while it fades out", () => {
     holdExitAnimation();
-    const props = { subject: SUBJECT, clientName: "Sam Lee", onOpenChange: vi.fn(), onConfirm: vi.fn() };
+    const props = { subject: PLANNED, onOpenChange: vi.fn(), onConfirm: vi.fn() };
     const { rerender } = render(<DeleteGoalDialog open {...props} />);
     rerender(<DeleteGoalDialog open={false} {...props} />);
 

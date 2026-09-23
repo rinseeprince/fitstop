@@ -5,7 +5,6 @@ import {
   firstGoalSchema,
   goalDeadlineSchema,
   renameGoalSchema,
-  restoreGoalSchema,
 } from "./client-goals";
 
 describe("addGoalSchema", () => {
@@ -72,11 +71,6 @@ describe("the small schemas", () => {
   it("renames with a description or none", () => {
     expect(renameGoalSchema.safeParse({ name: "Cut", description: null }).success).toBe(true);
     expect(renameGoalSchema.safeParse({ name: "Cut", description: "x".repeat(501) }).success).toBe(false);
-  });
-
-  it("restores from a copy string", () => {
-    expect(restoreGoalSchema.safeParse({ undo: "payload.signature" }).success).toBe(true);
-    expect(restoreGoalSchema.safeParse({ undo: "" }).success).toBe(false);
   });
 });
 

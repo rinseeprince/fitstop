@@ -118,10 +118,6 @@ export const GOAL_DESCRIPTION_MAX = 500;
 /** A goal's body-fat target, percent: the range a coach can set. */
 export const GOAL_BODY_FAT_MIN = 3;
 export const GOAL_BODY_FAT_MAX = 60;
-/** How long a deleted goal can be put back: the undo copy the delete hands out
- *  is signed with this expiry, and the "Goal deleted · Undo" toast shows for
- *  as long. */
-export const GOAL_UNDO_WINDOW_MS = 30_000;
 
 export const BLOCK_WEEKS_MAX = 52;
 export const BLOCKS_PER_CLIENT_MAX = 20;
@@ -196,7 +192,6 @@ export const AUDIT_ACTIONS = {
   GOAL_DEADLINE: "goal.deadline",
   GOAL_RENAME: "goal.rename",
   GOAL_DELETE: "goal.delete",
-  GOAL_RESTORE: "goal.restore",
   MEASUREMENT_CREATE: "measurement.create",
   MEASUREMENT_UPDATE: "measurement.update",
   MEASUREMENT_VOID: "measurement.void",

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ClientGoalsOverview, CurrentGoal, GoalFix, GoalOnDay } from "@/types/client-goals";
+import type { ClientGoalsOverview, CurrentGoal, GoalOnDay } from "@/types/client-goals";
 
 // The goals behind the Overview goal card's pencil (docs/MEASUREMENT-LOG-PLAN.md
 // §6 commit 8d2). The goals read is a small store the mocked writes land their
@@ -27,12 +27,10 @@ const { goalsStore, api, toast } = vi.hoisted(() => {
     },
     api: {
       run: vi.fn(),
-      applyFix: vi.fn(),
       remove: vi.fn(),
-      announceDeleted: vi.fn(),
       land: vi.fn(),
     },
-    toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() }),
+    toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
   };
 });
 
@@ -105,7 +103,6 @@ const PLANNED: GoalOnDay = {
 const OVERVIEW: ClientGoalsOverview = {
   current: CURRENT,
   planned: [PLANNED],
-  previous: { ...CURRENT, id: "goal-hold", name: "Maintain", type: "maintain", targetWeight: null, startsOn: "2026-05-04", deadline: null, endsOn: "2026-08-09" },
   clientToday: TODAY,
 };
 
@@ -113,7 +110,6 @@ const OVERVIEW: ClientGoalsOverview = {
 const ANSWER: ClientGoalsOverview = {
   current: { ...CURRENT, targetWeight: 77.6 },
   planned: [],
-  previous: OVERVIEW.previous,
   clientToday: TODAY,
 };
 
@@ -175,7 +171,7 @@ describe("the goals sheet — the list", () => {
   });
 
   it("says there is no current goal, and still offers Plan a goal", () => {
-    renderSheet({ ...OVERVIEW, current: null, previous: null, planned: [] });
+    renderSheet({ ...OVERVIEW, current: null, planned: [] });
 
     expect(screen.getByText("No current goal")).toBeInTheDocument();
     expect(screen.queryByText("Planned")).not.toBeInTheDocument();
@@ -463,13 +459,11 @@ describe("the goals sheet — editing a goal", () => {
   });
 });
 
-describe("the goals sheet — a refused save offers its fixes", () => {
-  const MOVE: GoalFix = { kind: "move_goal", goalId: "goal-peak", name: "Peak", startsOn: "2027-01-23" };
-  const DELETE: GoalFix = { kind: "delete_goal", goalId: "goal-peak", name: "Peak" };
+describe("the goals sheet — a refused save says what would clear it", () => {
   const SENTENCE = "The deadline runs into Peak, which starts 14 Dec. Move Peak to 23 Jan or delete it.";
 
   async function refusedDeadline() {
-    api.run.mockRejectedValueOnce(new GoalRefusal(SENTENCE, [MOVE, DELETE]));
+    api.run.mockRejectedValueOnce(new GoalRefusal(SENTENCE));
     const user = renderSheet();
     await user.click(screen.getByRole("button", { name: "Edit Lean out" }));
     fireEvent.change(screen.getByLabelText("Deadline"), { target: { value: "2027-01-22" } });
@@ -478,33 +472,14 @@ describe("the goals sheet — a refused save offers its fixes", () => {
     return user;
   }
 
-  /** A fix's button, in the refusal — the planned row keeps its own Delete. */
-  const fix = (name: string) =>
-    within(screen.getByText(SENTENCE).parentElement as HTMLElement).getByRole("button", { name });
-
-  it("keeps the form open with the rule's sentence and a button per fix", async () => {
+  it("keeps the form open with the rule's sentence, and nothing to click in it", async () => {
     await refusedDeadline();
 
-    expect(fix("Move Peak to 23 Jan")).toBeInTheDocument();
-    expect(fix("Delete Peak")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Move / })).not.toBeInTheDocument();
+    // The one Delete Peak is Peak's own row's.
+    expect(screen.getAllByRole("button", { name: "Delete Peak" })).toHaveLength(1);
     expect(api.land).not.toHaveBeenCalled();
     expect(saveButton()).toBeEnabled();
-  });
-
-  it("a fix makes its change, then saves the goal again — one click", async () => {
-    const user = await refusedDeadline();
-    const moved: ClientGoalsOverview = { ...OVERVIEW, planned: [{ ...PLANNED, startsOn: "2027-01-23" }] };
-    api.applyFix.mockResolvedValue(moved);
-    api.run.mockResolvedValueOnce(ANSWER);
-
-    await user.click(fix("Move Peak to 23 Jan"));
-
-    await waitFor(() => expect(formOpen()).toBe(false));
-    expect(api.applyFix).toHaveBeenCalledWith(MOVE, [PLANNED]);
-    expect(api.land).toHaveBeenNthCalledWith(1, moved);
-    expect(api.run).toHaveBeenCalledTimes(2);
-    expect(api.land).toHaveBeenLastCalledWith(ANSWER);
-    expect(api.announceDeleted).not.toHaveBeenCalled();
   });
 
   it("holds the refusal only while the fields read as refused", async () => {
@@ -512,89 +487,37 @@ describe("the goals sheet — a refused save offers its fixes", () => {
 
     fireEvent.change(screen.getByLabelText("Deadline"), { target: { value: "2026-12-11" } });
     expect(screen.queryByText(SENTENCE)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Move Peak to 23 Jan" })).not.toBeInTheDocument();
   });
 
-  // A delete is a delete: behind the destructive confirm. Its answer lands
-  // and the confirm closes together, and the toast carries no Undo — putting
-  // Peak back would bring back the clash the delete settled.
-  it("deleting the goal in the way asks first, then saves again — with no undo", async () => {
+  // The coach clears it from the goal in the way's own row, the form open as typed.
+  it("drops the refusal once the goal in the way is deleted, and the save then goes through", async () => {
     const user = await refusedDeadline();
-    const removal = deferred<ClientGoalsOverview & { undo: string }>();
-    api.remove.mockReturnValue(removal.promise);
+    api.remove.mockResolvedValue({ ...OVERVIEW, planned: [] });
+    await user.click(screen.getByRole("button", { name: "Delete Peak" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Delete Peak?" })).getByRole("button", { name: "Delete goal" })
+    );
+
+    await waitFor(() => expect(screen.queryByText(SENTENCE)).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Deadline")).toHaveValue("2027-01-22");
+
     api.run.mockResolvedValueOnce(ANSWER);
-
-    await user.click(fix("Delete Peak"));
-    const confirm = screen.getByRole("dialog", { name: "Delete Peak?" });
-    expect(within(confirm).getByText("Deletes Peak, planned from 14 Dec.")).toBeInTheDocument();
-    expect(api.remove).not.toHaveBeenCalled();
-
-    await user.click(within(confirm).getByRole("button", { name: "Delete goal" }));
-    expect(api.remove).toHaveBeenCalledWith("goal-peak");
-    expect(api.land).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog", { name: "Delete Peak?" })).toBeInTheDocument();
-
-    const answer = { ...OVERVIEW, planned: [], undo: "copy.sig" };
-    await act(async () => {
-      removal.resolve(answer);
-      await removal.promise;
-    });
-    expect(api.land).toHaveBeenNthCalledWith(1, answer);
-    expect(screen.queryByRole("dialog", { name: "Delete Peak?" })).not.toBeInTheDocument();
-    expect(toast.success).toHaveBeenCalledWith("Goal deleted");
-
+    await user.click(saveButton());
     await waitFor(() => expect(formOpen()).toBe(false));
-    expect(api.run).toHaveBeenCalledTimes(2);
     expect(api.run).toHaveBeenLastCalledWith({ kind: "deadline", goalId: "goal-lean", deadline: "2027-01-22" });
-    expect(api.applyFix).not.toHaveBeenCalled();
-    expect(api.announceDeleted).not.toHaveBeenCalled();
   });
 
-  it("says so, and asks nothing, when the goal in the way is no longer planned", async () => {
-    const user = await refusedDeadline();
-    act(() => goalsStore.set({ ...OVERVIEW, planned: [] }));
-
-    await user.click(fix("Delete Peak"));
-
-    expect(toast.error).toHaveBeenCalledWith("Delete failed", { description: "Peak is no longer planned." });
-    expect(screen.queryByRole("dialog", { name: "Delete Peak?" })).not.toBeInTheDocument();
-    expect(api.remove).not.toHaveBeenCalled();
-  });
-
-  it("a cancelled delete deletes nothing and leaves the refusal", async () => {
-    const user = await refusedDeadline();
-
-    await user.click(fix("Delete Peak"));
-    await user.click(within(screen.getByRole("dialog", { name: "Delete Peak?" })).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Delete Peak?" })).not.toBeInTheDocument());
-    expect(api.remove).not.toHaveBeenCalled();
-    expect(screen.getByText(SENTENCE)).toBeInTheDocument();
-    expect(api.run).toHaveBeenCalledTimes(1);
-  });
-
-  it("a refused fix says why and saves nothing more", async () => {
-    const user = await refusedDeadline();
-    api.applyFix.mockRejectedValue(new GoalRefusal("The deadline can't be before the goal starts.", []));
-
-    await user.click(fix("Move Peak to 23 Jan"));
-
-    expect(await screen.findByText("The deadline can't be before the goal starts.")).toBeInTheDocument();
-    expect(api.run).toHaveBeenCalledTimes(1);
-    expect(formOpen()).toBe(true);
-    expect(saveButton()).toBeEnabled();
-  });
-
-  it("offers to end the previous goal's deadline the day before a planned start", async () => {
-    const END: GoalFix = { kind: "end_deadline", goalId: "goal-lean", name: "Lean out", deadline: "2026-11-15" };
-    api.run.mockRejectedValueOnce(new GoalRefusal("Lean out's deadline is 4 Dec.", [END]));
+  it("a planned start inside the current goal's deadline says so, with nothing to click", async () => {
+    const sentence = "Lean out's deadline is 4 Dec. End that deadline on 15 Nov, or start this goal after it.";
+    api.run.mockRejectedValueOnce(new GoalRefusal(sentence));
     const user = renderSheet();
     await user.click(screen.getByRole("button", { name: "Plan a goal" }));
     await chooseType("Maintain");
     fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "2026-11-16" } });
     await user.click(saveButton());
 
-    expect(await screen.findByRole("button", { name: "End Lean out's deadline on 15 Nov" })).toBeInTheDocument();
+    expect(await screen.findByText(sentence)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^End / })).not.toBeInTheDocument();
   });
 
   it("a failure that is no refusal is a toast, and the form stays", async () => {
@@ -614,28 +537,32 @@ describe("the goals sheet — a refused save offers its fixes", () => {
 describe("the goals sheet — deleting a goal", () => {
   const dialog = () => screen.getByRole("dialog", { name: /^Delete / });
 
-  it("asks first, naming what takes today's goal's place", async () => {
+  it("names a planned goal's day, and deletes it at a click", async () => {
+    const user = renderSheet();
+    await user.click(screen.getByRole("button", { name: "Delete Peak" }));
+
+    expect(within(dialog()).getByText("Deletes Peak, planned from 14 Dec.")).toBeInTheDocument();
+    expect(within(dialog()).getByRole("button", { name: "Delete goal" })).toBeEnabled();
+  });
+
+  it("has the current goal's delete typed", async () => {
     const user = renderSheet();
     await user.click(screen.getByRole("button", { name: "Delete Lean out" }));
 
-    expect(within(dialog()).getByText("Delete Lean out?")).toBeInTheDocument();
-    expect(within(dialog()).getByText("Deletes Lean out. Maintain becomes the current goal again.")).toBeInTheDocument();
-  });
-
-  it("names a planned goal's day, and a client left with no goal", async () => {
-    const user = renderSheet({ ...OVERVIEW, previous: null });
-    await user.click(screen.getByRole("button", { name: "Delete Peak" }));
-    expect(within(dialog()).getByText("Deletes Peak, planned from 14 Dec.")).toBeInTheDocument();
-    await user.click(within(dialog()).getByRole("button", { name: "Cancel" }));
-
-    await user.click(screen.getByRole("button", { name: "Delete Lean out" }));
-    expect(within(dialog()).getByText("Deletes Lean out. Alex Kim will have no current goal.")).toBeInTheDocument();
+    expect(
+      within(dialog()).getByText(
+        "Lean out is the current goal. Deleting it can't be undone: set again, it starts from today and its progress counts from today's weight."
+      )
+    ).toBeInTheDocument();
+    expect(within(dialog()).getByRole("button", { name: "Delete goal" })).toBeDisabled();
+    await user.type(within(dialog()).getByLabelText("Type DELETE to confirm"), "DELETE");
+    expect(within(dialog()).getByRole("button", { name: "Delete goal" })).toBeEnabled();
   });
 
   // The frame test: the confirm holds its spinner until the delete answers;
-  // the answer is landed and the confirm closed together, then the undo toast.
-  it("deletes, lands the answer and closes the confirm together, then offers the undo", async () => {
-    const removal = deferred<ClientGoalsOverview & { undo: string }>();
+  // the answer is landed and the confirm closed together.
+  it("deletes, lands the answer and closes the confirm together, then says so", async () => {
+    const removal = deferred<ClientGoalsOverview>();
     api.remove.mockReturnValue(removal.promise);
     const user = renderSheet();
     await user.click(screen.getByRole("button", { name: "Delete Peak" }));
@@ -645,7 +572,7 @@ describe("the goals sheet — deleting a goal", () => {
     expect(within(dialog()).getByRole("button", { name: "Delete goal" })).toBeDisabled();
     expect(api.land).not.toHaveBeenCalled();
 
-    const answer = { ...OVERVIEW, planned: [], undo: "copy.sig" };
+    const answer = { ...OVERVIEW, planned: [] };
     await act(async () => {
       removal.resolve(answer);
       await removal.promise;
@@ -653,7 +580,7 @@ describe("the goals sheet — deleting a goal", () => {
     expect(api.land).toHaveBeenCalledWith(answer);
     expect(screen.queryByRole("dialog", { name: /^Delete / })).not.toBeInTheDocument();
     expect(screen.queryByText("Peak")).not.toBeInTheDocument();
-    expect(api.announceDeleted).toHaveBeenCalledWith("copy.sig");
+    expect(toast.success).toHaveBeenCalledWith("Goal deleted");
   });
 
   it("a failed delete says so and leaves the confirm open", async () => {
@@ -670,10 +597,11 @@ describe("the goals sheet — deleting a goal", () => {
   });
 
   it("a delete of another goal leaves an open form as it was", async () => {
-    api.remove.mockResolvedValue({ ...OVERVIEW, current: null, previous: null, undo: "copy.sig" });
+    api.remove.mockResolvedValue({ ...OVERVIEW, current: null });
     const user = renderSheet();
     await user.click(screen.getByRole("button", { name: "Edit Peak" }));
     await user.click(screen.getByRole("button", { name: "Delete Lean out" }));
+    await user.type(within(dialog()).getByLabelText("Type DELETE to confirm"), "DELETE");
     await user.click(within(dialog()).getByRole("button", { name: "Delete goal" }));
 
     await waitFor(() => expect(api.land).toHaveBeenCalled());

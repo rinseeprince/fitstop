@@ -349,10 +349,9 @@ rejected afterwards — a coach should never be able to select a day the app wil
 - **Only bound what is genuinely impossible.** A past *deadline* is refused, so it is bounded; a
   past *start date* is a real thing to record, so it is not. Greying out a legitimate day is the
   same defect in the other direction.
-- **A day a rule refuses with a fix on offer stays pickable.** On the goal form, a deadline past a
-  planned goal's start and a planned start on or before the current goal's deadline are refused
-  with the fix (move or delete the planned goal; end that deadline the day before) — the refusal
-  is what offers it.
+- **A day a rule refuses with a sentence saying what would clear it stays pickable.** On the goal
+  form, a deadline past a planned goal's start and a planned start on or before the current goal's
+  deadline are refused with that sentence.
 
 A date changed from an icon rather than a field is the "Date picker popover" (Overlays) — the same bound, greyed in its calendar.
 
@@ -556,6 +555,7 @@ Reference: `components/clients/training/calendar/delete-event-dialog.tsx`. Use t
 - Header row: danger thumb `grid h-9 w-9 shrink-0 place-items-center rounded-[6px] bg-[rgba(192,96,96,0.08)]` + `Trash2 h-4 w-4 text-[#c06060]` (strokeWidth 1.5) beside the `DialogTitle`.
 - Body: ONE plain-sans sentence (`text-sm text-[#5a7d82]`) naming exactly what happens ("Removes the upcoming scheduled sessions from the week of Jul 14."). Scope the verb precisely ("upcoming") rather than appending obvious reassurances — "Completed and past sessions are kept" is retired as filler (owner call, 2026-07-24); spell out what survives only when it is genuinely surprising (e.g. the delete-ALL-plans confirm). No mono. The subject may be `font-semibold text-[#0c1a1e]`.
 **Non-delete variant.** The same recipe covers a confirm that is not a deletion but is still unrecoverable and consequential — the reference is `overview/confirm-start-edit-dialog.tsx`, correcting a client's recorded START weight, which overwrites a fact no later measurement can recover and re-bases every progress figure derived from it. **Change the glyph, nothing else:** `AlertTriangle` in the same danger thumb, since nothing is being removed. Danger palette, danger-outline CTA and the one-sentence body all stay — the register is "you cannot undo this", not "this deletes a row".
+**Typed variant.** Deleting something current that can't be put back as it was adds a `Type DELETE to confirm` field under the sentence; the CTA stays disabled until it reads DELETE. Reference: `components/clients/goals/delete-goal-dialog.tsx` (the current goal).
 
 - Footer: Cancel (`variant="ghost"`) + danger-outline CTA: `variant="outline"` + `border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]`, `Loader2` spinner while pending. **There is no filled destructive button in this system — never invent one.** CTA label repeats the verb ("Remove session", "Clear week"), never "OK"/"Confirm".
 
@@ -566,7 +566,6 @@ Reference: `components/clients/training/calendar/delete-event-dialog.tsx`. Use t
 - Success: `toast.success("Session saved")` — a consequence, when there is one, as `{ description }`.
 - Failure: `toast.error("Save failed", { description: reason })` — the reason as the description, in plain words.
 - A confirmation with no verdict (`Nothing to clear`): plain `toast("Nothing to clear")` — no icon.
-- An outcome that can be taken back (`Goal deleted`): `action: { label: "Undo", onClick }`, a teal text action at the card's end, up for as long as the undo holds (`GOAL_UNDO_WINDOW_MS`) rather than 5 s.
 - Title: a short sans fragment stating the outcome — `Session saved`, `Week cleared`, `"{name}" updated`. Quote user-named things with `"…"`.
 - Description (optional): one plain sans sentence of consequence — `Programs that already use a copy of this session are unchanged.`
 - Never: markup, mono spans, raw error strings, IDs, or dates set in mono. Toast text obeys the prose rule above in full.

@@ -46,7 +46,6 @@ vi.mock("@/services/client-goal-writes-service", () => ({
   setGoalDeadline: vi.fn(),
   renameGoal: vi.fn(),
   deleteGoal: vi.fn(),
-  restoreGoal: vi.fn(),
 }));
 
 // The factory defines the error classes so the route (importing from the
@@ -333,9 +332,9 @@ describe("/api/clients/[id]/blocks", () => {
 
       await PUT(createMockRequest("PUT", VALID_PUT_BODY), mockParams);
 
-      // Five reads and six writes: every goal function there is.
+      // Five reads and five writes: every goal function there is.
       const goalFunctions = [...Object.values(goalReads), ...Object.values(goalWrites)];
-      expect(goalFunctions).toHaveLength(11);
+      expect(goalFunctions).toHaveLength(10);
       for (const goalFunction of goalFunctions) {
         expect(goalFunction).not.toHaveBeenCalled();
       }
