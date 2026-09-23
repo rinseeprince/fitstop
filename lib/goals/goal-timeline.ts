@@ -1,5 +1,4 @@
-import { addDaysToDateString } from "@/lib/date-helpers";
-import type { ClientGoal, GoalOnDay, PastGoal } from "@/types/client-goals";
+import type { ClientGoal, GoalOnDay } from "@/types/client-goals";
 
 /**
  * Which goal, and which deadline, on which day — decided ONCE, here, over a
@@ -46,20 +45,4 @@ export function plannedGoals(goals: readonly ClientGoal[], today: string): GoalO
     .filter((goal) => goal.startsOn > today)
     .sort((a, b) => (a.startsOn < b.startsOn ? -1 : 1))
     .map((goal) => goalAsOf(goal, goal.startsOn));
-}
-
-/**
- * Goals that ended before today's goal began, newest first: each runs to the
- * day before the next goal's start, and ended with its last deadline.
- */
-export function pastGoals(goals: readonly ClientGoal[], today: string): PastGoal[] {
-  const started = goals
-    .filter((goal) => goal.startsOn <= today)
-    .sort((a, b) => (a.startsOn < b.startsOn ? -1 : 1));
-  const past: PastGoal[] = [];
-  for (let i = 0; i < started.length - 1; i += 1) {
-    const endsOn = addDaysToDateString(started[i + 1].startsOn, -1);
-    past.push({ ...goalAsOf(started[i], endsOn), endsOn });
-  }
-  return past.reverse();
 }

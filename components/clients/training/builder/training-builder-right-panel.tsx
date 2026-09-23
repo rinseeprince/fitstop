@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useClearTrainingPlan } from "@/hooks/use-training-plan";
@@ -53,6 +54,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   const invalidateTrainingData = useInvalidateTrainingData();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
+  const clearGoalHistory = useClearClientGoalHistory();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
   const clearTrainingPlan = useClearTrainingPlan();
@@ -77,9 +79,11 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
       // The Journey block cards are DERIVED from these rows, so they now claim a
       // program that is gone. Cleared rather than revalidated: they render a
       // definite answer, and SWR serves the stale one for the whole refetch
-      // (CONVENTIONS §7). The hero's plan read likewise: the delete changes
-      // which plan it describes.
+      // (CONVENTIONS §7). The goals table and the hero's plan read likewise:
+      // the delete ends the programs they list and changes which plan it
+      // describes.
       void clearBlockFacts(clientId);
+      void clearGoalHistory(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
       void clearTrainingPlan(clientId);

@@ -106,14 +106,16 @@ export function GoalsSheet({
   const openForm = (goalId: string | null) =>
     setEditing((previousForm) => ({ goalId, opening: (previousForm?.opening ?? 0) + 1 }));
 
+  // The goals table is not on screen here, so landing is done when it returns:
+  // the answer and the closing surface render together.
   const onSaved = (answer: ClientGoalsOverview) => {
-    writes.land(answer);
+    void writes.land(answer);
     setEditing(null);
     toast.success("Goal saved");
   };
 
   const confirmDelete = async (subject: DeleteGoalSubject) => {
-    writes.land(await writes.remove(subject.goal.id));
+    void writes.land(await writes.remove(subject.goal.id));
     deleteDialog.close();
     toast.success("Goal deleted");
   };

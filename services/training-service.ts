@@ -317,8 +317,9 @@ type TrainingPlanWindowSummary = {
 /**
  * Every coach-visible plan whose window OVERLAPS [rangeStart, rangeEnd],
  * earliest-starting first — the journey-block facts read ("which programs ran
- * during this block"). An overlap question, not the starts-later question
- * getNextFutureTrainingPlan owns, but it carries the same exclusions
+ * during this block") and the goals table's (a null `rangeEnd` runs on for
+ * good, as the last goal does). An overlap question, not the starts-later
+ * question getNextFutureTrainingPlan owns, but it carries the same exclusions
  * (`deleted_at IS NULL`, `status <> 'archived'`) for the same reason: the copy
  * that forgot them re-surfaced retired plans. Overlap is
  * `effective_from <= rangeEnd AND effective_until >= rangeStart` — the
@@ -328,16 +329,17 @@ type TrainingPlanWindowSummary = {
 export const getTrainingPlansOverlapping = async (
   clientId: string,
   rangeStart: string,
-  rangeEnd: string
+  rangeEnd: string | null
 ): Promise<TrainingPlanWindowSummary[]> => {
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from("training_plans")
     .select("id, name, effective_from, effective_until")
     .eq("client_id", clientId)
     .is("deleted_at", null)
     .neq("status", "archived")
-    .lte("effective_from", rangeEnd)
-    .gte("effective_until", rangeStart)
+    .gte("effective_until", rangeStart);
+  if (rangeEnd !== null) query = query.lte("effective_from", rangeEnd);
+  const { data, error } = await query
     .order("effective_from", { ascending: true })
     .order("created_at", { ascending: false });
 

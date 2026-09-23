@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { deadlineRemaining, formatDateOnlyShort } from "./overview-format";
 import { InlineMono } from "./overview-primitives";
-import { GoalHistoryPopover } from "./goal-history-popover";
 import { BAND_DIVIDER, BAND_VALUE_CLASS, GoalCell, TargetCell } from "./goal-cells";
 import {
   MONO,
@@ -60,6 +59,8 @@ type StatusBandProps = {
    */
   series: MeasurementSeries | null;
   onOpenMetrics: () => void;
+  /** Goal history: the Journey's goals table. */
+  onOpenGoalHistory: () => void;
   /** The goal read is still in flight: the three goal cells render pending
    *  instead of claiming "Not set" — unresolved is never rendered as empty
    *  (docs/newdesignsystem.md → "Loading & async states"). */
@@ -168,6 +169,7 @@ export function StatusBand({
   chart,
   series,
   onOpenMetrics,
+  onOpenGoalHistory,
   goalPending = false,
   goalFailed = false,
   seriesPending = false,
@@ -272,7 +274,13 @@ export function StatusBand({
           </span>
         )}
         <div className="ml-auto flex items-center gap-4">
-          <GoalHistoryPopover clientId={client.id} />
+          <button
+            type="button"
+            onClick={onOpenGoalHistory}
+            className="text-[11px] font-medium text-[#93b0b4] transition-colors hover:text-white"
+          >
+            Goal history
+          </button>
           <button
             type="button"
             onClick={onOpenMetrics}

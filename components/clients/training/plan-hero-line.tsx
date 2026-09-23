@@ -10,6 +10,7 @@ import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-e
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { InlineMono } from "@/components/clients/overview/overview-primitives";
 import { formatDateOnlyWeekday } from "@/components/clients/overview/overview-format";
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
@@ -66,6 +67,7 @@ export function PlanHeroLine({ clientId, program, kind, clientToday, floor, onDe
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
   const clearBlockFacts = useClearBlockFacts();
+  const clearGoalHistory = useClearClientGoalHistory();
 
   const hasStarted = program.startsOn < floor;
   const shownDate = kind === "plan" && hasStarted ? program.endsOn : program.startsOn;
@@ -92,15 +94,16 @@ export function PlanHeroLine({ clientId, program, kind, clientToday, floor, onDe
         toast.error("Program not moved", { description: body.error ?? MOVE_FAILED });
         return;
       }
-      // Everything that reads the moved dates. The Overview, the feed and the
-      // block card render definite answers, so they are cleared; the nutrition
-      // month recomputes its training days. The Training tab's reads — the
-      // calendar and this hero's plan — revalidate in place, awaited, so the
-      // confirm closes onto the new dates.
+      // Everything that reads the moved dates. The Overview, the feed, the
+      // block card and the goals table render definite answers, so they are
+      // cleared; the nutrition month recomputes its training days. The
+      // Training tab's reads — the calendar and this hero's plan — revalidate
+      // in place, awaited, so the confirm closes onto the new dates.
       void invalidateNutritionCalendar(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
       void clearBlockFacts(clientId);
+      void clearGoalHistory(clientId);
       await invalidateTrainingData(clientId);
       confirm.close();
       toast.success("Program moved");

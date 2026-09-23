@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import { getPastGoals } from "@/services/client-goals-service";
+import { getGoalHistory } from "@/services/client-goals-service";
 
 /**
- * The client's past goals, newest first and bounded: each goal that ended
- * before today's began, with its last day and the deadline it ended with.
- * Today's goal and the planned ones come from the sibling `GET …/goals`.
+ * The Journey's goals table: every goal, planned first, each with its last
+ * day, whether it is planned, current or ended, and its deadline changes, the
+ * nutrition versions and the programs during it.
  */
 export async function GET(
   request: NextRequest,
@@ -21,7 +21,7 @@ export async function GET(
     const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
-    const history = await getPastGoals(clientId);
+    const history = await getGoalHistory(clientId);
 
     return NextResponse.json(
       { success: true, data: history },

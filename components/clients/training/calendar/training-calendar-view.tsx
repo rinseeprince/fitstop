@@ -6,6 +6,7 @@ import { calendarCollisionDetection } from "./calendar-collision";
 import { useCalendarEvents, useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useCalendarDnd } from "@/hooks/use-calendar-dnd";
@@ -155,6 +156,7 @@ export function TrainingCalendarView({
   // path below must also invalidate the nutrition calendar's cache.
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
+  const clearGoalHistory = useClearClientGoalHistory();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
 
@@ -203,10 +205,11 @@ export function TrainingCalendarView({
           void invalidateNutritionCalendar(clientId);
           void clearClientOverview(clientId);
           void clearAttentionFeed();
-          // The Journey block cards are DERIVED from these rows, so they are
-          // wrong the moment this lands (CONVENTIONS §7 — the area that reads
-          // what you wrote, not the one you wrote).
+          // The Journey block cards and goals table are DERIVED from these
+          // rows, so they are wrong the moment this lands (CONVENTIONS §7 —
+          // the area that reads what you wrote, not the one you wrote).
           void clearBlockFacts(clientId);
+          void clearGoalHistory(clientId);
         } catch (error) {
           toast.error("Placement failed", {
             description: error instanceof Error ? error.message : "Failed to place session",

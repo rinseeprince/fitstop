@@ -42,6 +42,7 @@ describe("toMetricTab", () => {
   });
 
   it("idles the non-metric panes on body", () => {
+    expect(toMetricTab("goals")).toBe("body");
     expect(toMetricTab("training")).toBe("body");
     expect(toMetricTab("blocks")).toBe("body");
   });

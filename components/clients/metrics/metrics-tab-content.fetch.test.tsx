@@ -58,6 +58,21 @@ function series(weights: { date: string; value: number; id: string }[]): Measure
   };
 }
 
+const GOAL = {
+  id: "goal-1",
+  clientId: CLIENT_ID,
+  name: "Lose weight",
+  type: "lose_weight",
+  targetWeight: 88,
+  targetBodyFatPercentage: null,
+  description: null,
+  startsOn: "2026-09-01",
+  source: "coach",
+  setBy: null,
+  createdAt: "2026-09-01T08:00:00Z",
+  updatedAt: "2026-09-01T08:00:00Z",
+};
+
 const OLD_SERIES = series([{ date: "2026-09-20", value: 90, id: "m-1" }]);
 const NEW_SERIES = series([
   { date: "2026-09-20", value: 90, id: "m-1" },
@@ -68,13 +83,15 @@ const NEW_SERIES = series([
 let requested: string[] = [];
 /** The series' next answer — swapped by a test for one it resolves by hand. */
 let answerSeries: () => Promise<unknown> = () => Promise.resolve({ success: true, data: OLD_SERIES });
+/** The goals read and the goals table: none, unless a test sets one. */
+let goalsData: { current: unknown; planned: unknown[] } = { current: null, planned: [] };
+let historyData: unknown[] = [];
 
 function answer(url: string): Promise<unknown> {
   const path = url.split("?")[0];
   if (path.endsWith("/measurement-series")) return answerSeries();
-  if (path.endsWith("/goals")) {
-    return Promise.resolve({ success: true, data: { current: null, planned: [] } });
-  }
+  if (path.endsWith("/goals")) return Promise.resolve({ success: true, data: goalsData });
+  if (path.endsWith("/goals/history")) return Promise.resolve({ success: true, data: historyData });
   if (path.endsWith("/blocks/facts")) return Promise.resolve({ success: true, data: { facts: [] } });
   if (path.endsWith("/blocks")) {
     return Promise.resolve({
@@ -131,6 +148,8 @@ beforeEach(() => {
   cleanup();
   requested = [];
   answerSeries = () => Promise.resolve({ success: true, data: OLD_SERIES });
+  goalsData = { current: null, planned: [] };
+  historyData = [];
   vi.mocked(swrFetcher).mockImplementation((url: string) => {
     requested.push(url);
     return answer(url) as never;
@@ -151,6 +170,14 @@ describe("MetricsTabContent — each pane requests only its own reads", () => {
       [
         `/api/clients/${CLIENT_ID}/blocks`,
         `/api/clients/${CLIENT_ID}/goals`,
+        `/api/clients/${CLIENT_ID}/measurement-series`,
+      ],
+    ],
+    [
+      "goals",
+      [
+        `/api/clients/${CLIENT_ID}/goals`,
+        `/api/clients/${CLIENT_ID}/goals/history`,
         `/api/clients/${CLIENT_ID}/measurement-series`,
       ],
     ],
@@ -205,6 +232,35 @@ describe("MetricsTabContent — Log measurement never shows an old reading", () 
       await refetch.promise;
     });
     await waitFor(() => expect(heroCurrent()).toBe("89.5kg"));
+  });
+
+  it("on Goals, it refreshes the pane in place: the old result stays until the new reading lands, then the dialog closes", async () => {
+    // Today's goal: lose weight to 88 kg, from 91 kg on its start day
+    goalsData = {
+      current: { ...GOAL, deadline: null, startReadings: { weight: 91, bodyFat: null } },
+      planned: [],
+    };
+    historyData = [{ ...GOAL, deadline: null, endsOn: null, status: "current", lines: [] }];
+    search = new URLSearchParams("journey=goals");
+    render(tree(new Map()));
+    await waitFor(() => expect(screen.getByText("2.0 kg to go")).toBeInTheDocument());
+
+    const refetch = deferred<unknown>();
+    answerSeries = () => refetch.promise;
+    await logWeight("89.5");
+
+    // The save has landed and the refetch is in flight: the result as it was,
+    // no loading frame, the dialog still open on its spinner
+    await waitFor(() => expect(seriesReads()).toBe(2));
+    expect(screen.getByText("2.0 kg to go")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await act(async () => {
+      refetch.resolve({ success: true, data: NEW_SERIES });
+      await refetch.promise;
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByText("1.5 kg to go")).toBeInTheDocument();
   });
 
   it("on Physique, it refreshes the pane in place: the old weight stays until the new lands, then the dialog closes", async () => {

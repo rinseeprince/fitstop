@@ -15,12 +15,13 @@ export const METRIC_TABS = ["body", "wellness"] as const;
 
 export type MetricTab = (typeof METRIC_TABS)[number];
 
-// The Journey tab's pane switcher: the two metric panes plus the two that key
-// nothing — Training (exercise analytics, moved here from the Training tab in
-// Session 7.1) and Blocks. Kept separate from MetricTab so a non-metric pane
-// can never leak into the metric-keyed data shapes below.
+// The Journey tab's pane switcher: the two metric panes plus the three that key
+// nothing — Goals, Training (exercise analytics, moved here from the Training
+// tab in Session 7.1) and Blocks. Kept separate from MetricTab so a non-metric
+// pane can never leak into the metric-keyed data shapes below.
 export const JOURNEY_SUBTABS = [
   "body",
+  "goals",
   "training",
   "wellness",
   "blocks",
@@ -36,14 +37,15 @@ export function isJourneySubtab(value: string | null): value is JourneySubtab {
 }
 
 /** Whether a Journey pane is a metric pane — one that shows a metric's data. */
-export function isMetricTab(pane: JourneySubtab): pane is MetricTab {
+function isMetricTab(pane: JourneySubtab): pane is MetricTab {
   return (METRIC_TABS as readonly string[]).includes(pane);
 }
 
 /**
  * The metric derivations want a MetricTab, but a Journey pane may be one that
- * keys nothing (Training, Blocks). Those idle on "body" — nothing metric-keyed
- * renders on them, and Log measurement opens on the body default from them.
+ * keys nothing (Goals, Training, Blocks). Those idle on "body" — nothing
+ * metric-keyed renders on them, and Log measurement opens on the body default
+ * from them.
  *
  * It WHITELISTS the metric panes rather than naming the non-metric ones. The
  * blacklist this replaced (`pane === "blocks" ? "body" : pane`) put the burden

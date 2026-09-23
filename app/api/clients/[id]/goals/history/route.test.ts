@@ -10,35 +10,40 @@ vi.mock("@/lib/require-coach-auth", () => ({
 }));
 
 vi.mock("@/services/client-goals-service", () => ({
-  getPastGoals: vi.fn(),
+  getGoalHistory: vi.fn(),
 }));
 
 import { GET } from "./route";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import { getPastGoals } from "@/services/client-goals-service";
+import { getGoalHistory } from "@/services/client-goals-service";
+import type { GoalHistoryRow } from "@/types/client-goals";
 
 const mockParams = { params: Promise.resolve({ id: "client-1" }) };
 
 const request = () =>
   new NextRequest("http://localhost:3000/api/clients/client-1/goals/history");
 
-const pastGoal = {
-  id: "goal-0",
-  clientId: "client-1",
-  name: "Lose weight",
-  type: "lose_weight",
-  targetWeight: 88,
-  targetBodyFatPercentage: null,
-  description: null,
-  startsOn: "2026-01-05",
-  source: "coach",
-  setBy: "coach-1",
-  createdAt: "2026-01-05T09:00:00Z",
-  updatedAt: "2026-01-05T09:00:00Z",
-  deadline: "2026-06-01",
-  endsOn: "2026-07-13",
-};
+const HISTORY: GoalHistoryRow[] = [
+  {
+    id: "goal-0",
+    clientId: "client-1",
+    name: "Lose weight",
+    type: "lose_weight",
+    targetWeight: 88,
+    targetBodyFatPercentage: null,
+    description: null,
+    startsOn: "2026-01-05",
+    source: "coach",
+    setBy: "coach-1",
+    createdAt: "2026-01-05T09:00:00Z",
+    updatedAt: "2026-01-05T09:00:00Z",
+    deadline: "2026-06-01",
+    endsOn: "2026-07-13",
+    status: "ended",
+    lines: [{ kind: "program", on: "2026-02-09", change: "starts", name: "Base" }],
+  },
+];
 
 describe("GET /api/clients/[id]/goals/history", () => {
   beforeEach(() => {
@@ -48,18 +53,16 @@ describe("GET /api/clients/[id]/goals/history", () => {
       authorized: true,
       coachId: "coach-1",
     } as never);
-    vi.mocked(getPastGoals).mockResolvedValue([pastGoal] as never);
+    vi.mocked(getGoalHistory).mockResolvedValue(HISTORY);
   });
 
-  it("returns the past goals as a flat array", async () => {
+  it("returns the goals table for the client", async () => {
     const response = await GET(request(), mockParams);
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.success).toBe(true);
-    expect(body.data).toHaveLength(1);
-    expect(body.data[0]).toMatchObject({ targetWeight: 88, endsOn: "2026-07-13" });
-    expect(getPastGoals).toHaveBeenCalledWith("client-1");
+    expect(body).toEqual({ success: true, data: HISTORY });
+    expect(getGoalHistory).toHaveBeenCalledWith("client-1");
   });
 
   it("is no-store: a goal change must not be served a cached history", async () => {
@@ -76,7 +79,7 @@ describe("GET /api/clients/[id]/goals/history", () => {
     const response = await GET(request(), mockParams);
 
     expect(response.status).toBe(404);
-    expect(getPastGoals).not.toHaveBeenCalled();
+    expect(getGoalHistory).not.toHaveBeenCalled();
   });
 
   it("rate limits before authorizing", async () => {
@@ -91,7 +94,7 @@ describe("GET /api/clients/[id]/goals/history", () => {
   });
 
   it("returns a generic 500 without leaking the raw error", async () => {
-    vi.mocked(getPastGoals).mockRejectedValue(new Error("relation does not exist"));
+    vi.mocked(getGoalHistory).mockRejectedValue(new Error("relation does not exist"));
 
     const response = await GET(request(), mockParams);
     const body = await response.json();

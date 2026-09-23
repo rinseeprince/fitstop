@@ -20,6 +20,7 @@ export function MetricsTopBar({
       <SegmentedControl
         options={[
           { value: "body", label: "Physique" },
+          { value: "goals", label: "Goals" },
           { value: "training", label: "Training" },
           { value: "wellness", label: "Wellness" },
           { value: "blocks", label: "Blocks" },

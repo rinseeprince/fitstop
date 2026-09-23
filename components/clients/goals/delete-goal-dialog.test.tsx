@@ -52,6 +52,7 @@ function holdExitAnimation() {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("DeleteGoalDialog", () => {
@@ -64,6 +65,24 @@ describe("DeleteGoalDialog", () => {
     expect(screen.queryByLabelText("Type DELETE to confirm")).not.toBeInTheDocument();
     screen.getByRole("button", { name: "Delete goal" }).click();
     expect(onConfirm).toHaveBeenCalledWith(PLANNED);
+  });
+
+  it("names a goal that has ended with its days, and deletes it at a click", () => {
+    // Its days carry their year when it isn't this one, so today is pinned
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-23T12:00:00"));
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    const ENDED: DeleteGoalSubject = {
+      goal: { ...PLANNED.goal, id: "goal-cut", name: "Cut", startsOn: "2026-03-16" },
+      isCurrent: false,
+      endsOn: "2026-05-10",
+    };
+    render(<DeleteGoalDialog open subject={ENDED} onOpenChange={vi.fn()} onConfirm={onConfirm} />);
+
+    expect(screen.getByText("Deletes Cut, 16 Mar – 10 May.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Type DELETE to confirm")).not.toBeInTheDocument();
+    screen.getByRole("button", { name: "Delete goal" }).click();
+    expect(onConfirm).toHaveBeenCalledWith(ENDED);
   });
 
   // The current goal can't be put back as it was, so its delete is typed.

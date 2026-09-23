@@ -42,8 +42,36 @@ export type CurrentGoal = GoalOnDay & {
   startReadings: { weight: number | null; bodyFat: number | null };
 };
 
-/** A goal that has ended: its last day and the deadline it ended with. */
-export type PastGoal = GoalOnDay & { endsOn: string };
+/**
+ * A line in an opened row of the Journey's goals table, dated by the day it
+ * takes effect on the client's calendar: a deadline change, a nutrition
+ * version during the goal (its window, calories and the goal it was built
+ * for), or a program starting, replacing another, or ending.
+ */
+export type GoalHistoryLine =
+  | { kind: "deadline"; on: string; from: string | null; to: string | null }
+  | {
+      kind: "nutrition";
+      on: string;
+      until: string;
+      calories: number;
+      /** The weight target (kg) and deadline its calories were priced for. */
+      builtFor: { goalWeightKg: number | null; deadline: string | null };
+    }
+  | { kind: "program"; on: string; change: "starts" | "ends"; name: string }
+  | { kind: "program"; on: string; change: "replaces"; name: string; replaced: string };
+
+/**
+ * A row of the Journey's goals table (`GET /api/clients/[id]/goals/history`,
+ * newest first): the goal with its deadline as it ended, or as it stands.
+ */
+export type GoalHistoryRow = GoalOnDay & {
+  /** Its last day; null while no goal follows it. */
+  endsOn: string | null;
+  status: "planned" | "current" | "ended";
+  /** Oldest first. */
+  lines: GoalHistoryLine[];
+};
 
 /** `GET /api/clients/[id]/goals`: today's goal and the ones planned after it. */
 export type ClientGoalsOverview = {

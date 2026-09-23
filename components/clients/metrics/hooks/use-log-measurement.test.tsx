@@ -231,6 +231,38 @@ describe("useLogMeasurement — the goals read", () => {
     await act(() => result.current.log(input("mood")));
     expect(reads.filter((url) => url === GOALS_KEY)).toHaveLength(1);
   });
+
+  // The Goals pane reads the series and the goals read too — its results are
+  // worked out from both — so a weight logged there refreshes both in place.
+  it("refreshes it and the series in place when the Goals pane is on screen", async () => {
+    const wrapper = wrapperFor(new Map());
+    const { result } = renderHook(
+      () => ({
+        goal: useGoalsReader(),
+        series: useMeasurementSeries(CLIENT_ID),
+        log: useLogMeasurement(CLIENT_ID, "goals"),
+      }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.goal.data).toBeDefined());
+    await waitFor(() => expect(result.current.series.series).toBeDefined());
+    const goalRefetch = deferred<unknown>();
+    answers[GOALS_KEY] = () => goalRefetch.promise;
+    let save!: Promise<void>;
+    act(() => {
+      save = result.current.log(input("weight"));
+    });
+    await waitFor(() => expect(reads.filter((url) => url === GOALS_KEY)).toHaveLength(2));
+    // Mid-refresh: both still show what they held, nothing loading
+    expect(reads.filter((url) => url === SERIES_KEY)).toHaveLength(2);
+    expect(result.current.goal).toEqual({ data: GOALS_OLD.data.current, isLoading: false });
+    expect(result.current.series.series).toEqual(OLD.data);
+    await act(async () => {
+      goalRefetch.resolve(GOALS_NEW);
+      await save;
+    });
+    expect(result.current.goal.data).toEqual(GOALS_NEW.data.current);
+  });
 });
 
 // docs/MEASUREMENT-LOG-PLAN.md commit 8d1: the nutrition drawer prices from the

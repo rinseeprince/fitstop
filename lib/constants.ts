@@ -109,9 +109,6 @@ export const LOAD_KG_MAX = 2000;
 // components/, and the two bound different things — an authored program's
 // length vs one journey block's. Drift is tolerated but must be deliberate;
 // if you change one, decide about the other on purpose.
-/** How many past goals the history read returns: a "what came before"
- *  reference, not an audit log, and nobody scrolls twenty of them. */
-export const GOAL_HISTORY_LIMIT = 20;
 /** A goal's name and description — mirrored by migration 193's CHECKs. */
 export const GOAL_NAME_MAX = 80;
 export const GOAL_DESCRIPTION_MAX = 500;

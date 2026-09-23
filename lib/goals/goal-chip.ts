@@ -3,6 +3,11 @@ import { goalDirection, type GoalMetric, type GoalType } from "./goal-types";
 
 export type GoalChipTone = "positive" | "warning";
 
+/** "1.2 kg", "3.5%" — how far, with what it is written in. */
+export function formatGoalAmount(amount: number, unit: string): string {
+  return `${amount.toFixed(1)}${unit === "%" ? "%" : ` ${unit}`}`;
+}
+
 /**
  * How far a client is from one of their goal's targets, in words — the coach's
  * goal card and the client's own goal card say it the same way. `goalState`
@@ -38,7 +43,7 @@ export function goalProgressChip({
 
   if (state.state === "reached") return { text: "Goal reached", tone: "positive" };
 
-  const amount = `${state.amount.toFixed(1)}${unit === "%" ? "%" : ` ${unit}`}`;
+  const amount = formatGoalAmount(state.amount, unit);
   if (state.state === "beyond") {
     return { text: `${amount} ${direction < 0 ? "under" : "over"} goal`, tone: "positive" };
   }

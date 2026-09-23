@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { getTodayDateString, isCalendarDay, parseDateParamOrToday } from "./date-helpers";
+import { formatHistoryDate, getTodayDateString, isCalendarDay, parseDateParamOrToday } from "./date-helpers";
+
+describe("formatHistoryDate", () => {
+  const now = new Date("2026-09-23T12:00:00");
+
+  it("is the short date in this year, and names any other year", () => {
+    expect(formatHistoryDate("2026-03-02", now)).toBe("2 Mar");
+    expect(formatHistoryDate("2025-12-29", now)).toBe("29 Dec 2025");
+    expect(formatHistoryDate("2027-01-04", now)).toBe("4 Jan 2027");
+  });
+});
 
 describe("isCalendarDay", () => {
   it("accepts a real day", () => {

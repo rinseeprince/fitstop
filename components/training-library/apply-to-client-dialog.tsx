@@ -28,6 +28,7 @@ import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useClearTrainingPlan } from "@/hooks/use-training-plan";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
+import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import {
   useClearBlockFacts,
   useClientBlocks,
@@ -94,6 +95,7 @@ export function ApplyToClientDialog({
   const invalidateTrainingData = useInvalidateTrainingData();
   const clearTrainingPlan = useClearTrainingPlan();
   const clearBlockFacts = useClearBlockFacts();
+  const clearGoalHistory = useClearClientGoalHistory();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
@@ -213,9 +215,11 @@ export function ApplyToClientDialog({
         // A placement can fail AFTER it has committed — the program is on the
         // calendar and only the earlier program's later sessions survived
         // (PlacementSupersedeError). Refresh both calendar areas so what the
-        // coach sees matches the sentence they just read.
+        // coach sees matches the sentence they just read, and clear the goals
+        // table, which lists the program.
         void invalidateNutritionCalendar(clientId);
         void invalidateTrainingData(clientId);
+        void clearGoalHistory(clientId);
         return;
       }
 
@@ -230,10 +234,11 @@ export function ApplyToClientDialog({
       void invalidateNutritionCalendar(clientId);
       void invalidateTrainingData(clientId);
       void clearTrainingPlan(clientId);
-      // And the Journey block cards, which are DERIVED from the rows this just
-      // wrote — the area that owes an invalidator is the one that READS what
-      // you wrote, not the one you wrote (CONVENTIONS §7).
+      // And the Journey block cards and goals table, which are DERIVED from the
+      // rows this just wrote — the area that owes an invalidator is the one
+      // that READS what you wrote, not the one you wrote (CONVENTIONS §7).
       void clearBlockFacts(clientId);
+      void clearGoalHistory(clientId);
       // And the Overview's cards and rows and the dashboard feed, which are
       // DERIVED from what this wrote — cleared, not revalidated, because they
       // render definite answers (CONVENTIONS §7).

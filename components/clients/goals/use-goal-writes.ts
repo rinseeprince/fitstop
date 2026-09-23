@@ -1,19 +1,24 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useClearClientGoalHistory, useSeedClientGoals } from "@/hooks/use-client-goals";
+import {
+  useClearClientGoalHistory,
+  useRefreshClientGoalHistory,
+  useSeedClientGoals,
+} from "@/hooks/use-client-goals";
 import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
 import { useClearCheckInComparisons } from "@/hooks/use-check-in-detail-data";
 import type { GoalWrite } from "@/lib/goals/goal-form";
 import type { ClientGoalsOverview } from "@/types/client-goals";
 
 /**
- * Every goal write the coach makes from the goals sheet: a save's writes and a
- * delete. Each route answers with the goals as they now stand, which the caller
- * lands (`land`) in the same tick it closes its surface — the seeded read and
- * the closing form render together (CONVENTIONS §7). Landing also clears what
- * is derived from goals: the goal history, how nutrition follows the goal, and
- * whether a sent check-in's goal is still the client's.
+ * Every goal write the coach makes — from the goals sheet a save's writes and
+ * a delete, from the Journey's goals table a delete. Each route answers with
+ * the goals as they now stand, which the caller lands (`land`) before it
+ * closes its surface — the seeded read and the closing form render together
+ * (CONVENTIONS §7). Landing also refreshes what is derived from goals: the
+ * goals table, how nutrition follows the goal, and whether a sent check-in's
+ * goal is still the client's.
  */
 
 /** A write the goal rules refused, with the sentence that says what would clear it. */
@@ -46,25 +51,44 @@ async function send(
 
 export type GoalWrites = ReturnType<typeof useGoalWrites>;
 
-export function useGoalWrites(clientId: string) {
+/**
+ * `historyOnScreen`: the writes come from the goals table, which is refreshed
+ * in place — it keeps its rows until the new ones land, and `land` resolves
+ * once they have, for the caller to close then. Elsewhere it is cleared, and
+ * `land`'s work is done when it returns.
+ */
+export function useGoalWrites(clientId: string, historyOnScreen = false) {
   const seed = useSeedClientGoals();
   const clearHistory = useClearClientGoalHistory();
+  const refreshHistory = useRefreshClientGoalHistory();
   const clearNutritionGoal = useClearNutritionGoal();
   const clearComparisons = useClearCheckInComparisons();
 
   /**
    * A write's answer, into the goals read — which it is, so nothing refetches
-   * it — and the reads derived from goals cleared: the goal history, how
-   * nutrition follows the goal, and every cached check-in comparison.
+   * it — the goals table refreshed, and the other reads derived from goals
+   * cleared: how nutrition follows the goal, and every cached check-in
+   * comparison.
    */
   const land = useCallback(
-    (answer: ClientGoalsOverview) => {
+    async (answer: ClientGoalsOverview) => {
       void seed(clientId, answer);
-      void clearHistory(clientId);
       void clearNutritionGoal(clientId);
       void clearComparisons();
+      if (!historyOnScreen) {
+        void clearHistory(clientId);
+        return;
+      }
+      try {
+        await refreshHistory(clientId);
+      } catch (error) {
+        // The rows on screen still hold what the write changed: dropped, the
+        // table shows its loading state, then the new rows or its own error.
+        console.error("Failed to refresh the goals table:", error);
+        void clearHistory(clientId);
+      }
     },
-    [clientId, seed, clearHistory, clearNutritionGoal, clearComparisons]
+    [clientId, historyOnScreen, seed, clearHistory, refreshHistory, clearNutritionGoal, clearComparisons]
   );
 
   return useMemo(() => {

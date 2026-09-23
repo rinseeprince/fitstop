@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
-const { seed, clearHistory, clearNutritionGoal, clearComparisons } = vi.hoisted(() => ({
+const { seed, clearHistory, refreshHistory, clearNutritionGoal, clearComparisons } = vi.hoisted(() => ({
   seed: vi.fn(),
   clearHistory: vi.fn(),
+  refreshHistory: vi.fn(),
   clearNutritionGoal: vi.fn(),
   clearComparisons: vi.fn(),
 }));
@@ -12,6 +13,7 @@ const { seed, clearHistory, clearNutritionGoal, clearComparisons } = vi.hoisted(
 vi.mock("@/hooks/use-client-goals", () => ({
   useSeedClientGoals: () => seed,
   useClearClientGoalHistory: () => clearHistory,
+  useRefreshClientGoalHistory: () => refreshHistory,
 }));
 vi.mock("@/hooks/use-nutrition-goal", () => ({ useClearNutritionGoal: () => clearNutritionGoal }));
 vi.mock("@/hooks/use-check-in-detail-data", () => ({
@@ -114,12 +116,44 @@ describe("each write goes to its route and answers with the goals as they stand"
 });
 
 describe("landing a write's answer", () => {
-  it("seeds the goals read and clears every read derived from goals", () => {
-    writes().land(ANSWER);
+  it("off the goals table: seeds the goals read and clears every read derived from goals, before it returns", () => {
+    void writes().land(ANSWER);
 
     expect(seed).toHaveBeenCalledWith("client-7", ANSWER);
     expect(clearHistory).toHaveBeenCalledWith("client-7");
     expect(clearNutritionGoal).toHaveBeenCalledWith("client-7");
     expect(clearComparisons).toHaveBeenCalled();
+    expect(refreshHistory).not.toHaveBeenCalled();
+  });
+
+  it("from the goals table: refreshes the table in place and resolves only once it has", async () => {
+    let refreshed!: () => void;
+    refreshHistory.mockReturnValue(new Promise<void>((resolve) => (refreshed = resolve)));
+    const api = renderHook(() => useGoalWrites("client-7", true)).result.current;
+
+    let landed = false;
+    const landing = api.land(ANSWER).then(() => (landed = true));
+    await Promise.resolve();
+
+    expect(seed).toHaveBeenCalledWith("client-7", ANSWER);
+    expect(refreshHistory).toHaveBeenCalledWith("client-7");
+    expect(clearHistory).not.toHaveBeenCalled();
+    expect(clearNutritionGoal).toHaveBeenCalledWith("client-7");
+    expect(clearComparisons).toHaveBeenCalled();
+    expect(landed).toBe(false);
+
+    refreshed();
+    await landing;
+    expect(landed).toBe(true);
+  });
+
+  it("from the goals table: a refresh that fails drops the table's rows instead, so they never pass for new", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    refreshHistory.mockRejectedValue(new Error("timeout"));
+    const api = renderHook(() => useGoalWrites("client-7", true)).result.current;
+
+    await api.land(ANSWER);
+
+    expect(clearHistory).toHaveBeenCalledWith("client-7");
   });
 });

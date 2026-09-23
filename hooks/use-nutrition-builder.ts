@@ -10,6 +10,7 @@ import {
 } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
+import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { useClearNutritionGoal, useNutritionGoalForDay } from "@/hooks/use-nutrition-goal";
 import {
   buildBlockStartOptions,
@@ -61,6 +62,7 @@ export function useNutritionBuilder({
   const nutritionPlan = useNutritionPlan({ client });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
+  const clearGoalHistory = useClearClientGoalHistory();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
   const clearNutritionGoal = useClearNutritionGoal();
@@ -366,12 +368,14 @@ export function useNutritionBuilder({
           // The calendar renders from its own SWR events cache — revalidate it
           // or the regenerated days only appear after a page refresh.
           void invalidateNutritionCalendar(client.id);
-          // And the Journey block cards, which are DERIVED from the plan
-          // versions this just wrote — the area that owes an invalidator is the
-          // one that READS what you wrote, not the one you wrote
-          // (CONVENTIONS §7). Cleared rather than revalidated: they render a
-          // definite "Not set", so a stale entry states something false.
+          // And the Journey block cards and goals table, which are DERIVED
+          // from the plan versions this just wrote — the area that owes an
+          // invalidator is the one that READS what you wrote, not the one you
+          // wrote (CONVENTIONS §7). Cleared rather than revalidated: they
+          // render a definite "Not set", so a stale entry states something
+          // false.
           void clearBlockFacts(client.id);
+          void clearGoalHistory(client.id);
           void clearClientOverview(client.id);
           void clearAttentionFeed();
           // Whether the versions still fit the goal is derived from the ones
@@ -404,6 +408,7 @@ export function useNutritionBuilder({
       nutritionPlan,
       invalidateNutritionCalendar,
       clearBlockFacts,
+      clearGoalHistory,
       clearClientOverview,
       clearAttentionFeed,
       clearNutritionGoal,

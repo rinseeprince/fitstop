@@ -10,7 +10,7 @@ import { useIntakePanel } from "@/contexts/intake-panel-context"
 import { useClient } from "@/hooks/use-check-in-data"
 import { hasStartWeight } from "@/lib/client-profile-completeness"
 import { postIntakeAction } from "@/lib/intake-actions"
-import { useInvalidateClientGoals } from "@/hooks/use-client-goals"
+import { useClearClientGoalHistory, useInvalidateClientGoals } from "@/hooks/use-client-goals"
 import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal"
 import type { IntakeStatus, ClientIntake } from "@/types/client-intake"
 
@@ -29,6 +29,7 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
   const router = useRouter()
   const { mutate } = useSWRConfig()
   const invalidateGoals = useInvalidateClientGoals()
+  const clearGoalHistory = useClearClientGoalHistory()
   const clearNutritionGoal = useClearNutritionGoal()
   const { openPanel, openMinimized, updateIntake, panel } = useIntakePanel()
   // The DURABLE answer to "have the metrics landed", off the client record.
@@ -54,9 +55,10 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
       const notes: string[] = result.data?.notes ?? []
       setSynced(true)
       // The sync may have set the client's first goal, readings and profile,
-      // which the client page this navigates to reads — its goal, and how its
-      // nutrition follows that goal.
+      // which the client page this navigates to reads — its goal, the goals
+      // table, and how its nutrition follows that goal.
       void invalidateGoals(clientId)
+      void clearGoalHistory(clientId)
       void clearNutritionGoal(clientId)
       toast.success("Metrics synced", {
         description: [

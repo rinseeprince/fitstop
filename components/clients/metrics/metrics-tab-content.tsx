@@ -18,6 +18,7 @@ import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { useUnits } from "@/contexts/units-context";
 import { toast } from "sonner";
 import { BlocksSubtab } from "./blocks/blocks-subtab";
+import { GoalsPane } from "./goals/goals-pane";
 // The Training pane's analytics live under clients/training/ and are MOUNTED
 // here (Session 7.1): analytics belong to Journey, prescription stays on the
 // Training tab. Same coach-facing audience, and the dependency runs one way —
@@ -26,7 +27,6 @@ import { ExerciseDataView } from "@/components/clients/training/exercise-data/ex
 import {
   DEFAULT_FOCUS,
   isJourneySubtab,
-  isMetricTab,
   toMetricTab,
   type JourneySubtab,
   type LogRow,
@@ -47,9 +47,10 @@ type MetricsTabContentProps = {
  * The Journey tab: the pane bar, the pane on screen, and the dialogs every pane
  * shares. It reads NOTHING itself — each pane reads its own data, so only the
  * pane on screen loads (Physique: the measurements, the goal and the blocks;
- * Wellness: the check-in history, the coach's entries and the blocks;
- * Training: its exercise reads; Blocks: the blocks and their plans). Log
- * measurement sits on every pane, its metric list the fixed catalog.
+ * Goals: the goals table, the measurements and the goal; Wellness: the
+ * check-in history, the coach's entries and the blocks; Training: its exercise
+ * reads; Blocks: the blocks and their plans). Log measurement sits on every
+ * pane, its metric list the fixed catalog.
  */
 export const MetricsTabContent = ({
   client,
@@ -76,8 +77,9 @@ export const MetricsTabContent = ({
     router.push(`?${params.toString()}`, { scroll: false });
   };
   // The metric-keyed derivations below want a MetricTab; the panes that key
-  // nothing (Training, Blocks) idle on "body". The mapping is a whitelist in
-  // metrics-view-types.ts so the next pane is safe without touching this line.
+  // nothing (Goals, Training, Blocks) idle on "body". The mapping is a
+  // whitelist in metrics-view-types.ts so the next pane is safe without
+  // touching this line.
   const tab: MetricTab = toMetricTab(pane);
 
   // The selected metric is Journey's second single-owner param, ?metric= —
@@ -122,11 +124,7 @@ export const MetricsTabContent = ({
   );
   // The pane on screen is refreshed in place by the save; a store no pane on
   // screen shows is cleared (use-log-measurement.ts).
-  const logMeasurement = useLogMeasurement(
-    client.id,
-    isMetricTab(pane) ? pane : null,
-    onClientUpdated
-  );
+  const logMeasurement = useLogMeasurement(client.id, pane, onClientUpdated);
 
   // The log's three row actions: Edit and Remove open a dialog, Restore is one
   // click (the removed row already says what it is). The dialogs toast their
@@ -180,6 +178,8 @@ export const MetricsTabContent = ({
           clientId={client.id}
           onTabChange={onTabChange}
         />
+      ) : pane === "goals" ? (
+        <GoalsPane clientId={client.id} />
       ) : pane === "training" ? (
         <ExerciseDataView clientId={client.id} />
       ) : pane === "wellness" ? (

@@ -252,6 +252,7 @@ export function ClientOverviewTab({
           />
         }
         onOpenMetrics={() => goToTab("metrics")}
+        onOpenGoalHistory={() => goToTab("metrics", { journey: "goals" })}
       />
 
       {/* 3 — What needs doing + what happened. Two self-railed columns: the

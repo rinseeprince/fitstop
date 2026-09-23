@@ -37,7 +37,7 @@ vi.mock("@/services/client-goals-service", () => ({
   getGoalForDate: vi.fn(),
   getCurrentGoal: vi.fn(),
   getGoalsOverview: vi.fn(),
-  getPastGoals: vi.fn(),
+  getGoalHistory: vi.fn(),
 }));
 
 vi.mock("@/services/client-goal-writes-service", () => ({

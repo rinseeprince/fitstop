@@ -94,7 +94,7 @@ export function GoalForm({
     let answer: ClientGoalsOverview | null = null;
     try {
       for (const write of planWrites) {
-        if (answer) writes.land(answer);
+        if (answer) void writes.land(answer);
         answer = await writes.run(write);
       }
       if (answer) onSaved(answer);

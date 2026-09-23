@@ -1,16 +1,19 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getReadingsOnDay } from "./measurements-service";
-import { GOAL_HISTORY_LIMIT } from "@/lib/constants";
-import { goalAsOf, goalOnDay, pastGoals, plannedGoals } from "@/lib/goals/goal-timeline";
+import { getTrainingPlansOverlapping } from "./training-service";
+import { addDaysToDateString } from "@/lib/date-helpers";
+import { goalHistoryRows, type NutritionVersionWindow } from "@/lib/goals/goal-history";
+import { goalAsOf, goalOnDay, plannedGoals } from "@/lib/goals/goal-timeline";
 import { isGoalType } from "@/lib/goals/goal-types";
+import { versionCalories } from "@/lib/nutrition/version-calories";
 import type { Database } from "@/types/database";
 import type {
   ClientGoal,
   ClientGoalsOverview,
+  GoalHistoryRow,
   GoalOnDay,
   GoalSource,
-  PastGoal,
 } from "@/types/client-goals";
 
 /**
@@ -123,11 +126,62 @@ export async function getGoalsOverview(clientId: string): Promise<ClientGoalsOve
   };
 }
 
-/** The goals that ended before today's began, newest first, bounded. */
-export async function getPastGoals(clientId: string): Promise<PastGoal[]> {
+/**
+ * The active nutrition versions with a day on or after `from`, earliest first:
+ * each one's window, its calories and the goal it was built for.
+ */
+async function getNutritionVersionsFrom(clientId: string, from: string): Promise<NutritionVersionWindow[]> {
+  const { data, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select(
+      "effective_from, effective_until, baseline_calories, custom_macros_enabled, custom_calories, goal_weight_kg, goal_deadline"
+    )
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .gte("effective_until", from)
+    .order("effective_from", { ascending: true });
+
+  if (error) {
+    console.error("Failed to read the nutrition versions:", error);
+    throw new Error(`Failed to read the nutrition versions: ${error.message}`);
+  }
+  return (data ?? []).map((row) => ({
+    startsOn: row.effective_from,
+    endsOn: row.effective_until,
+    calories: versionCalories({
+      baselineCalories: row.baseline_calories,
+      customMacrosEnabled: row.custom_macros_enabled,
+      customCalories: row.custom_calories,
+    }),
+    builtFor: {
+      goalWeightKg: row.goal_weight_kg == null ? null : Number(row.goal_weight_kg),
+      deadline: row.goal_deadline,
+    },
+  }));
+}
+
+/**
+ * The Journey's goals table: every goal, planned first, each with what
+ * happened during it (`goalHistoryRows`), judged against the client's today.
+ * The programs are read from the day before the first goal, so a program
+ * starting on its first day can be seen to replace the one before it.
+ */
+export async function getGoalHistory(clientId: string): Promise<GoalHistoryRow[]> {
   const [today, goals] = await Promise.all([
     getClientTodayString(clientId),
     listClientGoals(clientId),
   ]);
-  return pastGoals(goals, today).slice(0, GOAL_HISTORY_LIMIT);
+  if (goals.length === 0) return [];
+
+  const firstDay = goals[0].startsOn;
+  const [plans, versions] = await Promise.all([
+    getTrainingPlansOverlapping(clientId, addDaysToDateString(firstDay, -1), null),
+    getNutritionVersionsFrom(clientId, firstDay),
+  ]);
+  const programs = plans.map((plan) => ({
+    name: plan.name,
+    startsOn: plan.effectiveFrom,
+    endsOn: plan.effectiveUntil,
+  }));
+  return goalHistoryRows({ goals, today, programs, versions });
 }

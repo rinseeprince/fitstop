@@ -25,6 +25,7 @@ import {
   getNextFutureTrainingPlan,
   getTrainingPlanForDate,
   getTrainingPlanIdForDate,
+  getTrainingPlansOverlapping,
   getLiveProgramWindowsForClients,
 } from "./training-service";
 
@@ -352,6 +353,44 @@ describe("getFurthestLiveProgramEnd", () => {
     await expect(getFurthestLiveProgramEnd("client-1", ANCHOR)).resolves.toBeNull();
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+});
+
+describe("getTrainingPlansOverlapping", () => {
+  const ROW = { id: "plan-4", name: "Peak", effective_from: "2026-09-07", effective_until: "2026-11-01" };
+
+  function wire() {
+    const query: Record<string, ReturnType<typeof vi.fn>> & { then?: unknown } = {};
+    for (const method of ["select", "eq", "is", "neq", "gte", "lte", "order"]) {
+      query[method] = vi.fn(() => query);
+    }
+    query.then = (resolve: (value: unknown) => void) => Promise.resolve({ data: [ROW], error: null }).then(resolve);
+    vi.mocked(supabaseAdmin.from).mockReturnValue(query as never);
+    return query;
+  }
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("reads the live programs meeting a range, earliest first", async () => {
+    const query = wire();
+
+    expect(await getTrainingPlansOverlapping("client-1", "2026-08-31", "2026-10-25")).toEqual([
+      { id: "plan-4", name: "Peak", effectiveFrom: "2026-09-07", effectiveUntil: "2026-11-01" },
+    ]);
+    expect(query.eq).toHaveBeenCalledWith("client_id", "client-1");
+    expect(query.is).toHaveBeenCalledWith("deleted_at", null);
+    expect(query.neq).toHaveBeenCalledWith("status", "archived");
+    expect(query.gte).toHaveBeenCalledWith("effective_until", "2026-08-31");
+    expect(query.lte).toHaveBeenCalledWith("effective_from", "2026-10-25");
+  });
+
+  it("runs on for good without an end: every live program from the start", async () => {
+    const query = wire();
+
+    await getTrainingPlansOverlapping("client-1", "2026-08-31", null);
+
+    expect(query.gte).toHaveBeenCalledWith("effective_until", "2026-08-31");
+    expect(query.lte).not.toHaveBeenCalled();
   });
 });
 

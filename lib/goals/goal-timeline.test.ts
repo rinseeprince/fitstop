@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ClientGoal } from "@/types/client-goals";
-import { deadlineOnDay, goalAsOf, goalOnDay, pastGoals, plannedGoals } from "./goal-timeline";
+import { deadlineOnDay, goalAsOf, goalOnDay, plannedGoals } from "./goal-timeline";
 
 function goal(
   id: string,
@@ -91,19 +91,5 @@ describe("plannedGoals", () => {
 
   it("lists nothing once a planned goal's day arrives", () => {
     expect(plannedGoals(goals, "2026-09-20")).toEqual([]);
-  });
-});
-
-describe("pastGoals", () => {
-  it("lists the goals before today's, newest first, each to the day before the next began", () => {
-    const past = pastGoals(goals, "2026-09-21");
-    expect(past.map((g) => [g.id, g.endsOn, g.deadline])).toEqual([
-      ["build", "2026-09-19", "2026-09-12"],
-      ["cut", "2026-03-09", "2026-04-30"],
-    ]);
-  });
-
-  it("leaves a planned goal out, so today's goal is not past", () => {
-    expect(pastGoals(goals, "2026-06-30").map((g) => g.id)).toEqual(["cut"]);
   });
 });

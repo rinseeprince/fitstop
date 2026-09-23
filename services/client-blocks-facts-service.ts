@@ -2,6 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { listBlocks } from "./client-blocks-service";
 import { getTrainingPlansOverlapping } from "./training-service";
 import { derivePlanState } from "@/lib/blocks/block-derivations";
+import { versionCalories } from "@/lib/nutrition/version-calories";
 import type {
   BlockFacts,
   BlockNutritionFact,
@@ -86,13 +87,6 @@ async function fetchNutritionVersions(
     customCalories: row.custom_calories,
     coachNote: row.coach_note,
   }));
-}
-
-/** A version's own daily target, custom-macros override honoured. */
-function versionCalories(version: NutritionVersion): number {
-  return version.customMacrosEnabled && version.customCalories != null
-    ? version.customCalories
-    : version.baselineCalories;
 }
 
 /**

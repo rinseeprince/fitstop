@@ -113,6 +113,7 @@ const PROPS = {
   onEditGoals: vi.fn(),
   chart: <div data-testid="chart" />,
   onOpenMetrics: vi.fn(),
+  onOpenGoalHistory: vi.fn(),
   series: seriesOf(),
 };
 
@@ -557,6 +558,16 @@ describe("StatusBand — footer", () => {
 
     await user.click(screen.getByRole("button", { name: /Open metrics/ }));
     expect(onOpenMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the goal history — the Journey's goals table — rather than showing it here", async () => {
+    const user = userEvent.setup();
+    const onOpenGoalHistory = vi.fn();
+    render(<StatusBand {...PROPS} client={BASE} onOpenGoalHistory={onOpenGoalHistory} />);
+
+    await user.click(screen.getByRole("button", { name: "Goal history" }));
+    expect(onOpenGoalHistory).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 

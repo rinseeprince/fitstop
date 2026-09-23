@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatDateOnlyShort } from "@/lib/date-helpers";
+import { formatDateOnlyShort, formatHistoryDate } from "@/lib/date-helpers";
 import type { GoalOnDay } from "@/types/client-goals";
 
 /** What the confirm is about. */
@@ -21,23 +21,29 @@ export type DeleteGoalSubject = {
   goal: GoalOnDay;
   /** The goal in force today, whose delete is typed rather than clicked. */
   isCurrent: boolean;
+  /** A goal that has ended: its last day. */
+  endsOn?: string;
 };
 
 /** The word the current goal's delete is typed as. */
 const CONFIRM_WORD = "DELETE";
 
-function consequence({ goal, isCurrent }: DeleteGoalSubject): string {
-  return isCurrent
-    ? `${goal.name} is the current goal. Deleting it can't be undone: set again, it starts from today and its progress counts from today's weight.`
+function consequence({ goal, isCurrent, endsOn }: DeleteGoalSubject): string {
+  if (isCurrent) {
+    return `${goal.name} is the current goal. Deleting it can't be undone: set again, it starts from today and its progress counts from today's weight.`;
+  }
+  return endsOn
+    ? `Deletes ${goal.name}, ${formatHistoryDate(goal.startsOn)} – ${formatHistoryDate(endsOn)}.`
     : `Deletes ${goal.name}, planned from ${formatDateOnlyShort(goal.startsOn)}.`;
 }
 
 /**
  * Destructive confirm for a goal (docs/newdesignsystem.md → Destructive
  * confirm dialog); the current goal's is the typed variant. The host deletes,
- * lands the answer and closes this in one tick; the pending flag outlives that
- * close, so the closing card keeps its spinner, and the host keys the card by
- * its opening so the next one starts fresh.
+ * lands the answer and closes this — the goals table once its rows have
+ * refreshed; the pending flag outlives that close, so the closing card keeps
+ * its spinner, and the host keys the card by its opening so the next one
+ * starts fresh.
  */
 export function DeleteGoalDialog({
   open,

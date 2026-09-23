@@ -37,8 +37,8 @@ function weightText(kg: number, viewer: UnitSystem): string {
   return `${value.toFixed(1)} ${unit}`;
 }
 
-/** What the saved calories were worked out for. */
-function describeBuilt(pricing: GoalPricing, viewer: UnitSystem): string {
+/** What the saved calories were worked out for — the Journey's goals table says it the same way. */
+export function describeBuilt(pricing: GoalPricing, viewer: UnitSystem): string {
   if (pricing.goalWeightKg == null) return "maintenance";
   const weight = weightText(pricing.goalWeightKg, viewer);
   return pricing.deadline

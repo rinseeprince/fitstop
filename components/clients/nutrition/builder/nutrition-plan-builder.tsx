@@ -15,6 +15,7 @@ import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-e
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
+import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
 import {
   journeyReturnParams,
@@ -147,6 +148,7 @@ function NutritionCalendarMount() {
   const builder = useNutritionBuilderContext();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
+  const clearGoalHistory = useClearClientGoalHistory();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
   const clearNutritionGoal = useClearNutritionGoal();
@@ -170,9 +172,11 @@ function NutritionCalendarMount() {
       toast.success("Nutrition plan deleted");
       setDeleteOpen(false);
       await invalidateNutritionCalendar(clientId);
-      // The Journey block cards read the plan VERSIONS, so they are wrong the
-      // moment this lands (CONVENTIONS §7 — the area that reads what you wrote).
+      // The Journey block cards and goals table read the plan VERSIONS, so they
+      // are wrong the moment this lands (CONVENTIONS §7 — the area that reads
+      // what you wrote).
       void clearBlockFacts(clientId);
+      void clearGoalHistory(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
       // The versions this ended are what the out-of-date rule judges.

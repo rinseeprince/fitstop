@@ -5,21 +5,29 @@ const query = {
   eq: vi.fn(),
   order: vi.fn(),
 };
+const versionsQuery = {
+  select: vi.fn(),
+  eq: vi.fn(),
+  gte: vi.fn(),
+  order: vi.fn(),
+};
 
 vi.mock("./supabase-admin", () => ({
-  supabaseAdmin: { from: vi.fn(() => query) },
+  supabaseAdmin: { from: vi.fn((table: string) => (table === "nutrition_plans" ? versionsQuery : query)) },
 }));
 vi.mock("./today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("./measurements-service", () => ({ getReadingsOnDay: vi.fn() }));
+vi.mock("./training-service", () => ({ getTrainingPlansOverlapping: vi.fn() }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getReadingsOnDay } from "./measurements-service";
+import { getTrainingPlansOverlapping } from "./training-service";
 import {
   getCurrentGoal,
   getGoalForDate,
+  getGoalHistory,
   getGoalsOverview,
-  getPastGoals,
   listClientGoals,
 } from "./client-goals-service";
 
@@ -145,12 +153,75 @@ describe("the goals read", () => {
     expect(getReadingsOnDay).not.toHaveBeenCalled();
   });
 
-  it("lists past goals newest first, each to the day before the next began", async () => {
-    returns([row("g10", "2026-01-12"), row("g11", "2026-04-20"), row("g12", "2026-08-31")]);
-    const past = await getPastGoals("client-8");
-    expect(past.map((g) => [g.id, g.endsOn])).toEqual([
-      ["g11", "2026-08-30"],
-      ["g10", "2026-04-19"],
+});
+
+describe("the goals table read", () => {
+  function versionsReturn(rows: Row[], error: unknown = null) {
+    versionsQuery.select.mockReturnValue(versionsQuery);
+    versionsQuery.eq.mockReturnValue(versionsQuery);
+    versionsQuery.gte.mockReturnValue(versionsQuery);
+    versionsQuery.order.mockResolvedValue({ data: error ? null : rows, error });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-09-22");
+    vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([]);
+    versionsReturn([]);
+  });
+
+  it("reads nothing more for a client with no goals", async () => {
+    returns([]);
+    expect(await getGoalHistory("client-8")).toEqual([]);
+    expect(getTrainingPlansOverlapping).not.toHaveBeenCalled();
+    expect(supabaseAdmin.from).not.toHaveBeenCalledWith("nutrition_plans");
+  });
+
+  it("reads the programs from the day before the first goal on, and the versions from its first day", async () => {
+    returns([row("g20", "2026-03-02"), row("g21", "2026-06-22", { name: "Build" })]);
+    vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
+      { id: "plan-2", name: "Base", effectiveFrom: "2026-03-02", effectiveUntil: "2026-05-24" },
     ]);
+    versionsReturn([
+      {
+        effective_from: "2026-03-02",
+        effective_until: "2026-06-21",
+        baseline_calories: 2460,
+        custom_macros_enabled: true,
+        custom_calories: 2310,
+        goal_weight_kg: "77.9",
+        goal_deadline: "2026-06-19",
+      },
+    ]);
+
+    const history = await getGoalHistory("client-8");
+
+    expect(getTrainingPlansOverlapping).toHaveBeenCalledWith("client-8", "2026-03-01", null);
+    expect(versionsQuery.eq).toHaveBeenCalledWith("client_id", "client-8");
+    expect(versionsQuery.eq).toHaveBeenCalledWith("status", "active");
+    expect(versionsQuery.gte).toHaveBeenCalledWith("effective_until", "2026-03-02");
+    expect(history.map((goal) => [goal.id, goal.status, goal.endsOn])).toEqual([
+      ["g21", "current", null],
+      ["g20", "ended", "2026-06-21"],
+    ]);
+    // The coach's custom calories, and the goal the version was priced for
+    expect(history[1].lines).toEqual([
+      {
+        kind: "nutrition",
+        on: "2026-03-02",
+        until: "2026-06-21",
+        calories: 2310,
+        builtFor: { goalWeightKg: 77.9, deadline: "2026-06-19" },
+      },
+      { kind: "program", on: "2026-03-02", change: "starts", name: "Base" },
+      { kind: "program", on: "2026-05-24", change: "ends", name: "Base" },
+    ]);
+  });
+
+  it("throws a failed read of the versions rather than a table missing them", async () => {
+    returns([row("g22", "2026-04-13")]);
+    versionsReturn([], { message: "timeout" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(getGoalHistory("client-8")).rejects.toThrow(/timeout/);
   });
 });

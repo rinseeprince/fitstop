@@ -245,6 +245,12 @@ export function formatDateOnlyShort(dateStr: string): string {
   });
 }
 
+/** The short date, with its year when that isn't this year — for a list that runs across years. */
+export function formatHistoryDate(dateStr: string, now: Date = new Date()): string {
+  const year = dateStr.slice(0, 4);
+  return year === String(now.getFullYear()) ? formatDateOnlyShort(dateStr) : `${formatDateOnlyShort(dateStr)} ${year}`;
+}
+
 /**
  * The calendar day a UTC-midnight day stamp names, as a local-midnight Date. A
  * logged session's day (`session_logs.completed_at`, and the dates the exercise

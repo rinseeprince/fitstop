@@ -39,6 +39,7 @@ import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-e
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
+import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { blockColor } from "./block-colors";
 import { BlockCard } from "./block-card";
 import { BlockForm, type BlockFormValues } from "./block-form";
@@ -106,6 +107,8 @@ export function BlocksSubtab({
   // Trims and deletes end nutrition versions, which the out-of-date rule
   // judges (docs/MEASUREMENT-LOG-PLAN.md commit 8d1).
   const clearNutritionGoal = useClearNutritionGoal();
+  // What the goals table lists beside the goals: the programs and versions.
+  const clearGoalHistory = useClearClientGoalHistory();
   const [showAddForm, setShowAddForm] = useState(false);
   // Coach-curated views (Session 3.7): "journey" = everything unarchived —
   // a live program's finished phases included; "archive" = what the coach
@@ -190,12 +193,13 @@ export function BlocksSubtab({
       setIsTrimming(false);
     } finally {
       // Trims may have landed on either path: the calendars, the facts, the
-      // Overview and the feed are all derived from the plans they moved
-      // (CONVENTIONS §7).
+      // goals table, the Overview and the feed are all derived from the plans
+      // they moved (CONVENTIONS §7).
       void invalidateBlocks(clientId);
       void invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
       void clearBlockFacts(clientId);
+      void clearGoalHistory(clientId);
       void clearNutritionGoal(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
@@ -222,6 +226,7 @@ export function BlocksSubtab({
       void invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
       void clearBlockFacts(clientId);
+      void clearGoalHistory(clientId);
       void clearNutritionGoal(clientId);
       toast.success(`"${block.name}" deleted`);
       void invalidateBlocks(clientId);
@@ -251,11 +256,12 @@ export function BlocksSubtab({
       planDeleteDialog.close();
       // The delete rewrote a calendar — the upcoming sessions, or a version's
       // window the nutrition days are computed from — so both calendar areas
-      // are owed their invalidator, and the facts, the Overview and the feed
-      // are derived from the plan tables (CONVENTIONS §7).
+      // are owed their invalidator, and the facts, the goals table, the
+      // Overview and the feed are derived from the plan tables (CONVENTIONS §7).
       void invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
       void clearBlockFacts(clientId);
+      void clearGoalHistory(clientId);
       void clearNutritionGoal(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();

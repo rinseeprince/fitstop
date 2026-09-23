@@ -26,6 +26,8 @@
  *  13  a write without the Origin the CSRF check reads is refused
  *  14  the manual Add client sets the first goal from today, with the form's type, name, target, deadline and words — audited;
  *      a deadline before the new client's today is a 400 that leaves no client
+ *  15  the goals table: every goal, planned first, with its deadline changes, the nutrition versions and the programs
+ *      during it, in date order (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d3); another coach's client is 404
  */
 import "./env-bootstrap";
 
@@ -33,6 +35,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { appendMeasurements } from "@/services/measurements-service";
 import { getClientTodayString } from "@/services/today-service";
 import { addDaysToDateString, formatDateOnlyShort } from "@/lib/date-helpers";
+import type { GoalHistoryRow } from "@/types/client-goals";
 import { mintSession, send, PROOF_BASE } from "./proof-session";
 
 const COACH_EMAIL = "samuel.k@taboola.com";
@@ -279,6 +282,78 @@ async function main(): Promise<void> {
       body: JSON.stringify({ type: "maintain" }),
     });
     check("a write without the Origin is refused", noOrigin.status === 403, noOrigin.status);
+
+    console.info("15. The goals table");
+    const E = await makeClient("Goal routes proof E");
+    const { data: cutId } = await supabaseAdmin.rpc("add_client_goal", {
+      p_client_id: E, p_today: day(-40), p_starts_on: day(-40), p_type: "lose_weight", p_name: "Proof cut",
+      p_source: "coach", p_set_by: coach.id, p_target_weight: 69.6, p_deadline: day(-6),
+    });
+    if (!cutId) throw new Error("Setup: the ended goal was not written");
+    const { error: deadlineError } = await supabaseAdmin.rpc("set_client_goal_deadline", {
+      p_goal_id: cutId, p_client_id: E, p_today: day(-25), p_set_by: coach.id, p_deadline: day(-9),
+    });
+    if (deadlineError) throw new Error(`Setup: ${deadlineError.message}`);
+    const { data: buildId } = await supabaseAdmin.rpc("add_client_goal", {
+      p_client_id: E, p_today: day(-8), p_starts_on: day(-8), p_type: "build_muscle", p_name: "Proof build",
+      p_source: "coach", p_set_by: coach.id, p_target_weight: 74.4,
+    });
+    if (!buildId) throw new Error("Setup: today's goal was not written");
+    const hold = await send(session, "POST", `/api/clients/${E}/goals`, { type: "maintain", name: "Proof hold", startsOn: day(21) });
+    const holdId = (hold.json as Body).data?.planned[0]?.id;
+    // Base ran before the cut; Strength replaced it inside the cut and ended with
+    // a gap before Peak, which ends inside today's goal. Two versions: one begun
+    // before the cut, one on the coach's custom calories across both goals.
+    const program = (name: string, from: number, until: number) => ({
+      client_id: E, coach_id: coach.id, coach_prompt: "", name, split_type: "custom", frequency_per_week: 3,
+      status: "active", effective_from: day(from), effective_until: day(until),
+    });
+    const { error: plansError } = await supabaseAdmin.from("training_plans").insert([
+      program("Proof base", -45, -31), program("Proof strength", -30, -12), program("Proof peak", -5, 16),
+    ]);
+    const version = (from: number, until: number, calories: number, custom: number | null, deadline: number) => ({
+      client_id: E, coach_id: coach.id, status: "active", effective_from: day(from), effective_until: day(until),
+      baseline_calories: calories, custom_macros_enabled: custom !== null, custom_calories: custom,
+      protein_target_g: 152, carb_target_g: 213, fat_target_g: 67, base_weight_kg: 77.8,
+      training_volume_hours: "3-5", work_activity_level: "sedentary", goal_weight_kg: 69.6, goal_deadline: day(deadline),
+    });
+    const { error: versionsError } = await supabaseAdmin.from("nutrition_plans").insert([
+      version(-42, -20, 2280, null, -6), version(-19, 3, 2455, 2135, -9),
+    ]);
+    if (plansError || versionsError) throw new Error(`Setup: ${plansError?.message ?? versionsError?.message}`);
+
+    const table = await send(session, "GET", `/api/clients/${E}/goals/history`);
+    const rows = (table.json as { data?: GoalHistoryRow[] } | null)?.data ?? [];
+    check(
+      "every goal, planned first, each to the day before the next began",
+      table.status === 200 &&
+        JSON.stringify(rows.map((r) => [r.id, r.status, r.endsOn])) ===
+          JSON.stringify([[holdId, "planned", null], [buildId, "current", day(20)], [cutId, "ended", day(-9)]]),
+      rows.map((r) => [r.id, r.status, r.endsOn])
+    );
+    const cut = rows.find((r) => r.id === cutId);
+    check(
+      "an ended goal: the deadline it ended with, and its deadline change, versions and programs in date order",
+      cut?.deadline === day(-9) &&
+        JSON.stringify(cut.lines) ===
+          JSON.stringify([
+            { kind: "nutrition", on: day(-42), until: day(-20), calories: 2280, builtFor: { goalWeightKg: 69.6, deadline: day(-6) } },
+            { kind: "program", on: day(-30), change: "replaces", name: "Proof strength", replaced: "Proof base" },
+            { kind: "deadline", on: day(-25), from: day(-6), to: day(-9) },
+            { kind: "nutrition", on: day(-19), until: day(3), calories: 2135, builtFor: { goalWeightKg: 69.6, deadline: day(-9) } },
+            { kind: "program", on: day(-12), change: "ends", name: "Proof strength" },
+          ]),
+      cut
+    );
+    const build = rows.find((r) => r.id === buildId);
+    check(
+      "today's goal: the version running into it, and the program starting and ending in its days",
+      JSON.stringify(build?.lines.map((line) => [line.kind, line.on, line.kind === "program" ? line.change : null])) ===
+        JSON.stringify([["nutrition", day(-19), null], ["program", day(-5), "starts"], ["program", day(16), "ends"]]),
+      build?.lines
+    );
+    const foreignTable = await send(session, "GET", `/api/clients/${foreignClient.id}/goals/history`);
+    check("another coach's client's table is 404", foreignTable.status === 404, foreignTable.status);
   } finally {
     if (made.length > 0) {
       const { error: auditError } = await supabaseAdmin.from("audit_logs").delete().in("client_id", made);
