@@ -74,8 +74,6 @@ const CLIENT = {
   bmr: 1800,
   tdee: 2400,
   gender: "male",
-  includeActivityBurn: true,
-  surplusAsCarbs: false,
 } as unknown as Client;
 
 function okResponse(): Response {
@@ -440,5 +438,81 @@ describe("useNutritionBuilder — the manual save carries the balancer's numbers
 
     expect(saved).toBe(false);
     expect(fetchSpy.mock.calls.find(([, init]) => init?.method === "POST")).toBeUndefined();
+  });
+});
+
+// The two surplus settings are fields of the save (migration 196): a flip
+// writes nothing, and Regenerate / Generate carries both with the version, so
+// only the days it covers are priced with them — never an earlier one.
+describe("useNutritionBuilder — the surplus settings are saved with the plan", () => {
+  beforeEach(() => {
+    planState.nutritionData = {
+      calcInputs: CALC_INPUTS,
+      hasPlan: true,
+      includeActivityBurn: false,
+      surplusAsCarbs: true,
+      scheduledFor: null,
+    };
+    planState.refetchNutrition.mockReset();
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("seeds both switches from the latest-saved plan", () => {
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    expect(result.current.includeActivityBurn).toBe(false);
+    expect(result.current.surplusAsCarbs).toBe(true);
+  });
+
+  it("with no plan, starts from the defaults a first plan has: surplus on, kept to the split", () => {
+    planState.nutritionData = { calcInputs: CALC_INPUTS, hasPlan: false, scheduledFor: null };
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    expect(result.current.includeActivityBurn).toBe(true);
+    expect(result.current.surplusAsCarbs).toBe(false);
+  });
+
+  it("flipping either switch sends no request — it only changes what the save will carry", () => {
+    const fetchSpy = mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+
+    act(() => result.current.handleToggleActivityBurn(true));
+    act(() => result.current.handleToggleSurplusAsCarbs(false));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.current.includeActivityBurn).toBe(true);
+    expect(result.current.surplusAsCarbs).toBe(false);
+  });
+
+  it("a refetch carrying the same saved values does not undo a flip", () => {
+    const { result, rerender } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    act(() => result.current.handleToggleActivityBurn(true));
+
+    planState.nutritionData = { ...(planState.nutritionData as object) };
+    rerender();
+
+    expect(result.current.includeActivityBurn).toBe(true);
+  });
+
+  it("a flip followed by a save sends the flipped values", async () => {
+    const fetchSpy = mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    act(() => result.current.handleToggleActivityBurn(true));
+
+    await act(async () => {
+      await result.current.generatePlan();
+    });
+
+    expect(postedBody(fetchSpy)).toMatchObject({ includeActivityBurn: true, surplusAsCarbs: true });
+  });
+
+  it("discarding the edits — the drawer closing without a save — shows the saved values again", () => {
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    act(() => result.current.handleToggleActivityBurn(true));
+    act(() => result.current.handleToggleSurplusAsCarbs(false));
+
+    act(() => result.current.discardSurplusEdits());
+
+    expect(result.current.includeActivityBurn).toBe(false);
+    expect(result.current.surplusAsCarbs).toBe(true);
   });
 });

@@ -291,6 +291,27 @@ describe("training-event-calendar-service", () => {
       expect(mockRpc).not.toHaveBeenCalled();
     });
 
+    it("refuses a session sitting on a past day, before calling the function — its day's target never changes", async () => {
+      // A missed session two days before the client's today.
+      mockGetClientTodayString.mockResolvedValue("2026-06-11");
+      wire(storedEvent({ date: "2026-06-09" }));
+
+      await expect(
+        moveEvent("event-1", "2026-06-09", "2026-06-13", clientId, planId),
+      ).rejects.toThrow("Cannot move a session from a past date");
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it("a session on the client's today still moves to a later day", async () => {
+      mockGetClientTodayString.mockResolvedValue("2026-06-11");
+      wire(storedEvent({ date: "2026-06-11" }));
+
+      await expect(
+        moveEvent("event-1", "2026-06-11", "2026-06-14", clientId, planId),
+      ).resolves.toBeUndefined();
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+    });
+
     it("translates the function's message contract into the coach's errors", async () => {
       // Each refusal is one the function makes under its row lock — a client
       // move landing between the pre-checks above and the write.

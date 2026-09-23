@@ -8,6 +8,7 @@ import { mapClientRow, toClientSelfView, type ClientSelfView } from "@/lib/mappe
 import type { ClientRowWithMeasurements } from "@/lib/database-helpers";
 import { CLIENT_MEASUREMENT_EMBEDS } from "./measurements-service";
 import { getCurrentGoal } from "./client-goals-service";
+import { getSurplusSettingsForClientToday } from "./nutrition-plan-service";
 import { getLastSubmittedPeriodEnd } from "./daily-log-permissions-service";
 import { resolveLogsOpenFrom } from "@/lib/daily-log-permissions";
 import { getEventsForDateRange } from "./training-event-service";
@@ -63,7 +64,7 @@ const CLIENT_SELF_COLUMNS =
   "check_in_frequency, check_in_frequency_days, next_check_in_due, " +
   "last_reminder_sent_at, reminder_preferences, total_check_ins_expected, " +
   "total_check_ins_completed, check_in_adherence_rate, current_streak, longest_streak, " +
-  "unit_preference, include_activity_burn, surplus_as_carbs, " +
+  "unit_preference, " +
   "bmr_manual_override, tdee_manual_override, " +
   "welcome_message, onboarding_status, walkthrough_completed_at, start_date, timezone, " +
   CLIENT_MEASUREMENT_EMBEDS;
@@ -100,13 +101,18 @@ export async function getClientForCurrentUser(): Promise<ClientSelfView | null> 
   // to the column list above; the schedule facts it needs (timezone,
   // next_check_in_due, start_date) are already selected, so only the last
   // submitted period costs a query.
-  const [goal, lastSubmittedPeriodEnd] = await Promise.all([
+  //
+  // The two surplus settings are the nutrition version's (migration 196), not
+  // columns: the ones covering the client's today, read by the service role
+  // for the same reason as the goal.
+  const [goal, lastSubmittedPeriodEnd, surplusSettings] = await Promise.all([
     getCurrentGoal(client.id),
     getLastSubmittedPeriodEnd(client.id),
+    getSurplusSettingsForClientToday(client.id),
   ]);
   const logsOpenFrom = resolveLogsOpenFrom(client, lastSubmittedPeriodEnd);
 
-  return toClientSelfView({ ...client, logsOpenFrom }, goal);
+  return toClientSelfView({ ...client, logsOpenFrom }, goal, surplusSettings);
 }
 
 // Get nutrition targets for a client with daily breakdown
@@ -115,8 +121,7 @@ export async function getClientNutritionTargets(
 ): Promise<NutritionTargets | null> {
   // Three independent client-scoped reads, run together.
   //
-  // - display prefs (surplus_as_carbs decides how a training-day surplus
-  //   splits — the program card must match the coach calendar);
+  // - the unit preference;
   // - client-local today, because at 00:30 local just after a UTC week
   //   boundary server-UTC today would show last week's targets;
   // - the weekday their week ends on. This window used to be hard Mon-Sun for
@@ -126,7 +131,7 @@ export async function getClientNutritionTargets(
     await Promise.all([
       supabaseAdmin
         .from("clients")
-        .select("include_activity_burn, unit_preference, surplus_as_carbs")
+        .select("unit_preference")
         .eq("id", clientId)
         .single(),
       getClientTodayString(clientId),
@@ -134,9 +139,6 @@ export async function getClientNutritionTargets(
     ]);
 
   if (clientError || !clientData) return null;
-
-  const includeActivityBurn = clientData.include_activity_burn ?? true;
-  const surplusAsCarbs = clientData.surplus_as_carbs ?? false;
 
   // The version COVERING the client's today (migration 144): the portal's
   // program card shows what governs them NOW. The old newest-active read
@@ -177,12 +179,13 @@ export async function getClientNutritionTargets(
   ]);
   const dietType = (plan.diet_type as DietType) || "balanced";
 
+  // Each day is priced with its own version's two surplus settings (migration
+  // 196): the week's computed days carry theirs, and its template days take
+  // this version's — the program card matches the coach calendar either way.
   const dailyTargets = buildDailyTargetsFromPlan({
     plan,
     dailyTargetRows,
-    includeActivityBurn,
     dietType,
-    surplusAsCarbs,
     trainingEvents,
     nutritionEvents,
     // Dates the weekday grid so the template fallback is gated to the days
@@ -212,7 +215,9 @@ export async function getClientNutritionTargets(
     dietType,
     unitPreference: (clientData.unit_preference as UnitPreference | null) ?? undefined,
     baselineCalories: plan.baseline_calories,
-    includeActivityBurn,
+    // The setting of the version covering the client's today (migration 196);
+    // each day in `dailyTargets` carries its own.
+    includeActivityBurn: plan.include_activity_burn,
     // RETIRED FIELD, kept on the wire only. The coach-side "Custom day
     // distribution" feature it named was deleted; nothing in this repo reads
     // this. It still ships because GET /api/client/nutrition-plan is the React

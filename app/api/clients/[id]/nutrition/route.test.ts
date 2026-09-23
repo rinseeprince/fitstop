@@ -57,9 +57,6 @@ vi.mock('@/lib/validations/nutrition', () => ({
   nutritionPlanSchema: {
     safeParse: vi.fn().mockReturnValue({ success: true, data: {} }),
   },
-  nutritionSettingsPatchSchema: {
-    safeParse: vi.fn().mockReturnValue({ success: true, data: {} }),
-  },
   validateClientForNutrition: vi.fn().mockReturnValue({ valid: true, errors: [] }),
 }))
 
@@ -123,6 +120,7 @@ import { getClientTodayString } from '@/services/today-service'
 import { resolveEventDeletionFloor } from '@/services/event-deletion-floor'
 import { getAuthenticatedCoachId } from '@/lib/auth-helpers'
 import { GET, POST, DELETE } from './route'
+import * as nutritionRoute from './route'
 import type { GoalOnDay } from '@/types/client-goals'
 
 const mockClient = {
@@ -161,6 +159,8 @@ const mockBody = {
   trainingVolumeHours: '3-5',
   proteinTargetGPerKg: 2.0,
   dietType: 'balanced',
+  includeActivityBurn: true,
+  surplusAsCarbs: false,
 }
 
 function makeRequest(body: Record<string, unknown>): NextRequest {
@@ -214,6 +214,17 @@ describe('Nutrition Route POST - the calculator reads the client record', () => 
     const createCall = vi.mocked(createNutritionPlan).mock.calls[0][0]
     expect(createCall.bmr).toBe(1700)
     expect(createCall.baseWeightKg).toBe(175)
+  })
+
+  it("saves the body's two surplus settings with the version (migration 196)", async () => {
+    vi.mocked(getGoalForDate).mockResolvedValue(null)
+
+    const request = makeRequest({ ...mockBody, includeActivityBurn: false, surplusAsCarbs: true })
+    await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+
+    const createCall = vi.mocked(createNutritionPlan).mock.calls[0][0]
+    expect(createCall.includeActivityBurn).toBe(false)
+    expect(createCall.surplusAsCarbs).toBe(true)
   })
 
   it('prices maintenance when no goal is in force on the client\'s today — the profile holds no goal', async () => {
@@ -433,6 +444,8 @@ describe('Nutrition Route GET — the three-role read (versions placed by date)'
       custom_protein_g: null,
       custom_carb_g: null,
       custom_fat_g: null,
+      include_activity_burn: true,
+      surplus_as_carbs: false,
       base_weight_kg: 84,
       bmr: 1850,
       tdee: 2700,
@@ -525,6 +538,34 @@ describe('Nutrition Route GET — the three-role read (versions placed by date)'
     expect(data.effectiveFrom).toBeNull()
     expect(data.scheduledFor).toBe('2026-09-01')
     expect(data.calorieTarget).toBe(2000)
+  })
+
+  it("the drawer's two surplus switches seed from the seed version — the latest, else the covering one", async () => {
+    vi.mocked(getNutritionPlanForDate).mockResolvedValue(
+      planRow({ id: 'v-current', include_activity_burn: true, surplus_as_carbs: false })
+    )
+    vi.mocked(getLatestNutritionPlan).mockResolvedValue(
+      planRow({ id: 'v-latest', effective_from: '2026-09-15', include_activity_burn: false, surplus_as_carbs: true })
+    )
+    vi.mocked(getNextFutureNutritionPlan).mockResolvedValue({ id: 'v-latest', effectiveFrom: '2026-09-15' })
+
+    const latest = await (await GET(makeGetRequest(), getParams)).json()
+    expect(latest.includeActivityBurn).toBe(false)
+    expect(latest.surplusAsCarbs).toBe(true)
+
+    vi.mocked(getNutritionPlanForDate).mockResolvedValue(
+      planRow({ id: 'v-current', include_activity_burn: false, surplus_as_carbs: true })
+    )
+    vi.mocked(getLatestNutritionPlan).mockResolvedValue(null)
+    vi.mocked(getNextFutureNutritionPlan).mockResolvedValue(null)
+
+    const covering = await (await GET(makeGetRequest(), getParams)).json()
+    expect(covering.includeActivityBurn).toBe(false)
+    expect(covering.surplusAsCarbs).toBe(true)
+  })
+
+  it('has no switch-saving route: the settings are written only with a plan save', () => {
+    expect(nutritionRoute).not.toHaveProperty('PATCH')
   })
 
   it('a version ending today still covers it: the drawer seeds from it, never defaults', async () => {

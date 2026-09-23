@@ -5,15 +5,10 @@ import {
   getNextFutureTrainingPlan,
 } from "@/services/training-service";
 import { getClientTodayString } from "@/services/today-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import {
-  nutritionPlanSchema,
-  nutritionSettingsPatchSchema,
-} from "@/lib/validations/nutrition";
-import type { ClientUpdate } from "@/lib/database-helpers";
+import { nutritionPlanSchema } from "@/lib/validations/nutrition";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 import {
   orchestrateNutritionPlanCreation,
@@ -62,8 +57,6 @@ export async function GET(
     if (client.coachId !== coachId) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
-
-    const includeActivityBurn = client.includeActivityBurn ?? true;
 
     // CLIENT-local, because it mirrors GET /training, whose plan resolution is
     // client-local — the two ladders differ (client tz -> coach tz -> UTC vs
@@ -191,7 +184,11 @@ export async function GET(
       // regenerate silently rewrites the plan they never meant to change.
       workActivityLevel: seedPlan.work_activity_level,
       proteinTargetGPerKg: Number(seedPlan.protein_target_g_per_kg),
-      includeActivityBurn,
+      // The two surplus settings seed from the same version (migration 196):
+      // the drawer's switches are fields of the save, never written on their
+      // own, so a Regenerate the coach leaves untouched re-saves these.
+      includeActivityBurn: seedPlan.include_activity_burn,
+      surplusAsCarbs: seedPlan.surplus_as_carbs,
       // "Active since": the COVERING version's start — the version governing
       // the client's today. Null for a queued-only chain (nothing runs yet).
       effectiveFrom: covering?.effective_from ?? null,
@@ -275,84 +272,6 @@ export async function POST(
   }
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const rateLimitResult = await coachApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
-
-  try {
-    const coachId = await getAuthenticatedCoachId();
-
-    if (!coachId) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { id: clientId } = await params;
-    const client = await getClientById(clientId);
-
-    if (!client) {
-      return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
-    }
-
-    if (client.coachId !== coachId) {
-      return NextResponse.json(
-        { success: false, error: "Forbidden: You don't have access to this client" },
-        { status: 403 }
-      );
-    }
-
-    const body = await request.json();
-    const validationResult = nutritionSettingsPatchSchema.safeParse(body);
-
-    if (!validationResult.success) {
-      return NextResponse.json(
-        { success: false, error: "Invalid input" },
-        { status: 400 }
-      );
-    }
-
-    // Calculator toggles only. This handler used to accept `unitPreference`
-    // and write clients.unit_preference — a COACH-authenticated route mutating
-    // a display preference that belongs to the client. It is gone: the coach's
-    // own unit lives on coaches.unit_preference and is set in Settings, and a
-    // client sets theirs in their own settings. Nothing here writes a unit.
-    const updates: ClientUpdate = {};
-    if (validationResult.data.includeActivityBurn !== undefined) {
-      updates.include_activity_burn = validationResult.data.includeActivityBurn;
-    }
-    if (validationResult.data.surplusAsCarbs !== undefined) {
-      updates.surplus_as_carbs = validationResult.data.surplusAsCarbs;
-    }
-
-    if (Object.keys(updates).length > 0) {
-      const { error } = await supabaseAdmin
-        .from("clients")
-        .update(updates)
-        .eq("id", clientId)
-        .eq("coach_id", coachId);
-
-      if (error) throw new Error("Failed to update settings");
-    }
-
-    return NextResponse.json({ success: true }, { status: 200 });
-  } catch (error) {
-    console.error("Error updating nutrition settings:", error instanceof Error ? error.message : "Unknown error");
-    return NextResponse.json(
-      { success: false, error: "Failed to update nutrition settings" },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * DELETE: Remove (archive) the client's nutrition plan and clear its upcoming
- * daily targets. Past and logged days are kept for history.
- */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

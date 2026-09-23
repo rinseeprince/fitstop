@@ -2,6 +2,7 @@ import { countTargetedDays } from "@/lib/check-in/period-snapshot";
 import type { ActivityLevel, CheckIn, Client, Coach, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
 import type { GoalOnDay } from "@/types/client-goals";
+import type { SurplusSettings } from "@/lib/nutrition/surplus-settings";
 import { readSentSnapshot, reportedReadings } from "@/lib/check-in/sent-snapshot";
 import { toUnitSystem } from "@/utils/unit-conversions";
 import type {
@@ -142,8 +143,6 @@ export function mapClientRow(row: ClientRowWithMeasurements): Client {
     // everywhere useUnits() reached, while this mapper told the settings form
     // and the nutrition drawer imperial.
     unitPreference: toUnitSystem(row.unit_preference),
-    includeActivityBurn: row.include_activity_burn ?? true,
-    surplusAsCarbs: row.surplus_as_carbs ?? false,
     startingWeight: embeddedReading(row.client_baseline_measurements, "weight"),
     startingBodyFatPercentage: embeddedReading(row.client_baseline_measurements, "bodyFat"),
     bmrManualOverride: row.bmr_manual_override ?? undefined,
@@ -182,7 +181,9 @@ type ClientSelfGoalTargets = {
 // "allowlist, don't denylist" posture as CLIENT_SELF_COLUMNS on the read path.
 // The ORDER is the wire's JSON key order, and the React Native app's contract is
 // additive-only — an existing key never moves: the goal's targets sit after
-// `dateOfBirth`, and `logsOpenFrom` is last.
+// `dateOfBirth`, the two surplus settings after `unitPreference` (they are the
+// plan's since migration 196, read for the client's today, and keep the keys
+// the client columns gave them), and `logsOpenFrom` is last.
 const CLIENT_SELF_KEYS = [
   "id", "coachId", "name", "email", "avatarUrl", "active", "createdAt", "updatedAt",
   "height", "gender", "dateOfBirth", "goalWeight", "goalBodyFatPercentage",
@@ -193,25 +194,32 @@ const CLIENT_SELF_KEYS = [
   "includeActivityBurn", "surplusAsCarbs", "startingWeight", "startingBodyFatPercentage",
   "bmrManualOverride", "tdeeManualOverride", "welcomeMessage", "onboardingStatus",
   "walkthroughCompletedAt", "startDate", "timezone", "logsOpenFrom",
-] as const satisfies readonly (keyof (Client & ClientSelfGoalTargets))[];
+] as const satisfies readonly (keyof (Client & ClientSelfGoalTargets & SurplusSettings))[];
 
 /** `GET /api/client/me` and `PATCH /api/client/settings`: the client's own profile. */
 export type ClientSelfView = Partial<
-  Pick<Client & ClientSelfGoalTargets, (typeof CLIENT_SELF_KEYS)[number]>
+  Pick<Client & ClientSelfGoalTargets & SurplusSettings, (typeof CLIENT_SELF_KEYS)[number]>
 >;
 
 /**
  * The client's profile as they may see it, with the targets of `goal` — the
- * goal in force on their today (`getCurrentGoal`); the profile row carries no
- * goal of its own.
+ * goal in force on their today (`getCurrentGoal`) — and `surplusSettings`, the
+ * two settings of the nutrition version covering their today
+ * (`getSurplusSettingsForClientToday`). The profile row carries neither.
  */
-export function toClientSelfView(client: Client, goal: GoalOnDay | null): ClientSelfView {
-  const withGoal: Client & ClientSelfGoalTargets = {
+export function toClientSelfView(
+  client: Client,
+  goal: GoalOnDay | null,
+  surplusSettings: SurplusSettings
+): ClientSelfView {
+  const withPlan: Client & ClientSelfGoalTargets & SurplusSettings = {
     ...client,
     goalWeight: goal?.targetWeight ?? undefined,
     goalBodyFatPercentage: goal?.targetBodyFatPercentage ?? undefined,
+    includeActivityBurn: surplusSettings.includeActivityBurn,
+    surplusAsCarbs: surplusSettings.surplusAsCarbs,
   };
-  return pickAllowed(withGoal, CLIENT_SELF_KEYS);
+  return pickAllowed(withPlan, CLIENT_SELF_KEYS);
 }
 
 // Client-facing allowlist for a ClientIntake (M6). Excludes `coachReviewNotes`

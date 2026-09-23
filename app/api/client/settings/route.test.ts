@@ -24,11 +24,17 @@ vi.mock("@/services/client-goals-service", () => ({
   getCurrentGoal: vi.fn(),
 }));
 
+// Its two surplus settings are the nutrition plan's covering that today.
+vi.mock("@/services/nutrition-plan-service", () => ({
+  getSurplusSettingsForClientToday: vi.fn(),
+}));
+
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import { updateClientSettings } from "@/services/client-service";
 import { getCurrentGoal } from "@/services/client-goals-service";
+import { getSurplusSettingsForClientToday } from "@/services/nutrition-plan-service";
 import type { GoalOnDay } from "@/types/client-goals";
 
 function createMockRequest(body?: unknown) {
@@ -55,13 +61,15 @@ describe("PATCH /api/client/settings", () => {
       name: "Test",
       email: "test@example.com",
       active: true,
-      includeActivityBurn: true,
-      surplusAsCarbs: false,
       timezone: "UTC",
       createdAt: "2024-01-01T00:00:00Z",
       updatedAt: "2024-01-01T00:00:00Z",
     } as never);
     vi.mocked(getCurrentGoal).mockResolvedValue(null);
+    vi.mocked(getSurplusSettingsForClientToday).mockResolvedValue({
+      includeActivityBurn: true,
+      surplusAsCarbs: false,
+    });
   });
 
   // The response is the client's own profile — the React Native contract —
@@ -79,8 +87,6 @@ describe("PATCH /api/client/settings", () => {
         active: true,
         dateOfBirth: "1990-02-11",
         currentWeight: 82.3,
-        includeActivityBurn: true,
-        surplusAsCarbs: false,
         timezone: "Asia/Tokyo",
         createdAt: "2024-01-01T00:00:00Z",
         updatedAt: "2024-01-01T00:00:00Z",
@@ -121,6 +127,40 @@ describe("PATCH /api/client/settings", () => {
       "goalBodyFatPercentage",
       "currentWeight",
     ]);
+  });
+
+  it("answers with the surplus settings of the plan covering the client's today, read after the save", async () => {
+    const order: string[] = [];
+    vi.mocked(updateClientSettings).mockImplementation(() => {
+      order.push("save");
+      return Promise.resolve({
+        id: "client-1",
+        coachId: "coach-1",
+        name: "Test",
+        email: "test@example.com",
+        active: true,
+        unitPreference: "metric",
+        timezone: "Asia/Tokyo",
+        createdAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      } as never);
+    });
+    vi.mocked(getSurplusSettingsForClientToday).mockImplementation(() => {
+      order.push("settings");
+      return Promise.resolve({ includeActivityBurn: false, surplusAsCarbs: true });
+    });
+
+    const response = await PATCH(createMockRequest({ timezone: "Asia/Tokyo" }));
+    const { data } = await response.json();
+
+    expect(order[0]).toBe("save");
+    expect(order).toContain("settings");
+    expect(getSurplusSettingsForClientToday).toHaveBeenCalledWith("client-1");
+    expect(data.includeActivityBurn).toBe(false);
+    expect(data.surplusAsCarbs).toBe(true);
+    const keys = Object.keys(data);
+    const at = keys.indexOf("unitPreference");
+    expect(keys.slice(at, at + 3)).toEqual(["unitPreference", "includeActivityBurn", "surplusAsCarbs"]);
   });
 
   it("returns 200 and calls service for unitPreference: 'metric'", async () => {

@@ -215,6 +215,8 @@ async function handleCustomMacros(
     customCarbG: body.customCarbG,
     customFatG: body.customFatG,
     regenerationReason: "custom_macros",
+    includeActivityBurn: body.includeActivityBurn,
+    surplusAsCarbs: body.surplusAsCarbs,
     coachNote: coachNoteOf(validatedData),
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     effectiveFrom: body.effectiveFrom,
@@ -320,6 +322,8 @@ async function handleCalculatedPlan(
     customCarbG: null,
     customFatG: null,
     regenerationReason,
+    includeActivityBurn: body.includeActivityBurn,
+    surplusAsCarbs: body.surplusAsCarbs,
     coachNote: coachNoteOf(validatedData),
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     effectiveFrom: body.effectiveFrom,

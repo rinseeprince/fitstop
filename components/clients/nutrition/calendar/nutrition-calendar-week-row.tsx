@@ -20,8 +20,6 @@ type NutritionCalendarWeekRowProps = {
   /** Month shown in the grid; days outside it render dimmed. 0-indexed. */
   viewMonth: number;
   viewYear: number;
-  includeActivityBurn: boolean;
-  surplusAsCarbs?: boolean;
   /** Edit mode (◆2) + selection. */
   editMode?: boolean;
   selected?: Set<string>;
@@ -38,8 +36,6 @@ export const NutritionCalendarWeekRow = memo(function NutritionCalendarWeekRow({
   clientToday,
   viewMonth,
   viewYear,
-  includeActivityBurn,
-  surplusAsCarbs,
   editMode,
   selected,
   onToggle,
@@ -71,8 +67,6 @@ export const NutritionCalendarWeekRow = memo(function NutritionCalendarWeekRow({
             isToday={date === todayDate}
             isPast={date < clientToday}
             isOutsideMonth={isOutsideMonth}
-            includeActivityBurn={includeActivityBurn}
-            surplusAsCarbs={surplusAsCarbs}
             editMode={editMode}
             isSelected={selected?.has(date) ?? false}
             onToggle={onToggle}

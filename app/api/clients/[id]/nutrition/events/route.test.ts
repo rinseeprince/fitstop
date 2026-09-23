@@ -47,6 +47,8 @@ const sampleEvent: NutritionEvent = {
   dietType: "balanced",
   isTrainingDay: true,
   calorieSurplusPercentage: 5,
+  includeActivityBurn: true,
+  surplusAsCarbs: false,
   isModified: true,
   note: null,
   coachNote: null,

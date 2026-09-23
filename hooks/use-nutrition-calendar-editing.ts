@@ -25,9 +25,6 @@ type UseNutritionCalendarEditingArgs = {
   weeks: string[][];
   clientToday: string;
   viewMonth: { year: number; month: number };
-  /** Activity-burn toggle — resolution mirrors the day cells' displayed numbers. */
-  includeActivityBurn: boolean;
-  surplusAsCarbs: boolean;
   onUpdate: () => void;
 };
 
@@ -46,8 +43,6 @@ export function useNutritionCalendarEditing({
   weeks,
   clientToday,
   viewMonth,
-  includeActivityBurn,
-  surplusAsCarbs,
   onUpdate,
 }: UseNutritionCalendarEditingArgs) {
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
@@ -106,17 +101,17 @@ export function useNutritionCalendarEditing({
     (dates: string[]) => {
       if (dates.length === 0) return;
       setSelected(new Set(dates));
-      showEditor(resolveSelectedEvents(dates, eventsByDate, includeActivityBurn, surplusAsCarbs));
+      showEditor(resolveSelectedEvents(dates, eventsByDate));
     },
-    [showEditor, eventsByDate, includeActivityBurn, surplusAsCarbs]
+    [showEditor, eventsByDate]
   );
 
   // The selection resolved against loaded events — what the bar average, the
   // Revert affordance, and the editor's opening all read from. Dates outside the
   // loaded window stay selected but contribute nothing.
   const resolvedSelected = useMemo(
-    () => resolveSelectedEvents(selected, eventsByDate, includeActivityBurn, surplusAsCarbs),
-    [selected, eventsByDate, includeActivityBurn, surplusAsCarbs]
+    () => resolveSelectedEvents(selected, eventsByDate),
+    [selected, eventsByDate]
   );
   // The selection bar's "Edit targets": the editor opens on the selection as
   // resolved now.

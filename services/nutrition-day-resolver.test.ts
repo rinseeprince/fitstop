@@ -5,7 +5,14 @@ import { nutritionDayOfWeek, resolveNutritionDay } from "./nutrition-day-resolve
 // numbers themselves — no mocks, no database. Every fixture number is distinct
 // so a swapped field cannot pass.
 
-const VERSION = { id: "v-2810", baselineCalories: 2100, proteinTargetG: 160, dietType: "balanced" };
+const VERSION = {
+  id: "v-2810",
+  baselineCalories: 2100,
+  proteinTargetG: 160,
+  dietType: "balanced",
+  includeActivityBurn: true,
+  surplusAsCarbs: false,
+};
 const GRID_ROW = { calories: 1950, proteinG: 155, carbG: 210, fatG: 65 };
 
 const base = {
@@ -36,6 +43,8 @@ describe("resolveNutritionDay", () => {
       dietType: "balanced",
       isTrainingDay: false,
       calorieSurplusPercentage: null,
+      includeActivityBurn: true,
+      surplusAsCarbs: false,
       isModified: false,
       note: null,
       coachNote: null,
@@ -160,6 +169,23 @@ describe("resolveNutritionDay", () => {
         edit: { calories: 1700, proteinG: 140, carbG: 180, fatG: 60, note: null },
       }).coachNote
     ).toBe("Cut starts here");
+  });
+
+  it("a day carries its own version's two surplus settings, on a computed day and an edited one", () => {
+    const version = { ...VERSION, includeActivityBurn: false, surplusAsCarbs: true };
+    const computed = resolveNutritionDay({
+      ...base,
+      version,
+      trainingEvents: [{ calorieSurplusPercentage: 9, estimatedCalories: 310 }],
+    });
+    const edited = resolveNutritionDay({
+      ...base,
+      version,
+      edit: { calories: 1640, proteinG: 132, carbG: 171, fatG: 57, note: null },
+    });
+
+    expect([computed.includeActivityBurn, computed.surplusAsCarbs]).toEqual([false, true]);
+    expect([edited.includeActivityBurn, edited.surplusAsCarbs]).toEqual([false, true]);
   });
 
   it("the id is the date and the status is always scheduled", () => {

@@ -2,14 +2,16 @@ import type { DietType, NutritionEvent } from "@/types/check-in";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import { DAY_NAMES } from "@/lib/date-helpers";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
+import type { SurplusSettings } from "@/lib/nutrition/surplus-settings";
 
 /**
  * The one answer to "what is this client's nutrition target on this date?"
  *
  * A nutrition day is COMPUTED, never stored (owner decision 2026-09-10). It is
- * built from four facts and nothing else: the version covering the date and
- * its grid row for the weekday, the sessions placed on the date, and the
- * coach's per-day edit. Every reader — the coach calendar, the client's day,
+ * built from four facts and nothing else: the version covering the date (its
+ * prescription and its two surplus settings, migration 196) and its grid row
+ * for the weekday, the sessions placed on the date, and the coach's per-day
+ * edit. Every reader — the coach calendar, the client's day,
  * the check-in week, the history table, the block facts — gets its numbers
  * from this function, so they cannot disagree, and no writer keeps a day in
  * sync with anything.
@@ -39,13 +41,17 @@ import { calculateDailyMacros } from "@/utils/nutrition-helpers";
  * days by date), `status` is always `scheduled`.
  */
 
-/** The version covering the date: the plan-level prescription the day derives from. */
+/**
+ * The version covering the date: the plan-level prescription the day derives
+ * from, with its two surplus settings (migration 196) — the day carries them,
+ * so every reader prices it the way its own version says.
+ */
 type NutritionDayVersion = {
   id: string;
   baselineCalories: number;
   proteinTargetG: number;
   dietType: string;
-};
+} & SurplusSettings;
 
 /** The version's grid row for the date's weekday — the coach's numbers, verbatim. */
 export type NutritionDayGridRow = {
@@ -128,6 +134,8 @@ export function resolveNutritionDay(input: NutritionDayInputs): NutritionEvent {
       dietType: version.dietType,
       isTrainingDay,
       calorieSurplusPercentage: null,
+      includeActivityBurn: version.includeActivityBurn,
+      surplusAsCarbs: version.surplusAsCarbs,
       isModified: true,
       note: edit.note,
       coachNote,
@@ -171,6 +179,8 @@ export function resolveNutritionDay(input: NutritionDayInputs): NutritionEvent {
     dietType: version.dietType,
     isTrainingDay,
     calorieSurplusPercentage: surplusPercentage,
+    includeActivityBurn: version.includeActivityBurn,
+    surplusAsCarbs: version.surplusAsCarbs,
     isModified: false,
     note: null,
     coachNote,

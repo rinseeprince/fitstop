@@ -200,6 +200,20 @@ export async function POST(
     }
 
     // type === "session"
+    // A session may not land on a past day: that day's nutrition target is
+    // priced from the sessions on it, and a past day's target never changes
+    // (owner, 2026-09-23). The calendar refuses the drop too; this is the
+    // server's own word for any caller that skips the screen.
+    const clientToday = await getClientTodayString(clientId);
+    if (data.targetDate < clientToday) {
+      return NextResponse.json(
+        {
+          error: `${data.targetDate} has already passed for this client (their local date is ${clientToday}).`,
+        },
+        { status: 400 }
+      );
+    }
+
     const plan = await getTrainingPlanById(data.planId);
     if (!plan || plan.clientId !== clientId) {
       return NextResponse.json({ error: "Plan not found" }, { status: 404 });

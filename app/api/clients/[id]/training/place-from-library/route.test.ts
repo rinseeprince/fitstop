@@ -58,8 +58,10 @@ vi.mock("@/services/audit-log-service", () => ({
 }));
 
 import { getClientById } from "@/services/client-service";
+import { getTrainingPlanById } from "@/services/training-service";
 import {
   placePlanOnCalendar,
+  placeSessionOnCalendar,
   placeInlineEditedPlanOnCalendar,
 } from "@/services/library-placement-service";
 import { getClientTodayString } from "@/services/today-service";
@@ -307,5 +309,48 @@ describe("the placement supersedes the earlier programs (migration 167)", () => 
 
     expect(res.status).toBe(503);
     expect(data.error).toBe(BLOCKS_UNREADABLE);
+  });
+});
+
+// A library session dropped on a day: a past day is refused, because that
+// day's nutrition target is priced from the sessions on it and a past day's
+// target never changes (owner, 2026-09-23). The calendar refuses the drop too;
+// this is the server's own word.
+describe("POST /api/clients/[id]/training/place-from-library session", () => {
+  const savedSessionId = "22222222-2222-4222-8222-222222222222";
+  const planId = "33333333-3333-4333-8333-333333333333";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getClientById).mockResolvedValue({
+      id: clientId,
+      coachId: "coach-1",
+      name: "Chloe",
+    } as never);
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-01-15");
+    vi.mocked(getTrainingPlanById).mockResolvedValue({ id: planId, clientId } as never);
+    vi.mocked(placeSessionOnCalendar).mockResolvedValue({
+      sessionId: "session-9",
+      eventId: "event-9",
+    } as never);
+  });
+
+  it("refuses a day before the client's local today, and places nothing", async () => {
+    const res = await callRoute({ type: "session", savedSessionId, planId, targetDate: "2026-01-13" });
+    const data = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(data.error).toContain("2026-01-13");
+    expect(getClientTodayString).toHaveBeenCalledWith(clientId);
+    expect(placeSessionOnCalendar).not.toHaveBeenCalled();
+  });
+
+  it("places a session on the client's local today", async () => {
+    const res = await callRoute({ type: "session", savedSessionId, planId, targetDate: "2026-01-15" });
+
+    expect(res.status).toBe(200);
+    expect(placeSessionOnCalendar).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId, planId, targetDate: "2026-01-15" })
+    );
   });
 });

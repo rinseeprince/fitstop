@@ -151,8 +151,6 @@ describe("toClientSelfView — the client's own profile", () => {
     current_streak: 6,
     longest_streak: 12,
     unit_preference: "metric",
-    include_activity_burn: true,
-    surplus_as_carbs: false,
     bmr_manual_override: false,
     tdee_manual_override: false,
     welcome_message: "Welcome aboard",
@@ -192,8 +190,14 @@ describe("toClientSelfView — the client's own profile", () => {
     ...overrides,
   });
 
+  const surplus = { includeActivityBurn: false, surplusAsCarbs: true };
+
   it("carries the targets of the goal in force, in their places, and nothing coach-only", () => {
-    const view = toClientSelfView(client, goal({ targetWeight: 73.4, targetBodyFatPercentage: 17.5 }));
+    const view = toClientSelfView(
+      client,
+      goal({ targetWeight: 73.4, targetBodyFatPercentage: 17.5 }),
+      surplus
+    );
 
     expect(Object.keys(view)).toEqual([
       "id", "coachId", "name", "email", "avatarUrl", "active", "createdAt", "updatedAt",
@@ -216,15 +220,27 @@ describe("toClientSelfView — the client's own profile", () => {
   it("omits a target the goal does not set, and both with no goal in force", () => {
     const bodyFatOnly = toClientSelfView(
       client,
-      goal({ type: "recomposition", targetBodyFatPercentage: 16.5 })
+      goal({ type: "recomposition", targetBodyFatPercentage: 16.5 }),
+      surplus
     );
     expect(bodyFatOnly).not.toHaveProperty("goalWeight");
     expect(bodyFatOnly.goalBodyFatPercentage).toBe(16.5);
 
-    const none = toClientSelfView(client, null);
+    const none = toClientSelfView(client, null, surplus);
     expect(none).not.toHaveProperty("goalWeight");
     expect(none).not.toHaveProperty("goalBodyFatPercentage");
     expect(Object.keys(none).slice(10, 12)).toEqual(["dateOfBirth", "currentWeight"]);
+  });
+
+  it("carries the two surplus settings it is given — the plan's, for the client's today — right after unitPreference", () => {
+    const off = toClientSelfView(client, null, { includeActivityBurn: false, surplusAsCarbs: true });
+    const on = toClientSelfView(client, null, { includeActivityBurn: true, surplusAsCarbs: false });
+
+    expect([off.includeActivityBurn, off.surplusAsCarbs]).toEqual([false, true]);
+    expect([on.includeActivityBurn, on.surplusAsCarbs]).toEqual([true, false]);
+    const keys = Object.keys(off);
+    const at = keys.indexOf("unitPreference");
+    expect(keys.slice(at, at + 3)).toEqual(["unitPreference", "includeActivityBurn", "surplusAsCarbs"]);
   });
 });
 

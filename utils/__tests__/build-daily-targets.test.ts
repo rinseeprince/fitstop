@@ -9,6 +9,8 @@ const PLAN = {
   protein_target_g: 150,
   carb_target_g: 200,
   fat_target_g: 67,
+  include_activity_burn: true,
+  surplus_as_carbs: false,
 };
 
 // weekWindow that gates nothing: effectiveFrom null. 2026-06-08 is the Monday
@@ -52,6 +54,8 @@ function nev(overrides: Partial<NutritionEvent>): NutritionEvent {
     dietType: "balanced",
     isTrainingDay: false,
     calorieSurplusPercentage: null,
+    includeActivityBurn: true,
+    surplusAsCarbs: false,
     isModified: false,
     note: null,
     status: "scheduled",
@@ -77,7 +81,7 @@ const find = (targets: ReturnType<typeof buildDailyTargetsFromPlan>, day: string
 
 describe("buildDailyTargetsFromPlan", () => {
   it("always returns one entry per weekday (7), even with sparse rows/events", () => {
-    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: undefined, nutritionEvents: undefined, weekWindow: NO_GATE });
+    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: undefined, nutritionEvents: undefined, weekWindow: NO_GATE });
     expect(targets).toHaveLength(7);
   });
 
@@ -85,7 +89,7 @@ describe("buildDailyTargetsFromPlan", () => {
     // Stored split is high-carb/low-fat; the old calculateDailyMacros path would
     // have re-derived it to the balanced ratio. It must not.
     const rows = [row("monday", { carb_g: 250, fat_g: 47, is_training_day: false })];
-    const mon = find(buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: rows, includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: undefined, nutritionEvents: undefined, weekWindow: NO_GATE }), "monday");
+    const mon = find(buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: rows, dietType: "balanced", trainingEvents: undefined, nutritionEvents: undefined, weekWindow: NO_GATE }), "monday");
     expect(mon.calories).toBe(2000);
     expect(mon.carbsG).toBe(250);
     expect(mon.fatG).toBe(47);
@@ -95,7 +99,7 @@ describe("buildDailyTargetsFromPlan", () => {
     const rows = [row("monday", { carb_g: 100, fat_g: 50, is_training_day: true })];
     const events = [tev({ calorieSurplusPercentage: 10 })];
     const mon = find(
-      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: rows, includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: events, nutritionEvents: undefined, weekWindow: NO_GATE }),
+      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: rows, dietType: "balanced", trainingEvents: events, nutritionEvents: undefined, weekWindow: NO_GATE }),
       "monday",
     );
     expect(mon.calories).toBe(2200);
@@ -111,7 +115,7 @@ describe("buildDailyTargetsFromPlan", () => {
       tev({ calorieSurplusPercentage: 5, sessionName: "Evening lift" }),
     ];
     const mon = find(
-      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: rows, includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: events, nutritionEvents: undefined, weekWindow: NO_GATE }),
+      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: rows, dietType: "balanced", trainingEvents: events, nutritionEvents: undefined, weekWindow: NO_GATE }),
       "monday",
     );
     expect(mon.calorieSurplusPercentage).toBe(15);
@@ -123,7 +127,7 @@ describe("buildDailyTargetsFromPlan", () => {
     const rows = [row("monday", { carb_g: 100, fat_g: 50, is_training_day: true })];
     const events = [tev({ calorieSurplusPercentage: 10 })];
     const mon = find(
-      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: rows, includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: true, trainingEvents: events, nutritionEvents: undefined, weekWindow: NO_GATE }),
+      buildDailyTargetsFromPlan({ plan: { ...PLAN, surplus_as_carbs: true }, dailyTargetRows: rows, dietType: "balanced", trainingEvents: events, nutritionEvents: undefined, weekWindow: NO_GATE }),
       "monday",
     );
     expect(mon.calories).toBe(2200);
@@ -138,12 +142,12 @@ describe("buildDailyTargetsFromPlan", () => {
     ];
     const trainingEvents = [tev({ sessionName: "Push", estimatedCalories: 200, calorieSurplusPercentage: 10 })];
     const mon = find(
-      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: trainingEvents, nutritionEvents: nutritionEvents, weekWindow: NO_GATE }),
+      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: trainingEvents, nutritionEvents: nutritionEvents, weekWindow: NO_GATE }),
       "monday",
     );
 
     // Numbers identical to the mapper (parity by construction)...
-    const mapped = mapNutritionEventToDisplayTarget(nutritionEvents[0], true, false);
+    const mapped = mapNutritionEventToDisplayTarget(nutritionEvents[0]);
     expect(mon.calories).toBe(mapped.calories);
     expect(mon.carbsG).toBe(mapped.carbsG);
     expect(mon.fatG).toBe(mapped.fatG);
@@ -158,7 +162,7 @@ describe("buildDailyTargetsFromPlan", () => {
     // A live training event with a real surplus still exists on this day...
     const trainingEvents = [tev({ calorieSurplusPercentage: 15 })];
     const mon = find(
-      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: trainingEvents, nutritionEvents: nutritionEvents, weekWindow: NO_GATE }),
+      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: trainingEvents, nutritionEvents: nutritionEvents, weekWindow: NO_GATE }),
       "monday",
     );
     // ...but the frozen event wins: 2586, not 2586*(1.15).
@@ -171,7 +175,7 @@ describe("buildDailyTargetsFromPlan", () => {
     const rows = [row("monday", { carb_g: 100, fat_g: 50, is_training_day: true })];
     const events = [tev({ calorieSurplusPercentage: 10 })];
     const mon = find(
-      buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: rows, includeActivityBurn: false, dietType: "balanced", surplusAsCarbs: false, trainingEvents: events, nutritionEvents: undefined, weekWindow: NO_GATE }),
+      buildDailyTargetsFromPlan({ plan: { ...PLAN, include_activity_burn: false }, dailyTargetRows: rows, dietType: "balanced", trainingEvents: events, nutritionEvents: undefined, weekWindow: NO_GATE }),
       "monday",
     );
     expect(mon.calories).toBe(2000);
@@ -182,15 +186,50 @@ describe("buildDailyTargetsFromPlan", () => {
 
   it("surfaces the event's coach note on the program card (event days only)", () => {
     const nutritionEvents = [nev({ dayOfWeek: "monday", note: "Deload week — go easy" })];
-    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: [], nutritionEvents: nutritionEvents, weekWindow: NO_GATE });
+    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: [], nutritionEvents: nutritionEvents, weekWindow: NO_GATE });
     expect(find(targets, "monday").note).toBe("Deload week — go easy");
     // A template (no-event) day carries no per-date note.
     expect(find(targets, "tuesday").note ?? null).toBeNull();
   });
 
+  it("each day is priced with its own version's settings: template days the plan's, event days their own (migration 196)", () => {
+    // The plan covering the week runs with the surplus OFF; Monday's computed
+    // day carries a version whose surplus is ON.
+    const nutritionEvents = [
+      nev({
+        dayOfWeek: "monday",
+        isTrainingDay: true,
+        baselineCalories: 2140,
+        proteinG: 161,
+        carbG: 214,
+        fatG: 69,
+        calorieSurplusPercentage: 12,
+        includeActivityBurn: true,
+      }),
+    ];
+    const rows = [row("wednesday", { calories: 1960, is_training_day: true })];
+    const trainingEvents = [tev({ date: "2026-06-10", calorieSurplusPercentage: 12 })];
+    const targets = buildDailyTargetsFromPlan({
+      plan: { ...PLAN, include_activity_burn: false },
+      dailyTargetRows: rows,
+      dietType: "balanced",
+      trainingEvents,
+      nutritionEvents,
+      weekWindow: NO_GATE,
+    });
+
+    // Monday: the event's own setting — round(2140 × 1.12) = 2397.
+    expect(find(targets, "monday").calories).toBe(2397);
+    expect(find(targets, "monday").includeActivityBurn).toBe(true);
+    // Wednesday: no event, so the plan's setting — its baseline, no surplus.
+    expect(find(targets, "wednesday").calories).toBe(1960);
+    expect(find(targets, "wednesday").trainingSessionCalories).toBe(0);
+    expect(find(targets, "wednesday").includeActivityBurn).toBe(false);
+  });
+
   it("gap day (no event, no stored row): falls back to plan baseline + diet split", () => {
     const nutritionEvents = [nev({ dayOfWeek: "monday" })];
-    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: [], nutritionEvents: nutritionEvents, weekWindow: NO_GATE });
+    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: [], nutritionEvents: nutritionEvents, weekWindow: NO_GATE });
     const tue = find(targets, "tuesday");
     expect(tue.calories).toBe(PLAN.baseline_calories);
     // balanced split: (2000 - 600) / 2 between carb/fat
@@ -209,9 +248,7 @@ describe("the emitted week runs in the CLIENT's order, not Monday-first", () => 
     buildDailyTargetsFromPlan({
       plan: PLAN,
       dailyTargetRows: [],
-      includeActivityBurn: true,
       dietType: "balanced",
-      surplusAsCarbs: false,
       trainingEvents: undefined,
       nutritionEvents: undefined,
       weekWindow: { weekStart, effectiveFrom: null, effectiveUntil: null },
@@ -254,7 +291,7 @@ describe("buildDailyTargetsFromPlan — the effective_from template gate (migrat
   const GATED = { weekStart: "2026-06-08", effectiveFrom: "2026-06-11", effectiveUntil: null };
 
   it("drops template days dated before effective_from and keeps the rest", () => {
-    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: undefined, nutritionEvents: undefined, weekWindow: GATED });
+    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: undefined, nutritionEvents: undefined, weekWindow: GATED });
 
     // Mon/Tue/Wed (08/09/10) are gone; Thu..Sun (11..14) are served.
     expect(targets.map((t) => t.day)).toEqual(["thursday", "friday", "saturday", "sunday"]);
@@ -262,7 +299,7 @@ describe("buildDailyTargetsFromPlan — the effective_from template gate (migrat
 
   it("never gates an event day — events are the dated SOT and pre-effective_from rows keep the old prescription", () => {
     const nutritionEvents = [nev({ dayOfWeek: "monday", date: "2026-06-08", baselineCalories: 1800 })];
-    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: [], nutritionEvents: nutritionEvents, weekWindow: GATED });
+    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: [], nutritionEvents: nutritionEvents, weekWindow: GATED });
 
     // Monday survives via its event, carrying the OLD numbers verbatim…
     expect(find(targets, "monday").calories).toBe(1800);
@@ -271,12 +308,12 @@ describe("buildDailyTargetsFromPlan — the effective_from template gate (migrat
   });
 
   it("a null effective_from gates nothing (first insert has no prior prescription to protect)", () => {
-    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: undefined, nutritionEvents: undefined, weekWindow: NO_GATE });
+    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: undefined, nutritionEvents: undefined, weekWindow: NO_GATE });
     expect(targets).toHaveLength(7);
   });
 
   it("an effective_from on the week's first day gates nothing — the boundary day is governed", () => {
-    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: undefined, nutritionEvents: undefined, weekWindow: {
+    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: undefined, nutritionEvents: undefined, weekWindow: {
       weekStart: "2026-06-08",
       effectiveFrom: "2026-06-08",
       effectiveUntil: null,
@@ -289,7 +326,7 @@ describe("buildDailyTargetsFromPlan — the effective_from template gate (migrat
   //    era, and its own grid must not impersonate it. ──────────────────────────
   it("drops template days dated after effective_until and keeps the rest", () => {
     // Week Mon 06-08 .. Sun 06-14; the version ends Wed 06-10.
-    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: undefined, nutritionEvents: undefined, weekWindow: {
+    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: undefined, nutritionEvents: undefined, weekWindow: {
       weekStart: "2026-06-08",
       effectiveFrom: null,
       effectiveUntil: "2026-06-10",
@@ -298,7 +335,7 @@ describe("buildDailyTargetsFromPlan — the effective_from template gate (migrat
   });
 
   it("an effective_until on the week's last day gates nothing — the boundary day is governed", () => {
-    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], includeActivityBurn: true, dietType: "balanced", surplusAsCarbs: false, trainingEvents: undefined, nutritionEvents: undefined, weekWindow: {
+    const targets = buildDailyTargetsFromPlan({ plan: PLAN, dailyTargetRows: [], dietType: "balanced", trainingEvents: undefined, nutritionEvents: undefined, weekWindow: {
       weekStart: "2026-06-08",
       effectiveFrom: null,
       effectiveUntil: "2026-06-14",
@@ -310,9 +347,7 @@ describe("buildDailyTargetsFromPlan — the effective_from template gate (migrat
     const targets = buildDailyTargetsFromPlan({
       plan: PLAN,
       dailyTargetRows: [],
-      includeActivityBurn: true,
       dietType: "balanced",
-      surplusAsCarbs: false,
       trainingEvents: undefined,
       nutritionEvents: [
         {

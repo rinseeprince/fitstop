@@ -19,21 +19,6 @@ const dietTypeSchema = z.enum([
   "custom",
 ]);
 
-// Calculator toggles the COACH owns for a given client. No `unitPreference`:
-// this is a coach-authenticated route, and a unit preference belongs to the
-// person reading the screen, not to the client record being edited. The coach's
-// lives on coaches.unit_preference (PATCH /api/coach/settings), the client's on
-// clients.unit_preference (PATCH /api/client/settings).
-export const nutritionSettingsPatchSchema = z.object({
-  includeActivityBurn: z.boolean().optional(),
-  surplusAsCarbs: z.boolean().optional(),
-}).refine(
-  (data) =>
-    data.includeActivityBurn !== undefined ||
-    data.surplusAsCarbs !== undefined,
-  { message: "No valid updates provided" }
-);
-
 export const nutritionPlanSchema = z.object({
   // Accepted-but-IGNORED. Activity level is a client fact read from
   // clients.work_activity_level (resolveNutritionCalcInputs); the orchestrator
@@ -58,6 +43,10 @@ export const nutritionPlanSchema = z.object({
   customCalories: z.number().positive().optional(),
   coachNotes: z.string().max(500).optional(),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
+  // The version's two surplus settings (migration 196). Required: every save
+  // states them, and they price only the days the version covers.
+  includeActivityBurn: z.boolean(),
+  surplusAsCarbs: z.boolean(),
 }).refine(
   (data) => {
     // If custom macros are enabled, validate that custom calories match macro totals

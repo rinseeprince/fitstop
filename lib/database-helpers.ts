@@ -42,8 +42,6 @@ export type ClientRowWithMeasurements = ClientRow & {
 };
 
 // Additional helper types for insert/update operations
-export type ClientUpdate = Database["public"]["Tables"]["clients"]["Update"];
-
 export type TrainingPlanUpdate = Database["public"]["Tables"]["training_plans"]["Update"];
 
 export type TrainingEventRow = Database["public"]["Tables"]["training_events"]["Row"];

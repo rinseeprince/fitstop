@@ -270,7 +270,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
     const bmr = energy.bmr;
     const tdee = energy.tdee;
 
-    clients.push({
+    const clientHead = {
       id: clientId,
       coach_id: coachId,
       name: personName(idRng),
@@ -289,8 +289,16 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       gender,
       date_of_birth: dateOfBirth,
       work_activity_level: workActivityLevel,
+    };
+    // The two surplus settings belong to the client's nutrition plans
+    // (migration 196). Drawn HERE, where the client columns drew them, so the
+    // generator's sequence — and every seeded value after it — is unchanged.
+    const surplusSettings = {
       include_activity_burn: idRng.bool(0.7),
       surplus_as_carbs: idRng.bool(0.4),
+    };
+    clients.push({
+      ...clientHead,
       // No weight columns: "now" and "at the start" are derived from the
       // measurement log (the intake row on the start date below is the
       // baseline; the last fortnightly coach entry is "now").
@@ -569,6 +577,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       bmr,
       tdee,
       custom_macros_enabled: false,
+      ...surplusSettings,
       created_at: createdAt,
       updated_at: createdAt,
     };

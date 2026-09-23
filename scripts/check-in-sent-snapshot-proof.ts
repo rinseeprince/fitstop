@@ -14,8 +14,9 @@
  *   2  the coach's review — the detail and the comparison, read as the coach
  *      over HTTP — and the AI review's prompt are recorded;
  *   3  the coach then corrects the check-in's weigh-in on the Journey, sets a
- *      new goal from today, switches off "include activity burn", switches the
- *      habit off, rewords the question and moves the start date;
+ *      new goal from today, saves a nutrition plan from today with the
+ *      training surplus off, switches the habit off, rewords the question and
+ *      moves the start date;
  *   4  the review, the comparison and the prompt read exactly as before — the
  *      one live answer, "is the judged goal still current", now says no;
  *   5  the database refuses a change to the saved copy and still takes the
@@ -209,8 +210,38 @@ async function main(): Promise<void> {
       description: null,
       deadline: d(29),
     });
-    const burn = await send(coachSession, "PATCH", `/api/clients/${C}/nutrition`, { includeActivityBurn: false });
-    check("activity burn switched off", burn.status === 200, burn.text.slice(0, 200));
+    // The training surplus switched off the only way a coach can (migration
+    // 196): a plan saved from today with it off, through the save function.
+    const { error: surplusError } = await supabaseAdmin.rpc("create_nutrition_plan_atomic", {
+      p_client_id: C,
+      p_coach_id: coach.id,
+      p_work_activity_level: "moderately_active",
+      p_training_volume_hours: "3-5",
+      p_protein_target_g_per_kg: 2.1,
+      p_diet_type: "balanced",
+      p_goal_weight_kg: null,
+      p_goal_deadline: null,
+      p_baseline_calories: 2140,
+      p_protein_target_g: 176,
+      p_carb_target_g: 214,
+      p_fat_target_g: 67,
+      p_base_weight_kg: 89.9,
+      p_bmr: 1830,
+      p_tdee: 2610,
+      p_custom_macros_enabled: false,
+      p_custom_calories: null,
+      p_custom_protein_g: null,
+      p_custom_carb_g: null,
+      p_custom_fat_g: null,
+      p_regeneration_reason: "regenerated",
+      p_daily_targets: [],
+      p_include_activity_burn: false,
+      p_surplus_as_carbs: false,
+      p_effective_until: d(33),
+      p_effective_from: today,
+      p_today: today,
+    } as never);
+    check("a plan saved from today with the surplus off", !surplusError, surplusError?.message);
     await supabaseAdmin.from("daily_habits").update({ is_active: false } as never).eq("id", habit.id);
     await supabaseAdmin.from("check_in_questions").update({ prompt: "What was your biggest win?" } as never).eq("id", question.id);
     await supabaseAdmin.from("clients").update({ start_date: d(-16) } as never).eq("id", C);

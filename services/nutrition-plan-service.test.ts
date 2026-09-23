@@ -33,6 +33,8 @@ import {
   createNutritionPlan,
   getNutritionPlanForDate,
   getNutritionPlanIdForDate,
+  getSurplusSettingsForDate,
+  getSurplusSettingsForClientToday,
   getNextFutureNutritionPlan,
   getLatestNutritionPlan,
   getNutritionPrescriptionsForRange,
@@ -106,6 +108,8 @@ describe('Nutrition Plan Service', () => {
       customCarbG: null,
       customFatG: null,
       regenerationReason: 'initial',
+      includeActivityBurn: true,
+      surplusAsCarbs: false,
       trainingPlan: null,
       effectiveUntil: '2024-03-13',
     }
@@ -175,8 +179,9 @@ describe('Nutrition Plan Service', () => {
     // change then has to be re-pinned here deliberately instead of riding in
     // unnoticed. It moved from 24 to 25 with migration 166 (`p_effective_until`,
     // the placement's end) — the first arity change since 139; migration 172
-    // added `p_coach_note`, optional and OMITTED when the save carries none, so
-    // the no-note payload stays at 25 and a note makes it 26. A mismatch
+    // added `p_coach_note`, optional and OMITTED when the save carries none;
+    // migration 196 added the version's two surplus settings, both required, so
+    // the no-note payload is 27 and a note makes it 28. A mismatch
     // either belt misses is a PGRST202: PostgREST cannot resolve the overload,
     // createNutritionPlan returns null, and every plan save fails while tsc,
     // eslint and vitest all stay green.
@@ -195,10 +200,11 @@ describe('Nutrition Plan Service', () => {
         'p_custom_fat_g', 'p_custom_macros_enabled', 'p_custom_protein_g',
         'p_daily_targets', 'p_diet_type', 'p_effective_from', 'p_effective_until',
         'p_fat_target_g', 'p_goal_deadline', 'p_goal_weight_kg',
-        'p_protein_target_g', 'p_protein_target_g_per_kg', 'p_regeneration_reason',
+        'p_include_activity_burn', 'p_protein_target_g', 'p_protein_target_g_per_kg',
+        'p_regeneration_reason', 'p_surplus_as_carbs',
         'p_tdee', 'p_today', 'p_training_volume_hours', 'p_work_activity_level',
       ])
-      expect(sentKeys).toHaveLength(25)
+      expect(sentKeys).toHaveLength(27)
       expect(sentKeys).not.toContain('p_coach_notes')
       expect(sentKeys).not.toContain('p_coach_note')
       expect(sentKeys).not.toContain('p_recalc_snapshots')
@@ -214,7 +220,17 @@ describe('Nutrition Plan Service', () => {
 
       const sent = vi.mocked(supabaseAdmin.rpc).mock.calls[0][1] as Record<string, unknown>
       expect(sent.p_coach_note).toBe('Aggressive')
-      expect(Object.keys(sent)).toHaveLength(26)
+      expect(Object.keys(sent)).toHaveLength(28)
+    })
+
+    it("sends the version's two surplus settings as the save states them (migration 196)", async () => {
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
+
+      await createNutritionPlan({ ...baseParams, includeActivityBurn: false, surplusAsCarbs: true })
+
+      const sent = vi.mocked(supabaseAdmin.rpc).mock.calls[0][1] as Record<string, unknown>
+      expect(sent.p_include_activity_burn).toBe(false)
+      expect(sent.p_surplus_as_carbs).toBe(true)
     })
   })
 
@@ -316,6 +332,47 @@ describe('Nutrition Plan Service', () => {
     })
   })
 
+  describe('getSurplusSettingsForDate — the covering version\'s two settings (migration 196)', () => {
+    it('reads the two settings through the same window predicate', async () => {
+      const query = createResolverQuery({
+        data: { include_activity_burn: false, surplus_as_carbs: true },
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(query as any)
+
+      const settings = await getSurplusSettingsForDate('client-123', '2026-08-14')
+
+      expect(query.select).toHaveBeenCalledWith('include_activity_burn, surplus_as_carbs')
+      expect(query.eq).toHaveBeenCalledWith('client_id', 'client-123')
+      expect(query.eq).toHaveBeenCalledWith('status', 'active')
+      expect(query.lte).toHaveBeenCalledWith('effective_from', '2026-08-14')
+      expect(query.gte).toHaveBeenCalledWith('effective_until', '2026-08-14')
+      expect(settings).toEqual({ includeActivityBurn: false, surplusAsCarbs: true })
+    })
+
+    it('no version covers the date: the defaults a first plan starts from', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(createResolverQuery({ data: null, error: null }) as any)
+      expect(await getSurplusSettingsForDate('client-123', '2026-08-14')).toEqual({
+        includeActivityBurn: true,
+        surplusAsCarbs: false,
+      })
+    })
+
+    it("the client's today: resolved from the client, then read for that day", async () => {
+      const query = createResolverQuery({
+        data: { include_activity_burn: true, surplus_as_carbs: true },
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(query as any)
+
+      const settings = await getSurplusSettingsForClientToday('client-123')
+
+      expect(getClientTodayString).toHaveBeenCalledWith('client-123')
+      expect(query.lte).toHaveBeenCalledWith('effective_from', '2024-01-17')
+      expect(settings).toEqual({ includeActivityBurn: true, surplusAsCarbs: true })
+    })
+  })
+
   describe('getNextFutureNutritionPlan — the window-flipped twin', () => {
     it('takes the EARLIEST strictly-future active version, newest-created on a tie', async () => {
       const query = createResolverQuery({
@@ -379,11 +436,11 @@ describe('Nutrition Plan Service', () => {
   })
 
   describe('getNutritionPrescriptionsForRange — the day reader\'s version read', () => {
-    it('applies the same overlap predicate and carries the three prescription fields and the save note', async () => {
+    it('applies the same overlap predicate and carries the three prescription fields, the save note and the two surplus settings', async () => {
       const query = createResolverQuery({
         data: [
-          { id: 'v1', effective_from: '2026-06-01', effective_until: '2026-07-19', baseline_calories: 1875, protein_target_g: 152, diet_type: 'balanced', coach_note: 'Starting the cut.' },
-          { id: 'v2', effective_from: '2026-07-20', effective_until: '2026-09-13', baseline_calories: 2025, protein_target_g: 158, diet_type: 'high_carb', coach_note: null },
+          { id: 'v1', effective_from: '2026-06-01', effective_until: '2026-07-19', baseline_calories: 1875, protein_target_g: 152, diet_type: 'balanced', coach_note: 'Starting the cut.', include_activity_burn: true, surplus_as_carbs: false },
+          { id: 'v2', effective_from: '2026-07-20', effective_until: '2026-09-13', baseline_calories: 2025, protein_target_g: 158, diet_type: 'high_carb', coach_note: null, include_activity_burn: false, surplus_as_carbs: true },
         ],
         error: null,
       })
@@ -392,7 +449,7 @@ describe('Nutrition Plan Service', () => {
       const versions = await getNutritionPrescriptionsForRange('client-123', '2026-07-01', '2026-08-01')
 
       expect(query.select).toHaveBeenCalledWith(
-        'id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note'
+        'id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note, include_activity_burn, surplus_as_carbs'
       )
       expect(query.eq).toHaveBeenCalledWith('client_id', 'client-123')
       expect(query.eq).toHaveBeenCalledWith('status', 'active')
@@ -401,8 +458,8 @@ describe('Nutrition Plan Service', () => {
       expect(query.or).not.toHaveBeenCalled()
       expect(query.order).toHaveBeenCalledWith('effective_from', { ascending: true })
       expect(versions).toEqual([
-        { id: 'v1', effectiveFrom: '2026-06-01', effectiveUntil: '2026-07-19', baselineCalories: 1875, proteinTargetG: 152, dietType: 'balanced', coachNote: 'Starting the cut.' },
-        { id: 'v2', effectiveFrom: '2026-07-20', effectiveUntil: '2026-09-13', baselineCalories: 2025, proteinTargetG: 158, dietType: 'high_carb', coachNote: null },
+        { id: 'v1', effectiveFrom: '2026-06-01', effectiveUntil: '2026-07-19', baselineCalories: 1875, proteinTargetG: 152, dietType: 'balanced', coachNote: 'Starting the cut.', includeActivityBurn: true, surplusAsCarbs: false },
+        { id: 'v2', effectiveFrom: '2026-07-20', effectiveUntil: '2026-09-13', baselineCalories: 2025, proteinTargetG: 158, dietType: 'high_carb', coachNote: null, includeActivityBurn: false, surplusAsCarbs: true },
       ])
     })
 

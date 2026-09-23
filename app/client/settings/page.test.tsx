@@ -44,8 +44,6 @@ function makeClient(overrides: Partial<Client> = {}): Client {
     name: "Alex Doe",
     email: "alex@example.com",
     active: true,
-    includeActivityBurn: true,
-    surplusAsCarbs: false,
     timezone: "America/New_York",
     unitPreference: "imperial",
     createdAt: "2024-01-01T00:00:00Z",

@@ -1047,7 +1047,6 @@ export type Database = {
           gender: string | null
           height: number | null
           id: string
-          include_activity_burn: boolean
           last_reminder_sent_at: string | null
           longest_streak: number | null
           name: string
@@ -1057,7 +1056,6 @@ export type Database = {
           phone: string | null
           reminder_preferences: Json | null
           start_date: string | null
-          surplus_as_carbs: boolean
           tdee: number | null
           tdee_manual_override: boolean | null
           timezone: string
@@ -1086,7 +1084,6 @@ export type Database = {
           gender?: string | null
           height?: number | null
           id?: string
-          include_activity_burn?: boolean
           last_reminder_sent_at?: string | null
           longest_streak?: number | null
           name: string
@@ -1096,7 +1093,6 @@ export type Database = {
           phone?: string | null
           reminder_preferences?: Json | null
           start_date?: string | null
-          surplus_as_carbs?: boolean
           tdee?: number | null
           tdee_manual_override?: boolean | null
           timezone?: string
@@ -1125,7 +1121,6 @@ export type Database = {
           gender?: string | null
           height?: number | null
           id?: string
-          include_activity_burn?: boolean
           last_reminder_sent_at?: string | null
           longest_streak?: number | null
           name?: string
@@ -1135,7 +1130,6 @@ export type Database = {
           phone?: string | null
           reminder_preferences?: Json | null
           start_date?: string | null
-          surplus_as_carbs?: boolean
           tdee?: number | null
           tdee_manual_override?: boolean | null
           timezone?: string
@@ -2113,11 +2107,13 @@ export type Database = {
           goal_deadline: string | null
           goal_weight_kg: number | null
           id: string
+          include_activity_burn: boolean
           name: string | null
           protein_target_g: number
           protein_target_g_per_kg: number
           regeneration_reason: string | null
           status: string
+          surplus_as_carbs: boolean
           tdee: number | null
           training_volume_hours: string
           updated_at: string
@@ -2144,11 +2140,13 @@ export type Database = {
           goal_deadline?: string | null
           goal_weight_kg?: number | null
           id?: string
+          include_activity_burn?: boolean
           name?: string | null
           protein_target_g: number
           protein_target_g_per_kg?: number
           regeneration_reason?: string | null
           status?: string
+          surplus_as_carbs?: boolean
           tdee?: number | null
           training_volume_hours: string
           updated_at?: string
@@ -2175,11 +2173,13 @@ export type Database = {
           goal_deadline?: string | null
           goal_weight_kg?: number | null
           id?: string
+          include_activity_burn?: boolean
           name?: string | null
           protein_target_g?: number
           protein_target_g_per_kg?: number
           regeneration_reason?: string | null
           status?: string
+          surplus_as_carbs?: boolean
           tdee?: number | null
           training_volume_hours?: string
           updated_at?: string
@@ -3216,9 +3216,11 @@ export type Database = {
           p_fat_target_g: number
           p_goal_deadline: string
           p_goal_weight_kg: number
+          p_include_activity_burn: boolean
           p_protein_target_g: number
           p_protein_target_g_per_kg: number
           p_regeneration_reason: string
+          p_surplus_as_carbs: boolean
           p_tdee: number
           p_today?: string
           p_training_volume_hours: string

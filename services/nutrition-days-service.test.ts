@@ -36,6 +36,8 @@ const V1 = {
   proteinTargetG: 150,
   dietType: "balanced",
   coachNote: null,
+  includeActivityBurn: true,
+  surplusAsCarbs: false,
 };
 const V2 = {
   id: "v2",
@@ -45,6 +47,8 @@ const V2 = {
   proteinTargetG: 170,
   dietType: "high_carb",
   coachNote: null,
+  includeActivityBurn: true,
+  surplusAsCarbs: false,
 };
 
 const gridRow = (planId: string, dayOfWeek: string, calories: number) => ({
@@ -204,9 +208,9 @@ describe("getNutritionEventsForDateRange — batched, never per day", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The target readers: the computed days through the client's display
-// switches — the number every verdict is judged against, per client and
-// across a roster in one pass.
+// The target readers: the computed days priced with their covering version's
+// two surplus settings (migration 196) — the number every verdict is judged
+// against, per client and across a roster in one pass.
 // ---------------------------------------------------------------------------
 
 import { supabaseAdmin } from "./supabase-admin";
@@ -220,7 +224,7 @@ type ChainResult = { data?: unknown; error?: { message: string } | null };
 /**
  * One self-returning, thenable chain per supabaseAdmin.from() call, answering
  * per TABLE. `.range()` resolves the table's rows once and an empty page after,
- * so the paged readers terminate; `.maybeSingle()` answers the prefs read.
+ * so the paged readers terminate; `.maybeSingle()` answers a single-row read.
  */
 function mockTables(rows: Record<string, unknown[]>) {
   const served = new Map<string, number>();
@@ -246,11 +250,11 @@ function mockTables(rows: Record<string, unknown[]>) {
 }
 
 describe("getNutritionTargetsForDateRange — one client, the display shape", () => {
-  it("applies the client's display switches: burn on splits the surplus, burn off is the baseline", async () => {
+  it("applies the covering version's settings: burn on splits the surplus, burn off is the baseline", async () => {
     vi.mocked(getNutritionPlanGrids).mockResolvedValue([gridRow("v1", "monday", 2000)]);
     vi.mocked(getEventsForDateRange).mockResolvedValue([session("2026-10-05", 10)]);
 
-    mockTables({ clients: [{ include_activity_burn: true, surplus_as_carbs: false }] });
+    mockTables({});
     const withBurn = await getNutritionTargetsForDateRange(CLIENT, "2026-10-05", "2026-10-05");
     // 2000 × 1.10 = 2200; protein held, carbs + fat scaled in their ratio.
     expect(withBurn.get("2026-10-05")).toMatchObject({
@@ -262,21 +266,48 @@ describe("getNutritionTargetsForDateRange — one client, the display shape", ()
     });
     expect(withBurn.get("2026-10-05")!.carbsG).toBeGreaterThan(200);
 
-    mockTables({ clients: [{ include_activity_burn: false, surplus_as_carbs: false }] });
+    vi.mocked(getNutritionPrescriptionsForRange).mockResolvedValue([
+      { ...V1, includeActivityBurn: false },
+      V2,
+    ]);
     const withoutBurn = await getNutritionTargetsForDateRange(CLIENT, "2026-10-05", "2026-10-05");
     expect(withoutBurn.get("2026-10-05")).toMatchObject({ calories: 2000, carbsG: 200, fatG: 60 });
 
-    mockTables({ clients: [{ include_activity_burn: true, surplus_as_carbs: true }] });
+    vi.mocked(getNutritionPrescriptionsForRange).mockResolvedValue([
+      { ...V1, surplusAsCarbs: true },
+      V2,
+    ]);
     const carbsOnly = await getNutritionTargetsForDateRange(CLIENT, "2026-10-05", "2026-10-05");
     // Fat held at 60, protein at 150: the whole 200 kcal surplus lands on carbs.
     expect(carbsOnly.get("2026-10-05")).toMatchObject({ calories: 2200, fatG: 60, carbsG: 265 });
+    // Nothing reads the client for a setting: the versions carry them.
+    expect(vi.mocked(supabaseAdmin.from).mock.calls.map(([table]) => table)).not.toContain("clients");
+  });
+
+  it("two versions with different settings in one range: each day is priced with its own", async () => {
+    vi.mocked(getNutritionPrescriptionsForRange).mockResolvedValue([
+      { ...V1, includeActivityBurn: true },
+      { ...V2, includeActivityBurn: false },
+    ]);
+    vi.mocked(getEventsForDateRange).mockResolvedValue([
+      session("2026-10-08", 13),
+      session("2026-10-26", 14),
+    ]);
+    mockTables({});
+
+    const targets = await getNutritionTargetsForDateRange(CLIENT, "2026-10-01", "2026-10-31");
+
+    // v1 runs with the surplus on: round(1800 × 1.13) = 2034.
+    expect(targets.get("2026-10-08")).toMatchObject({ calories: 2034, isTrainingDay: true });
+    // v2 runs with it off: the training day is v2's baseline, not 2508.
+    expect(targets.get("2026-10-26")).toMatchObject({ calories: 2200, isTrainingDay: true });
   });
 
   it("carries an edited day's note and has no entry for a gap day", async () => {
     vi.mocked(getNutritionDayEditsForRange).mockResolvedValue([
       { date: "2026-10-07", calories: 1500, proteinG: 140, carbG: 150, fatG: 50, note: "Rest week" },
     ]);
-    mockTables({ clients: [{ include_activity_burn: true, surplus_as_carbs: false }] });
+    mockTables({});
 
     const targets = await getNutritionTargetsForDateRange(CLIENT, "2026-10-01", "2026-10-31");
 
@@ -293,7 +324,14 @@ describe("getNutritionTargetsForDateRange — one client, the display shape", ()
 });
 
 describe("getNutritionTargetsForClients — the roster in one pass", () => {
-  const versionRow = (id: string, client_id: string, from: string, until: string, calories: number) => ({
+  const versionRow = (
+    id: string,
+    client_id: string,
+    from: string,
+    until: string,
+    calories: number,
+    include_activity_burn = true
+  ) => ({
     id,
     client_id,
     effective_from: from,
@@ -302,13 +340,15 @@ describe("getNutritionTargetsForClients — the roster in one pass", () => {
     protein_target_g: 150,
     diet_type: "balanced",
     coach_note: null,
+    include_activity_burn,
+    surplus_as_carbs: false,
   });
 
-  it("reads each source once for the whole roster, chunked by client id, and prices every client's days with its own switches", async () => {
+  it("reads each source once for the whole roster, chunked by client id, and prices every client's days with its own version's settings", async () => {
     const calls = mockTables({
       nutrition_plans: [
         versionRow("v-a", "ca", "2026-10-01", "2026-10-31", 2000),
-        versionRow("v-b", "cb", "2026-10-10", "2026-10-31", 1800),
+        versionRow("v-b", "cb", "2026-10-10", "2026-10-31", 1800, false),
       ],
       nutrition_plan_daily_targets: [
         { nutrition_plan_id: "v-b", day_of_week: "monday", calories: 1700, protein_g: 140, carb_g: 180, fat_g: 55 },
@@ -320,10 +360,6 @@ describe("getNutritionTargetsForClients — the roster in one pass", () => {
       nutrition_day_edits: [
         { client_id: "ca", date: "2026-10-06", calories: 1500, protein_g: 140, carb_g: 150, fat_g: 50, note: "Rest" },
       ],
-      clients: [
-        { id: "ca", include_activity_burn: true, surplus_as_carbs: false },
-        { id: "cb", include_activity_burn: false, surplus_as_carbs: false },
-      ],
     });
 
     const targets = await getNutritionTargetsForClients(["ca", "cb", "cc"], "2026-10-01", "2026-10-31");
@@ -334,7 +370,8 @@ describe("getNutritionTargetsForClients — the roster in one pass", () => {
     expect(tables.filter((t) => t === "nutrition_plan_daily_targets")).toHaveLength(1);
     expect(tables.filter((t) => t === "training_events")).toHaveLength(1);
     expect(tables.filter((t) => t === "nutrition_day_edits")).toHaveLength(1);
-    expect(tables.filter((t) => t === "clients")).toHaveLength(1);
+    // The settings ride on the versions: nothing reads the client for them.
+    expect(tables.filter((t) => t === "clients")).toHaveLength(0);
     const versionsRead = calls.find((call) => call.table === "nutrition_plans")!.chain;
     expect(versionsRead.in).toHaveBeenCalledWith("client_id", ["ca", "cb", "cc"]);
     expect(versionsRead.eq).toHaveBeenCalledWith("status", "active");
@@ -343,8 +380,6 @@ describe("getNutritionTargetsForClients — the roster in one pass", () => {
     // The per-day sources are read for the covered clients only.
     const eventsRead = calls.find((call) => call.table === "training_events")!.chain;
     expect(eventsRead.in).toHaveBeenCalledWith("client_id", ["ca", "cb"]);
-    const prefsRead = calls.find((call) => call.table === "clients")!.chain;
-    expect(prefsRead.in).toHaveBeenCalledWith("id", ["ca", "cb"]);
     // The prescription needs no per-client read either.
     expect(getNutritionPrescriptionsForRange).not.toHaveBeenCalled();
 
@@ -353,7 +388,8 @@ describe("getNutritionTargetsForClients — the roster in one pass", () => {
     expect(byKey.get("ca:2026-10-05")).toMatchObject({ calories: 2200, isTrainingDay: true });
     expect(byKey.get("ca:2026-10-04")).toMatchObject({ calories: 2000, isTrainingDay: false });
     expect(byKey.get("ca:2026-10-06")).toMatchObject({ calories: 1500, note: "Rest" });
-    // cb: burn OFF — the training day is the baseline; its Monday grid row prices Mondays.
+    // cb: its version's burn is OFF — the training day is the baseline; its
+    // Monday grid row prices Mondays.
     expect(byKey.get("cb:2026-10-12")).toMatchObject({ calories: 1700, isTrainingDay: true });
     expect(byKey.get("cb:2026-10-13")).toMatchObject({ calories: 1800 });
     // cb's window starts on the 10th; before it there is no day.
@@ -362,6 +398,26 @@ describe("getNutritionTargetsForClients — the roster in one pass", () => {
     expect(targets.some((t) => t.clientId === "cc")).toBe(false);
     expect(targets.filter((t) => t.clientId === "ca")).toHaveLength(31);
     expect(targets.filter((t) => t.clientId === "cb")).toHaveLength(22);
+  });
+
+  it("one client's two versions with different settings: each day is priced with its own", async () => {
+    mockTables({
+      nutrition_plans: [
+        versionRow("v-d1", "cd", "2026-10-01", "2026-10-15", 1900, true),
+        versionRow("v-d2", "cd", "2026-10-16", "2026-10-31", 1900, false),
+      ],
+      training_events: [
+        { client_id: "cd", date: "2026-10-08", calorie_surplus_percentage: 13, estimated_calories: null },
+        { client_id: "cd", date: "2026-10-22", calorie_surplus_percentage: 13, estimated_calories: null },
+      ],
+    });
+
+    const targets = await getNutritionTargetsForClients(["cd"], "2026-10-01", "2026-10-31");
+    const byDate = new Map(targets.map((t) => [t.date, t]));
+
+    // v-d1's surplus is on: round(1900 × 1.13) = 2147; v-d2's is off.
+    expect(byDate.get("2026-10-08")).toMatchObject({ calories: 2147, isTrainingDay: true });
+    expect(byDate.get("2026-10-22")).toMatchObject({ calories: 1900, isTrainingDay: true });
   });
 
   it("no client has a version in the window: one read, nothing else", async () => {

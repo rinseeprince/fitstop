@@ -10,6 +10,8 @@ import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 const custom = (customCalories: number) => ({
   proteinTargetGPerKg: 2.0,
   dietType: "balanced",
+  includeActivityBurn: true,
+  surplusAsCarbs: false,
   customMacrosEnabled: true,
   customProteinG: 150,
   customCarbG: 200,
@@ -37,8 +39,32 @@ describe("nutritionPlanSchema — the custom-macros belt", () => {
 
   it("a calculated save has no belt to trip", () => {
     expect(
-      nutritionPlanSchema.safeParse({ proteinTargetGPerKg: 2.0, dietType: "keto" }).success
+      nutritionPlanSchema.safeParse({
+        proteinTargetGPerKg: 2.0,
+        dietType: "keto",
+        includeActivityBurn: true,
+        surplusAsCarbs: false,
+      }).success
     ).toBe(true);
+  });
+});
+
+// Every save states the version's two surplus settings (migration 196): they
+// price only the days it covers, so a save without them has nothing to price
+// its training days with.
+describe("nutritionPlanSchema — the two surplus settings are required", () => {
+  const calculated = { proteinTargetGPerKg: 1.8, dietType: "balanced" };
+
+  it("accepts a save that states both", () => {
+    expect(
+      nutritionPlanSchema.safeParse({ ...calculated, includeActivityBurn: false, surplusAsCarbs: true }).success
+    ).toBe(true);
+  });
+
+  it("refuses a save missing either one", () => {
+    expect(nutritionPlanSchema.safeParse({ ...calculated, surplusAsCarbs: true }).success).toBe(false);
+    expect(nutritionPlanSchema.safeParse({ ...calculated, includeActivityBurn: false }).success).toBe(false);
+    expect(nutritionPlanSchema.safeParse(calculated).success).toBe(false);
   });
 });
 

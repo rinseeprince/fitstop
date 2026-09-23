@@ -134,10 +134,8 @@ export function DrawerFormBody() {
           isLoading={builder.isLoadingTrainingPlan}
           includeActivityBurn={builder.includeActivityBurn}
           onToggleActivityBurn={builder.handleToggleActivityBurn}
-          isSavingToggle={builder.isSavingBurnToggle}
           surplusAsCarbs={builder.surplusAsCarbs}
           onToggleSurplusAsCarbs={builder.handleToggleSurplusAsCarbs}
-          isSavingSurplus={builder.isSavingSurplusToggle}
         />
 
         <Divider />

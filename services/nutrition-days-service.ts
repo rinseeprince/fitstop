@@ -2,6 +2,7 @@ import type { NutritionEvent } from "@/types/check-in";
 import { expandDateRange } from "@/lib/date-helpers";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
+import { surplusSettingsOf, type SurplusSettings } from "@/lib/nutrition/surplus-settings";
 import { supabaseAdmin } from "./supabase-admin";
 import {
   getNutritionPlanGrids,
@@ -39,9 +40,10 @@ import {
  *
  * The range reader is the name every reader already calls; the day table's
  * readers were deleted so the compiler listed every caller. The two TARGET
- * readers under it are the display shape of the same days — the client's two
- * display switches applied — one per client and one across many clients (the
- * feed's), both over one pure assembly. A single day is the range over one day.
+ * readers under it are the display shape of the same days — each priced with
+ * its covering version's two surplus settings (migration 196), which the day
+ * carries — one per client and one across many clients (the feed's), both over
+ * one pure assembly. A single day is the range over one day.
  */
 
 /** The version covering a date, as the day reader prices a day from it. */
@@ -53,7 +55,7 @@ type DayVersion = {
   proteinTargetG: number;
   dietType: string;
   coachNote: string | null;
-};
+} & SurplusSettings;
 
 /** A version's grid row, keyed by the version and the weekday it prices. */
 type GridRowWithKey = NutritionDayGridRow & { planId: string; dayOfWeek: string };
@@ -142,11 +144,11 @@ export async function getNutritionEventsForDateRange(
 // ---------------------------------------------------------------------------
 
 /**
- * A day's target as displayed — the computed day through the client's two
- * display switches (`include_activity_burn`, `surplus_as_carbs`), the same
- * mapping the calendar and the program card apply, so the number a verdict is
- * judged against is the number the client was shown. `note` is the coach's
- * per-day note, shown to the client.
+ * A day's target as displayed — the computed day priced with its covering
+ * version's two surplus settings (migration 196), the same mapping the
+ * calendar and the program card apply, so the number a verdict is judged
+ * against is the number the client was shown. `note` is the coach's per-day
+ * note, shown to the client.
  */
 export type NutritionDayTarget = {
   date: string;
@@ -161,22 +163,8 @@ export type NutritionDayTarget = {
 /** A target with the client it belongs to — the cross-client reader's row. */
 export type ClientNutritionDayTarget = NutritionDayTarget & { clientId: string };
 
-type DisplayPrefs = { includeActivityBurn: boolean; surplusAsCarbs: boolean };
-
-const DEFAULT_DISPLAY_PREFS: DisplayPrefs = { includeActivityBurn: true, surplusAsCarbs: false };
-
-function toDisplayPrefs(row: {
-  include_activity_burn: boolean | null;
-  surplus_as_carbs: boolean | null;
-}): DisplayPrefs {
-  return {
-    includeActivityBurn: row.include_activity_burn !== false,
-    surplusAsCarbs: row.surplus_as_carbs === true,
-  };
-}
-
-function toDisplayTarget(day: NutritionEvent, prefs: DisplayPrefs): NutritionDayTarget {
-  const target = mapNutritionEventToDisplayTarget(day, prefs.includeActivityBurn, prefs.surplusAsCarbs);
+function toDisplayTarget(day: NutritionEvent): NutritionDayTarget {
+  const target = mapNutritionEventToDisplayTarget(day);
   return {
     date: day.date,
     calories: target.calories,
@@ -188,22 +176,10 @@ function toDisplayTarget(day: NutritionEvent, prefs: DisplayPrefs): NutritionDay
   };
 }
 
-async function readDisplayPrefs(clientId: string): Promise<DisplayPrefs> {
-  const { data, error } = await supabaseAdmin
-    .from("clients")
-    .select("include_activity_burn, surplus_as_carbs")
-    .eq("id", clientId)
-    .maybeSingle();
-  if (error) {
-    throw new Error(`Failed to read the client's nutrition display settings: ${error.message}`);
-  }
-  return data ? toDisplayPrefs(data) : DEFAULT_DISPLAY_PREFS;
-}
-
 /**
  * The client's targets over a range, by date — one entry per date a version
- * covers, none for a gap. The day reader's four reads plus the client's
- * display switches, read together; the number of days decides nothing.
+ * covers, none for a gap. The day reader's four reads; the number of days
+ * decides nothing.
  */
 export async function getNutritionTargetsForDateRange(
   clientId: string,
@@ -212,11 +188,8 @@ export async function getNutritionTargetsForDateRange(
 ): Promise<Map<string, NutritionDayTarget>> {
   if (endDate < startDate) return new Map();
 
-  const [days, prefs] = await Promise.all([
-    getNutritionEventsForDateRange(clientId, startDate, endDate),
-    readDisplayPrefs(clientId),
-  ]);
-  return new Map(days.map((day) => [day.date, toDisplayTarget(day, prefs)]));
+  const days = await getNutritionEventsForDateRange(clientId, startDate, endDate);
+  return new Map(days.map((day) => [day.date, toDisplayTarget(day)]));
 }
 
 type VersionRow = {
@@ -228,6 +201,8 @@ type VersionRow = {
   protein_target_g: number;
   diet_type: string;
   coach_note: string | null;
+  include_activity_burn: boolean;
+  surplus_as_carbs: boolean;
 };
 
 type GridRow = {
@@ -256,12 +231,6 @@ type EditRow = {
   note: string | null;
 };
 
-type PrefsRow = {
-  id: string;
-  include_activity_burn: boolean | null;
-  surplus_as_carbs: boolean | null;
-};
-
 function groupBy<T>(rows: readonly T[], key: (row: T) => string): Map<string, T[]> {
   const groups = new Map<string, T[]>();
   for (const row of rows) {
@@ -274,8 +243,8 @@ function groupBy<T>(rows: readonly T[], key: (row: T) => string): Map<string, T[
 
 /**
  * Every client's targets over a range, in one pass — the attention feed's
- * read, beside the per-client reader above. The same four sources and the
- * same display switches, each read ONCE for the whole roster: chunked by
+ * read, beside the per-client reader above. The same four sources, each read
+ * ONCE for the whole roster: chunked by
  * client id and paged within each chunk (`fetchAllByChunkedIds`), like the
  * feed's own window and event reads, because a coach's roster has two
  * independent ceilings — the request line and the row cap — and a truncated
@@ -296,7 +265,7 @@ export async function getNutritionTargetsForClients(
       supabaseAdmin
         .from("nutrition_plans")
         .select(
-          "id, client_id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note"
+          "id, client_id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note, include_activity_burn, surplus_as_carbs"
         )
         .in("client_id", chunk)
         .eq("status", "active")
@@ -311,10 +280,10 @@ export async function getNutritionTargetsForClients(
   if (versionRows.length === 0) return [];
 
   // Only the clients a version covers in the window have days to price; the
-  // three per-day sources and the switches are read for them alone.
+  // three per-day sources are read for them alone.
   const coveredClientIds = [...new Set(versionRows.map((row) => row.client_id))];
 
-  const [gridRows, sessionRows, editRows, prefsRows] = await Promise.all([
+  const [gridRows, sessionRows, editRows] = await Promise.all([
     fetchAllByChunkedIds<GridRow, string>(
       versionRows.map((row) => row.id),
       (chunk, from, to) =>
@@ -356,24 +325,12 @@ export async function getNutritionTargetsForClients(
           .range(from, to),
       { errorLabel: "nutrition day edits for the clients" }
     ),
-    fetchAllByChunkedIds<PrefsRow, string>(
-      coveredClientIds,
-      (chunk, from, to) =>
-        supabaseAdmin
-          .from("clients")
-          .select("id, include_activity_burn, surplus_as_carbs")
-          .in("id", chunk)
-          .order("id", { ascending: true })
-          .range(from, to),
-      { errorLabel: "nutrition display settings for the clients" }
-    ),
   ]);
 
   const versionsByClient = groupBy(versionRows, (row) => row.client_id);
   const gridsByVersion = groupBy(gridRows, (row) => row.nutrition_plan_id);
   const sessionsByClient = groupBy(sessionRows, (row) => row.client_id);
   const editsByClient = groupBy(editRows, (row) => row.client_id);
-  const prefsByClient = new Map(prefsRows.map((row) => [row.id, toDisplayPrefs(row)]));
 
   const targets: ClientNutritionDayTarget[] = [];
   for (const clientId of coveredClientIds) {
@@ -385,6 +342,7 @@ export async function getNutritionTargetsForClients(
       proteinTargetG: Number(row.protein_target_g),
       dietType: row.diet_type,
       coachNote: row.coach_note,
+      ...surplusSettingsOf(row),
     }));
     const grids = versions.flatMap((version) =>
       (gridsByVersion.get(version.id) ?? []).map((row) => ({
@@ -409,10 +367,8 @@ export async function getNutritionTargetsForClients(
       fatG: row.fat_g,
       note: row.note,
     }));
-    const prefs = prefsByClient.get(clientId) ?? DEFAULT_DISPLAY_PREFS;
-
     for (const day of assembleDays(clientId, startDate, endDate, versions, grids, sessions, edits)) {
-      targets.push({ clientId, ...toDisplayTarget(day, prefs) });
+      targets.push({ clientId, ...toDisplayTarget(day) });
     }
   }
   return targets;

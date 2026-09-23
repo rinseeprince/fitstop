@@ -55,6 +55,15 @@ export async function moveEvent(
   if (event.date !== fromDate) throw new CalendarMoveDriftError(MOVE_DRIFT_MESSAGE);
 
   const today = await getClientTodayString(clientId);
+  // A session on a past day stays there: that day's nutrition target is
+  // priced from the sessions on it, and a past day's target never changes
+  // (owner, 2026-09-23). The calendar never offers the drag; this is the
+  // server's own word for any caller that skips the screen. A client moving an
+  // unlogged session within their own week is theirs to do
+  // (services/training-event-layout-service.ts), not this path.
+  if (fromDate < today) {
+    throw new Error("Cannot move a session from a past date");
+  }
   if (newDate < today) {
     throw new Error("Cannot move event to a past date");
   }

@@ -55,10 +55,6 @@ function buildWeeks(gridStart: Date, gridEnd: Date): string[][] {
 type NutritionCalendarViewProps = {
   clientId: string;
   clientTimezone?: string;
-  /** Activity-burn toggle, so calendar totals match the rest of the builder. */
-  includeActivityBurn: boolean;
-  /** How a training-day surplus distributes across macros. */
-  surplusAsCarbs: boolean;
   /** Refetch the surrounding builder after an edit. */
   onUpdate: () => void;
   /** Renders the toolbar's Delete-plan trigger when provided. */
@@ -68,8 +64,6 @@ type NutritionCalendarViewProps = {
 export function NutritionCalendarView({
   clientId,
   clientTimezone,
-  includeActivityBurn,
-  surplusAsCarbs,
   onUpdate,
   onDeletePlan,
 }: NutritionCalendarViewProps) {
@@ -112,8 +106,6 @@ export function NutritionCalendarView({
     weeks,
     clientToday,
     viewMonth,
-    includeActivityBurn,
-    surplusAsCarbs,
     onUpdate,
   });
 
@@ -180,8 +172,6 @@ export function NutritionCalendarView({
                 clientToday={clientToday}
                 viewMonth={viewMonth.month}
                 viewYear={viewMonth.year}
-                includeActivityBurn={includeActivityBurn}
-                surplusAsCarbs={surplusAsCarbs}
                 editMode={edit.editMode}
                 selected={edit.selected}
                 onToggle={edit.toggleDay}

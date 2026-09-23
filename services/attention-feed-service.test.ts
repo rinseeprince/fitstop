@@ -598,7 +598,7 @@ describe("attention-feed-service", () => {
       // day reader's cross-client read that prices every logged day's target.
       expect(calls["nutrition_plans"].select).toEqual([
         ["id, client_id, effective_from, effective_until"],
-        ["id, client_id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note"],
+        ["id, client_id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note, include_activity_burn, surplus_as_carbs"],
       ])
       expect(calls["nutrition_plans"].eq).toEqual([["status", "active"], ["status", "active"]])
       // The window is the row (migration 167): a plain select, no embedded

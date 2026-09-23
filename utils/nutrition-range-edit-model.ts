@@ -34,13 +34,12 @@ export type ResolvedSelectedDay = {
  * Resolve the selected dates against the loaded events, dropping any that have
  * no event or are no longer editable (a refetch or month change can leave
  * selected dates outside the loaded window — they stay selected but contribute
- * nothing to seeds/averages/previews).
+ * nothing to seeds/averages/previews). Each day is priced with its own
+ * version's surplus settings (migration 196), as its calendar cell is.
  */
 export function resolveSelectedEvents(
   dates: Iterable<string>,
-  eventsByDate: Map<string, NutritionEvent>,
-  includeActivityBurn: boolean,
-  surplusAsCarbs: boolean
+  eventsByDate: Map<string, NutritionEvent>
 ): ResolvedSelectedDay[] {
   const out: ResolvedSelectedDay[] = [];
   for (const date of [...dates].sort()) {
@@ -49,7 +48,7 @@ export function resolveSelectedEvents(
     out.push({
       date,
       event,
-      target: mapNutritionEventToDisplayTarget(event, includeActivityBurn, surplusAsCarbs),
+      target: mapNutritionEventToDisplayTarget(event),
     });
   }
   return out;

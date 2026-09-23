@@ -47,6 +47,8 @@ function day(overrides: Partial<NutritionEvent> = {}): NutritionEvent {
     dietType: "balanced",
     isTrainingDay: false,
     calorieSurplusPercentage: null,
+    includeActivityBurn: true,
+    surplusAsCarbs: false,
     isModified: false,
     note: null,
     coachNote: null,

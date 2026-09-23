@@ -20,6 +20,8 @@ function ev(date: string, overrides: Partial<NutritionEvent> = {}): NutritionEve
     dietType: "balanced",
     isTrainingDay: false,
     calorieSurplusPercentage: null,
+    includeActivityBurn: true,
+    surplusAsCarbs: false,
     isModified: false,
     note: null,
     coachNote: null,
@@ -31,9 +33,7 @@ function ev(date: string, overrides: Partial<NutritionEvent> = {}): NutritionEve
 function resolve(events: NutritionEvent[]) {
   return resolveSelectedEvents(
     events.map((e) => e.date),
-    new Map(events.map((e) => [e.date, e])),
-    true,
-    false
+    new Map(events.map((e) => [e.date, e]))
   );
 }
 

@@ -17,6 +17,8 @@ function ev(overrides: Partial<NutritionEvent>): NutritionEvent {
     dietType: "balanced",
     isTrainingDay: false,
     calorieSurplusPercentage: null,
+    includeActivityBurn: true,
+    surplusAsCarbs: false,
     isModified: false,
     note: null,
     status: "scheduled",
@@ -37,7 +39,7 @@ describe("mapNutritionEventToDisplayTarget", () => {
       calorieSurplusPercentage: null,
     });
 
-    const target = mapNutritionEventToDisplayTarget(event, true);
+    const target = mapNutritionEventToDisplayTarget(event);
 
     expect(target.calories).toBe(2586);
     expect(target.proteinG).toBe(190);
@@ -56,7 +58,7 @@ describe("mapNutritionEventToDisplayTarget", () => {
       calorieSurplusPercentage: null,
     });
 
-    const target = mapNutritionEventToDisplayTarget(event, true);
+    const target = mapNutritionEventToDisplayTarget(event);
 
     expect(target.calories).toBe(2502);
     expect(target.carbsG).toBe(250); // NOT re-derived to 213
@@ -74,7 +76,7 @@ describe("mapNutritionEventToDisplayTarget", () => {
       calorieSurplusPercentage: 10, // total = 2200
     });
 
-    const target = mapNutritionEventToDisplayTarget(event, true); // surplusAsCarbs default false
+    const target = mapNutritionEventToDisplayTarget(event); // the day's surplusAsCarbs is false
 
     // protein held; the +200 surplus splits by the stored 400:450 ratio
     expect(target.calories).toBe(2200);
@@ -92,9 +94,10 @@ describe("mapNutritionEventToDisplayTarget", () => {
       carbG: 100,
       fatG: 50,
       calorieSurplusPercentage: 10, // total = 2200
+      surplusAsCarbs: true,
     });
 
-    const target = mapNutritionEventToDisplayTarget(event, true, true);
+    const target = mapNutritionEventToDisplayTarget(event);
 
     expect(target.calories).toBe(2200);
     expect(target.proteinG).toBe(150); // held
@@ -104,10 +107,51 @@ describe("mapNutritionEventToDisplayTarget", () => {
   });
 
   it("uses stored macros when activity burn is off (unchanged)", () => {
-    const event = ev({ baselineCalories: 2000, proteinG: 150, carbG: 200, fatG: 67 });
-    const target = mapNutritionEventToDisplayTarget(event, false);
+    const event = ev({
+      baselineCalories: 2000,
+      proteinG: 150,
+      carbG: 200,
+      fatG: 67,
+      includeActivityBurn: false,
+    });
+    const target = mapNutritionEventToDisplayTarget(event);
     expect(target.calories).toBe(2000);
     expect(target.carbsG).toBe(200);
     expect(target.fatG).toBe(67);
+  });
+});
+
+describe("mapNutritionEventToDisplayTarget — the day's own surplus settings (migration 196)", () => {
+  const trainingDay = (overrides: Partial<NutritionEvent>) =>
+    ev({
+      isTrainingDay: true,
+      baselineCalories: 2230,
+      proteinG: 177,
+      carbG: 226,
+      fatG: 70,
+      calorieSurplusPercentage: 12,
+      ...overrides,
+    });
+
+  it("adds the session's surplus only when the day's own setting is on", () => {
+    const on = mapNutritionEventToDisplayTarget(trainingDay({ includeActivityBurn: true }));
+    const off = mapNutritionEventToDisplayTarget(trainingDay({ includeActivityBurn: false }));
+
+    expect(on.calories).toBe(2498);
+    expect(on.trainingSessionCalories).toBe(268);
+    expect(off.calories).toBe(2230);
+    expect(off.trainingSessionCalories).toBe(0);
+    expect(off.carbsG).toBe(226);
+    expect(off.fatG).toBe(70);
+  });
+
+  it("splits the surplus by the day's own surplusAsCarbs, not a shared switch", () => {
+    const keepSplit = mapNutritionEventToDisplayTarget(trainingDay({ surplusAsCarbs: false }));
+    const carbsOnly = mapNutritionEventToDisplayTarget(trainingDay({ surplusAsCarbs: true }));
+
+    expect(carbsOnly.calories).toBe(keepSplit.calories);
+    expect(carbsOnly.fatG).toBe(70);
+    expect(keepSplit.fatG).toBeGreaterThan(70);
+    expect(carbsOnly.carbsG).toBeGreaterThan(keepSplit.carbsG);
   });
 });

@@ -98,20 +98,12 @@ export const getCheckInNutritionContext = async (
   const weekStart = getTrainingWeekStart(today, checkInDay);
   const weekEnd = getTrainingWeekEnd(today, checkInDay);
 
-  const [events, { data: clientRow }] = await Promise.all([
-    getNutritionEventsForDateRange(clientId, weekStart, weekEnd),
-    supabaseAdmin
-      .from("clients")
-      .select("include_activity_burn, surplus_as_carbs")
-      .eq("id", clientId)
-      .single(),
-  ]);
-  const includeActivityBurn = clientRow?.include_activity_burn !== false;
-  const surplusAsCarbs = clientRow?.surplus_as_carbs === true;
+  const events = await getNutritionEventsForDateRange(clientId, weekStart, weekEnd);
 
-  // Use event-based targets (all available events for the week)
+  // Use event-based targets (all available events for the week), each priced
+  // with its own version's two surplus settings (migration 196).
   const weeklyTargets: Array<{ day: DayOfWeek; dayLabel: string; isTrainingDay: boolean; calories: number; proteinG: number; carbsG: number; fatG: number }> = events.slice(0, 7).map((event) => {
-    const display = mapNutritionEventToDisplayTarget(event, includeActivityBurn, surplusAsCarbs);
+    const display = mapNutritionEventToDisplayTarget(event);
     return {
       day: display.day as DayOfWeek,
       dayLabel: display.dayLabel,

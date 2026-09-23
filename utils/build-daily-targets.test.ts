@@ -17,6 +17,8 @@ const plan = {
   protein_target_g: 150,
   carb_target_g: 200,
   fat_target_g: 60,
+  include_activity_burn: true,
+  surplus_as_carbs: false,
 };
 
 const storedTargets = [
@@ -54,9 +56,7 @@ const build = (trainingEvents?: TrainingEvent[]) =>
   buildDailyTargetsFromPlan({
     plan,
     dailyTargetRows: storedTargets,
-    includeActivityBurn: true,
     dietType: "balanced",
-    surplusAsCarbs: false,
     trainingEvents,
     nutritionEvents: undefined,
     // effectiveFrom null = the template gate stays out of this suite's frame.

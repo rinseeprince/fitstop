@@ -32,6 +32,10 @@ vi.mock("./daily-log-permissions-service", () => ({
   getLastSubmittedPeriodEnd: vi.fn(),
 }));
 
+vi.mock("./nutrition-plan-service", () => ({
+  getSurplusSettingsForClientToday: vi.fn(),
+}));
+
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getEventsForDateRange } from "./training-event-service";
@@ -40,6 +44,7 @@ import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { getCurrentGoal } from "./client-goals-service";
 import { getLastSubmittedPeriodEnd } from "./daily-log-permissions-service";
+import { getSurplusSettingsForClientToday } from "./nutrition-plan-service";
 import { getClientForCurrentUser, getClientNutritionTargets } from "./client-portal-service";
 
 function createMockQuery(result: { data: unknown; error: unknown }) {
@@ -74,7 +79,7 @@ describe("getClientNutritionTargets", () => {
     vi.mocked(getClientTodayString).mockResolvedValue("2026-06-10");
 
     const clientQuery = createMockQuery({
-      data: { include_activity_burn: true, unit_preference: "metric" },
+      data: { unit_preference: "metric" },
       error: null,
     });
     const planQuery = createMockQuery({
@@ -139,7 +144,7 @@ describe("getClientNutritionTargets", () => {
     vi.mocked(getClientTodayString).mockResolvedValue("2026-06-10");
 
     const clientQuery = createMockQuery({
-      data: { include_activity_burn: true, unit_preference: "metric" },
+      data: { unit_preference: "metric" },
       error: null,
     });
     const anchorQuery = createMockQuery({
@@ -190,7 +195,7 @@ describe("getClientNutritionTargets", () => {
     );
   });
 
-  it("reads surplus_as_carbs from the client and threads it + the week's events into the builder", async () => {
+  it("prices the week with the covering plan's own settings, and the wire's includeActivityBurn is that plan's", async () => {
     vi.mocked(getClientTodayString).mockResolvedValue("2026-06-10");
     const weekEvents = [{ dayOfWeek: "monday" }];
     vi.mocked(getNutritionEventsForDateRange).mockResolvedValue(
@@ -198,11 +203,7 @@ describe("getClientNutritionTargets", () => {
     );
 
     const clientQuery = createMockQuery({
-      data: {
-        include_activity_burn: true,
-        unit_preference: "metric",
-        surplus_as_carbs: true,
-      },
+      data: { unit_preference: "metric" },
       error: null,
     });
     const planQuery = createMockQuery({
@@ -217,6 +218,8 @@ describe("getClientNutritionTargets", () => {
         protein_target_g: 170,
         carb_target_g: 240,
         fat_target_g: 70,
+        include_activity_burn: false,
+        surplus_as_carbs: true,
       },
       error: null,
     });
@@ -235,10 +238,17 @@ describe("getClientNutritionTargets", () => {
       return targetsQuery;
     }) as never);
 
-    await getClientNutritionTargets("client-1");
+    const result = await getClientNutritionTargets("client-1");
 
     const [input] = vi.mocked(buildDailyTargetsFromPlan).mock.calls[0];
-    expect(input.surplusAsCarbs).toBe(true); // threaded through
+    // The builder takes the covering plan whole — its two settings price the
+    // template days — and no client-level setting beside it.
+    expect(input.plan).toMatchObject({ include_activity_burn: false, surplus_as_carbs: true });
+    expect(input).not.toHaveProperty("includeActivityBurn");
+    expect(input).not.toHaveProperty("surplusAsCarbs");
+    expect(result?.includeActivityBurn).toBe(false);
+    // The client read carries no setting any more.
+    expect(clientQuery.select).toHaveBeenCalledWith("unit_preference");
     expect(input.nutritionEvents).toBe(weekEvents); // the week's nutrition events
     // The template gate's inputs. This mock never runs the real util, so this
     // assertion is the ONLY thing standing between "gate exists" and "gate is
@@ -310,6 +320,10 @@ describe("getClientForCurrentUser", () => {
       deadline: "2026-12-04",
     });
     vi.mocked(getLastSubmittedPeriodEnd).mockResolvedValue("2026-09-13");
+    vi.mocked(getSurplusSettingsForClientToday).mockResolvedValue({
+      includeActivityBurn: false,
+      surplusAsCarbs: true,
+    });
 
     const profile = await getClientForCurrentUser();
 
@@ -329,5 +343,55 @@ describe("getClientForCurrentUser", () => {
     // No goal column on the profile read: one named there is a PostgREST 400,
     // which this read turns into an empty profile.
     expect(selects[0]).not.toContain("goal_");
+  });
+
+  it("carries the surplus settings of the nutrition plan covering the client's today, right after unitPreference", async () => {
+    const selects: string[] = [];
+    const clientChain = {
+      select: (columns: string) => {
+        selects.push(columns);
+        return clientChain;
+      },
+      eq: () => clientChain,
+      single: () =>
+        Promise.resolve({
+          data: {
+            id: "client-1",
+            coach_id: "coach-1",
+            name: "Sam",
+            email: "sam@example.com",
+            active: true,
+            created_at: "2026-02-09T09:00:00+00:00",
+            updated_at: "2026-09-01T09:00:00+00:00",
+            timezone: "Europe/London",
+            unit_preference: "metric",
+            next_check_in_due: null,
+            start_date: null,
+          },
+          error: null,
+        }),
+    };
+    vi.mocked(createServerSupabaseClient).mockResolvedValue({
+      auth: { getUser: () => Promise.resolve({ data: { user: { id: "user-1" } } }) },
+      from: () => clientChain,
+    } as never);
+    vi.mocked(getCurrentGoal).mockResolvedValue(null);
+    vi.mocked(getLastSubmittedPeriodEnd).mockResolvedValue(null);
+    vi.mocked(getSurplusSettingsForClientToday).mockResolvedValue({
+      includeActivityBurn: false,
+      surplusAsCarbs: true,
+    });
+
+    const profile = await getClientForCurrentUser();
+
+    expect(getSurplusSettingsForClientToday).toHaveBeenCalledWith("client-1");
+    expect(profile?.includeActivityBurn).toBe(false);
+    expect(profile?.surplusAsCarbs).toBe(true);
+    const keys = Object.keys(profile ?? {});
+    const at = keys.indexOf("unitPreference");
+    expect(keys.slice(at, at + 3)).toEqual(["unitPreference", "includeActivityBurn", "surplusAsCarbs"]);
+    // The settings are the plan's now: neither column is read off the client.
+    expect(selects[0]).not.toContain("include_activity_burn");
+    expect(selects[0]).not.toContain("surplus_as_carbs");
   });
 });

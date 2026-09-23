@@ -45,6 +45,9 @@ type PlanBaseline = {
   protein_target_g: number;
   carb_target_g: number;
   fat_target_g: number;
+  /** The version's two surplus settings (migration 196): the template days it prices. */
+  include_activity_burn: boolean;
+  surplus_as_carbs: boolean;
 };
 
 /**
@@ -65,13 +68,14 @@ type PlanBaseline = {
  *
  * The surplus-split policy is unified with the coach calendar:
  *   - event-present days reuse `mapNutritionEventToDisplayTarget` (parity by
- *     construction — frozen `is_modified` days display verbatim, the
- *     `surplusAsCarbs` toggle decides the split), overriding only the live
- *     trainingSessions list + the coach note;
- *   - no-event (template) days hold protein and split any training surplus via
- *     `applySurplusSplit`, preserving the coach's stored carb/fat ratio (never
- *     re-derived from the diet type), with stored macros shown verbatim on rest
- *     days / when burn is off.
+ *     construction — frozen `is_modified` days display verbatim, and each day
+ *     is priced with the two surplus settings it carries, its own version's),
+ *     overriding only the live trainingSessions list + the coach note;
+ *   - no-event (template) days are priced with `plan`'s own two settings: they
+ *     hold protein and split any training surplus via `applySurplusSplit`,
+ *     preserving the coach's stored carb/fat ratio (never re-derived from the
+ *     diet type), with stored macros shown verbatim on rest days / when the
+ *     surplus is off.
  *
  * `weekWindow` is REQUIRED, and deliberately last-and-required rather than
  * optional: it dates the weekday grid (`weekStart` + 6 days) so the TEMPLATE
@@ -85,16 +89,14 @@ type PlanBaseline = {
  * days are never gated: events are the dated SOT and carry their own era's
  * numbers. It is a required key so tsc enumerates every call site.
  *
- * Inputs are a named object rather than positionals: nine same-shaped arguments
- * (three booleans, three optional arrays) are exactly where a call lands a value
- * in the wrong slot with every test still green.
+ * Inputs are a named object rather than positionals: six arguments, three of
+ * them same-shaped optional arrays, are exactly where a call lands a value in
+ * the wrong slot with every test still green.
  */
 type BuildDailyTargetsInput = {
   plan: PlanBaseline;
   dailyTargetRows: StoredDailyTarget[] | null;
-  includeActivityBurn: boolean;
   dietType: DietType;
-  surplusAsCarbs: boolean;
   trainingEvents: TrainingEvent[] | undefined;
   nutritionEvents: NutritionEvent[] | undefined;
   weekWindow: { weekStart: string; effectiveFrom: string | null; effectiveUntil: string | null };
@@ -103,9 +105,7 @@ type BuildDailyTargetsInput = {
 export function buildDailyTargetsFromPlan({
   plan,
   dailyTargetRows,
-  includeActivityBurn,
   dietType,
-  surplusAsCarbs,
   trainingEvents,
   nutritionEvents,
   weekWindow,
@@ -150,11 +150,11 @@ export function buildDailyTargetsFromPlan({
 
     // Event-present day -> reuse the calendar mapper for full parity, then
     // layer the live training-session list (the mapper returns none). The
-    // mapper already honors includeActivityBurn, is_modified, and surplusAsCarbs.
+    // mapper already honors is_modified and the day's own surplus settings.
     const event = eventsByWeekday.get(day);
     if (event) {
       return [{
-        ...mapNutritionEventToDisplayTarget(event, includeActivityBurn, surplusAsCarbs),
+        ...mapNutritionEventToDisplayTarget(event),
         date,
         trainingSessions: trainingSessionsFor(day),
         // `note` only. `event.coachNote` is COACH-PRIVATE and must never be
@@ -205,7 +205,7 @@ export function buildDailyTargetsFromPlan({
     // Apply the training surplus only when burn is on and a real surplus exists;
     // otherwise the stored macros display verbatim (matches the event mapper's
     // verbatim guard).
-    const applyBurn = includeActivityBurn && daySurplus != null && daySurplus > 0;
+    const applyBurn = plan.include_activity_burn && daySurplus != null && daySurplus > 0;
     let dayCalories: number;
     let trainingSessionCalories: number;
     let carbsG: number;
@@ -213,7 +213,7 @@ export function buildDailyTargetsFromPlan({
     if (applyBurn) {
       dayCalories = Math.round(baselineCalories * (1 + daySurplus / 100));
       trainingSessionCalories = dayCalories - baselineCalories;
-      ({ carbsG, fatG } = applySurplusSplit(dayCalories, proteinG, baselineCarbG, baselineFatG, surplusAsCarbs));
+      ({ carbsG, fatG } = applySurplusSplit(dayCalories, proteinG, baselineCarbG, baselineFatG, plan.surplus_as_carbs));
     } else {
       dayCalories = baselineCalories;
       trainingSessionCalories = 0;
@@ -241,7 +241,7 @@ export function buildDailyTargetsFromPlan({
       trainingSessionCalories,
       trainingSessions: trainingSessionsFor(day),
       totalCaloriesWithActivities: dayCalories,
-      includeActivityBurn,
+      includeActivityBurn: plan.include_activity_burn,
       calorieSurplusPercentage: daySurplus,
     }];
   });

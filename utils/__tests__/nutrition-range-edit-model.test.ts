@@ -23,6 +23,8 @@ function ev(date: string, overrides: EvOverrides = {}): NutritionEvent {
     dietType: "balanced",
     isTrainingDay: false,
     calorieSurplusPercentage: null,
+    includeActivityBurn: true,
+    surplusAsCarbs: false,
     isModified: false,
     note: null,
     status: "scheduled",
@@ -40,12 +42,7 @@ describe("nutrition-range-edit-model", () => {
   describe("resolveSelectedEvents", () => {
     it("drops missing and non-scheduled dates, sorts by date", () => {
       const map = mapOf([ev("2026-06-02"), ev("2026-06-01", { status: "logged" })]);
-      const days = resolveSelectedEvents(
-        ["2026-06-03", "2026-06-02", "2026-06-01"],
-        map,
-        true,
-        false
-      );
+      const days = resolveSelectedEvents(["2026-06-03", "2026-06-02", "2026-06-01"], map);
       expect(days.map((d) => d.date)).toEqual(["2026-06-02"]);
     });
   });
@@ -56,7 +53,7 @@ describe("nutrition-range-edit-model", () => {
     it("seeds the calories and grams from the first selected day; equal days expose no range", () => {
       const map = mapOf([ev("2026-06-01"), ev("2026-06-02")]);
       const seed = computeAbsoluteSeed(
-        resolveSelectedEvents(["2026-06-01", "2026-06-02"], map, true, false)
+        resolveSelectedEvents(["2026-06-01", "2026-06-02"], map)
       );
       expect(seed.calories).toBe(2000);
       expect(seed.grams).toEqual({ proteinG: 150, carbG: 200, fatG: 60 });
@@ -70,7 +67,7 @@ describe("nutrition-range-edit-model", () => {
         ev("2026-06-02", { calorieSurplusPercentage: 10, isTrainingDay: true }),
       ]);
       const seed = computeAbsoluteSeed(
-        resolveSelectedEvents(["2026-06-01", "2026-06-02"], map, true, false)
+        resolveSelectedEvents(["2026-06-01", "2026-06-02"], map)
       );
       expect(seed.calories).toBe(2000);
       expect(seed.calorieRange).toEqual({ min: 2000, max: 2200 });
@@ -82,7 +79,7 @@ describe("nutrition-range-edit-model", () => {
         ev("2026-06-02", { baselineCalories: 2200 }),
       ]);
       const seed = computeAbsoluteSeed(
-        resolveSelectedEvents(["2026-06-02", "2026-06-01"], map, true, false)
+        resolveSelectedEvents(["2026-06-02", "2026-06-01"], map)
       );
       expect(seed.calories).toBe(1800);
       expect(seed.calorieRange).toEqual({ min: 1800, max: 2200 });
@@ -99,7 +96,7 @@ describe("nutrition-range-edit-model", () => {
         ev("2026-06-01"),
         ev("2026-06-02", { calorieSurplusPercentage: 10, isTrainingDay: true }),
       ]);
-      const days = resolveSelectedEvents(["2026-06-01", "2026-06-02"], map, true, false);
+      const days = resolveSelectedEvents(["2026-06-01", "2026-06-02"], map);
       expect(averageDisplayedCalories(days)).toBe(2100); // (2000 + 2200) / 2
       expect(averageDisplayedCalories([])).toBeNull();
     });

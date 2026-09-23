@@ -105,6 +105,8 @@ function ev(date: string, overrides: Partial<NutritionEvent> = {}): NutritionEve
     dietType: "balanced",
     isTrainingDay: false,
     calorieSurplusPercentage: null,
+    includeActivityBurn: true,
+    surplusAsCarbs: false,
     isModified: false,
     note: null,
     coachNote: null,
@@ -135,7 +137,7 @@ afterEach(() => {
 });
 
 const view = () => (
-  <NutritionCalendarView clientId="c1" includeActivityBurn surplusAsCarbs={false} onUpdate={vi.fn()} />
+  <NutritionCalendarView clientId="c1" onUpdate={vi.fn()} />
 );
 const renderView = () => render(view());
 

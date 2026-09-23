@@ -22,6 +22,7 @@ import type {
 } from "@/types/check-in";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
 import { useManualTargets, type MacroTargets } from "@/hooks/use-manual-targets";
+import { DEFAULT_SURPLUS_SETTINGS, type SurplusSettings } from "@/lib/nutrition/surplus-settings";
 // A PURE module (types + one arithmetic helper, no DB imports), so the browser
 // runs the identical calculator the server does. That is what makes the preview
 // authoritative rather than an approximation.
@@ -160,62 +161,38 @@ export function useNutritionBuilder({
 
   const manual = useManualTargets(nutritionPlan.nutritionData);
 
-  // Activity burn toggle
-  const [includeActivityBurn, setIncludeActivityBurn] = useState(client.includeActivityBurn);
-  const [isSavingBurnToggle, setIsSavingBurnToggle] = useState(false);
+  // The two surplus settings (migration 196): fields of the save. The saved
+  // values — the latest-saved version's, else the defaults a first plan starts
+  // from — show until the coach flips one. A flip is held here and nowhere
+  // else: it writes nothing, Regenerate / Generate saves it with the version
+  // from its Starts on, and closing the drawer without saving drops it
+  // (`discardSurplusEdits`), so the next open shows what is saved (owner,
+  // 2026-09-23).
+  const savedIncludeActivityBurn = nd?.includeActivityBurn;
+  const savedSurplusAsCarbs = nd?.surplusAsCarbs;
+  const savedSurplus: SurplusSettings = useMemo(
+    () =>
+      savedIncludeActivityBurn !== undefined && savedSurplusAsCarbs !== undefined
+        ? { includeActivityBurn: savedIncludeActivityBurn, surplusAsCarbs: savedSurplusAsCarbs }
+        : DEFAULT_SURPLUS_SETTINGS,
+    [savedIncludeActivityBurn, savedSurplusAsCarbs]
+  );
+  const [surplusEdit, setSurplusEdit] = useState<SurplusSettings | null>(null);
+  const surplus = surplusEdit ?? savedSurplus;
 
   const handleToggleActivityBurn = useCallback(
-    async (value: boolean) => {
-      setIncludeActivityBurn(value);
-      setIsSavingBurnToggle(true);
-      try {
-        const res = await fetch(`/api/clients/${client.id}/nutrition`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ includeActivityBurn: value }),
-        });
-        if (!res.ok) throw new Error("Failed to update");
-        onUpdate?.();
-      } catch {
-        toast.error("Error", {
-          description: "Failed to update activity burn setting",
-        });
-        setIncludeActivityBurn(!value);
-      } finally {
-        setIsSavingBurnToggle(false);
-      }
-    },
-    [client.id, onUpdate]
+    (value: boolean) => setSurplusEdit({ ...surplus, includeActivityBurn: value }),
+    [surplus]
   );
 
-  // Surplus distribution toggle (mig 117): false = keep the plan's carb:fat ratio
-  // on a training-day surplus; true = add the whole surplus as carbs.
-  const [surplusAsCarbs, setSurplusAsCarbs] = useState(client.surplusAsCarbs);
-  const [isSavingSurplusToggle, setIsSavingSurplusToggle] = useState(false);
-
+  // "Add training calories as": false keeps the plan's carb:fat split on a
+  // training-day surplus; true adds the whole surplus as carbs.
   const handleToggleSurplusAsCarbs = useCallback(
-    async (value: boolean) => {
-      setSurplusAsCarbs(value);
-      setIsSavingSurplusToggle(true);
-      try {
-        const res = await fetch(`/api/clients/${client.id}/nutrition`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ surplusAsCarbs: value }),
-        });
-        if (!res.ok) throw new Error("Failed to update");
-        onUpdate?.();
-      } catch {
-        toast.error("Error", {
-          description: "Failed to update surplus setting",
-        });
-        setSurplusAsCarbs(!value);
-      } finally {
-        setIsSavingSurplusToggle(false);
-      }
-    },
-    [client.id, onUpdate]
+    (value: boolean) => setSurplusEdit({ ...surplus, surplusAsCarbs: value }),
+    [surplus]
   );
+
+  const discardSurplusEdits = useCallback(() => setSurplusEdit(null), []);
 
   const [coachNotes, setCoachNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -296,6 +273,9 @@ export function useNutritionBuilder({
           // The day the plan takes effect and the deficit is spread from — the
           // day the preview computed from, today included, on the client's calendar.
           ...(effectiveFrom ? { effectiveFrom } : {}),
+          // Saved with the version and pricing only its days (migration 196).
+          includeActivityBurn: surplus.includeActivityBurn,
+          surplusAsCarbs: surplus.surplusAsCarbs,
         };
 
         if (useManual) {
@@ -363,6 +343,7 @@ export function useNutritionBuilder({
       client,
       settings,
       effectiveFrom,
+      surplus,
       manual.manualTargets,
       manual.manualBlockingError,
       coachNotes,
@@ -410,15 +391,12 @@ export function useNutritionBuilder({
     calcInputs,
     ...manual,
 
-    // Activity burn toggle
-    includeActivityBurn,
-    isSavingBurnToggle,
+    // The two surplus settings — fields of the save (migration 196)
+    includeActivityBurn: surplus.includeActivityBurn,
     handleToggleActivityBurn,
-
-    // Surplus distribution toggle
-    surplusAsCarbs,
-    isSavingSurplusToggle,
+    surplusAsCarbs: surplus.surplusAsCarbs,
     handleToggleSurplusAsCarbs,
+    discardSurplusEdits,
 
     // Coach notes on the generated plan
     coachNotes,

@@ -422,6 +422,12 @@ export type NutritionEvent = {
   dietType: string;
   isTrainingDay: boolean;
   calorieSurplusPercentage: number | null;
+  // The covering version's two surplus settings (migration 196): whether a day
+  // with a session adds its sessions' surplus, and whether that surplus is
+  // added as carbs alone. The day is priced with THESE, so a later save never
+  // reaches a day this version covers.
+  includeActivityBurn: boolean;
+  surplusAsCarbs: boolean;
   // The coach overrode this day (a `nutrition_day_edits` row, migration 169):
   // its numbers are the edit's, verbatim, and no training surplus stacks.
   isModified: boolean;
@@ -500,10 +506,6 @@ export type Client = {
 
   // Display preferences (remain on clients table)
   unitPreference?: UnitPreference;
-  includeActivityBurn: boolean;
-  // How a training-day surplus distributes across macros (mig 117): false = keep
-  // the plan's carb:fat ratio (protein held); true = carbs only (protein+fat held).
-  surplusAsCarbs: boolean;
 
   // Activation
   welcomeMessage?: string;
@@ -749,6 +751,10 @@ export type GenerateNutritionPlanRequest = {
   customCalories?: number;
   coachNotes?: string;
   effectiveFrom?: string;
+  // The version's two surplus settings (migration 196), saved with it and
+  // pricing only the days it covers.
+  includeActivityBurn: boolean;
+  surplusAsCarbs: boolean;
 };
 
 /**

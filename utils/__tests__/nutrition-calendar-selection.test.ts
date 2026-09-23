@@ -24,6 +24,8 @@ function ev(date: string, isTrainingDay = false): NutritionEvent {
     dietType: "balanced",
     isTrainingDay,
     calorieSurplusPercentage: null,
+    includeActivityBurn: true,
+    surplusAsCarbs: false,
     isModified: false,
     note: null,
     coachNote: null,

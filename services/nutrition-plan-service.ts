@@ -8,6 +8,8 @@ import { addDaysToDateString } from "@/lib/date-helpers";
 import { NUTRITION_PLACEMENT_FALLBACK_DAYS } from "@/lib/constants";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import type { ClientPlanWindow } from "@/lib/prescription-triggers";
+import { surplusSettingsOf, type SurplusSettings } from "@/lib/nutrition/surplus-settings";
+import { getClientTodayString } from "./today-service";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import type { Database } from "@/types/database";
@@ -41,7 +43,8 @@ type NullableRpcArgKeys =
 
 /**
  * The payload this service must send: the 25 parameters migration 166 requires
- * present, with NULL admitted on the nine above, plus migration 172's
+ * and migration 196's two surplus settings present, with NULL admitted on the
+ * nine above, plus migration 172's
  * `p_coach_note`, sent only when the save carries a note — the RPC's DEFAULT
  * NULL is the empty case, never an explicit null. `Required<>` makes the two
  * the SQL gives defaults (`p_effective_from`, `p_today`) mandatory here — the
@@ -85,6 +88,12 @@ type CreateNutritionPlanParams = {
   customCarbG: number | null;
   customFatG: number | null;
   regenerationReason: string;
+  /**
+   * The version's two surplus settings (migration 196), saved with it: the days
+   * it covers are priced with them, and no other day ever is.
+   */
+  includeActivityBurn: boolean;
+  surplusAsCarbs: boolean;
   trainingPlan: TrainingPlan | null;
   effectiveFrom?: string;
   /**
@@ -178,12 +187,15 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_custom_fat_g: params.customFatG,
       p_regeneration_reason: params.regenerationReason,
       p_daily_targets: dailyTargets,
+      p_include_activity_burn: params.includeActivityBurn,
+      p_surplus_as_carbs: params.surplusAsCarbs,
       p_effective_until: params.effectiveUntil,
       p_effective_from: params.effectiveFrom || null,
       p_today: params.clientToday,
       ...(params.coachNote ? { p_coach_note: params.coachNote } : {}),
-      // `satisfies` checks this payload against migration 172's signature (166's
-      // 25 parameters plus the optional note): an added, dropped or renamed key is a compile error HERE,
+      // `satisfies` checks this payload against migration 196's signature (166's
+      // 25 parameters, 196's two settings and 172's optional note): an added,
+      // dropped or renamed key is a compile error HERE,
       // rather than a PGRST202 at runtime where PostgREST cannot resolve the
       // overload, rpcError is set below, this returns null, and EVERY plan save
       // fails with "Failed to create nutrition plan" while tsc, eslint and
@@ -240,6 +252,40 @@ export async function getNutritionPlanForDate(
     throw new Error(`Failed to resolve nutrition plan for date: ${error.message}`);
   }
   return data;
+}
+
+/**
+ * The two surplus settings of the version covering `date` (migration 196),
+ * else the defaults a first plan starts from — what the client's own profile
+ * reports for their today. Same window predicate and tie order as
+ * `getNutritionPlanForDate`, two columns wide.
+ */
+export async function getSurplusSettingsForDate(
+  clientId: string,
+  date: string
+): Promise<SurplusSettings> {
+  const { data, error } = await coversDate(
+    supabaseAdmin
+      .from("nutrition_plans")
+      .select("include_activity_burn, surplus_as_carbs")
+      .eq("client_id", clientId)
+      .eq("status", "active"),
+    date
+  )
+    .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to resolve the nutrition surplus settings for date: ${error.message}`);
+  }
+  return surplusSettingsOf(data);
+}
+
+/** The settings of the version covering the client's own today. */
+export async function getSurplusSettingsForClientToday(clientId: string): Promise<SurplusSettings> {
+  return getSurplusSettingsForDate(clientId, await getClientTodayString(clientId));
 }
 
 /**
@@ -312,12 +358,13 @@ type NutritionVersionPrescription = NutritionPlanVersionWindow & {
   /** The save's note (migration 172) — the computed day carries it on the
    *  version's start date. */
   coachNote: string | null;
-};
+} & SurplusSettings;
 
 /**
  * The day reader's version read: every ACTIVE version overlapping
- * [rangeStart, rangeEnd], earliest first, with the three plan fields the
- * resolver prices a day from.
+ * [rangeStart, rangeEnd], earliest first, with the plan fields the resolver
+ * prices a day from — its three prescription fields and its two surplus
+ * settings (migration 196).
  */
 export async function getNutritionPrescriptionsForRange(
   clientId: string,
@@ -327,7 +374,9 @@ export async function getNutritionPrescriptionsForRange(
   const { data, error } = await overlappingActiveVersions(
     supabaseAdmin
       .from("nutrition_plans")
-      .select("id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note"),
+      .select(
+        "id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note, include_activity_burn, surplus_as_carbs"
+      ),
     clientId,
     rangeStart,
     rangeEnd
@@ -344,6 +393,7 @@ export async function getNutritionPrescriptionsForRange(
     proteinTargetG: Number(row.protein_target_g),
     dietType: row.diet_type,
     coachNote: row.coach_note,
+    ...surplusSettingsOf(row),
   }));
 }
 

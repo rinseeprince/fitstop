@@ -9,17 +9,18 @@ type NutritionSurplusSettingsProps = {
    *  for a boolean instead of fetching the whole training plan. */
   hasTrainingPlan: boolean;
   isLoading: boolean;
+  /** Fields of the plan save (migration 196): a flip writes nothing on its own. */
   includeActivityBurn: boolean;
   onToggleActivityBurn: (value: boolean) => void;
-  isSavingToggle?: boolean;
   /** How a training-day surplus distributes across macros (mig 117). */
   surplusAsCarbs: boolean;
   onToggleSurplusAsCarbs: (value: boolean) => void;
-  isSavingSurplus?: boolean;
 };
 
 /**
- * The two training-surplus SETTINGS. Formerly
+ * The two training-surplus SETTINGS — fields of the plan save like the pickers
+ * above them: Regenerate / Generate saves them with the version, from its
+ * Starts on, and no earlier day is repriced (migration 196). Formerly
  * `NutritionTrainingCaloriesDisplay`, which also rendered the surplus.
  *
  * Both of its display branches were deleted rather than restyled. The
@@ -38,10 +39,8 @@ export function NutritionSurplusSettings({
   isLoading,
   includeActivityBurn,
   onToggleActivityBurn,
-  isSavingToggle,
   surplusAsCarbs,
   onToggleSurplusAsCarbs,
-  isSavingSurplus,
 }: NutritionSurplusSettingsProps) {
   if (isLoading) {
     return (
@@ -73,7 +72,6 @@ export function NutritionSurplusSettings({
         <Switch
           checked={includeActivityBurn}
           onCheckedChange={onToggleActivityBurn}
-          disabled={isSavingToggle}
         />
       </div>
 
@@ -91,8 +89,8 @@ export function NutritionSurplusSettings({
           <div className="flex-shrink-0">
             <SegmentedControl
               options={[
-                { value: "split", label: "Keep split", disabled: isSavingSurplus },
-                { value: "carbs", label: "Carbs only", disabled: isSavingSurplus },
+                { value: "split", label: "Keep split" },
+                { value: "carbs", label: "Carbs only" },
               ]}
               value={surplusAsCarbs ? "carbs" : "split"}
               onChange={(value) => onToggleSurplusAsCarbs(value === "carbs")}

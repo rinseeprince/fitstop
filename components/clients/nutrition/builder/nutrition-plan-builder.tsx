@@ -183,8 +183,6 @@ function NutritionCalendarMount() {
       <NutritionCalendarView
         clientId={clientId}
         clientTimezone={builder.client.timezone}
-        includeActivityBurn={builder.includeActivityBurn}
-        surplusAsCarbs={builder.surplusAsCarbs}
         onUpdate={() => builder.refetchNutrition()}
         onDeletePlan={builder.hasPlan ? () => setDeleteOpen(true) : undefined}
       />

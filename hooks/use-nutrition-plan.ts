@@ -31,7 +31,10 @@ type NutritionTargetsData = {
   /** Server-resolved inputs for the live preview. Present on BOTH the has-plan
    *  and no-plan responses; null only when the resolver itself failed. */
   calcInputs?: NutritionCalcInputs | null;
-  includeActivityBurn: boolean;
+  /** The latest-saved version's two surplus settings (migration 196) — the
+   *  drawer's switches seed from them. Absent when there is no plan. */
+  includeActivityBurn?: boolean;
+  surplusAsCarbs?: boolean;
   /** A plan exists — a version covers today OR one is queued. The server's
    *  explicit verdict (migration 144); never derive it from a target field. */
   hasPlan?: boolean;
