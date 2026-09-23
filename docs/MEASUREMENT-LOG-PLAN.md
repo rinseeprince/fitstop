@@ -874,41 +874,57 @@ browser smokelist.
 
 ### Commit 8d3 — `feat(journey): the goals table`
 
-**STATUS: NOT STARTED. Owner decisions 2026-09-22.**
+**STATUS: NOT STARTED. Owner decisions 2026-09-22 and 2026-09-23 (habits wait for the habits rebuild).**
 
-- **Journey → Goals** (`?journey=goals`): a row per goal, planned ones first, each with its dates, its targets and its **result**. A row opens to show its deadline changes, each nutrition version during it with its calories and what it was built for, the programs placed, replaced or ended during it, and the habits added, stopped or restarted during it — in date order.
+- **Journey → Goals** (`?journey=goals`): a row per goal, planned ones first, each with its dates, its targets and its **result**. A row opens to show its deadline changes, each nutrition version during it with its calories and what it was built for, and the programs placed, replaced or ended during it — in date order. Nothing new is recorded and there is no migration: nutrition versions and training placements carry their own dates. Habits join the row with the habits rebuild's dated periods.
 - **The result is derived, never stored:** reached, with the first day the target was met; else how far it got when the goal ended; else missed by so much at its deadline, when the deadline passed while the goal ran. A goal still running shows its progress, a planned one shows "Planned", a goal with no targets shows the weight change over its days. It uses the same verdict as the goal card, so the two cannot disagree, and a corrected weigh-in corrects it.
-- **One small migration** records a habit's events — added, stopped, restarted — written by the habit saves, because a stop has no date today and a restart re-dates the habit. Nothing else is recorded: nutrition versions and training placements already carry their own dates, and the owner does not want every program edit recorded.
 - **A goal can be deleted from a row,** with the same confirm as the sheet, and the Overview's Goal-history popover becomes a link to this pane.
 
 ```text
-Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commits 8d and 8d3
-before planning. Plan for my review before writing anything.
+Build commit 8d3 of docs/MEASUREMENT-LOG-PLAN.md §6, the Journey's goals table. You have my go:
+don't show me a plan; build it, and stop only for a decision the entry doesn't answer.
+
+Read these first, and only these:
+- CONVENTIONS.md, whole.
+- docs/MEASUREMENT-LOG-PLAN.md: the §6 entries for commits 8d, 8d2 and 8d3.
+- docs/ARCHITECTURE.md: "Client Goals & Body Metrics" through "client_measurements table"; "Plans
+  as templates/provenance"; "Nutrition plan versions + per-version daily-targets template"; "The
+  window is the row"; "Whole-program placement", "Atomic placement", "Edit plan", "Moving a
+  program's start" and "Deleting one program from the Plans hero"; "Timezone model"; "SWR
+  fetching"; "Client page tab structure"; "Coach client Overview"; "IDOR prevention"; "Audit
+  logging".
+- docs/newdesignsystem.md: "Non-negotiables checklist", "Mono = numbers only", "Reusable
+  components index", "Client detail pages", "Section-label divider", "Table", "Empty state",
+  "Sessions table (readout)", "Collapsible sections", "Loading & async states", "Destructive
+  confirm dialog", "Spacing Principles", "Anti-patterns".
+Open another section only when something you touch points to it. Read the code you change or
+call. Don't read old transcripts or superseded plans.
 
 Build the Journey's Goals pane: a table with a row per goal, planned ones first, each showing its
 dates, its targets and its result, and opening to show its deadline changes, every nutrition
-version during it with its calories and what it was built for, the programs placed, replaced or
-ended during it, and the habits added, stopped or restarted during it. The result is worked out
-from the measurement log, never stored, through the same verdict the goal card uses: reached with
-the day it was met, else how far it got when the goal ended, else missed by X at its deadline. A
-goal can be deleted from a row with the same confirm as the goals sheet, and the
-Overview's Goal-history popover becomes a link here.
+version during it with its calories and what it was built for, and the programs placed, replaced
+or ended during it, in date order. The result is worked out from the measurement log, never
+stored, through the same verdict the goal card uses: reached with the day it was met, else how far
+it got when the goal ended, else missed by X at its deadline; a running goal shows its progress, a
+planned one "Planned", one with no targets its weight change over its days. A goal can be deleted
+from a row with the same confirm as the goals sheet, and the Overview's Goal-history popover
+becomes a link here. Habits are not in this commit, and it has no migration.
 
-It takes one small migration: a habit's events — added, stopped, restarted — written by the habit
-saves, because a stop has no date today and a restart re-dates the habit. Record nothing else.
+Job: what the entry lists, with its tests (a frame test wherever a surface closes), mutations for
+the new logic, a real-request proof for any new route, and the docs: current shape only, fewest
+words. Where a doc states a rule this commit contradicts, change the doc and list it in the
+handover.
 
-Job: what commit 8d3's entry lists, with its tests and their mutations, and the docs.
+Working method: edit files with the Edit tool, not shell scripts. Run the full suite with the other
+gates once the build and its docs are done, and again after the review's fixes, not in between.
+When the gates are green, start an independent review of the whole diff, docs included, and write
+the smoke seed and the smokelist while it runs; fix what it finds, then rerun the gates. Seed only
+what the smoke can't set up in the app.
 
-Where ARCHITECTURE, CONVENTIONS or docs/newdesignsystem.md state a rule that contradicts this
-commit, list each one with the doc line and what the plan says instead, and I will review before
-you write.
-
-Migration rules as in commit 2, DEV first. Before the PROD push: `supabase migration list
---linked` against the prod ref; show me the output and wait. Rules: every fixture number distinct;
-cp backups before mutating, never git stash or git checkout --; gates: npx tsc --noEmit, npx
-eslint ., npx vitest run, npm run check:labels, npx knip, npm run check:service-key, npm run
-check:rls. Commit directly to main. Then replace this entry's STATUS line with SHIPPED, the hash
-and the date, and hand me a browser smokelist.
+Rules: every fixture number distinct; cp backups before mutating, never git stash or git checkout
+--; gates: npx tsc --noEmit, npx eslint ., npx vitest run, npm run check:labels, npx knip, npm run
+check:service-key, npm run check:rls. Commit directly to main. Then replace this entry's STATUS
+line with SHIPPED, the hash and the date, and hand me a browser smokelist.
 ```
 
 ### Commit 9 — `refactor(journey): the Wellness pane reads its series — the merge, the check-in pager and the dialog's wellness keys go`
