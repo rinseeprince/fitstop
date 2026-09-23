@@ -505,14 +505,21 @@ describe("useNutritionBuilder — the surplus settings are saved with the plan",
     expect(postedBody(fetchSpy)).toMatchObject({ includeActivityBurn: true, surplusAsCarbs: true });
   });
 
-  it("discarding the edits — the drawer closing without a save — shows the saved values again", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+  it("a flip stays a draft until a new save, whose saved values then show", () => {
+    const { result, rerender } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
     act(() => result.current.handleToggleActivityBurn(true));
-    act(() => result.current.handleToggleSurplusAsCarbs(false));
-
-    act(() => result.current.discardSurplusEdits());
-
-    expect(result.current.includeActivityBurn).toBe(false);
+    rerender();
+    expect(result.current.includeActivityBurn).toBe(true);
     expect(result.current.surplusAsCarbs).toBe(true);
+
+    planState.nutritionData = {
+      ...(planState.nutritionData as object),
+      includeActivityBurn: true,
+      surplusAsCarbs: false,
+    };
+    rerender();
+
+    expect(result.current.includeActivityBurn).toBe(true);
+    expect(result.current.surplusAsCarbs).toBe(false);
   });
 });

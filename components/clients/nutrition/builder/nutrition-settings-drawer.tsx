@@ -28,30 +28,20 @@ export function NutritionSettingsDrawer({
   const builder = useNutritionBuilderContext();
   const wasGenerating = useRef(false);
   const previousHasPlan = useRef(builder.hasPlan);
-  // Every close drops the surplus switches' held flip, so the next open shows
-  // the saved settings (migration 196: they change only through a save) —
-  // after a save, the settings it just saved.
-  const { discardSurplusEdits } = builder;
 
   // Auto-close drawer on successful generation
   useEffect(() => {
     if (wasGenerating.current && !builder.isGenerating && builder.hasPlan) {
-      discardSurplusEdits();
       onOpenChange(false);
     }
     wasGenerating.current = builder.isGenerating;
     previousHasPlan.current = builder.hasPlan;
-  }, [builder.isGenerating, builder.hasPlan, onOpenChange, discardSurplusEdits]);
+  }, [builder.isGenerating, builder.hasPlan, onOpenChange]);
 
   const title = builder.hasPlan ? "Regenerate Plan" : "Generate Plan";
 
-  const handleOpenChange = (next: boolean) => {
-    if (!next) discardSurplusEdits();
-    onOpenChange(next);
-  };
-
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
         overlayClassName="bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]"

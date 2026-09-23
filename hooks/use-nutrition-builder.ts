@@ -161,38 +161,40 @@ export function useNutritionBuilder({
 
   const manual = useManualTargets(nutritionPlan.nutritionData);
 
-  // The two surplus settings (migration 196): fields of the save. The saved
-  // values — the latest-saved version's, else the defaults a first plan starts
-  // from — show until the coach flips one. A flip is held here and nowhere
-  // else: it writes nothing, Regenerate / Generate saves it with the version
-  // from its Starts on, and closing the drawer without saving drops it
-  // (`discardSurplusEdits`), so the next open shows what is saved (owner,
-  // 2026-09-23).
-  const savedIncludeActivityBurn = nd?.includeActivityBurn;
-  const savedSurplusAsCarbs = nd?.surplusAsCarbs;
-  const savedSurplus: SurplusSettings = useMemo(
-    () =>
-      savedIncludeActivityBurn !== undefined && savedSurplusAsCarbs !== undefined
-        ? { includeActivityBurn: savedIncludeActivityBurn, surplusAsCarbs: savedSurplusAsCarbs }
-        : DEFAULT_SURPLUS_SETTINGS,
-    [savedIncludeActivityBurn, savedSurplusAsCarbs]
-  );
-  const [surplusEdit, setSurplusEdit] = useState<SurplusSettings | null>(null);
-  const surplus = surplusEdit ?? savedSurplus;
+  // The two surplus settings (migration 196): fields of the save, like the
+  // pickers above and seeded the same way — once per saved value, from the
+  // latest-saved version, so a background refetch cannot undo a flip and a
+  // new save shows what it saved; with no plan, the defaults a first plan
+  // starts from. A flip writes nothing: Regenerate / Generate saves it with the
+  // version, from its Starts on. Until then it is a draft like every other
+  // field here — it survives closing and reopening the drawer, so an
+  // accidental click outside loses nothing, and goes when the coach leaves the
+  // Nutrition tab (owner, 2026-09-23).
+  const [surplus, setSurplus] = useState<SurplusSettings>(DEFAULT_SURPLUS_SETTINGS);
+  const surplusSeedKey =
+    nd?.includeActivityBurn !== undefined && nd?.surplusAsCarbs !== undefined
+      ? `${nd.includeActivityBurn}|${nd.surplusAsCarbs}`
+      : null;
+  const surplusSeededRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!surplusSeedKey || surplusSeededRef.current === surplusSeedKey) return;
+    const [includeActivityBurn, surplusAsCarbs] = surplusSeedKey.split("|");
+    setSurplus({
+      includeActivityBurn: includeActivityBurn === "true",
+      surplusAsCarbs: surplusAsCarbs === "true",
+    });
+    surplusSeededRef.current = surplusSeedKey;
+  }, [surplusSeedKey]);
 
-  const handleToggleActivityBurn = useCallback(
-    (value: boolean) => setSurplusEdit({ ...surplus, includeActivityBurn: value }),
-    [surplus]
-  );
+  const handleToggleActivityBurn = useCallback((value: boolean) => {
+    setSurplus((current) => ({ ...current, includeActivityBurn: value }));
+  }, []);
 
   // "Add training calories as": false keeps the plan's carb:fat split on a
   // training-day surplus; true adds the whole surplus as carbs.
-  const handleToggleSurplusAsCarbs = useCallback(
-    (value: boolean) => setSurplusEdit({ ...surplus, surplusAsCarbs: value }),
-    [surplus]
-  );
-
-  const discardSurplusEdits = useCallback(() => setSurplusEdit(null), []);
+  const handleToggleSurplusAsCarbs = useCallback((value: boolean) => {
+    setSurplus((current) => ({ ...current, surplusAsCarbs: value }));
+  }, []);
 
   const [coachNotes, setCoachNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -396,7 +398,6 @@ export function useNutritionBuilder({
     handleToggleActivityBurn,
     surplusAsCarbs: surplus.surplusAsCarbs,
     handleToggleSurplusAsCarbs,
-    discardSurplusEdits,
 
     // Coach notes on the generated plan
     coachNotes,
