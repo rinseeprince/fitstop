@@ -206,6 +206,7 @@ export const AUDIT_ACTIONS = {
   NUTRITION_PLAN_CREATE: "nutrition_plan.create",
   NUTRITION_PLAN_DELETE: "nutrition_plan.delete",
   NUTRITION_PLAN_VERSION_DELETE: "nutrition_plan.version_delete",
+  NUTRITION_PLAN_KEEP_FOR_GOAL: "nutrition_plan.keep_for_goal",
   TRAINING_PLAN_PLACE: "training_plan.place",
   TRAINING_PLAN_CREATE: "training_plan.create",
   TRAINING_PLAN_EDIT: "training_plan.edit",

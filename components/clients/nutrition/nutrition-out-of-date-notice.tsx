@@ -1,6 +1,6 @@
 "use client";
 
-import { Target } from "lucide-react";
+import { Target, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
 import { formatDateOnlyShort } from "@/lib/date-helpers";
@@ -27,6 +27,8 @@ type NutritionOutOfDateNoticeProps = {
   onRegenerate?: () => void;
   /** Starts the drawer on the notice's day. */
   onSetFrom?: (day: string) => void;
+  /** The ×: closes the notice everywhere until the goal changes again. */
+  onClose?: () => void;
 };
 
 /** A goal weight in the coach's own unit — formatWeight converts freely, never snaps. */
@@ -58,6 +60,7 @@ export function NutritionOutOfDateNotice({
   clientToday,
   onRegenerate,
   onSetFrom,
+  onClose,
 }: NutritionOutOfDateNoticeProps) {
   const { preference } = useUnits();
   const fromToday = outOfDate.fromDay === clientToday;
@@ -100,6 +103,19 @@ export function NutritionOutOfDateNotice({
           )}
         >
           {action.label}
+        </button>
+      )}
+      {onClose && (
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={onClose}
+          className={cn(
+            FOCUS_RING,
+            "shrink-0 rounded-[4px] p-0.5 text-[#93b0b4] transition-colors hover:text-[#5a7d82]"
+          )}
+        >
+          <X className="h-3.5 w-3.5" strokeWidth={1.5} />
         </button>
       )}
     </div>

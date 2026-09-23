@@ -11,7 +11,10 @@ vi.mock("@/contexts/units-context", () => ({
 }));
 vi.mock("../nutrition-plan-hero", () => ({ NutritionPlanHero: () => <div>hero</div> }));
 
-const outOfDateState = vi.hoisted(() => ({ outOfDate: null as NutritionOutOfDate | null }));
+const outOfDateState = vi.hoisted(() => ({
+  outOfDate: null as NutritionOutOfDate | null,
+  close: vi.fn(),
+}));
 vi.mock("@/hooks/use-nutrition-goal", () => ({
   useNutritionOutOfDate: () => ({
     outOfDate: outOfDateState.outOfDate,
@@ -19,6 +22,7 @@ vi.mock("@/hooks/use-nutrition-goal", () => ({
     isLoading: false,
     isError: false,
   }),
+  useCloseNutritionOutOfDate: () => outOfDateState.close,
 }));
 
 const setStartsOn = vi.fn();
@@ -54,6 +58,21 @@ describe("NutritionBuilderRightPanel — the out-of-date notice", () => {
     // Never a day an earlier, unsaved pick left in the drawer.
     expect(setStartsOn).toHaveBeenCalledWith("2026-09-23");
     expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it("the × closes this client's notice", () => {
+    const notice: NutritionOutOfDate = {
+      versionId: "v-run",
+      fromDay: "2026-10-19",
+      built: { goalWeightKg: 80.6, deadline: "2026-10-18" },
+      goal: { goalWeightKg: 85.1, deadline: "2027-01-22" },
+      goalName: "Build",
+    };
+    outOfDateState.outOfDate = notice;
+    render(<NutritionBuilderRightPanel onOpenSettings={vi.fn()} />);
+
+    screen.getByRole("button", { name: "Close" }).click();
+    expect(outOfDateState.close).toHaveBeenCalledWith("client-4", notice);
   });
 
   it("a later day's problem: Set nutrition from moves Starts on to it and opens the drawer", () => {

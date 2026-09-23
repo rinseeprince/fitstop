@@ -2,7 +2,9 @@
 
 import { useCallback } from "react";
 import useSWR, { useSWRConfig } from "swr";
+import { toast } from "sonner";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import type { NutritionOutOfDate } from "@/lib/nutrition/nutrition-out-of-date";
 import type { NutritionGoalForDay, NutritionOutOfDateRead } from "@/types/nutrition-goal";
 
 /**
@@ -97,5 +99,37 @@ export function useClearNutritionGoal() {
       );
     },
     [mutate]
+  );
+}
+
+/**
+ * The notice's ×: keeps the version's calories for the goal the notice
+ * compared them with (migration 197), then clears this area so every surface
+ * drops the notice at once — or shows the current one, when it changed under
+ * the coach (a 409).
+ */
+export function useCloseNutritionOutOfDate() {
+  const clearNutritionGoal = useClearNutritionGoal();
+  return useCallback(
+    async (clientId: string, outOfDate: NutritionOutOfDate) => {
+      let res: Response;
+      try {
+        res = await fetch(`${nutritionOutOfDateKey(clientId)}/keep`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ versionId: outOfDate.versionId, fromDay: outOfDate.fromDay }),
+        });
+      } catch (error) {
+        console.error("Failed to close the nutrition notice:", error);
+        toast.error("Save failed", { description: "Try again." });
+        return;
+      }
+      if (!res.ok && res.status !== 409) {
+        toast.error("Save failed", { description: "Try again." });
+        return;
+      }
+      await clearNutritionGoal(clientId);
+    },
+    [clearNutritionGoal]
   );
 }

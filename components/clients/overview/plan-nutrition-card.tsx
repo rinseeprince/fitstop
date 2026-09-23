@@ -13,7 +13,7 @@ import {
 } from "./overview-primitives";
 import { formatDateOnlyWeekday, pluralize } from "./overview-format";
 import { NutritionOutOfDateNotice } from "@/components/clients/nutrition/nutrition-out-of-date-notice";
-import { useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
+import { useCloseNutritionOutOfDate, useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { KG_PER_LB } from "@/utils/unit-conversions";
@@ -65,6 +65,7 @@ function OutOfDateLine({
   onOpenNutritionDrawer,
 }: Pick<PlanNutritionCardProps, "clientId" | "onOpenNutritionDrawer">) {
   const { outOfDate, clientToday } = useNutritionOutOfDate(clientId);
+  const closeOutOfDate = useCloseNutritionOutOfDate();
   if (!outOfDate || !clientToday) return null;
   return (
     <div className="px-5 pb-4">
@@ -73,6 +74,7 @@ function OutOfDateLine({
         clientToday={clientToday}
         onRegenerate={() => onOpenNutritionDrawer()}
         onSetFrom={(day) => onOpenNutritionDrawer(day)}
+        onClose={() => void closeOutOfDate(clientId, outOfDate)}
       />
     </div>
   );

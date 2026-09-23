@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { renderHook, act } from "@testing-library/react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
@@ -18,14 +18,18 @@ vi.mock("swr", () => ({
 }));
 
 vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 import {
   nutritionGoalForDayKey,
   nutritionOutOfDateKey,
   useClearNutritionGoal,
+  useCloseNutritionOutOfDate,
   useNutritionGoalForDay,
   useNutritionOutOfDate,
 } from "./use-nutrition-goal";
+import { toast } from "sonner";
+import type { NutritionOutOfDate } from "@/lib/nutrition/nutrition-out-of-date";
 
 beforeEach(() => {
   mutateMock.mockClear();
@@ -43,6 +47,58 @@ describe("the reads of how nutrition follows the goal", () => {
   it("reads the out-of-date answer under its own key", () => {
     renderHook(() => useNutritionOutOfDate("c1"));
     expect(swrSubscribeMock.mock.calls[0][0]).toBe("/api/clients/c1/nutrition/goal/out-of-date");
+  });
+});
+
+describe("useCloseNutritionOutOfDate — the notice's ×", () => {
+  const notice: NutritionOutOfDate = {
+    versionId: "v-9",
+    fromDay: "2026-10-19",
+    built: { goalWeightKg: 83.1, deadline: "2026-10-18" },
+    goal: { goalWeightKg: 86.2, deadline: "2027-01-29" },
+    goalName: "Build",
+  };
+
+  beforeEach(() => vi.mocked(toast.error).mockClear());
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function close(fetchMock: ReturnType<typeof vi.fn>) {
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useCloseNutritionOutOfDate());
+    await act(async () => {
+      await result.current("c1", notice);
+    });
+  }
+
+  it("keeps the version for the notice the coach closed, then clears the area", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    await close(fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/clients/c1/nutrition/goal/out-of-date/keep",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ versionId: "v-9", fromDay: "2026-10-19" }),
+      })
+    );
+    expect(mutateMock).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("clears on a notice that changed meanwhile, so the current one shows", async () => {
+    await close(vi.fn().mockResolvedValue({ ok: false, status: 409 }));
+    expect(mutateMock).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("says so when it fails, and leaves the notice where it is", async () => {
+    await close(vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    expect(toast.error).toHaveBeenCalledTimes(1);
+
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await close(vi.fn().mockRejectedValue(new Error("offline")));
+    expect(toast.error).toHaveBeenCalledTimes(2);
+    expect(mutateMock).not.toHaveBeenCalled();
   });
 });
 

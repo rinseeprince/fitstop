@@ -104,6 +104,12 @@ export const nutritionGoalDayQuerySchema = z.object({
   date: z.string().refine(isCalendarDay, "Must be a real date in YYYY-MM-DD format"),
 });
 
+/** The notice's ×: the notice the coach closed, as the rule named it. */
+export const nutritionKeepForGoalSchema = z.object({
+  versionId: z.string().uuid(),
+  fromDay: z.string().refine(isCalendarDay, "Must be a real date in YYYY-MM-DD format"),
+});
+
 // Validation function to ensure required client data exists
 export function validateClientForNutrition(client: {
   currentWeight?: number;

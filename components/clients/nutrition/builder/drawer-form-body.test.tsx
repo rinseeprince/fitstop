@@ -25,7 +25,10 @@ vi.mock("./nutrition-targets-block", () => ({
   },
 }));
 
-const outOfDateState = vi.hoisted(() => ({ outOfDate: null as NutritionOutOfDate | null }));
+const outOfDateState = vi.hoisted(() => ({
+  outOfDate: null as NutritionOutOfDate | null,
+  close: vi.fn(),
+}));
 vi.mock("@/hooks/use-nutrition-goal", () => ({
   useNutritionOutOfDate: () => ({
     outOfDate: outOfDateState.outOfDate,
@@ -33,6 +36,7 @@ vi.mock("@/hooks/use-nutrition-goal", () => ({
     isLoading: false,
     isError: false,
   }),
+  useCloseNutritionOutOfDate: () => outOfDateState.close,
 }));
 
 const setStartsOn = vi.fn();
@@ -174,6 +178,14 @@ describe("DrawerFormBody — the out-of-date notice moves Starts on", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Set nutrition from/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Regenerate" })).not.toBeInTheDocument();
+  });
+
+  it("the × closes this client's notice", () => {
+    outOfDateState.outOfDate = later;
+    render(<DrawerFormBody />);
+
+    screen.getByRole("button", { name: "Close" }).click();
+    expect(outOfDateState.close).toHaveBeenCalledWith("client-2", later);
   });
 
   it("says nothing while every version fits its goal", () => {

@@ -9,7 +9,7 @@ import { NUTRITION_PLACEMENT_FALLBACK_DAYS } from "@/lib/constants";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import type { ClientPlanWindow } from "@/lib/prescription-triggers";
 import { surplusSettingsOf, type SurplusSettings } from "@/lib/nutrition/surplus-settings";
-import type { NutritionVersionGoal } from "@/lib/nutrition/nutrition-out-of-date";
+import type { GoalPricing, NutritionVersionGoal } from "@/lib/nutrition/nutrition-out-of-date";
 import { getClientTodayString } from "./today-service";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
@@ -577,7 +577,9 @@ export async function getNutritionVersionGoalsFrom(
 ): Promise<NutritionVersionGoal[]> {
   const { data, error } = await supabaseAdmin
     .from("nutrition_plans")
-    .select("id, effective_from, effective_until, goal_weight_kg, goal_deadline")
+    .select(
+      "id, effective_from, effective_until, goal_weight_kg, goal_deadline, nutrition_plan_kept_goals!nutrition_plan_kept_goals_nutrition_plan_id_fkey(goal_weight_kg, goal_deadline)"
+    )
     .eq("client_id", clientId)
     .eq("status", "active")
     .gte("effective_until", today)
@@ -594,7 +596,33 @@ export async function getNutritionVersionGoalsFrom(
       goalWeightKg: row.goal_weight_kg == null ? null : Number(row.goal_weight_kg),
       deadline: row.goal_deadline,
     },
+    kept: (row.nutrition_plan_kept_goals ?? []).map((keptFor) => ({
+      goalWeightKg: keptFor.goal_weight_kg == null ? null : Number(keptFor.goal_weight_kg),
+      deadline: keptFor.goal_deadline,
+    })),
   }));
+}
+
+/**
+ * Records that the coach kept a version's calories for a goal, as the
+ * calculator prices it, by closing the out-of-date notice (migration 197).
+ * Once per version per pricing: a second close of the same notice — two tabs,
+ * a double click — finds it already kept and succeeds.
+ */
+export async function recordNutritionVersionKept(
+  versionId: string,
+  keptFor: GoalPricing,
+  coachId: string
+): Promise<void> {
+  const { error } = await supabaseAdmin.from("nutrition_plan_kept_goals").insert({
+    nutrition_plan_id: versionId,
+    goal_weight_kg: keptFor.goalWeightKg,
+    goal_deadline: keptFor.deadline,
+    kept_by: coachId,
+  });
+  if (error && error.code !== "23505") {
+    throw new Error(`Failed to keep the nutrition version: ${error.message}`);
+  }
 }
 
 /**

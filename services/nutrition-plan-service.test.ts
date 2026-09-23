@@ -41,6 +41,7 @@ import {
   getNutritionPlanGrids,
   getNextNutritionVersionStartCap,
   getNutritionVersionGoalsFrom,
+  recordNutritionVersionKept,
   getNutritionWindowsForClients,
   listNutritionPlanNotesInRange,
   resolveNutritionPlacementEnd,
@@ -440,8 +441,14 @@ describe('Nutrition Plan Service', () => {
     it('reads the active versions with a day on or after today, earliest first, with the goal each was built for', async () => {
       const query = createResolverQuery({
         data: [
-          { id: 'v1', effective_from: '2026-09-01', effective_until: '2026-10-31', goal_weight_kg: 81.4, goal_deadline: '2026-11-20' },
-          { id: 'v2', effective_from: '2026-11-01', effective_until: '2026-12-26', goal_weight_kg: null, goal_deadline: null },
+          {
+            id: 'v1', effective_from: '2026-09-01', effective_until: '2026-10-31', goal_weight_kg: 81.4, goal_deadline: '2026-11-20',
+            nutrition_plan_kept_goals: [{ goal_weight_kg: 78.9, goal_deadline: '2027-01-08' }],
+          },
+          {
+            id: 'v2', effective_from: '2026-11-01', effective_until: '2026-12-26', goal_weight_kg: null, goal_deadline: null,
+            nutrition_plan_kept_goals: [],
+          },
         ],
         error: null,
       })
@@ -449,15 +456,21 @@ describe('Nutrition Plan Service', () => {
 
       const versions = await getNutritionVersionGoalsFrom('client-123', '2026-09-23')
 
-      expect(query.select).toHaveBeenCalledWith('id, effective_from, effective_until, goal_weight_kg, goal_deadline')
+      expect(query.select).toHaveBeenCalledWith(
+        'id, effective_from, effective_until, goal_weight_kg, goal_deadline, nutrition_plan_kept_goals!nutrition_plan_kept_goals_nutrition_plan_id_fkey(goal_weight_kg, goal_deadline)'
+      )
       expect(query.eq).toHaveBeenCalledWith('client_id', 'client-123')
       expect(query.eq).toHaveBeenCalledWith('status', 'active')
       // A version that has ended is history and never judged.
       expect(query.gte).toHaveBeenCalledWith('effective_until', '2026-09-23')
       expect(query.order).toHaveBeenCalledWith('effective_from', { ascending: true })
       expect(versions).toEqual([
-        { id: 'v1', effectiveFrom: '2026-09-01', effectiveUntil: '2026-10-31', built: { goalWeightKg: 81.4, deadline: '2026-11-20' } },
-        { id: 'v2', effectiveFrom: '2026-11-01', effectiveUntil: '2026-12-26', built: { goalWeightKg: null, deadline: null } },
+        {
+          id: 'v1', effectiveFrom: '2026-09-01', effectiveUntil: '2026-10-31', built: { goalWeightKg: 81.4, deadline: '2026-11-20' },
+          // The goals the coach kept these calories for (migration 197).
+          kept: [{ goalWeightKg: 78.9, deadline: '2027-01-08' }],
+        },
+        { id: 'v2', effectiveFrom: '2026-11-01', effectiveUntil: '2026-12-26', built: { goalWeightKg: null, deadline: null }, kept: [] },
       ])
     })
 
@@ -466,6 +479,35 @@ describe('Nutrition Plan Service', () => {
         createResolverQuery({ data: null, error: { message: 'boom' } }) as any
       )
       await expect(getNutritionVersionGoalsFrom('client-123', '2026-09-23')).rejects.toThrow(/boom/)
+    })
+  })
+
+  describe('recordNutritionVersionKept — a closed out-of-date notice (migration 197)', () => {
+    it('records the goal the calories were kept for, and who kept them', async () => {
+      const insert = vi.fn().mockResolvedValue({ error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue({ insert } as any)
+
+      await recordNutritionVersionKept('v-7', { goalWeightKg: 77.3, deadline: '2027-02-19' }, 'coach-3')
+
+      expect(supabaseAdmin.from).toHaveBeenCalledWith('nutrition_plan_kept_goals')
+      expect(insert).toHaveBeenCalledWith({
+        nutrition_plan_id: 'v-7',
+        goal_weight_kg: 77.3,
+        goal_deadline: '2027-02-19',
+        kept_by: 'coach-3',
+      })
+    })
+
+    it('a second close of the same notice finds it already kept', async () => {
+      const insert = vi.fn().mockResolvedValue({ error: { code: '23505', message: 'duplicate key' } })
+      vi.mocked(supabaseAdmin.from).mockReturnValue({ insert } as any)
+      await expect(recordNutritionVersionKept('v-7', { goalWeightKg: null, deadline: null }, 'coach-3')).resolves.toBeUndefined()
+    })
+
+    it('throws any other error', async () => {
+      const insert = vi.fn().mockResolvedValue({ error: { code: '42501', message: 'denied' } })
+      vi.mocked(supabaseAdmin.from).mockReturnValue({ insert } as any)
+      await expect(recordNutritionVersionKept('v-7', { goalWeightKg: null, deadline: null }, 'coach-3')).rejects.toThrow(/denied/)
     })
   })
 

@@ -93,6 +93,19 @@ describe("NutritionOutOfDateNotice", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
+  it("closes with an × only where the surface offers it", () => {
+    const onClose = vi.fn();
+    const { unmount } = render(
+      <NutritionOutOfDateNotice outOfDate={fromLater} clientToday={TODAY} onClose={onClose} />
+    );
+    screen.getByRole("button", { name: "Close" }).click();
+    expect(onClose).toHaveBeenCalledOnce();
+    unmount();
+
+    render(<NutritionOutOfDateNotice outOfDate={fromLater} clientToday={TODAY} />);
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+  });
+
   it("names a goal with no weight target by its name alone", () => {
     render(
       <NutritionOutOfDateNotice

@@ -1,7 +1,7 @@
 import { getClientTodayString } from "./today-service";
 import { getGoalForDate, listClientGoals } from "./client-goals-service";
 import { resolveNutritionCalcInputs } from "./nutrition-calc-inputs";
-import { getNutritionVersionGoalsFrom } from "./nutrition-plan-service";
+import { getNutritionVersionGoalsFrom, recordNutritionVersionKept } from "./nutrition-plan-service";
 import { findNutritionOutOfDate } from "@/lib/nutrition/nutrition-out-of-date";
 import type { Client } from "@/types/check-in";
 import type { NutritionGoalForDay, NutritionOutOfDateRead } from "@/types/nutrition-goal";
@@ -43,4 +43,26 @@ export async function getNutritionOutOfDate(clientId: string): Promise<Nutrition
     listClientGoals(clientId),
   ]);
   return { clientToday, outOfDate: findNutritionOutOfDate(versions, goals, clientToday) };
+}
+
+/** What the coach closed is no longer the notice: the goal or the plan moved. */
+export class NutritionNoticeChangedError extends Error {}
+
+/**
+ * The coach closes the out-of-date notice (the ×): the version's calories are
+ * kept for the goal the notice compared them with (migration 197). The rule is
+ * recomputed here and ITS answer recorded — never a goal sent by the browser —
+ * and a notice that has changed since the coach saw it is refused, so the
+ * browser shows the current one instead.
+ */
+export async function keepNutritionForGoal(
+  clientId: string,
+  coachId: string,
+  closed: { versionId: string; fromDay: string }
+): Promise<void> {
+  const { outOfDate } = await getNutritionOutOfDate(clientId);
+  if (!outOfDate || outOfDate.versionId !== closed.versionId || outOfDate.fromDay !== closed.fromDay) {
+    throw new NutritionNoticeChangedError("The notice has changed");
+  }
+  await recordNutritionVersionKept(outOfDate.versionId, outOfDate.goal, coachId);
 }

@@ -15,7 +15,7 @@ import { NutritionSettingsForm } from "./nutrition-settings-form";
 import { NutritionTargetsBlock } from "./nutrition-targets-block";
 import { NutritionSurplusSettings } from "./nutrition-surplus-settings";
 import { NutritionOutOfDateNotice } from "../nutrition-out-of-date-notice";
-import { useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
+import { useCloseNutritionOutOfDate, useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
 import { formatDateOnlyShort } from "@/components/clients/overview/overview-format";
 import { TextSkeleton } from "@/components/text-skeleton";
 import { useUnits } from "@/contexts/units-context";
@@ -104,6 +104,7 @@ export function DrawerFormBody() {
   // it returns maintenance no matter what the target weight says.
   const hasGoalTarget = goal?.targetWeight != null && goal?.deadline != null;
   const { outOfDate, clientToday } = useNutritionOutOfDate(builder.client.id);
+  const closeOutOfDate = useCloseNutritionOutOfDate();
 
   return (
     <div className="flex-1 overflow-y-auto px-6 pt-6" style={{ paddingBottom: 120 }}>
@@ -132,6 +133,7 @@ export function DrawerFormBody() {
               onSetFrom={
                 builder.effectiveFrom !== outOfDate.fromDay ? builder.setStartsOn : undefined
               }
+              onClose={() => void closeOutOfDate(builder.client.id, outOfDate)}
             />
           )}
           <GoalLine

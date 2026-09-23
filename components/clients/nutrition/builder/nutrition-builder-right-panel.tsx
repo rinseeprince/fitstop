@@ -6,7 +6,7 @@ import { NutritionWarnings } from "../nutrition-warnings";
 import { NutritionPlanHero } from "../nutrition-plan-hero";
 import { NutritionOutOfDateNotice } from "../nutrition-out-of-date-notice";
 import { PageLoading } from "@/components/page-loading";
-import { useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
+import { useCloseNutritionOutOfDate, useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
 
 type NutritionBuilderRightPanelProps = {
   onOpenSettings?: () => void;
@@ -20,6 +20,7 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
   // the hero (docs/MEASUREMENT-LOG-PLAN.md commit 8d1). Read beside the plan
   // read, never behind it, so it lands with the pane.
   const { outOfDate, clientToday } = useNutritionOutOfDate(builder.client.id);
+  const closeOutOfDate = useCloseNutritionOutOfDate();
 
   // Loading state for training plan or nutrition data
   // KNOWN GAP: this panel has loading and content states only. The context
@@ -56,6 +57,7 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
             builder.setStartsOn(day);
             onOpenSettings?.();
           }}
+          onClose={() => void closeOutOfDate(builder.client.id, outOfDate)}
         />
       )}
     </div>

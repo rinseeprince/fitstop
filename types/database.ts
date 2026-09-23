@@ -2085,6 +2085,48 @@ export type Database = {
           },
         ]
       }
+      nutrition_plan_kept_goals: {
+        Row: {
+          goal_deadline: string | null
+          goal_weight_kg: number | null
+          id: string
+          kept_at: string
+          kept_by: string | null
+          nutrition_plan_id: string
+        }
+        Insert: {
+          goal_deadline?: string | null
+          goal_weight_kg?: number | null
+          id?: string
+          kept_at?: string
+          kept_by?: string | null
+          nutrition_plan_id: string
+        }
+        Update: {
+          goal_deadline?: string | null
+          goal_weight_kg?: number | null
+          id?: string
+          kept_at?: string
+          kept_by?: string | null
+          nutrition_plan_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nutrition_plan_kept_goals_kept_by_fkey"
+            columns: ["kept_by"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nutrition_plan_kept_goals_nutrition_plan_id_fkey"
+            columns: ["nutrition_plan_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       nutrition_plans: {
         Row: {
           base_weight_kg: number

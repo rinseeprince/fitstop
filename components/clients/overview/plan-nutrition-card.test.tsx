@@ -16,6 +16,7 @@ vi.mock("@/contexts/units-context", () => ({
 const outOfDateState = vi.hoisted(() => ({
   outOfDate: null as NutritionOutOfDate | null,
   clientIds: [] as string[],
+  close: vi.fn(),
 }));
 vi.mock("@/hooks/use-nutrition-goal", () => ({
   useNutritionOutOfDate: (clientId: string) => {
@@ -27,6 +28,7 @@ vi.mock("@/hooks/use-nutrition-goal", () => ({
       isError: false,
     };
   },
+  useCloseNutritionOutOfDate: () => outOfDateState.close,
 }));
 
 const CLIENT_TODAY = "2026-09-23";
@@ -150,6 +152,20 @@ describe("PlanNutritionCard — targets that no longer fit the goal", () => {
     ).toBeInTheDocument();
     screen.getByRole("button", { name: "Regenerate" }).click();
     expect(onOpenNutritionDrawer).toHaveBeenCalledWith();
+  });
+
+  it("the × closes this client's notice", () => {
+    outOfDateState.outOfDate = {
+      versionId: "v-run",
+      fromDay: CLIENT_TODAY,
+      built: { goalWeightKg: 82.4, deadline: "2026-10-08" },
+      goal: { goalWeightKg: 79.3, deadline: "2026-12-02" },
+      goalName: "Cut deeper",
+    };
+    renderCard({ nutrition: RUNNING });
+
+    screen.getByRole("button", { name: "Close" }).click();
+    expect(outOfDateState.close).toHaveBeenCalledWith("client-9", outOfDateState.outOfDate);
   });
 
   it("a later day's problem offers Set nutrition from that day, on the queued card too", () => {

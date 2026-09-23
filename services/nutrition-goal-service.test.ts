@@ -12,13 +12,19 @@ vi.mock("./nutrition-calc-inputs", () => ({
 }));
 vi.mock("./nutrition-plan-service", () => ({
   getNutritionVersionGoalsFrom: vi.fn(),
+  recordNutritionVersionKept: vi.fn(),
 }));
 
-import { getNutritionGoalForDay, getNutritionOutOfDate } from "./nutrition-goal-service";
+import {
+  getNutritionGoalForDay,
+  getNutritionOutOfDate,
+  keepNutritionForGoal,
+  NutritionNoticeChangedError,
+} from "./nutrition-goal-service";
 import { getClientTodayString } from "./today-service";
 import { getGoalForDate, listClientGoals } from "./client-goals-service";
 import { resolveNutritionCalcInputs } from "./nutrition-calc-inputs";
-import { getNutritionVersionGoalsFrom } from "./nutrition-plan-service";
+import { getNutritionVersionGoalsFrom, recordNutritionVersionKept } from "./nutrition-plan-service";
 import type { ClientGoal, GoalOnDay } from "@/types/client-goals";
 import type { Client } from "@/types/check-in";
 
@@ -86,6 +92,7 @@ describe("getNutritionOutOfDate", () => {
         effectiveFrom: "2026-09-01",
         effectiveUntil: "2026-12-06",
         built: { goalWeightKg: 81.2, deadline: "2026-11-30" },
+        kept: [],
       },
     ]);
 
@@ -108,9 +115,45 @@ describe("getNutritionOutOfDate", () => {
   it("is null when every version fits the goal on its days", async () => {
     vi.mocked(listClientGoals).mockResolvedValue([]);
     vi.mocked(getNutritionVersionGoalsFrom).mockResolvedValue([
-      { id: "v-m", effectiveFrom: TODAY, effectiveUntil: "2026-11-17", built: { goalWeightKg: null, deadline: null } },
+      { id: "v-m", effectiveFrom: TODAY, effectiveUntil: "2026-11-17", built: { goalWeightKg: null, deadline: null }, kept: [] },
     ]);
 
     expect(await getNutritionOutOfDate("client-6")).toEqual({ clientToday: TODAY, outOfDate: null });
+  });
+});
+
+describe("keepNutritionForGoal — the notice's ×", () => {
+  // Out of date from today: built for 80.9 kg by 30 Oct, the goal is Build.
+  beforeEach(() => {
+    vi.mocked(listClientGoals).mockResolvedValue([
+      { ...build, startsOn: "2026-09-02", deadlines: [{ effectiveOn: "2026-09-02", deadline: "2027-01-15", setBy: null }] },
+    ]);
+    vi.mocked(getNutritionVersionGoalsFrom).mockResolvedValue([
+      { id: "v-x", effectiveFrom: "2026-09-02", effectiveUntil: "2026-11-24", built: { goalWeightKg: 80.9, deadline: "2026-10-30" }, kept: [] },
+    ]);
+  });
+
+  it("keeps the version for the goal the rule compares it with — the server's answer, never the browser's", async () => {
+    await keepNutritionForGoal("client-6", "coach-4", { versionId: "v-x", fromDay: TODAY });
+
+    expect(recordNutritionVersionKept).toHaveBeenCalledWith(
+      "v-x",
+      { goalWeightKg: build.targetWeight, deadline: "2027-01-15" },
+      "coach-4"
+    );
+  });
+
+  it("refuses a notice that has changed since the coach saw it", async () => {
+    await expect(
+      keepNutritionForGoal("client-6", "coach-4", { versionId: "v-x", fromDay: "2026-10-19" })
+    ).rejects.toBeInstanceOf(NutritionNoticeChangedError);
+    await expect(
+      keepNutritionForGoal("client-6", "coach-4", { versionId: "v-other", fromDay: TODAY })
+    ).rejects.toBeInstanceOf(NutritionNoticeChangedError);
+    vi.mocked(getNutritionVersionGoalsFrom).mockResolvedValue([]);
+    await expect(
+      keepNutritionForGoal("client-6", "coach-4", { versionId: "v-x", fromDay: TODAY })
+    ).rejects.toBeInstanceOf(NutritionNoticeChangedError);
+    expect(recordNutritionVersionKept).not.toHaveBeenCalled();
   });
 });

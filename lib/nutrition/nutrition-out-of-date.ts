@@ -30,6 +30,9 @@ export type NutritionVersionGoal = {
   effectiveFrom: string;
   effectiveUntil: string;
   built: GoalPricing;
+  /** Goals the coach kept these calories for by closing the notice
+   *  (migration 197): a day whose goal prices like one of them fits too. */
+  kept: GoalPricing[];
 };
 
 export type NutritionOutOfDate = {
@@ -98,6 +101,9 @@ export function findNutritionOutOfDate(
     for (const day of turningDays(goals, from, version.effectiveUntil)) {
       const goal = pricingOnDay(goals, day);
       if (!pricesDiffer(version.built, goal)) continue;
+      // Closed by the coach for this goal: kept, so it stays closed until the
+      // goal on a day prices differently again.
+      if (version.kept.some((keptFor) => !pricesDiffer(keptFor, goal))) continue;
       if (earliest === null || day < earliest.fromDay) {
         earliest = {
           versionId: version.id,

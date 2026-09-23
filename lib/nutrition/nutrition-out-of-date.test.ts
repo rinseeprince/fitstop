@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import type { ClientGoal } from "@/types/client-goals";
-import { findNutritionOutOfDate, type NutritionVersionGoal } from "./nutrition-out-of-date";
+import {
+  findNutritionOutOfDate,
+  type GoalPricing,
+  type NutritionVersionGoal,
+} from "./nutrition-out-of-date";
 
 const TODAY = "2026-09-23";
 
@@ -33,9 +37,10 @@ function version(
   effectiveFrom: string,
   effectiveUntil: string,
   goalWeightKg: number | null,
-  deadline: string | null
+  deadline: string | null,
+  kept: GoalPricing[] = []
 ): NutritionVersionGoal {
-  return { id, effectiveFrom, effectiveUntil, built: { goalWeightKg, deadline } };
+  return { id, effectiveFrom, effectiveUntil, built: { goalWeightKg, deadline }, kept };
 }
 
 // Lean out runs from 6 Aug, 81.5 kg by 9 Nov; Build is planned from 19 Oct.
@@ -141,6 +146,25 @@ describe("findNutritionOutOfDate", () => {
     // A deadline added starts a deficit: that is out of date.
     const dated = goal("dated", TODAY, [[TODAY, "2027-02-12"]], 82.6);
     expect(findNutritionOutOfDate([builtLoose], [loose, dated], TODAY)?.fromDay).toBe(TODAY);
+  });
+
+  it("stays closed once the coach keeps it for the goal, and comes back when the goal changes", () => {
+    const keptForLeanOut = version("v-kept", "2026-09-01", "2026-10-31", 80.3, "2026-10-01", [
+      { goalWeightKg: 81.5, deadline: "2026-11-09" },
+    ]);
+    expect(findNutritionOutOfDate([keptForLeanOut], [leanOut], TODAY)).toBeNull();
+    // A new target from today: not what the coach kept these calories for.
+    const retargeted = goal("lean-3", TODAY, [[TODAY, "2026-11-09"]], 79.1);
+    expect(findNutritionOutOfDate([keptForLeanOut], [leanOut, retargeted], TODAY)?.fromDay).toBe(TODAY);
+  });
+
+  it("keeping today's goal does not hide a planned goal's day", () => {
+    const keptForLeanOut = version("v-kept", "2026-09-01", "2026-10-31", 80.3, "2026-10-01", [
+      { goalWeightKg: 81.5, deadline: "2026-11-09" },
+    ]);
+    const found = findNutritionOutOfDate([keptForLeanOut], [leanOut, build], TODAY);
+    expect(found?.fromDay).toBe("2026-10-19");
+    expect(found?.goalName).toBe("Goal build");
   });
 
   it("reads no goal as maintenance, on both sides", () => {
