@@ -68,6 +68,16 @@ describe("nutritionPlanSchema — the two surplus settings are required", () => 
   });
 });
 
+describe("nutritionPlanSchema — the start is a real day", () => {
+  const save = { proteinTargetGPerKg: 2.2, dietType: "balanced", includeActivityBurn: true, surplusAsCarbs: false };
+
+  it("accepts a real day and refuses one that only looks like a date", () => {
+    expect(nutritionPlanSchema.safeParse({ ...save, effectiveFrom: "2026-10-19" }).success).toBe(true);
+    expect(nutritionPlanSchema.safeParse({ ...save, effectiveFrom: "2026-02-30" }).success).toBe(false);
+    expect(nutritionPlanSchema.safeParse({ ...save, effectiveFrom: "2026-13-45" }).success).toBe(false);
+  });
+});
+
 // The per-day edit has one mode. "Adjust by" (a percent or kcal delta scaled
 // per day) was removed on 2026-09-10; a delta body is a 400, not a silent
 // fall-through to some other arithmetic.

@@ -44,6 +44,18 @@ export type NutritionOutOfDate = {
 };
 
 /** The weight target and deadline in force on `day`; no goal is maintenance. */
+/**
+ * Whether two pricings give different calories. The calculator holds a plan at
+ * maintenance unless it has both a goal weight and a deadline, so two pricings
+ * that each lack one are the same calories, whatever else they hold.
+ */
+function pricesDiffer(built: GoalPricing, goal: GoalPricing): boolean {
+  const atMaintenance = (pricing: GoalPricing) =>
+    pricing.goalWeightKg == null || pricing.deadline == null;
+  if (atMaintenance(built) && atMaintenance(goal)) return false;
+  return detectGoalDrift(built, goal).changed;
+}
+
 function pricingOnDay(goals: readonly ClientGoal[], day: string): GoalPricing {
   const goal = goalOnDay(goals, day);
   const effective = resolveEffectiveGoal(
@@ -85,7 +97,7 @@ export function findNutritionOutOfDate(
     const from = version.effectiveFrom > today ? version.effectiveFrom : today;
     for (const day of turningDays(goals, from, version.effectiveUntil)) {
       const goal = pricingOnDay(goals, day);
-      if (!detectGoalDrift(version.built, goal).changed) continue;
+      if (!pricesDiffer(version.built, goal)) continue;
       if (earliest === null || day < earliest.fromDay) {
         earliest = {
           versionId: version.id,

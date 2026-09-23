@@ -96,6 +96,7 @@ describe("GET /api/clients/[id]/nutrition/goal — the drawer's Starts on day", 
   it("is 400 without a well-formed day", async () => {
     expect((await GET(request(null), params)).status).toBe(400);
     expect((await GET(request("19-10-2026"), params)).status).toBe(400);
+    expect((await GET(request("2026-02-30"), params)).status).toBe(400);
     expect(getNutritionGoalForDay).not.toHaveBeenCalled();
   });
 

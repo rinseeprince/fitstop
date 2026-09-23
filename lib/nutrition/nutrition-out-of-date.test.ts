@@ -128,6 +128,21 @@ describe("findNutritionOutOfDate", () => {
     expect(findNutritionOutOfDate([running], [leanOut, recomposed], TODAY)).toBeNull();
   });
 
+  it("is not out of date when both sides price at maintenance", () => {
+    // A Recomp goal, no weight target, whose deadline moved today.
+    const recomp = goal("recomp", "2026-08-11", [["2026-08-11", "2026-12-01"], [TODAY, "2026-12-15"]], null, 18.5);
+    const builtRecomp = version("v-recomp", "2026-08-11", "2026-11-22", null, "2026-12-01");
+    expect(findNutritionOutOfDate([builtRecomp], [recomp], TODAY)).toBeNull();
+    // A goal with no deadline, given a new weight today.
+    const loose = goal("loose", "2026-08-11", [["2026-08-11", null]], 82.6);
+    const reweighed = goal("reweighed", TODAY, [[TODAY, null]], 78.4);
+    const builtLoose = version("v-loose", "2026-08-11", "2026-11-22", 82.6, null);
+    expect(findNutritionOutOfDate([builtLoose], [loose, reweighed], TODAY)).toBeNull();
+    // A deadline added starts a deficit: that is out of date.
+    const dated = goal("dated", TODAY, [[TODAY, "2027-02-12"]], 82.6);
+    expect(findNutritionOutOfDate([builtLoose], [loose, dated], TODAY)?.fromDay).toBe(TODAY);
+  });
+
   it("reads no goal as maintenance, on both sides", () => {
     const maintenance = version("v-maint", "2026-09-01", "2026-10-31", null, null);
     expect(findNutritionOutOfDate([maintenance], [], TODAY)).toBeNull();

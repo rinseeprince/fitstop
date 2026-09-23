@@ -41,6 +41,9 @@ type UseNutritionBuilderProps = {
    *  19 Oct" on the Overview), or null. Captured on arrival with the trip and
    *  cleared with it; the coach's own pick and a chosen block both win. */
   roundTripStartsOn?: string | null;
+  /** Whether the drawer is open. The day's goal is read only then — nothing
+   *  outside the drawer shows it, so a visit to the tab never pays for it. */
+  drawerOpen: boolean;
 };
 
 type NutritionSettings = {
@@ -53,6 +56,7 @@ export function useNutritionBuilder({
   onUpdate,
   roundTripBlockId = null,
   roundTripStartsOn = null,
+  drawerOpen,
 }: UseNutritionBuilderProps) {
   const nutritionPlan = useNutritionPlan({ client });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
@@ -137,9 +141,17 @@ export function useNutritionBuilder({
   // goal on its Starts on, as the save does — one resolver on the server — so
   // preview and save agree even inside a planned goal. A new day is a new read:
   // until it lands the numbers are pending, never another day's.
-  const dayRead = useNutritionGoalForDay(client.id, effectiveFrom);
+  const dayRead = useNutritionGoalForDay(client.id, drawerOpen ? effectiveFrom : null);
   const dayGoal = dayRead.goalForDay?.goal ?? null;
-  const isDayPending = !dayRead.goalForDay && !dayRead.isError;
+  // The plan read failing leaves no client's today and no plan to seed from,
+  // so nothing can be priced: the drawer says it failed, as for a failed day
+  // read, and Try again retries whichever failed.
+  const isDayError = dayRead.isError || nutritionPlan.isNutritionError;
+  const isDayPending = !isDayError && !dayRead.goalForDay;
+  const retryDay = () => {
+    if (nutritionPlan.isNutritionError) nutritionPlan.refetchNutrition();
+    if (dayRead.isError) dayRead.retry();
+  };
 
   // The live preview. Recomputes on every picker change REGARDLESS of manual
   // mode — that is what powers the "Auto suggests …" hint without ever writing
@@ -290,7 +302,7 @@ export function useNutritionBuilder({
       // The footer holds the button while the day's goal is loading or failed;
       // this is the belt, so a save can never price a day the drawer has not
       // shown.
-      if (isDayPending || dayRead.isError) {
+      if (isDayPending || isDayError) {
         toast.error("Save failed", {
           description: "The goal for the Starts on day hasn't loaded yet.",
         });
@@ -381,7 +393,7 @@ export function useNutritionBuilder({
     [
       client,
       isDayPending,
-      dayRead.isError,
+      isDayError,
       settings,
       effectiveFrom,
       surplus,
@@ -420,8 +432,8 @@ export function useNutritionBuilder({
     // state: while it is pending the numbers are, and Generate waits.
     dayGoal,
     isDayPending,
-    isDayError: dayRead.isError,
-    retryDay: dayRead.retry,
+    isDayError,
+    retryDay,
 
     // The Block field: its options, the selected value, and whether a block is
     // chosen — the form disables the date field while one is.

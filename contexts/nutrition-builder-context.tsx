@@ -17,6 +17,8 @@ type NutritionBuilderProviderProps = {
   roundTripBlockId?: string | null;
   /** The day an arrival asked the drawer to start on (see `useNutritionBuilder`). */
   roundTripStartsOn?: string | null;
+  /** Whether the drawer is open (see `useNutritionBuilder`). */
+  drawerOpen: boolean;
 };
 
 export function NutritionBuilderProvider({
@@ -25,8 +27,15 @@ export function NutritionBuilderProvider({
   onUpdate,
   roundTripBlockId,
   roundTripStartsOn,
+  drawerOpen,
 }: NutritionBuilderProviderProps) {
-  const builder = useNutritionBuilder({ client, onUpdate, roundTripBlockId, roundTripStartsOn });
+  const builder = useNutritionBuilder({
+    client,
+    onUpdate,
+    roundTripBlockId,
+    roundTripStartsOn,
+    drawerOpen,
+  });
 
   return (
     <NutritionBuilderContext.Provider value={builder}>

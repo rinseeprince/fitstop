@@ -66,6 +66,9 @@ export function useNutritionPlan({ client }: UseNutritionPlanProps) {
   // Nutrition targets from API (reads from nutrition_plans tables)
   const [nutritionData, setNutritionData] = useState<NutritionTargetsData | null>(null);
   const [isLoadingNutrition, setIsLoadingNutrition] = useState(true);
+  // The read failing leaves no data behind, which must not read as "no plan"
+  // to the drawer: it has no client's today to price and no plan to seed.
+  const [isNutritionError, setIsNutritionError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Fetch nutrition targets from API (reads from nutrition_plans tables)
@@ -76,9 +79,13 @@ export function useNutritionPlan({ client }: UseNutritionPlanProps) {
         if (res.ok) {
           const data = await res.json();
           setNutritionData(data);
+          setIsNutritionError(false);
+        } else {
+          setIsNutritionError(true);
         }
       } catch (error) {
         console.error("Failed to fetch nutrition targets:", error);
+        setIsNutritionError(true);
       } finally {
         setIsLoadingNutrition(false);
       }
@@ -135,6 +142,12 @@ export function useNutritionPlan({ client }: UseNutritionPlanProps) {
     // Nutrition data from plan
     nutritionData,
     isLoadingNutrition,
-    refetchNutrition: () => setRefreshKey((k) => k + 1),
+    isNutritionError,
+    // A retry clears the failure first, so the drawer shows it loading again
+    // rather than the old failure until the answer lands.
+    refetchNutrition: () => {
+      setIsNutritionError(false);
+      setRefreshKey((k) => k + 1);
+    },
   };
 }

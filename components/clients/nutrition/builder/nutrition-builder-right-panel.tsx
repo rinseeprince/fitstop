@@ -22,10 +22,10 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
   const { outOfDate, clientToday } = useNutritionOutOfDate(builder.client.id);
 
   // Loading state for training plan or nutrition data
-  // KNOWN GAP: the nutrition builder context exposes no load error, so this
-  // panel has loading and content states only — the error branch needs the
-  // context to surface one first (docs rule: every fetch-backed surface has
-  // an error branch).
+  // KNOWN GAP: this panel has loading and content states only. The context
+  // exposes the plan read's failure (`isNutritionError`), which the drawer
+  // shows with Try again; this panel has no error branch yet (docs rule: every
+  // fetch-backed surface has one).
   if (builder.isLoadingTrainingPlan || builder.isLoadingNutrition) {
     return <PageLoading label="Loading nutrition plan…" />;
   }
@@ -44,7 +44,12 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
         <NutritionOutOfDateNotice
           outOfDate={outOfDate}
           clientToday={clientToday}
-          onRegenerate={onOpenSettings}
+          // Today's problem: Starts on back to today — never a day an earlier,
+          // unsaved pick left in the drawer — then the drawer opens on it.
+          onRegenerate={() => {
+            builder.setStartsOn(clientToday);
+            onOpenSettings?.();
+          }}
           // The date and the drawer in one click: Starts on moves to the
           // notice's day, then the drawer opens on it.
           onSetFrom={(day) => {

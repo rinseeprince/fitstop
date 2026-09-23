@@ -1,3 +1,5 @@
+import { isCalendarDay } from "@/lib/date-helpers"
+
 export const CLIENT_TABS = [
   { value: "overview", label: "Overview" },
   // Label-only rename (Metrics → Journey, Session 3.1): the URL value stays
@@ -153,7 +155,6 @@ const RETURN_BLOCK = "returnBlock"
 const RETURN_TO_JOURNEY = "journey"
 /** The day the nutrition drawer should start on, riding one-shot on `?edit=1`. */
 const STARTS_ON = "startsOn"
-const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 /** Journey → a setup surface, already open, knowing the way back. Spread it
  *  beside the destination pane: `{ training: "plans", ...journeyTripParams(…) }`. */
@@ -218,7 +219,7 @@ export function readJourneyTrip(
   return {
     open: true,
     returnBlockId: readJourneyReturnBlock(search),
-    startsOn: startsOn && DAY_PATTERN.test(startsOn) ? startsOn : null,
+    startsOn: startsOn && isCalendarDay(startsOn) ? startsOn : null,
   }
 }
 

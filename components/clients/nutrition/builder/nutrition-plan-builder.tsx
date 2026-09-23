@@ -77,6 +77,7 @@ export function NutritionPlanBuilder({
         onUpdate={onUpdate}
         roundTripBlockId={returnBlockId}
         roundTripStartsOn={roundTripStartsOn}
+        drawerOpen={drawerOpen}
       >
         {/* Top content bar */}
         <TopContentBar subtab={subtab} setSubtab={setSubtab} />

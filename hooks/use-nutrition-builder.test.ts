@@ -62,6 +62,7 @@ vi.mock("@/hooks/use-nutrition-goal", () => ({
 // What the coach GET ships, held where the module mock below can reach it.
 const planState = vi.hoisted(() => ({
   nutritionData: null as unknown,
+  isNutritionError: false,
   refetchNutrition: vi.fn(),
 }));
 vi.mock("@/hooks/use-nutrition-plan", () => ({
@@ -74,6 +75,7 @@ vi.mock("@/hooks/use-nutrition-plan", () => ({
     showRegenerationBanner: false,
     nutritionData: planState.nutritionData,
     isLoadingNutrition: false,
+    isNutritionError: planState.isNutritionError,
     refetchNutrition: planState.refetchNutrition,
   }),
 }));
@@ -103,6 +105,9 @@ beforeEach(() => {
   dayState.inputsFor = () => CALC_INPUTS;
   dayState.goalFor = () => null;
   dayState.clear.mockReset();
+  dayState.retry.mockReset();
+  planState.isNutritionError = false;
+  planState.refetchNutrition.mockReset();
 });
 
 const CLIENT = {
@@ -153,20 +158,20 @@ describe("useNutritionBuilder — the day the plan takes effect", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("defaults to the CLIENT's today from the resolved inputs, never the browser's day (D27)", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
     expect(result.current.clientToday).toBe(CLIENT_TODAY);
   });
 
   it("is null, with no preview, until the resolved inputs have loaded", () => {
     planState.nutritionData = null;
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     expect(result.current.effectiveFrom).toBeNull();
     expect(result.current.autoPlan).toBeNull();
   });
 
   it("the preview follows the date: three weeks out, the deficit is steeper and the calories lower", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     const fromToday = result.current.autoPlan;
     if (!fromToday) throw new Error("expected a preview");
 
@@ -190,7 +195,7 @@ describe("useNutritionBuilder — the day the plan takes effect", () => {
 
   it("the request carries the picked date", async () => {
     const fetchSpy = mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
 
     await act(async () => {
@@ -202,7 +207,7 @@ describe("useNutritionBuilder — the day the plan takes effect", () => {
 
   it("the request carries the client's today when nothing was picked — the day the preview used", async () => {
     const fetchSpy = mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
 
     await act(async () => {
       await result.current.generatePlan();
@@ -212,7 +217,7 @@ describe("useNutritionBuilder — the day the plan takes effect", () => {
   });
 
   it("an emptied picker means today again, not an empty date", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
     act(() => result.current.handleEffectiveFromChange(""));
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
@@ -220,7 +225,7 @@ describe("useNutritionBuilder — the day the plan takes effect", () => {
 
   it("a saved plan resets the pick, so the next save defaults to today again (D27)", async () => {
     mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
 
     await act(async () => {
@@ -259,7 +264,7 @@ describe("useNutritionBuilder — the start is the client's today, whatever they
     // A workout logged today: the apply dialog's picker moves to tomorrow;
     // the targets' start does not.
     blocksState.planStartFloor = TOMORROW;
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
     expect(result.current.clientToday).toBe(CLIENT_TODAY);
   });
@@ -267,13 +272,13 @@ describe("useNutritionBuilder — the start is the client's today, whatever they
   it("is null until the resolved inputs have loaded, whatever the payload says", () => {
     planState.nutritionData = null;
     blocksState.planStartFloor = TOMORROW;
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     expect(result.current.effectiveFrom).toBeNull();
   });
 
   it("the coach's own pick still wins over the default", () => {
     blocksState.planStartFloor = TOMORROW;
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
     expect(result.current.effectiveFrom).toBe(THREE_WEEKS_OUT);
   });
@@ -312,7 +317,7 @@ describe("useNutritionBuilder — the Block field", () => {
   });
 
   it("leads with the dash, then the blocks whose end is on or after today, and defaults to the dash", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     expect(result.current.blockOptions.map((option) => option.value)).toEqual([
       "none",
       CUT.id,
@@ -325,7 +330,7 @@ describe("useNutritionBuilder — the Block field", () => {
 
   it("preselects the block the coach came from: a future block fixes the start on its own first day", () => {
     const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, roundTripBlockId: BUILD.id })
+      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: BUILD.id })
     );
     expect(result.current.blockValue).toBe(BUILD.id);
     expect(result.current.blockSelected).toBe(true);
@@ -334,7 +339,7 @@ describe("useNutritionBuilder — the Block field", () => {
 
   it("a block already under way fixes the start at the client's today, not the day it began — a logged workout notwithstanding", () => {
     const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, roundTripBlockId: CUT.id })
+      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: CUT.id })
     );
     expect(result.current.blockSelected).toBe(true);
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
@@ -343,14 +348,14 @@ describe("useNutritionBuilder — the Block field", () => {
     // dialog); targets in a running block still start today.
     blocksState.planStartFloor = TOMORROW;
     const trained = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, roundTripBlockId: CUT.id })
+      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: CUT.id })
     );
     expect(trained.result.current.effectiveFrom).toBe(CLIENT_TODAY);
   });
 
   it("a round trip from a block no longer listed falls to the dash", () => {
     const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, roundTripBlockId: OLD.id })
+      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: OLD.id })
     );
     expect(result.current.blockValue).toBe("none");
     expect(result.current.blockSelected).toBe(false);
@@ -358,7 +363,7 @@ describe("useNutritionBuilder — the Block field", () => {
   });
 
   it("picking a block fixes the start; picking the dash hands the date back at today", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
 
     act(() => result.current.handleBlockChange(BUILD.id));
     expect(result.current.blockValue).toBe(BUILD.id);
@@ -372,7 +377,7 @@ describe("useNutritionBuilder — the Block field", () => {
   });
 
   it("the coach's own date applies with the dash only, and a block change discards it", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleEffectiveFromChange("2026-07-25"));
     expect(result.current.effectiveFrom).toBe("2026-07-25");
 
@@ -385,7 +390,7 @@ describe("useNutritionBuilder — the Block field", () => {
 
   it("the request carries the chosen block's first available day", async () => {
     const fetchSpy = mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleBlockChange(BUILD.id));
 
     await act(async () => {
@@ -397,7 +402,7 @@ describe("useNutritionBuilder — the Block field", () => {
 
   it("a saved plan resets the block pick as it resets the date", async () => {
     mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleBlockChange(BUILD.id));
 
     await act(async () => {
@@ -411,7 +416,7 @@ describe("useNutritionBuilder — the Block field", () => {
   it("no options and nothing fixed until the resolved inputs have loaded", () => {
     planState.nutritionData = null;
     const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, roundTripBlockId: BUILD.id })
+      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: BUILD.id })
     );
     expect(result.current.blockOptions).toEqual([]);
     expect(result.current.blockValue).toBe("none");
@@ -441,7 +446,7 @@ describe("useNutritionBuilder — the manual save carries the balancer's numbers
 
   it("posts the typed calories and the derived grams as the custom-macro override", async () => {
     const fetchSpy = mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     const auto = result.current.autoTargets;
     if (!auto) throw new Error("expected a preview");
     act(() => result.current.enableManualTargets(auto));
@@ -463,7 +468,7 @@ describe("useNutritionBuilder — the manual save carries the balancer's numbers
 
   it("refuses to post an override with no calorie target", async () => {
     const fetchSpy = mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     const auto = result.current.autoTargets;
     if (!auto) throw new Error("expected a preview");
     act(() => result.current.enableManualTargets(auto));
@@ -497,21 +502,21 @@ describe("useNutritionBuilder — the surplus settings are saved with the plan",
   afterEach(() => vi.restoreAllMocks());
 
   it("seeds both switches from the latest-saved plan", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     expect(result.current.includeActivityBurn).toBe(false);
     expect(result.current.surplusAsCarbs).toBe(true);
   });
 
   it("with no plan, starts from the defaults a first plan has: surplus on, kept to the split", () => {
     planState.nutritionData = { clientToday: CLIENT_TODAY, hasPlan: false, scheduledFor: null };
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     expect(result.current.includeActivityBurn).toBe(true);
     expect(result.current.surplusAsCarbs).toBe(false);
   });
 
   it("flipping either switch sends no request — it only changes what the save will carry", () => {
     const fetchSpy = mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
 
     act(() => result.current.handleToggleActivityBurn(true));
     act(() => result.current.handleToggleSurplusAsCarbs(false));
@@ -522,7 +527,7 @@ describe("useNutritionBuilder — the surplus settings are saved with the plan",
   });
 
   it("a refetch carrying the same saved values does not undo a flip", () => {
-    const { result, rerender } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result, rerender } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleToggleActivityBurn(true));
 
     planState.nutritionData = { ...(planState.nutritionData as object) };
@@ -533,7 +538,7 @@ describe("useNutritionBuilder — the surplus settings are saved with the plan",
 
   it("a flip followed by a save sends the flipped values", async () => {
     const fetchSpy = mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleToggleActivityBurn(true));
 
     await act(async () => {
@@ -544,7 +549,7 @@ describe("useNutritionBuilder — the surplus settings are saved with the plan",
   });
 
   it("a flip stays a draft until a new save, whose saved values then show", () => {
-    const { result, rerender } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result, rerender } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleToggleActivityBurn(true));
     rerender();
     expect(result.current.includeActivityBurn).toBe(true);
@@ -595,7 +600,7 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
   });
 
   it("reads the goal for the Starts on day, and a new date is a new read", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     expect(dayState.reads.at(-1)).toBe(CLIENT_TODAY);
 
     act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
@@ -603,7 +608,7 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
   });
 
   it("prices that day's goal: inside a planned goal the preview is the planned goal's, and so is the Goal line", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
 
     expect(result.current.dayGoal).toEqual(BUILD_GOAL);
@@ -629,7 +634,7 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
   it("while the day is loading, nothing is previewed and a save sends nothing", async () => {
     dayState.pending = true;
     const fetchSpy = mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
 
     expect(result.current.isDayPending).toBe(true);
     expect(result.current.autoPlan).toBeNull();
@@ -644,7 +649,7 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
   it("a failed day read refuses the save", async () => {
     dayState.failed = true;
     const fetchSpy = mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
 
     expect(result.current.isDayError).toBe(true);
     expect(result.current.isDayPending).toBe(false);
@@ -656,9 +661,41 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
     expect(fetchSpy.mock.calls.find(([, init]) => init?.method === "POST")).toBeUndefined();
   });
 
+  it("reads no day while the drawer is closed, and the drawer's day once it opens", () => {
+    const { rerender } = renderHook(
+      ({ open }: { open: boolean }) => useNutritionBuilder({ client: CLIENT, drawerOpen: open }),
+      { initialProps: { open: false } }
+    );
+    expect(dayState.reads.every((day) => day === null)).toBe(true);
+
+    rerender({ open: true });
+    expect(dayState.reads.at(-1)).toBe(CLIENT_TODAY);
+  });
+
+  it("a failed plan read shows as failed, refuses the save, and Try again retries it", async () => {
+    planState.nutritionData = null;
+    planState.isNutritionError = true;
+    const fetchSpy = mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
+
+    // Never loading forever: there is no client's today to read a day for.
+    expect(result.current.isDayError).toBe(true);
+    expect(result.current.isDayPending).toBe(false);
+    let saved = true;
+    await act(async () => {
+      saved = await result.current.generatePlan();
+    });
+    expect(saved).toBe(false);
+    expect(fetchSpy.mock.calls.find(([, init]) => init?.method === "POST")).toBeUndefined();
+
+    act(() => result.current.retryDay());
+    expect(planState.refetchNutrition).toHaveBeenCalledOnce();
+    expect(dayState.retry).not.toHaveBeenCalled();
+  });
+
   it("an arrival's start day is where the drawer starts; the coach's own pick wins over it", () => {
     const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, roundTripStartsOn: THREE_WEEKS_OUT })
+      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripStartsOn: THREE_WEEKS_OUT })
     );
     expect(result.current.effectiveFrom).toBe(THREE_WEEKS_OUT);
     // Never a render on the client's today first.
@@ -675,6 +712,7 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
         client: CLIENT,
         roundTripBlockId: FUTURE_BLOCK.id,
         roundTripStartsOn: THREE_WEEKS_OUT,
+        drawerOpen: true,
       })
     );
     expect(result.current.effectiveFrom).toBe(FUTURE_BLOCK.startsOn);
@@ -683,7 +721,7 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
   it("Set nutrition from a day moves to the dash and that day in one update", () => {
     blocksState.blocks = [FUTURE_BLOCK];
     const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, roundTripBlockId: FUTURE_BLOCK.id })
+      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: FUTURE_BLOCK.id })
     );
     expect(result.current.blockValue).toBe(FUTURE_BLOCK.id);
 
@@ -694,7 +732,7 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
 
   it("a save clears the reads of how nutrition follows the goal", async () => {
     mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
 
     await act(async () => {
       await result.current.generatePlan();

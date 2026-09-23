@@ -277,6 +277,9 @@ describe("the nutrition drawer's start day", () => {
       startsOn: "2026-10-19",
     });
     expect(readJourneyTrip(new URLSearchParams("edit=1&startsOn=19-10-2026"), "edit").startsOn).toBeNull();
+    // Shaped like a date but not one: never a day the drawer starts on.
+    expect(readJourneyTrip(new URLSearchParams("edit=1&startsOn=2026-13-45"), "edit").startsOn).toBeNull();
+    expect(readJourneyTrip(new URLSearchParams("edit=1&startsOn=2026-02-30"), "edit").startsOn).toBeNull();
     expect(readJourneyTrip(new URLSearchParams("edit=1"), "edit").startsOn).toBeNull();
     // No drawer trip, no day.
     expect(readJourneyTrip(new URLSearchParams("startsOn=2026-10-19"), "edit")).toEqual({

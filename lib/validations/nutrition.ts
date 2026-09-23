@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
+import { isCalendarDay } from "@/lib/date-helpers";
 
 const activityLevelSchema = z.enum([
   "sedentary",
@@ -42,7 +43,7 @@ export const nutritionPlanSchema = z.object({
   customFatG: z.number().positive().optional(),
   customCalories: z.number().positive().optional(),
   coachNotes: z.string().max(500).optional(),
-  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
+  effectiveFrom: z.string().refine(isCalendarDay, "Must be a real date in YYYY-MM-DD format").optional(),
   // The version's two surplus settings (migration 196). Required: every save
   // states them, and they price only the days the version covers.
   includeActivityBurn: z.boolean(),
@@ -100,7 +101,7 @@ export const nutritionResetDaysSchema = z.object({
 // goal and calculator inputs the preview prices. Format only — a read of any
 // day is harmless; the save judges the past.
 export const nutritionGoalDayQuerySchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+  date: z.string().refine(isCalendarDay, "Must be a real date in YYYY-MM-DD format"),
 });
 
 // Validation function to ensure required client data exists

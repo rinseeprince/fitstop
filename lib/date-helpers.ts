@@ -110,22 +110,27 @@ export const dateStringToDayNumber = (dateStr: string): number => {
 };
 
 /**
+ * Whether `raw` is a real calendar day in YYYY-MM-DD. The round-trip check
+ * (`getDateString(parsed) === raw`) rejects values that pass the shape regex
+ * but roll over, e.g. "2026-02-30" or "2026-13-01".
+ */
+export const isCalendarDay = (raw: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const parsed = new Date(raw + "T00:00:00");
+  return !Number.isNaN(parsed.getTime()) && getDateString(parsed) === raw;
+};
+
+/**
  * Parses a `?date=` query-param value into a safe YYYY-MM-DD string, falling back
- * to today (local) when the value is missing, malformed, or not a real calendar date.
- * The round-trip check (`getDateString(parsed) === raw`) rejects values that pass the
- * shape regex but roll over, e.g. "2026-02-30" or "2026-13-01". Shared by the client
- * home view and the per-day detail pages so they resolve the URL date identically.
+ * to today (local) when the value is missing, malformed, or not a real calendar
+ * date (`isCalendarDay`). Shared by the client home view and the per-day detail
+ * pages so they resolve the URL date identically.
  *
  * @param {string | null} raw - the raw query-param value
  * @returns {string} a valid YYYY-MM-DD date (today's date if `raw` is unusable)
  */
-export const parseDateParamOrToday = (raw: string | null): string => {
-  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return getTodayDateString();
-  const parsed = new Date(raw + "T00:00:00");
-  if (Number.isNaN(parsed.getTime())) return getTodayDateString();
-  if (getDateString(parsed) !== raw) return getTodayDateString();
-  return raw;
-};
+export const parseDateParamOrToday = (raw: string | null): string =>
+  raw && isCalendarDay(raw) ? raw : getTodayDateString();
 
 /**
  * Returns a date N days ago from today as a YYYY-MM-DD string in local timezone

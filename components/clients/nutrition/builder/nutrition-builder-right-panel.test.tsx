@@ -39,7 +39,7 @@ beforeEach(() => {
 });
 
 describe("NutritionBuilderRightPanel — the out-of-date notice", () => {
-  it("today's problem: Regenerate opens the drawer", () => {
+  it("today's problem: Regenerate puts Starts on back to today and opens the drawer", () => {
     outOfDateState.outOfDate = {
       versionId: "v-run",
       fromDay: "2026-09-23",
@@ -51,8 +51,9 @@ describe("NutritionBuilderRightPanel — the out-of-date notice", () => {
     render(<NutritionBuilderRightPanel onOpenSettings={onOpenSettings} />);
 
     screen.getByRole("button", { name: "Regenerate" }).click();
+    // Never a day an earlier, unsaved pick left in the drawer.
+    expect(setStartsOn).toHaveBeenCalledWith("2026-09-23");
     expect(onOpenSettings).toHaveBeenCalledOnce();
-    expect(setStartsOn).not.toHaveBeenCalled();
   });
 
   it("a later day's problem: Set nutrition from moves Starts on to it and opens the drawer", () => {
