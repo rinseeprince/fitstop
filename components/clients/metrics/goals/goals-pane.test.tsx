@@ -292,7 +292,7 @@ describe("GoalsPane — deleting a goal from its row", () => {
     );
   });
 
-  it("asks with the sheet's confirm: an ended goal by its days, at a click; today's typed", async () => {
+  it("asks with the sheet's confirm: typed for an ended goal and today's, a click for a planned one", async () => {
     const user = userEvent.setup();
     render(tree());
     await waitFor(() => expect(screen.getByText("Cut")).toBeInTheDocument());
@@ -300,11 +300,16 @@ describe("GoalsPane — deleting a goal from its row", () => {
     await user.click(screen.getByRole("button", { name: "Delete Cut" }));
     expect(screen.getByRole("heading", { name: "Delete Cut?" })).toBeInTheDocument();
     expect(screen.getByText("Deletes Cut, 4 May – 28 June.")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Type DELETE to confirm")).toBeNull();
+    expect(screen.getByLabelText("Type DELETE to confirm")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await user.click(screen.getByRole("button", { name: "Delete Build" }));
     expect(screen.getByLabelText("Type DELETE to confirm")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await user.click(screen.getByRole("button", { name: "Delete Lean out" }));
+    expect(screen.getByText("Deletes Lean out, planned from 19 Oct.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Type DELETE to confirm")).toBeNull();
   });
 
   it("keeps the confirm open until the table no longer holds the goal, then closes onto it", async () => {
@@ -315,6 +320,7 @@ describe("GoalsPane — deleting a goal from its row", () => {
     const refetch = deferred<unknown>();
     answers[HISTORY_KEY] = () => refetch.promise;
     await user.click(screen.getByRole("button", { name: "Delete Cut" }));
+    await user.type(screen.getByLabelText("Type DELETE to confirm"), "DELETE");
     await user.click(screen.getByRole("button", { name: "Delete goal" }));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(`/api/clients/${CLIENT_ID}/goals/goal-cut`, expect.objectContaining({ method: "DELETE" }));

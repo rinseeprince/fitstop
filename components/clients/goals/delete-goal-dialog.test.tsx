@@ -67,7 +67,8 @@ describe("DeleteGoalDialog", () => {
     expect(onConfirm).toHaveBeenCalledWith(PLANNED);
   });
 
-  it("names a goal that has ended with its days, and deletes it at a click", () => {
+  // An ended goal can never be set again, so its delete is typed too.
+  it("names a goal that has ended with its days, and deletes it only once DELETE is typed", () => {
     // Its days carry their year when it isn't this one, so today is pinned
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-09-23T12:00:00"));
@@ -80,8 +81,11 @@ describe("DeleteGoalDialog", () => {
     render(<DeleteGoalDialog open subject={ENDED} onOpenChange={vi.fn()} onConfirm={onConfirm} />);
 
     expect(screen.getByText("Deletes Cut, 16 Mar – 10 May.")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Type DELETE to confirm")).not.toBeInTheDocument();
-    screen.getByRole("button", { name: "Delete goal" }).click();
+    const cta = screen.getByRole("button", { name: "Delete goal" });
+    expect(cta).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), { target: { value: "DELETE" } });
+    expect(cta).toBeEnabled();
+    cta.click();
     expect(onConfirm).toHaveBeenCalledWith(ENDED);
   });
 

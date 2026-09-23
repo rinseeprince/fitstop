@@ -21,7 +21,7 @@ export type DeleteGoalSubject = {
   goal: GoalOnDay;
   /** The goal in force today, whose delete is typed rather than clicked. */
   isCurrent: boolean;
-  /** A goal that has ended: its last day. */
+  /** A goal that has ended: its last day. Its delete is typed too — it can never be set again. */
   endsOn?: string;
 };
 
@@ -39,7 +39,7 @@ function consequence({ goal, isCurrent, endsOn }: DeleteGoalSubject): string {
 
 /**
  * Destructive confirm for a goal (docs/newdesignsystem.md → Destructive
- * confirm dialog); the current goal's is the typed variant. The host deletes,
+ * confirm dialog); the current goal's and an ended goal's are the typed variant. The host deletes,
  * lands the answer and closes this — the goals table once its rows have
  * refreshed; the pending flag outlives that close, so the closing card keeps
  * its spinner, and the host keys the card by its opening so the next one
@@ -59,7 +59,8 @@ export function DeleteGoalDialog({
 }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [typed, setTyped] = useState("");
-  const typedConfirm = subject?.isCurrent ?? false;
+  // A planned goal can be planned again; the current goal and an ended one can't be put back as they were.
+  const typedConfirm = subject ? subject.isCurrent || subject.endsOn !== undefined : false;
 
   const handleConfirm = async () => {
     if (!subject) return;
