@@ -4,16 +4,18 @@ import { SectionLabel } from "@/components/programs/shared/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlanTrainingCard } from "./plan-training-card";
 import { PlanNutritionCard } from "./plan-nutrition-card";
-import type { ClientTab } from "@/lib/client-tabs";
+import { nutritionDrawerParams, type ClientTab } from "@/lib/client-tabs";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
 
 type CurrentPlanSectionProps = {
+  clientId: string;
   summary: OverviewPlanSummary | null;
   isLoading: boolean;
-  onTabChange: (tab: ClientTab) => void;
+  onTabChange: (tab: ClientTab, extraParams?: Record<string, string>) => void;
 };
 
 export function CurrentPlanSection({
+  clientId,
   summary,
   isLoading,
   onTabChange,
@@ -40,9 +42,15 @@ export function CurrentPlanSection({
             onOpenTraining={() => onTabChange("training")}
           />
           <PlanNutritionCard
+            clientId={clientId}
             nutrition={summary?.nutrition ?? null}
             upcomingNutrition={summary?.upcomingNutrition ?? null}
             onOpenNutrition={() => onTabChange("nutrition")}
+            // One navigation: the tab, the Plans pane and the drawer — on the
+            // notice's day when it names one (docs/MEASUREMENT-LOG-PLAN.md 8d1).
+            onOpenNutritionDrawer={(startsOn) =>
+              onTabChange("nutrition", nutritionDrawerParams(startsOn))
+            }
           />
         </div>
       )}

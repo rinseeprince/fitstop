@@ -431,13 +431,45 @@ describe("orchestrateNutritionPlanCreation — the deficit runs from the day the
     expect(generateNutritionPlan).toHaveBeenLastCalledWith(
       expect.objectContaining({ startDate: THREE_WEEKS_OUT })
     );
-    // The goal priced is the one in force on the client's today, whatever day
-    // the plan takes effect.
-    expect(getGoalForDate).toHaveBeenLastCalledWith(clientId, "2026-07-02");
+    // The goal priced is the one in force on the day the plan takes effect
+    // (docs/MEASUREMENT-LOG-PLAN.md commit 8d1), never the client's today.
+    expect(getGoalForDate).toHaveBeenLastCalledWith(clientId, THREE_WEEKS_OUT);
 
     await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
     expect(generateNutritionPlan).toHaveBeenLastCalledWith(
       expect.objectContaining({ startDate: "2026-07-02" })
+    );
+    expect(getGoalForDate).toHaveBeenLastCalledWith(clientId, "2026-07-02");
+  });
+
+  it("inside a planned goal, prices and records THAT goal: the version says what it was built for", async () => {
+    // Build (83 kg by 31 Dec) is planned from 20 Jul; the client's today is
+    // still inside the cut. A plan from three weeks out starts inside Build.
+    const BUILD: GoalOnDay = {
+      ...GOAL,
+      id: "goal-build",
+      name: "Build",
+      type: "build_muscle",
+      targetWeight: 188,
+      startsOn: "2026-07-20",
+      deadline: "2026-12-31",
+    };
+    vi.mocked(getGoalForDate).mockImplementation((_client, day) =>
+      Promise.resolve(day >= "2026-07-20" ? BUILD : GOAL)
+    );
+
+    await orchestrateNutritionPlanCreation(
+      clientId,
+      coachId,
+      { ...calculatedBody, effectiveFrom: THREE_WEEKS_OUT },
+      {}
+    );
+
+    expect(generateNutritionPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ goalWeightKg: 188, goalDeadline: "2026-12-31" })
+    );
+    expect(createNutritionPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ goalWeightKg: 188, goalDeadline: "2026-12-31" })
     );
   });
 
@@ -459,10 +491,11 @@ describe("orchestrateNutritionPlanCreation — the deficit runs from the day the
   });
 
   it("the preview and the save agree: one pure calculator over the same resolved inputs", async () => {
-    // What the drawer previews: the shared resolver's inputs, the pickers, and
-    // the picked date as the window's start.
+    // What the drawer previews: the shared resolver's inputs for the picked
+    // day (its day read), the pickers, and that day as the window's start.
     const inputs = await resolveNutritionCalcInputs(clientId, client as never, {
       today: "2026-07-02",
+      day: THREE_WEEKS_OUT,
     });
     if (inputs.status !== "ready") throw new Error("expected ready inputs");
     const previewed = realGenerate({

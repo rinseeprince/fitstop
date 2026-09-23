@@ -9,6 +9,7 @@ import { NUTRITION_PLACEMENT_FALLBACK_DAYS } from "@/lib/constants";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import type { ClientPlanWindow } from "@/lib/prescription-triggers";
 import { surplusSettingsOf, type SurplusSettings } from "@/lib/nutrition/surplus-settings";
+import type { NutritionVersionGoal } from "@/lib/nutrition/nutrition-out-of-date";
 import { getClientTodayString } from "./today-service";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
@@ -561,6 +562,39 @@ export async function getNextFutureNutritionPlan(
     throw new Error(`Failed to resolve next future nutrition plan: ${error.message}`);
   }
   return data ? { id: data.id, effectiveFrom: data.effective_from } : null;
+}
+
+/**
+ * Every active version with a day on or after `today`, earliest first, with
+ * the goal it was built for — the weight target and deadline its save priced
+ * (`goal_weight_kg`, `goal_deadline`). What the out-of-date rule reads
+ * (`lib/nutrition/nutrition-out-of-date.ts`); a version that has ended is
+ * history and is not returned.
+ */
+export async function getNutritionVersionGoalsFrom(
+  clientId: string,
+  today: string
+): Promise<NutritionVersionGoal[]> {
+  const { data, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id, effective_from, effective_until, goal_weight_kg, goal_deadline")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .gte("effective_until", today)
+    .order("effective_from", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to read the nutrition versions: ${error.message}`);
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    effectiveFrom: row.effective_from,
+    effectiveUntil: row.effective_until,
+    built: {
+      goalWeightKg: row.goal_weight_kg == null ? null : Number(row.goal_weight_kg),
+      deadline: row.goal_deadline,
+    },
+  }));
 }
 
 /**

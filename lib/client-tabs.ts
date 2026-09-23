@@ -151,6 +151,9 @@ export type JourneyTripSurface = "apply" | "edit"
 const RETURN_TO = "returnTo"
 const RETURN_BLOCK = "returnBlock"
 const RETURN_TO_JOURNEY = "journey"
+/** The day the nutrition drawer should start on, riding one-shot on `?edit=1`. */
+const STARTS_ON = "startsOn"
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 /** Journey → a setup surface, already open, knowing the way back. Spread it
  *  beside the destination pane: `{ training: "plans", ...journeyTripParams(…) }`. */
@@ -179,6 +182,19 @@ export function journeyPlanTripParams(
   }
 }
 
+/**
+ * The Overview → the nutrition drawer, open on the Plans pane — from a day when
+ * `startsOn` is given ("Set nutrition from 19 Oct"), else from the client's
+ * today ("Regenerate"). No return target: a save stays on the Nutrition tab.
+ */
+export function nutritionDrawerParams(startsOn?: string): Record<string, string> {
+  return {
+    nutrition: "plans",
+    edit: "1",
+    ...(startsOn ? { [STARTS_ON]: startsOn } : {}),
+  }
+}
+
 /** A setup surface → back to the block it came from, expanded. */
 export function journeyReturnParams(blockId: string): Record<string, string> {
   return { journey: "blocks", block: blockId }
@@ -190,13 +206,20 @@ export function readJourneyReturnBlock(search: URLSearchParams): string | null {
 }
 
 /** What a surface should do with the URL it just received. `returnBlockId` is
- *  null for a surface opened any other way, so an ordinary save never bounces. */
+ *  null for a surface opened any other way, so an ordinary save never bounces;
+ *  `startsOn` is the day an arrival asked the drawer to start on, when it is a
+ *  well-formed day. */
 export function readJourneyTrip(
   search: URLSearchParams,
   surface: JourneyTripSurface
-): { open: boolean; returnBlockId: string | null } {
-  if (search.get(surface) !== "1") return { open: false, returnBlockId: null }
-  return { open: true, returnBlockId: readJourneyReturnBlock(search) }
+): { open: boolean; returnBlockId: string | null; startsOn: string | null } {
+  if (search.get(surface) !== "1") return { open: false, returnBlockId: null, startsOn: null }
+  const startsOn = search.get(STARTS_ON)
+  return {
+    open: true,
+    returnBlockId: readJourneyReturnBlock(search),
+    startsOn: startsOn && DAY_PATTERN.test(startsOn) ? startsOn : null,
+  }
 }
 
 /** The same query with the one-shot trip params removed. */
@@ -206,6 +229,7 @@ export function stripJourneyTrip(
 ): string {
   const params = new URLSearchParams(stripJourneyReturn(currentSearch))
   params.delete(surface)
+  params.delete(STARTS_ON)
   return params.toString()
 }
 

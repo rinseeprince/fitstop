@@ -18,6 +18,10 @@ export function DrawerFooter({ onSaved }: DrawerFooterProps) {
   // otherwise the server recalculates from the same pickers the preview used.
   const isManual = builder.manualEnabled;
   const cannotCalculate = builder.calcInputs?.status === "incomplete";
+  // Generate waits for the Starts on day's goal (docs/MEASUREMENT-LOG-PLAN.md
+  // commit 8d1): a save priced for a day the drawer has not shown would not be
+  // the plan on screen. A failed read is retried from the targets block.
+  const dayNotReady = builder.isDayPending || builder.isDayError;
 
   /**
    * The gate. Deliberately here and not on the inputs: the coach types freely,
@@ -66,7 +70,7 @@ export function DrawerFooter({ onSaved }: DrawerFooterProps) {
       <div className="pointer-events-auto px-6 pb-6 pt-4">
         <button
           onClick={handleClick}
-          disabled={builder.isGenerating}
+          disabled={builder.isGenerating || dayNotReady}
           className="w-full flex items-center justify-center gap-2 bg-[#0d9488] text-white text-[13.5px] font-semibold rounded-[6px] px-4 py-2.5 transition-all hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(13,148,136,0.25)] hover:bg-gradient-to-br hover:from-[#0d9488] hover:to-[#0a7c72] disabled:opacity-50 disabled:pointer-events-none"
         >
           <Sparkles className={`w-4 h-4 ${builder.isGenerating ? "animate-pulse" : ""}`} strokeWidth={1.5} />

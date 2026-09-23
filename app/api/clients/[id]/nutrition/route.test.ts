@@ -597,46 +597,35 @@ describe('Nutrition Route GET — the three-role read (versions placed by date)'
 
     expect(data.hasPlan).toBe(false)
     expect(data.calorieTarget).toBeUndefined()
-    expect(data).toHaveProperty('calcInputs')
+    expect(data.clientToday).toBe('2026-08-11')
   })
 
-  it('no versions at all: explicit hasPlan false with calcInputs still served', async () => {
+  it("no versions at all: explicit hasPlan false, with the client's today the drawer starts from", async () => {
     const response = await GET(makeGetRequest(), getParams)
     const data = await response.json()
 
     expect(response.status).toBe(200)
     expect(data.hasPlan).toBe(false)
-    expect(data).toHaveProperty('calcInputs')
+    expect(data.clientToday).toBe('2026-08-11')
     expect(data.calorieTarget).toBeUndefined()
   })
 
-  // The drift banner compares the version the drawer will overwrite with the
-  // goal in force on the client's today — its weight target and that day's
-  // deadline, from one goal — and the preview prices that same goal.
-  it("judges goal drift against the goal in force on the client's today, read once", async () => {
+  // docs/MEASUREMENT-LOG-PLAN.md commit 8d1: the goal is not this read's. The
+  // drawer prices the goal on its Starts on day through GET …/nutrition/goal,
+  // and whether a version still fits the goal is GET …/nutrition/goal/out-of-date
+  // — so this read carries neither the calculator's inputs nor a drift flag,
+  // and reads no goal at all.
+  it("carries the client's today, and neither the calculator's inputs nor a goal verdict", async () => {
     const row = planRow({ goal_weight_kg: 81.5, goal_deadline: '2026-10-30' })
     vi.mocked(getNutritionPlanForDate).mockResolvedValue(row)
     vi.mocked(getLatestNutritionPlan).mockResolvedValue(row)
-    vi.mocked(getGoalForDate).mockResolvedValue(
-      goalOnDay({ targetWeight: 81.5, deadline: '2026-10-30' })
-    )
 
-    const same = await (await GET(makeGetRequest(), getParams)).json()
+    const data = await (await GET(makeGetRequest(), getParams)).json()
 
-    expect(getGoalForDate).toHaveBeenCalledTimes(1)
-    expect(getGoalForDate).toHaveBeenCalledWith('client-1', '2026-08-11')
-    expect(same.goalChanged.changed).toBe(false)
-    expect(same.calcInputs).toMatchObject({ goalWeightKg: 81.5, goalDeadline: '2026-10-30' })
-
-    vi.mocked(getGoalForDate).mockResolvedValue(
-      goalOnDay({ targetWeight: 79.5, deadline: '2026-10-30' })
-    )
-    const moved = await (await GET(makeGetRequest(), getParams)).json()
-
-    expect(moved.goalChanged).toMatchObject({
-      changed: true,
-      planGoalWeightKg: 81.5,
-      currentGoalWeightKg: 79.5,
-    })
+    expect(data.hasPlan).toBe(true)
+    expect(data.clientToday).toBe('2026-08-11')
+    expect(data).not.toHaveProperty('calcInputs')
+    expect(data).not.toHaveProperty('goalChanged')
+    expect(getGoalForDate).not.toHaveBeenCalled()
   })
 })

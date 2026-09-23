@@ -96,6 +96,13 @@ export const nutritionResetDaysSchema = z.object({
   dates: editableDates,
 });
 
+// The drawer's day read (`GET …/nutrition/goal?date=`): the Starts on day whose
+// goal and calculator inputs the preview prices. Format only — a read of any
+// day is harmless; the save judges the past.
+export const nutritionGoalDayQuerySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+});
+
 // Validation function to ensure required client data exists
 export function validateClientForNutrition(client: {
   currentWeight?: number;

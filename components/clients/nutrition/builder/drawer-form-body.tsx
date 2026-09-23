@@ -14,9 +14,10 @@ import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context
 import { NutritionSettingsForm } from "./nutrition-settings-form";
 import { NutritionTargetsBlock } from "./nutrition-targets-block";
 import { NutritionSurplusSettings } from "./nutrition-surplus-settings";
-import { NutritionGoalChangedBanner } from "../nutrition-goal-changed-banner";
-import { useClientGoals } from "@/hooks/use-client-goals";
+import { NutritionOutOfDateNotice } from "../nutrition-out-of-date-notice";
+import { useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
 import { formatDateOnlyShort } from "@/components/clients/overview/overview-format";
+import { TextSkeleton } from "@/components/text-skeleton";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 import { getFirstName } from "@/lib/client-name";
@@ -27,10 +28,11 @@ function Divider() {
 }
 
 /**
- * READ-ONLY. The editor that used to sit here was the only goal editor in the
- * product, which meant setting a client's goal required opening a nutrition
- * plan; it now lives on the Overview status card, where the goal is displayed
- * (Task 0b.4). One writer, per invariant 16.
+ * READ-ONLY. The goal in force on the Starts on day — the goal the preview and
+ * the save price (docs/MEASUREMENT-LOG-PLAN.md commit 8d1) — and, when the
+ * calories hold at maintenance, the one place that says why: no goal on that
+ * day, a goal with no weight target, or one with no deadline. The goal itself
+ * is set on the Overview; one writer.
  *
  * **No link, deliberately.** A tab URL is assembled by the client page's
  * handler alone (the carried single-owner params, the stripped `?subtab=`), so
@@ -40,25 +42,41 @@ function Divider() {
  * to avoid that is the prop-drilling §4 warns about. A sentence naming the
  * destination costs the coach one click and risks nothing.
  */
-function GoalSummary({ goal }: { goal: GoalOnDay | null }) {
+function GoalLine({
+  goal,
+  pending,
+  failed,
+}: {
+  goal: GoalOnDay | null;
+  pending: boolean;
+  failed: boolean;
+}) {
   const { preference } = useUnits();
 
-  const shown = goal?.targetWeight != null ? formatWeight(goal.targetWeight, preference) : null;
-  const summary = shown
-    ? `${shown.value.toFixed(1)} ${shown.unit}${
-        goal?.deadline ? ` by ${formatDateOnlyShort(goal.deadline)}` : ""
-      }`
-    : null;
+  // A sentence (sans, the prose rule) for every state but the priced goal,
+  // whose line is standalone data — the numerals ARE the information.
+  let reason: string | null = null;
+  let summary: string | null = null;
+  if (failed) reason = "Couldn't load the goal for this day.";
+  else if (!goal) reason = "No goal set, so calories are at maintenance.";
+  else if (goal.targetWeight == null) reason = "No weight target, so calories are at maintenance.";
+  else if (goal.deadline == null) reason = "No deadline, so calories are at maintenance.";
+  else {
+    const shown = formatWeight(goal.targetWeight, preference);
+    summary = `${shown.value.toFixed(1)} ${shown.unit} by ${formatDateOnlyShort(goal.deadline)}`;
+  }
 
   return (
     <div className="space-y-1.5">
       <label className={SECTION_LABEL_CLASS}>Goal</label>
-      {summary ? (
-        // Standalone data, not a sentence — the numerals ARE the information.
-        // The old summary printed the deadline as a raw ISO string.
+      {pending ? (
+        <p className={cn(MONO, "text-[13px] font-medium text-[#0c1a1e]")}>
+          <TextSkeleton className="w-28 bg-[rgba(13,148,136,0.08)]" />
+        </p>
+      ) : summary ? (
         <p className={cn(MONO, "text-[13px] font-medium text-[#0c1a1e]")}>{summary}</p>
       ) : (
-        <p className="text-[13px] font-medium text-[#0c1a1e]">No goal set</p>
+        <p className="text-[13px] font-medium text-[#0c1a1e]">{reason}</p>
       )}
       <p className="text-[11px] leading-[1.4] text-[#93b0b4]">
         The long-term goal &amp; deadline drive nutrition pace. Set them on the
@@ -79,13 +97,13 @@ function GoalSummary({ goal }: { goal: GoalOnDay | null }) {
  */
 export function DrawerFormBody() {
   const builder = useNutritionBuilderContext();
-  // The goal in force on the client's today, from the same shared read the
-  // Overview uses, so both surfaces render one goal from one cache entry rather
-  // than two fetches that can disagree.
-  const { current } = useClientGoals(builder.client.id);
+  // The goal in force on the Starts on day, from the day read the preview
+  // prices — so the Goal line and the numbers under it are one goal's.
+  const goal = builder.dayGoal;
   // Both are required for the calculator to solve anything: without a deadline
   // it returns maintenance no matter what the target weight says.
-  const hasGoalTarget = current?.targetWeight != null && current?.deadline != null;
+  const hasGoalTarget = goal?.targetWeight != null && goal?.deadline != null;
+  const { outOfDate, clientToday } = useNutritionOutOfDate(builder.client.id);
 
   return (
     <div className="flex-1 overflow-y-auto px-6 pt-6" style={{ paddingBottom: 120 }}>
@@ -105,10 +123,22 @@ export function DrawerFormBody() {
             queuedChangeDate={builder.nutritionData?.scheduledFor ?? null}
             onEffectiveFromChange={builder.handleEffectiveFromChange}
           />
-          <NutritionGoalChangedBanner
-            drift={builder.nutritionData?.goalChanged}
+          {outOfDate && clientToday && (
+            <NutritionOutOfDateNotice
+              outOfDate={outOfDate}
+              clientToday={clientToday}
+              // The drawer's own button is the regenerate; the notice only
+              // moves Starts on to its day, and says nothing to do once it is.
+              onSetFrom={
+                builder.effectiveFrom !== outOfDate.fromDay ? builder.setStartsOn : undefined
+              }
+            />
+          )}
+          <GoalLine
+            goal={goal}
+            pending={builder.isDayPending}
+            failed={builder.isDayError}
           />
-          <GoalSummary goal={current} />
         </div>
 
         <Divider />
@@ -125,6 +155,9 @@ export function DrawerFormBody() {
             builder.calcInputs?.status === "incomplete" ? builder.calcInputs.missing : []
           }
           hasGoalTarget={hasGoalTarget}
+          pending={builder.isDayPending}
+          failed={builder.isDayError}
+          onRetry={builder.retryDay}
         />
 
         <Divider />

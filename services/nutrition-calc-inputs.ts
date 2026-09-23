@@ -8,9 +8,9 @@ import type { GoalOnDay } from "@/types/client-goals";
 
 /**
  * The inputs `generateNutritionPlan` needs, resolved once and shared by BOTH
- * the write path (the plan POST) and the read path (the coach GET, which sends
- * them to the browser so the builder can preview a plan live as the coach moves
- * a picker).
+ * the write path (the plan POST) and the read path (`GET …/nutrition/goal
+ * ?date=`, which sends them to the browser for the drawer's Starts on day so
+ * the builder can preview a plan live as the coach moves a picker).
  *
  * This is the whole point of the module: preview and save must agree, and the
  * only way to guarantee that is for both to run the same pure calculator over
@@ -58,20 +58,22 @@ export type NutritionCalcInputs =
     };
 
 /**
- * Resolve the calculator inputs for a client.
+ * Resolve the calculator inputs for a client, for the day a plan takes effect.
  *
  * The caller owns `getClientById` and the ownership check — this takes the
  * already-fetched `client` so it cannot be used to reach a client the caller
  * has not authorized.
  *
- * The goal is the one in force on the client's today, with that day's
- * deadline: no goal, no weight target or no deadline is maintenance.
+ * The goal is the one in force on `day` — the plan's Starts on — with that
+ * day's deadline: no goal, no weight target or no deadline is maintenance. A
+ * plan starting inside a planned goal is priced for that goal, in the drawer's
+ * preview (`GET …/nutrition/goal?date=`) and in the save alike. `day` defaults
+ * to the client's today.
  *
  * `prefetched` exists so a caller that already resolved these can hand them in
- * rather than paying for them twice: the coach GET already computes the client's
- * today and reads the goal in force on it for its drift check, and without this
- * the route would issue both queries a second time. A prefetched goal must be
- * the one in force on the prefetched today.
+ * rather than paying for them twice: the day read already holds the client's
+ * today and the goal it shows on the Goal line. A prefetched goal must be the
+ * one in force on `day`.
  *
  * Throws only on genuine DB failures (the underlying services throw). It never
  * throws for a client who is simply missing data — that is `status:
@@ -81,12 +83,13 @@ export type NutritionCalcInputs =
 export async function resolveNutritionCalcInputs(
   clientId: string,
   client: Client,
-  prefetched?: { today?: string; goal?: GoalOnDay | null }
+  prefetched?: { today?: string; day?: string; goal?: GoalOnDay | null }
 ): Promise<NutritionCalcInputs> {
-  // The goal waits on today: which goal is in force depends on the day.
+  // The goal waits on the day: which goal is in force depends on it.
   const today = prefetched?.today ?? (await getClientTodayString(clientId));
+  const day = prefetched?.day ?? today;
   const goal =
-    prefetched?.goal !== undefined ? prefetched.goal : await getGoalForDate(clientId, today);
+    prefetched?.goal !== undefined ? prefetched.goal : await getGoalForDate(clientId, day);
 
   // The client object carries both inputs from their single owners. WEIGHT is
   // the newest reading in the measurement log, of any source
@@ -113,7 +116,7 @@ export async function resolveNutritionCalcInputs(
   }
 
   // The weight target and the deadline come from ONE goal — the one in force
-  // on the client's today — never from a request body. Kilograms, as stored.
+  // on the plan's day — never from a request body. Kilograms, as stored.
   const effective = resolveEffectiveGoal(goal);
 
   return {

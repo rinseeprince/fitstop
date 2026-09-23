@@ -7,6 +7,7 @@ import { useLogMeasurement } from "./use-log-measurement";
 import { useMetricEntries } from "@/hooks/use-metric-entries";
 import { useMeasurementSeries } from "@/hooks/use-measurement-series";
 import { useClientGoals } from "@/hooks/use-client-goals";
+import { useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { MetricTab } from "../metrics-view-types";
 
@@ -20,6 +21,7 @@ const CLIENT_ID = "client-1";
 const ENTRIES_KEY = `/api/clients/${CLIENT_ID}/metric-entries`;
 const SERIES_KEY = `/api/clients/${CLIENT_ID}/measurement-series`;
 const GOALS_KEY = `/api/clients/${CLIENT_ID}/goals`;
+const OUT_OF_DATE_KEY = `/api/clients/${CLIENT_ID}/nutrition/goal/out-of-date`;
 const GOALS_OLD = { success: true, data: { current: { id: "goal-7", startReadings: { weight: 91.4 } }, planned: [] } };
 const GOALS_NEW = { success: true, data: { current: { id: "goal-7", startReadings: { weight: 89.3 } }, planned: [] } };
 
@@ -67,6 +69,8 @@ beforeEach(() => {
     [ENTRIES_KEY]: () => Promise.resolve(OLD),
     [SERIES_KEY]: () => Promise.resolve(OLD),
     [GOALS_KEY]: () => Promise.resolve(GOALS_OLD),
+    [OUT_OF_DATE_KEY]: () =>
+      Promise.resolve({ success: true, data: { clientToday: "2026-09-21", outOfDate: null } }),
   };
   vi.mocked(swrFetcher).mockImplementation((url: string) => {
     reads.push(url);
@@ -226,5 +230,42 @@ describe("useLogMeasurement — the goals read", () => {
     await waitFor(() => expect(result.current.shown.data).toBeDefined());
     await act(() => result.current.log(input("mood")));
     expect(reads.filter((url) => url === GOALS_KEY)).toHaveLength(1);
+  });
+});
+
+// docs/MEASUREMENT-LOG-PLAN.md commit 8d1: the nutrition drawer prices from the
+// newest weight and the energy pair, on no screen this dialog shows — so a
+// weight or body fat CLEARS how nutrition follows the goal, and a score leaves
+// it alone.
+describe("useLogMeasurement — how nutrition follows the goal", () => {
+  const useRuleReader = () => {
+    const { outOfDate, clientToday, isLoading } = useNutritionOutOfDate(CLIENT_ID);
+    return { data: clientToday ? { outOfDate } : undefined, isLoading };
+  };
+
+  it("clears it after a weight: the next reader starts loading, never on the old answer", async () => {
+    const cache: Cache = new Map();
+    const wrapper = wrapperFor(cache);
+    const first = renderHook(() => useRuleReader(), { wrapper });
+    await waitFor(() => expect(first.result.current.data).toBeDefined());
+    first.unmount();
+
+    const { result } = renderHook(() => useLogMeasurement(CLIENT_ID, "body"), { wrapper });
+    await act(() => result.current(input("weight")));
+
+    answers[OUT_OF_DATE_KEY] = () => deferred<unknown>().promise;
+    const next = renderHook(() => useRuleReader(), { wrapper });
+    expect(next.result.current).toEqual({ data: undefined, isLoading: true });
+  });
+
+  it("leaves it alone for a score", async () => {
+    const wrapper = wrapperFor(new Map());
+    const { result } = renderHook(
+      () => ({ shown: useRuleReader(), log: useLogMeasurement(CLIENT_ID, "wellness") }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.shown.data).toBeDefined());
+    await act(() => result.current.log(input("mood")));
+    expect(reads.filter((url) => url === OUT_OF_DATE_KEY)).toHaveLength(1);
   });
 });

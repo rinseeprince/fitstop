@@ -40,6 +40,7 @@ import {
   getNutritionPrescriptionsForRange,
   getNutritionPlanGrids,
   getNextNutritionVersionStartCap,
+  getNutritionVersionGoalsFrom,
   getNutritionWindowsForClients,
   listNutritionPlanNotesInRange,
   resolveNutritionPlacementEnd,
@@ -432,6 +433,39 @@ describe('Nutrition Plan Service', () => {
         createResolverQuery({ data: null, error: { message: 'boom' } }) as any
       )
       await expect(getLatestNutritionPlan('client-123')).rejects.toThrow(/boom/)
+    })
+  })
+
+  describe('getNutritionVersionGoalsFrom — what the out-of-date rule judges (commit 8d1)', () => {
+    it('reads the active versions with a day on or after today, earliest first, with the goal each was built for', async () => {
+      const query = createResolverQuery({
+        data: [
+          { id: 'v1', effective_from: '2026-09-01', effective_until: '2026-10-31', goal_weight_kg: 81.4, goal_deadline: '2026-11-20' },
+          { id: 'v2', effective_from: '2026-11-01', effective_until: '2026-12-26', goal_weight_kg: null, goal_deadline: null },
+        ],
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(query as any)
+
+      const versions = await getNutritionVersionGoalsFrom('client-123', '2026-09-23')
+
+      expect(query.select).toHaveBeenCalledWith('id, effective_from, effective_until, goal_weight_kg, goal_deadline')
+      expect(query.eq).toHaveBeenCalledWith('client_id', 'client-123')
+      expect(query.eq).toHaveBeenCalledWith('status', 'active')
+      // A version that has ended is history and never judged.
+      expect(query.gte).toHaveBeenCalledWith('effective_until', '2026-09-23')
+      expect(query.order).toHaveBeenCalledWith('effective_from', { ascending: true })
+      expect(versions).toEqual([
+        { id: 'v1', effectiveFrom: '2026-09-01', effectiveUntil: '2026-10-31', built: { goalWeightKg: 81.4, deadline: '2026-11-20' } },
+        { id: 'v2', effectiveFrom: '2026-11-01', effectiveUntil: '2026-12-26', built: { goalWeightKg: null, deadline: null } },
+      ])
+    })
+
+    it('throws on a query error', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(
+        createResolverQuery({ data: null, error: { message: 'boom' } }) as any
+      )
+      await expect(getNutritionVersionGoalsFrom('client-123', '2026-09-23')).rejects.toThrow(/boom/)
     })
   })
 

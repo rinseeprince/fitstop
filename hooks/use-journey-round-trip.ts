@@ -29,17 +29,24 @@ import {
  *
  * Read `returnBlockId` from the render closure when the save succeeds — the
  * surface's own close clears it, and closure capture makes that a non-race.
+ *
+ * `startsOn` is the day an arrival asked the drawer to start on ("Set
+ * nutrition from 19 Oct" on the Overview): captured in the same update that
+ * opens the surface, so the drawer never opens on another day first, and
+ * dropped with the trip on any close.
  */
 export function useJourneyRoundTrip(surface: JourneyTripSurface): {
   open: boolean;
   setOpen: (open: boolean) => void;
   returnBlockId: string | null;
+  startsOn: string | null;
 } {
   const searchParams = useSearchParams();
   const router = useRouter();
 
   const [open, setOpenState] = useState(false);
   const [returnBlockId, setReturnBlockId] = useState<string | null>(null);
+  const [startsOn, setStartsOn] = useState<string | null>(null);
   // Guards the window between consuming and the stripped URL committing, in
   // which this effect can re-run against the params it already handled.
   const consumed = useRef(false);
@@ -51,6 +58,7 @@ export function useJourneyRoundTrip(surface: JourneyTripSurface): {
     consumed.current = true;
     setOpenState(true);
     setReturnBlockId(trip.returnBlockId);
+    setStartsOn(trip.startsOn);
     router.replace(`?${stripJourneyTrip(searchParams.toString(), surface)}`, {
       scroll: false,
     });
@@ -61,9 +69,10 @@ export function useJourneyRoundTrip(surface: JourneyTripSurface): {
     // Closing without a save ABANDONS the trip, and a hand open starts a fresh
     // one: either way nothing may ride on to the next save.
     setReturnBlockId(null);
+    setStartsOn(null);
   }, []);
 
-  return { open, setOpen, returnBlockId };
+  return { open, setOpen, returnBlockId, startsOn };
 }
 
 /**

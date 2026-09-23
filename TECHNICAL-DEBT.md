@@ -121,10 +121,15 @@ the anti-pattern that section names: there is no cache to invalidate at all, so
 **no other surface can refresh it** — only a caller holding the hook's own
 `refetchNutrition`.
 
-A goal is set on the Overview (the client details sheet) and a reading on the
-Journey, and neither can refresh the drawer's derived targets or its drift
-banner: they catch up only when the drawer refetches. Every writer of client
-weight, goals or metrics has the same problem and no invalidator to call.
+Narrowed 2026-09-23 (docs/MEASUREMENT-LOG-PLAN.md commit 8d1): the parts of the
+drawer that a goal, a reading or the profile move are no longer on this read.
+The drawer's calculator inputs and Goal line come from the SWR day read
+`GET …/nutrition/goal?date=`, and whether the versions still fit the goal from
+`GET …/nutrition/goal/out-of-date` — one area with one clearer
+(`hooks/use-nutrition-goal.ts`), which every goal, reading and profile writer
+calls. What is left here is the plan read itself — the seeds, the hero's dates,
+`hasPlan` — which only a plan save or delete moves, and those hold
+`refetchNutrition`.
 
 Proper fix: migrate the hook to SWR with a co-located key builder + exported
 invalidator, matching `useInvalidateNutritionCalendar`. Deferred because it is a

@@ -21,11 +21,6 @@ import {
   getNextFutureNutritionPlan,
 } from "@/services/nutrition-plan-service";
 import { BlocksUnreadableError } from "@/services/client-blocks-service";
-import { getGoalForDate } from "@/services/client-goals-service";
-import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
-import { captureApiError } from "@/lib/error-handler";
-import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
-import { detectGoalDrift } from "@/lib/goals/detect-goal-drift";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 
@@ -33,7 +28,9 @@ import { AUDIT_ACTIONS } from "@/lib/constants";
  * GET: Return the active nutrition plan's baseline targets + calculator
  * settings for the coach view. Per-day targets are NOT here — they are
  * computed per date (services/nutrition-days-service.ts) and the calendar
- * reads them through GET …/nutrition/events.
+ * reads them through GET …/nutrition/events. Nor is the goal: the drawer
+ * prices the goal in force on its Starts on day (GET …/nutrition/goal?date=),
+ * and whether a version still fits the goal is GET …/nutrition/goal/out-of-date.
  */
 export async function GET(
   request: NextRequest,
@@ -70,29 +67,25 @@ export async function GET(
     // alongside the plan-role reads because none depends on another, and it
     // must be resolved BEFORE the no-plan early return — the tab's training
     // section is independent of whether a nutrition plan exists.
-    // The goal in force on the client's today rides in this batch: the drift
-    // check needs it AND the calc-input resolver needs it, so reading it once
-    // here costs one query instead of two and removes a sequential hop.
     //
     // THREE PLAN ROLES (versions placed by date, migration 166):
     //   covering  → what governs TODAY: "Active since" + hasCurrentTargets.
-    //   latest    → the latest-saved prescription: the drawer's seeds and the
-    //               goal-drift comparison. Seeding from anything else lets
-    //               Generate clobber a queued prescription.
+    //   latest    → the latest-saved prescription: the drawer's seeds.
+    //               Seeding from anything else lets Generate clobber a queued
+    //               prescription.
     //   future    → the EARLIEST queued version: "New targets from" / "Starts".
     //               A two-row shape hid the next change behind a third queued
     //               version; earliest-first cannot.
     // The old todayEvent probe is retired: the covering ROW answers "is
     // anything running" directly (events before a queued change belong to the
     // still-covering old version).
-    const [covering, latestPlan, nextFuture, activePlan, nextPlan, goal] =
+    const [covering, latestPlan, nextFuture, activePlan, nextPlan] =
       await Promise.all([
         getNutritionPlanForDate(clientId, clientToday),
         getLatestNutritionPlan(clientId),
         getNextFutureNutritionPlan(clientId, clientToday),
         getTrainingPlanSummaryForDate(clientId, clientToday),
         getNextFutureTrainingPlan(clientId, clientToday),
-        getGoalForDate(clientId, clientToday),
       ]);
     const hasTrainingPlan = Boolean(activePlan ?? nextPlan);
 
@@ -111,35 +104,15 @@ export async function GET(
     // hasTrainingPlan: the running program, else the queued one.
     const trainingPlanName = activePlan?.name ?? nextPlan?.name ?? null;
 
-    // The exact inputs the plan POST will calculate from, sent to the browser so
-    // the builder can preview a plan live as the coach moves a picker — same
-    // resolver, same pure calculator, so preview and save cannot disagree.
-    //
-    // Resolved BEFORE the no-plan early return and returned on BOTH branches:
-    // a coach creating their FIRST plan is exactly who needs the preview, and
-    // computing it above a three-key literal that ignores it would make it dead
-    // precisely then.
-    //
-    // A failure here degrades the preview to null rather than failing the read.
-    // This route's catch has no NutritionPlanError branch, so an uncaught throw
-    // becomes a blanket 500 — and the client treats a non-OK response as "no
-    // plan", so a measurement-read hiccup would blank a working nutrition tab.
-    // The POST does its own strict resolution, so Generate still behaves.
-    const calcInputs = await resolveNutritionCalcInputs(clientId, client, {
-      today: clientToday,
-      goal,
-    }).catch((err) => {
-      captureApiError(err, { action: "nutrition-calc-inputs", clientId });
-      return null;
-    });
-
     if (!hasPlan || !seedPlan) {
       return NextResponse.json({
         success: true,
         hasPlan: false,
         hasTrainingPlan,
         trainingPlanName,
-        calcInputs,
+        // The client's today, on both branches: the drawer's Starts on defaults
+        // to it and floors on it before any day read has answered.
+        clientToday,
       });
     }
 
@@ -150,20 +123,6 @@ export async function GET(
     // the calendar owns per-day targets — so the two queries had no reader.
     // Per-day targets are computed per date from the covering version; the
     // client portal builds its own date-accurate targets in client-portal-service.
-
-    // Goal-drift flag (Session 7.8): does the goal in force on the client's
-    // today — its weight target and that day's deadline — differ from the
-    // snapshot this active plan was built against? Surfaced as "Goal changed —
-    // regenerate", distinct from the weight-delta banner (which compares current
-    // weight vs the plan base weight).
-    const effectiveGoal = resolveEffectiveGoal(goal);
-    // Drift compares against the version the drawer will actually seed and
-    // overwrite (latest ?? covering) — comparing anything else would flag or
-    // clear the banner against numbers Generate does not touch.
-    const goalChanged = detectGoalDrift(
-      { goalWeightKg: seedPlan.goal_weight_kg ?? null, deadline: seedPlan.goal_deadline ?? null },
-      effectiveGoal
-    );
 
     return NextResponse.json({
       hasPlan: true,
@@ -202,10 +161,9 @@ export async function GET(
       // until then" (a covering version keeps running) from "Starts X" (a
       // first plan with nothing running in the interim).
       hasCurrentTargets: covering != null,
-      goalChanged,
       hasTrainingPlan,
       trainingPlanName,
-      calcInputs,
+      clientToday,
     });
   } catch (error) {
     console.error("Error fetching nutrition plan:", error instanceof Error ? error.message : "Unknown error");

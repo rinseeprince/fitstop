@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import { useReadingActions } from "./use-reading-actions";
 import { useClientGoals } from "@/hooks/use-client-goals";
+import { useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { LogRow } from "../metrics-view-types";
 
@@ -78,5 +79,34 @@ describe("useReadingActions — the goals read", () => {
     await waitFor(() => expect(result.current.goals.isLoading).toBe(false));
     await act(() => result.current.actions.remove(row("waist")));
     expect(reads.filter((url) => url === GOALS_KEY)).toHaveLength(1);
+  });
+});
+
+// docs/MEASUREMENT-LOG-PLAN.md commit 8d1: the nutrition drawer prices from the
+// newest weight and the energy pair, so a weight or body-fat action clears how
+// nutrition follows the goal — and a girth leaves it alone.
+describe("useReadingActions — how nutrition follows the goal", () => {
+  const OUT_OF_DATE_KEY = `/api/clients/${CLIENT_ID}/nutrition/goal/out-of-date`;
+
+  it("is cleared after a weight or body-fat action", async () => {
+    const { result } = renderHook(
+      () => ({ rule: useNutritionOutOfDate(CLIENT_ID), actions: useReadingActions(CLIENT_ID) }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.rule.isLoading).toBe(false));
+    await act(async () => {
+      await result.current.actions.update(row("bodyFat"), 21.4);
+    });
+    await waitFor(() => expect(reads.filter((url) => url === OUT_OF_DATE_KEY)).toHaveLength(2));
+  });
+
+  it("is left alone after a girth", async () => {
+    const { result } = renderHook(
+      () => ({ rule: useNutritionOutOfDate(CLIENT_ID), actions: useReadingActions(CLIENT_ID) }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.rule.isLoading).toBe(false));
+    await act(() => result.current.actions.remove(row("hips")));
+    expect(reads.filter((url) => url === OUT_OF_DATE_KEY)).toHaveLength(1);
   });
 });

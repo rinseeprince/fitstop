@@ -3,8 +3,10 @@ import {
   buildClientTabUrl,
   checkInReviewUrl,
   journeyPlanTripParams,
+  nutritionDrawerParams,
   paneParamSearch,
   readJourneyReturnBlock,
+  readJourneyTrip,
   resolvePaneParam,
   stripJourneyReturn,
   stripJourneyTrip,
@@ -252,5 +254,41 @@ describe("checkInReviewUrl", () => {
     expect(
       buildClientTabUrl("c1", "check-ins", "tab=check-ins&checkIn=ci-9", { checkIn: null })
     ).toBe("/clients/c1?tab=check-ins");
+  });
+});
+
+// docs/MEASUREMENT-LOG-PLAN.md commit 8d1: the Overview's out-of-date line opens
+// the nutrition drawer — from a day when it names one — through the drawer's
+// own one-shot `?edit=1`, with the day riding one-shot beside it.
+describe("the nutrition drawer's start day", () => {
+  it("nutritionDrawerParams opens the drawer on the Plans pane, from a day when given", () => {
+    expect(nutritionDrawerParams()).toEqual({ nutrition: "plans", edit: "1" });
+    expect(nutritionDrawerParams("2026-10-19")).toEqual({
+      nutrition: "plans",
+      edit: "1",
+      startsOn: "2026-10-19",
+    });
+  });
+
+  it("readJourneyTrip hands the drawer a well-formed day, and nothing else", () => {
+    expect(readJourneyTrip(new URLSearchParams("edit=1&startsOn=2026-10-19"), "edit")).toEqual({
+      open: true,
+      returnBlockId: null,
+      startsOn: "2026-10-19",
+    });
+    expect(readJourneyTrip(new URLSearchParams("edit=1&startsOn=19-10-2026"), "edit").startsOn).toBeNull();
+    expect(readJourneyTrip(new URLSearchParams("edit=1"), "edit").startsOn).toBeNull();
+    // No drawer trip, no day.
+    expect(readJourneyTrip(new URLSearchParams("startsOn=2026-10-19"), "edit")).toEqual({
+      open: false,
+      returnBlockId: null,
+      startsOn: null,
+    });
+  });
+
+  it("stripJourneyTrip takes the day with the trip", () => {
+    expect(stripJourneyTrip("tab=nutrition&nutrition=plans&edit=1&startsOn=2026-10-19", "edit")).toBe(
+      "tab=nutrition&nutrition=plans"
+    );
   });
 });

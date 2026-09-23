@@ -24,6 +24,24 @@ beforeEach(() => {
 });
 
 describe("useJourneyRoundTrip", () => {
+  // docs/MEASUREMENT-LOG-PLAN.md commit 8d1: "Set nutrition from 19 Oct" on the
+  // Overview. The day is captured in the same update that opens the drawer —
+  // so it never opens on another day first — stripped with the trip, and
+  // dropped on any close.
+  it("captures the start day with the open, strips it, and drops it on a close", () => {
+    search = new URLSearchParams("tab=nutrition&nutrition=plans&edit=1&startsOn=2026-10-19");
+    const { result } = renderHook(() => useJourneyRoundTrip("edit"));
+
+    expect(result.current.open).toBe(true);
+    expect(result.current.startsOn).toBe("2026-10-19");
+    const [url] = mockReplace.mock.calls[0] as [string];
+    expect(url).not.toContain("startsOn=");
+    expect(url).toContain("nutrition=plans");
+
+    act(() => result.current.setOpen(false));
+    expect(result.current.startsOn).toBe(null);
+  });
+
   it("stays shut, with no return target, when no trip params are present", () => {
     search = new URLSearchParams("tab=training&training=plans");
     const { result } = renderHook(() => useJourneyRoundTrip("apply"));

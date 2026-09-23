@@ -10,6 +10,7 @@ import {
   useInvalidateMetricEntries,
 } from "@/hooks/use-metric-entries";
 import { useClearClientGoals, useInvalidateClientGoals } from "@/hooks/use-client-goals";
+import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
 import { isMeasurementKey } from "@/lib/measurements/keys";
 import type { CreateMetricEntryRequest } from "@/types/metric-entries";
 import type { MetricTab } from "../metrics-view-types";
@@ -41,6 +42,7 @@ export function useLogMeasurement(
   const clearEntries = useClearMetricEntries();
   const refreshGoals = useInvalidateClientGoals();
   const clearGoals = useClearClientGoals();
+  const clearNutritionGoal = useClearNutritionGoal();
 
   return useCallback(
     async (input: CreateMetricEntryRequest) => {
@@ -58,9 +60,11 @@ export function useLogMeasurement(
         // A weight or body fat may be the client's newest reading — refresh
         // the client record so "now", the goal "to go" stat and the pair go live
         // — and may be the reading on a goal's start day, which the goal chips
-        // measure from.
+        // measure from. The nutrition drawer prices from the same newest weight
+        // and energy pair, on no screen shown here, so its read is cleared.
         if (input.metricKey === "weight" || input.metricKey === "bodyFat") {
           await (onScreen === "body" ? refreshGoals : clearGoals)(clientId);
+          void clearNutritionGoal(clientId);
           onClientUpdated?.();
         }
       } else {
@@ -77,6 +81,7 @@ export function useLogMeasurement(
       clearEntries,
       refreshGoals,
       clearGoals,
+      clearNutritionGoal,
     ]
   );
 }

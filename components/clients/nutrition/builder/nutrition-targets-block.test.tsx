@@ -40,7 +40,14 @@ const autoPlan = (
 
 function renderBlock(
   weeklyWeightChangeKg: number,
-  opts: { requiredDailyDeficit?: number; hasGoalTarget?: boolean; manualEnabled?: boolean } = {},
+  opts: {
+    requiredDailyDeficit?: number;
+    hasGoalTarget?: boolean;
+    manualEnabled?: boolean;
+    pending?: boolean;
+    failed?: boolean;
+    onRetry?: () => void;
+  } = {},
 ) {
   return render(
     <NutritionTargetsBlock
@@ -53,6 +60,9 @@ function renderBlock(
       onBalanceChange={vi.fn()}
       missing={[]}
       hasGoalTarget={opts.hasGoalTarget ?? true}
+      pending={opts.pending ?? false}
+      failed={opts.failed ?? false}
+      onRetry={opts.onRetry ?? vi.fn()}
     />,
   );
 }
@@ -90,30 +100,28 @@ describe("NutritionTargetsBlock — weekly rate unit", () => {
   });
 });
 
-// Task 0b.5. Both explanatory spans are suppressed at exactly zero, so a client
-// with no goal used to leave a bare "TDEE 2,600" and nothing saying why — and
-// the only thing on this surface that mentioned a missing goal was the goal
-// editor, which moved to the Overview in this same session.
+// Both explanatory spans are suppressed at exactly zero. Why the calories hold
+// at maintenance has ONE home per reason (docs/MEASUREMENT-LOG-PLAN.md commit
+// 8d1): no goal, no weight target and no deadline are the drawer's Goal line's;
+// only a goal the client already weighs is said here, where nothing else would.
 describe("NutritionTargetsBlock — the maintenance state is explained, not silent", () => {
   beforeEach(() => {
     cleanup();
     units.preference = "metric";
   });
 
-  it("names the missing goal when there is no target to solve against", () => {
+  it("leaves a missing goal, target or deadline to the Goal line — no second sentence here", () => {
     renderBlock(0, { requiredDailyDeficit: 0, hasGoalTarget: false });
 
-    expect(screen.getByText(/no goal weight and deadline are set/i)).toBeInTheDocument();
-    expect(screen.getByText(/client's Overview/i)).toBeInTheDocument();
+    expect(screen.queryByText(/maintenance/i)).toBeNull();
   });
 
-  // A goal IS set and the client is already on it. Telling this coach to go set
-  // a goal would be wrong, so the two cases get different sentences.
+  // A goal IS set and the client is already on it: the one maintenance this
+  // block explains itself.
   it("says the client is already on their goal when one is set", () => {
     renderBlock(0, { requiredDailyDeficit: 0, hasGoalTarget: true });
 
     expect(screen.getByText(/matches the client's current weight/i)).toBeInTheDocument();
-    expect(screen.queryByText(/no goal weight and deadline/i)).toBeNull();
   });
 
   it("stays quiet when the plan is actually working to a deficit", () => {
@@ -155,5 +163,31 @@ describe("NutritionTargetsBlock — the manual entry is the balancer", () => {
     cleanup();
     renderBlock(-0.5);
     expect(screen.queryByText(/Match macros/i)).toBeNull();
+  });
+});
+
+// docs/MEASUREMENT-LOG-PLAN.md commit 8d1: the numbers are the Starts on day's.
+// While that day's goal is loading they are pending — never another day's —
+// and a failed read says so, with the retry, instead of numbers.
+describe("NutritionTargetsBlock — the day's read", () => {
+  beforeEach(() => {
+    cleanup();
+    units.preference = "metric";
+  });
+
+  it("renders the four auto numbers as pending while the day loads", () => {
+    const { container } = renderBlock(-0.5, { pending: true });
+    expect(container.querySelectorAll("input[readonly]")).toHaveLength(0);
+    expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(4);
+  });
+
+  it("a failed read shows no numbers, says so, and retries on request", () => {
+    const onRetry = vi.fn();
+    const { container } = renderBlock(-0.5, { failed: true, onRetry });
+
+    expect(container.querySelectorAll("input[readonly]")).toHaveLength(0);
+    expect(screen.getByText(/Couldn't work out the targets for this day/)).toBeInTheDocument();
+    screen.getByRole("button", { name: "Try again" }).click();
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 });

@@ -15,6 +15,7 @@ import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-e
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
+import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
 import {
   journeyReturnParams,
   paneParamSearch,
@@ -43,11 +44,14 @@ export function NutritionPlanBuilder({
   // drops the target on any close without a save — so an abandoned trip cannot
   // bounce a later, unrelated save back to Journey. The block it names is also
   // the one the drawer's Block field preselects, so it is handed to the
-  // provider below rather than re-read off a URL that no longer carries it.
+  // provider below rather than re-read off a URL that no longer carries it —
+  // as is the day an arrival asked the drawer to start on (the Overview's
+  // "Set nutrition from 19 Oct").
   const {
     open: drawerOpen,
     setOpen: setDrawerOpen,
     returnBlockId,
+    startsOn: roundTripStartsOn,
   } = useJourneyRoundTrip("edit");
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -72,6 +76,7 @@ export function NutritionPlanBuilder({
         client={client}
         onUpdate={onUpdate}
         roundTripBlockId={returnBlockId}
+        roundTripStartsOn={roundTripStartsOn}
       >
         {/* Top content bar */}
         <TopContentBar subtab={subtab} setSubtab={setSubtab} />
@@ -143,6 +148,7 @@ function NutritionCalendarMount() {
   const clearBlockFacts = useClearBlockFacts();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
+  const clearNutritionGoal = useClearNutritionGoal();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -168,6 +174,8 @@ function NutritionCalendarMount() {
       void clearBlockFacts(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
+      // The versions this ended are what the out-of-date rule judges.
+      void clearNutritionGoal(clientId);
       builder.refetchNutrition();
     } catch (error) {
       toast.error("Delete failed", {

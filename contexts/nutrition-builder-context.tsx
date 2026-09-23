@@ -15,6 +15,8 @@ type NutritionBuilderProviderProps = {
   /** The Journey block the coach came from, preselected in the drawer's Block
    *  field (see `useNutritionBuilder`). */
   roundTripBlockId?: string | null;
+  /** The day an arrival asked the drawer to start on (see `useNutritionBuilder`). */
+  roundTripStartsOn?: string | null;
 };
 
 export function NutritionBuilderProvider({
@@ -22,8 +24,9 @@ export function NutritionBuilderProvider({
   client,
   onUpdate,
   roundTripBlockId,
+  roundTripStartsOn,
 }: NutritionBuilderProviderProps) {
-  const builder = useNutritionBuilder({ client, onUpdate, roundTripBlockId });
+  const builder = useNutritionBuilder({ client, onUpdate, roundTripBlockId, roundTripStartsOn });
 
   return (
     <NutritionBuilderContext.Provider value={builder}>

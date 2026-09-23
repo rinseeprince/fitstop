@@ -10,6 +10,7 @@ import {
 } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
+import { useClearNutritionGoal, useNutritionGoalForDay } from "@/hooks/use-nutrition-goal";
 import {
   buildBlockStartOptions,
   selectBlockStartOption,
@@ -36,6 +37,10 @@ type UseNutritionBuilderProps = {
    *  is stripped of the trip in the same effect — and preselected in the Block
    *  field below; never a binding. */
   roundTripBlockId?: string | null;
+  /** The day an arrival asked the drawer to start on ("Set nutrition from
+   *  19 Oct" on the Overview), or null. Captured on arrival with the trip and
+   *  cleared with it; the coach's own pick and a chosen block both win. */
+  roundTripStartsOn?: string | null;
 };
 
 type NutritionSettings = {
@@ -47,12 +52,14 @@ export function useNutritionBuilder({
   client,
   onUpdate,
   roundTripBlockId = null,
+  roundTripStartsOn = null,
 }: UseNutritionBuilderProps) {
   const nutritionPlan = useNutritionPlan({ client });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
+  const clearNutritionGoal = useClearNutritionGoal();
 
   const [settings, setSettings] = useState<NutritionSettings>({
     proteinTargetGPerKg: 2.0,
@@ -87,32 +94,20 @@ export function useNutritionBuilder({
     settingsSeededRef.current = settingsSeedKey;
   }, [settingsSeedKey]);
 
-  // The live preview. Recomputes on every picker change REGARDLESS of manual
-  // mode — that is what powers the "Auto suggests …" hint without ever writing
-  // into the coach's typed numbers.
-  //
-  // The `status === "ready"` gate is load-bearing, not defensive. The server
-  // asserts `bmr!` because validateClientForNutrition ran first; the browser
-  // has no such guarantee, and an undefined bmr makes Math.round(bmr * mult)
-  // NaN — which the minimum-calorie floor does NOT catch, so the field would
-  // render the literal string "NaN". A null bmr is worse: it yields 0, which
-  // looks like a number.
-  const calcInputs = nutritionPlan.nutritionData?.calcInputs ?? null;
-
   // The day the plan takes effect — the coach's pick, else the client's today
   // (docs/MEASUREMENT-LOG-PLAN.md commit 8bb, D27). Derived rather than seeded
   // so the default follows the client's day across their midnight, and taken
-  // from the resolved inputs — the day the server's past-date belt judges —
-  // never from the coach's browser clock.
+  // from the server's answer — the day its past-date belt judges — never from
+  // the coach's browser clock.
   const [effectiveFromPick, setEffectiveFromPick] = useState<string | null>(null);
-  const clientToday = calcInputs?.today ?? null;
+  const clientToday = nd?.clientToday ?? null;
   // The earliest day targets may START is the client's own today (owner,
   // 2026-09-11): today is the coach's to replace whatever the client has
   // eaten — a today they have already logged is re-recorded onto their log by
   // the save — so nothing on this track asks the deletion floor, which is
   // training's (a workout logged today moves a program's start, never the
   // targets'). The blocks payload is read for its blocks alone. Null until the
-  // resolved inputs have loaded, like everything here; the server's own belt
+  // plan read has answered, like everything here; the server's own belt
   // refuses a past start either way.
   const { blocks } = useClientBlocks(client.id);
   // The Block field over the date: the dash (no block) first, then the client's
@@ -120,9 +115,10 @@ export function useNutritionBuilder({
   // none, the block they came from is preselected; else the dash. A chosen
   // block FIXES the start on its first available day (today for a block
   // already under way, never the day it began) and the form disables the date;
-  // with the dash the date is the coach's own, seeded at today. A derivation,
-  // never a second copy of the date, so the two cannot disagree. No options,
-  // and so nothing fixed, until the client's today is known.
+  // with the dash the date is the coach's own, else the day an arrival asked
+  // for, else today. A derivation, never a second copy of the date, so the two
+  // cannot disagree. No options, and so nothing fixed, until the client's today
+  // is known.
   const blockOptions = useMemo(
     () => (clientToday ? buildBlockStartOptions(blocks, clientToday) : []),
     [blocks, clientToday]
@@ -134,7 +130,28 @@ export function useNutritionBuilder({
       : null;
   const fixedStart =
     selectedBlock && selectedBlock.value !== NO_BLOCK_OPTION ? selectedBlock.startsOn : null;
-  const effectiveFrom = fixedStart ?? effectiveFromPick ?? clientToday;
+  const effectiveFrom = fixedStart ?? effectiveFromPick ?? roundTripStartsOn ?? clientToday;
+
+  // The goal in force on that day and the calculator's inputs for it
+  // (docs/MEASUREMENT-LOG-PLAN.md commit 8d1): the drawer prices a plan for the
+  // goal on its Starts on, as the save does — one resolver on the server — so
+  // preview and save agree even inside a planned goal. A new day is a new read:
+  // until it lands the numbers are pending, never another day's.
+  const dayRead = useNutritionGoalForDay(client.id, effectiveFrom);
+  const dayGoal = dayRead.goalForDay?.goal ?? null;
+  const isDayPending = !dayRead.goalForDay && !dayRead.isError;
+
+  // The live preview. Recomputes on every picker change REGARDLESS of manual
+  // mode — that is what powers the "Auto suggests …" hint without ever writing
+  // into the coach's typed numbers.
+  //
+  // The `status === "ready"` gate is load-bearing, not defensive. The server
+  // asserts `bmr!` because validateClientForNutrition ran first; the browser
+  // has no such guarantee, and an undefined bmr makes Math.round(bmr * mult)
+  // NaN — which the minimum-calorie floor does NOT catch, so the field would
+  // render the literal string "NaN". A null bmr is worse: it yields 0, which
+  // looks like a number.
+  const calcInputs = dayRead.goalForDay?.calcInputs ?? null;
 
   const autoPlan = useMemo(
     () =>
@@ -250,6 +267,14 @@ export function useNutritionBuilder({
     setSettingsChanged(true);
   }, []);
 
+  // "Set nutrition from 19 Oct": the dash and that day, in one update, so the
+  // date field and the numbers under it move together.
+  const setStartsOn = useCallback((day: string) => {
+    setBlockPick(NO_BLOCK_OPTION);
+    setEffectiveFromPick(day);
+    setSettingsChanged(true);
+  }, []);
+
   // Generate nutrition plan. `useManual` posts the coach's typed targets as the
   // custom-macro override; otherwise the server recalculates from the same
   // pickers the preview used, so the saved numbers match what was on screen.
@@ -259,6 +284,15 @@ export function useNutritionBuilder({
       if (!validation.valid) {
         toast.error("Missing required data", {
           description: validation.errors.join(", "),
+        });
+        return false;
+      }
+      // The footer holds the button while the day's goal is loading or failed;
+      // this is the belt, so a save can never price a day the drawer has not
+      // shown.
+      if (isDayPending || dayRead.isError) {
+        toast.error("Save failed", {
+          description: "The goal for the Starts on day hasn't loaded yet.",
         });
         return false;
       }
@@ -328,6 +362,9 @@ export function useNutritionBuilder({
           void clearBlockFacts(client.id);
           void clearClientOverview(client.id);
           void clearAttentionFeed();
+          // Whether the versions still fit the goal is derived from the ones
+          // this just wrote: cleared, so the old notice never shows again.
+          void clearNutritionGoal(client.id);
           return true;
         } else {
           throw new Error(data.error || "Failed to generate plan");
@@ -343,6 +380,8 @@ export function useNutritionBuilder({
     },
     [
       client,
+      isDayPending,
+      dayRead.isError,
       settings,
       effectiveFrom,
       surplus,
@@ -355,6 +394,7 @@ export function useNutritionBuilder({
       clearBlockFacts,
       clearClientOverview,
       clearAttentionFeed,
+      clearNutritionGoal,
     ]
   );
 
@@ -374,6 +414,14 @@ export function useNutritionBuilder({
     effectiveFrom,
     clientToday,
     handleEffectiveFromChange,
+    setStartsOn,
+
+    // The goal in force on that day — the Goal line's — and the day read's
+    // state: while it is pending the numbers are, and Generate waits.
+    dayGoal,
+    isDayPending,
+    isDayError: dayRead.isError,
+    retryDay: dayRead.retry,
 
     // The Block field: its options, the selected value, and whether a block is
     // chosen — the form disables the date field while one is.

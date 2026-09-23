@@ -38,6 +38,7 @@ import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
+import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
 import { blockColor } from "./block-colors";
 import { BlockCard } from "./block-card";
 import { BlockForm, type BlockFormValues } from "./block-form";
@@ -102,6 +103,9 @@ export function BlocksSubtab({
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
+  // Trims and deletes end nutrition versions, which the out-of-date rule
+  // judges (docs/MEASUREMENT-LOG-PLAN.md commit 8d1).
+  const clearNutritionGoal = useClearNutritionGoal();
   const [showAddForm, setShowAddForm] = useState(false);
   // Coach-curated views (Session 3.7): "journey" = everything unarchived —
   // a live program's finished phases included; "archive" = what the coach
@@ -192,6 +196,7 @@ export function BlocksSubtab({
       void invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
       void clearBlockFacts(clientId);
+      void clearNutritionGoal(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
     }
@@ -217,6 +222,7 @@ export function BlocksSubtab({
       void invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
       void clearBlockFacts(clientId);
+      void clearNutritionGoal(clientId);
       toast.success(`"${block.name}" deleted`);
       void invalidateBlocks(clientId);
       void clearClientOverview(clientId);
@@ -250,6 +256,7 @@ export function BlocksSubtab({
       void invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
       void clearBlockFacts(clientId);
+      void clearNutritionGoal(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
       toast.success(planDeleteOutcome(plan));

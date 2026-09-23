@@ -29,6 +29,7 @@ import {
   useMeasurementSeries,
 } from "@/hooks/use-measurement-series";
 import { useClientGoals, useInvalidateClientGoals } from "@/hooks/use-client-goals";
+import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
 import { useClientNotes } from "@/hooks/use-client-notes";
 import { useOverviewBrief } from "@/hooks/use-overview-brief";
 import { useOverviewPlanSummary } from "@/hooks/use-overview-plan-summary";
@@ -73,6 +74,7 @@ export function ClientOverviewTab({
   const { current: currentGoal, isLoading: goalLoading } = useClientGoals(client.id);
   const invalidateGoals = useInvalidateClientGoals();
   const invalidateSeries = useInvalidateMeasurementSeries();
+  const clearNutritionGoal = useClearNutritionGoal();
   const {
     notes,
     isLoading: notesLoading,
@@ -122,17 +124,20 @@ export function ClientOverviewTab({
     void mutateBrief();
   }, [onClientUpdated, mutateBrief]);
 
-  // A sheet save touches THREE areas, so it has to revalidate all three: the
-  // goals read behind the band, the client record everything else derives from,
-  // and the chart's series — correcting a recorded start weight routes to
+  // A sheet save touches FOUR areas, so it has to refresh all four: the goals
+  // read behind the band, the client record everything else derives from, the
+  // chart's series — correcting a recorded start weight routes to
   // `recordClientStart`, which MOVES the metric entries dated on the start date,
   // so the chart's first point changes under a save that never looked like a
-  // measurement, and so can the goal's start reading the chips measure from.
+  // measurement, and so can the goal's start reading the chips measure from —
+  // and how nutrition follows the goal: the goal, the weight and the energy
+  // pair are what the drawer prices and the out-of-date rule judges.
   const handleSaved = useCallback(() => {
     void invalidateGoals(client.id);
     void invalidateSeries(client.id);
+    void clearNutritionGoal(client.id);
     handleClientUpdated();
-  }, [invalidateGoals, invalidateSeries, client.id, handleClientUpdated]);
+  }, [invalidateGoals, invalidateSeries, clearNutritionGoal, client.id, handleClientUpdated]);
 
   const edit = useClientProfileEdit(client, handleSaved, currentGoal);
 
@@ -262,6 +267,7 @@ export function ClientOverviewTab({
           adherence is adherence TO something: the prescription reads first and
           the fortnight measuring it reads second. */}
       <CurrentPlanSection
+        clientId={client.id}
         summary={summary}
         isLoading={summaryLoading}
         onTabChange={goToTab}

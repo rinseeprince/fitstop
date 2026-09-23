@@ -200,8 +200,8 @@ describe("resolveNutritionCalcInputs", () => {
     expect(result.missing.length).toBeGreaterThanOrEqual(3);
   });
 
-  // Without this the coach GET pays for today + the goal twice, because it has
-  // already resolved both for its own drift check.
+  // Without this the day read pays for today + the goal twice, because it has
+  // already resolved both for its Goal line.
   it("uses prefetched today and goal instead of re-querying", async () => {
     await resolveNutritionCalcInputs("client-1", CLIENT, {
       today: "2026-09-09",
@@ -230,13 +230,34 @@ describe("resolveNutritionCalcInputs", () => {
     expect(getGoalForDate).toHaveBeenCalledWith("client-1", "2026-08-05");
   });
 
-  // The plan POST hands in the today it already resolved and no goal: the goal
-  // read must ask for THAT day, or a save near the client's midnight would
+  // A caller that hands in the today it already resolved and no day: the goal
+  // read must ask for THAT today, or a read near the client's midnight would
   // price itself against another day's goal.
   it("reads the goal in force on a prefetched today", async () => {
     await resolveNutritionCalcInputs("client-1", CLIENT, { today: "2026-09-14" });
 
     expect(getClientTodayString).not.toHaveBeenCalled();
     expect(getGoalForDate).toHaveBeenCalledWith("client-1", "2026-09-14");
+  });
+
+  // docs/MEASUREMENT-LOG-PLAN.md commit 8d1: a plan is priced for the goal in
+  // force on the day it takes effect — the drawer's Starts on, the save's
+  // effective date — so a plan starting inside a planned goal is that goal's.
+  it("reads the goal in force on the plan's day, not the client's today", async () => {
+    vi.mocked(getGoalForDate).mockResolvedValue(
+      goalOnDay({ targetWeight: 182.7, deadline: "2027-02-12" })
+    );
+
+    const result = await resolveNutritionCalcInputs("client-1", CLIENT, {
+      today: "2026-09-14",
+      day: "2026-10-19",
+    });
+
+    expect(getGoalForDate).toHaveBeenCalledWith("client-1", "2026-10-19");
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.goalWeightKg).toBe(182.7);
+    expect(result.goalDeadline).toBe("2027-02-12");
+    // The client's today still rides for the calculator; only the goal moved.
+    expect(result.today).toBe("2026-09-14");
   });
 });

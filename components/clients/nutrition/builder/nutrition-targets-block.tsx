@@ -10,6 +10,7 @@ import {
   SECTION_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { MacroBalance } from "@/components/clients/nutrition/macro-balance";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { MacroBalanceValue } from "@/lib/nutrition/macro-balance";
 import type { MacroTargets } from "@/hooks/use-manual-targets";
 import type { NutritionPlan } from "@/services/nutrition-service";
@@ -30,10 +31,17 @@ type NutritionTargetsBlockProps = {
   /** `validateClientForNutrition` messages when the client lacks the data the
    *  calculator needs. Non-empty means nothing can be previewed at all. */
   missing: string[];
-  /** Whether the client has BOTH a goal weight and a deadline — the pair the
-   *  calculator needs before it can solve for anything but maintenance. Drives
-   *  which maintenance explanation is shown, not whether one is. */
+  /** Whether the Starts on day's goal has BOTH a weight target and a deadline —
+   *  the pair the calculator needs before it can solve for anything but
+   *  maintenance. Only then does this block explain a maintenance result
+   *  itself; every other reason is the Goal line's. */
   hasGoalTarget: boolean;
+  /** The Starts on day's goal and inputs are still loading: the auto numbers
+   *  are pending, never another day's. */
+  pending: boolean;
+  /** That read failed: nothing can be priced until it is retried. */
+  failed: boolean;
+  onRetry: () => void;
 };
 
 const FIELD_CLASS =
@@ -59,6 +67,9 @@ export function NutritionTargetsBlock({
   onBalanceChange,
   missing,
   hasGoalTarget,
+  pending,
+  failed,
+  onRetry,
 }: NutritionTargetsBlockProps) {
   // The coach's own unit. This block is "use client" and already inside the
   // builder tree, so no prop thread is needed.
@@ -68,6 +79,35 @@ export function NutritionTargetsBlock({
   // NOT formatLoad — nothing is being loaded on a bar, so snapping to 5 lb
   // would turn a 0.75 kg/week target into a meaningless 1.5 lbs/week.
   const weeklyChange = formatWeight(autoPlan?.weeklyWeightChangeKg ?? 0, preference);
+
+  // The Starts on day's read failed: say so, with the retry, rather than a
+  // plausible-looking set of numbers for some other day.
+  if (failed) {
+    return (
+      <div className="space-y-2">
+        <label className={SECTION_LABEL_CLASS}>Targets</label>
+        <div className="flex items-start gap-2.5 rounded-[6px] bg-[rgba(245,158,11,0.07)] p-3.5">
+          <AlertCircle
+            className="mt-0.5 h-3 w-3 flex-shrink-0 text-[#d97706]"
+            strokeWidth={1.5}
+          />
+          <p className="flex-1 text-[11.5px] font-medium leading-[1.4] text-[#d97706]">
+            Couldn&apos;t work out the targets for this day.
+          </p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className={cn(
+              FOCUS_RING,
+              "shrink-0 rounded-[4px] text-[11.5px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]"
+            )}
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Nothing can be calculated for this client yet. Say which data is missing
   // rather than rendering a plausible-looking zero — a browser has no
@@ -127,10 +167,10 @@ export function NutritionTargetsBlock({
         <MacroBalance value={balance} onChange={onBalanceChange} />
       ) : (
         <div className="grid grid-cols-4 gap-2">
-          <Field label="kcal" value={autoTargets?.calories ?? null} />
-          <Field label="Protein" suffix="g" value={autoTargets?.proteinG ?? null} />
-          <Field label="Carbs" suffix="g" value={autoTargets?.carbG ?? null} />
-          <Field label="Fat" suffix="g" value={autoTargets?.fatG ?? null} />
+          <Field label="kcal" value={autoTargets?.calories ?? null} pending={pending} />
+          <Field label="Protein" suffix="g" value={autoTargets?.proteinG ?? null} pending={pending} />
+          <Field label="Carbs" suffix="g" value={autoTargets?.carbG ?? null} pending={pending} />
+          <Field label="Fat" suffix="g" value={autoTargets?.fatG ?? null} pending={pending} />
         </div>
       )}
 
@@ -162,18 +202,18 @@ export function NutritionTargetsBlock({
         </p>
       )}
 
-      {/* Both spans above are suppressed at exactly zero, so a client with no
-          goal used to leave a bare "TDEE 2,400" with nothing explaining it —
-          and the ONLY thing on this surface that said a goal was missing was
-          the goal editor, which moved to the Overview (0b.5). The numbers were
-          always correct; they were just silent about why.
+      {/* Both spans above are suppressed at exactly zero. When the goal has a
+          weight target and a deadline and the numbers still hold at
+          maintenance, the target IS the client's weight — said here, because
+          nothing else explains it. No goal, no weight target and no deadline
+          are the Goal line's to say (docs/MEASUREMENT-LOG-PLAN.md commit 8d1):
+          one place per reason.
 
           A full sentence, so 100% sans (prose rule) — including the numerals. */}
-      {autoPlan && !manualEnabled && isMaintenance && (
+      {autoPlan && !manualEnabled && isMaintenance && hasGoalTarget && (
         <p className="text-[11px] leading-[1.4] text-[#93b0b4]">
-          {hasGoalTarget
-            ? "The goal weight matches the client's current weight, so these targets hold at maintenance."
-            : "No goal weight and deadline are set, so these targets hold at maintenance. Set them on the client's Overview to work to a deficit."}
+          The goal weight matches the client&apos;s current weight, so these targets hold at
+          maintenance.
         </p>
       )}
 
@@ -202,17 +242,31 @@ export function NutritionTargetsBlock({
   );
 }
 
-/** A read-only cell of the auto result. */
-function Field({ label, suffix, value }: { label: string; suffix?: string; value: number | null }) {
+/** A read-only cell of the auto result; a skeleton at its size while pending. */
+function Field({
+  label,
+  suffix,
+  value,
+  pending,
+}: {
+  label: string;
+  suffix?: string;
+  value: number | null;
+  pending: boolean;
+}) {
   return (
     <div className="space-y-1">
-      <input
-        type="number"
-        readOnly
-        tabIndex={-1}
-        value={value ?? ""}
-        className={cn(MONO, FIELD_CLASS, FOCUS_RING)}
-      />
+      {pending ? (
+        <Skeleton className="h-[38px] w-full rounded-[6px]" />
+      ) : (
+        <input
+          type="number"
+          readOnly
+          tabIndex={-1}
+          value={value ?? ""}
+          className={cn(MONO, FIELD_CLASS, FOCUS_RING)}
+        />
+      )}
       <p className={cn(LABEL_CLASS, "text-center")}>
         {label}
         {suffix ? ` (${suffix})` : ""}

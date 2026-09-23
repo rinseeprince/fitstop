@@ -19,6 +19,7 @@ import { hasStartWeight } from "@/lib/client-profile-completeness"
 import { postIntakeAction } from "@/lib/intake-actions"
 import { useClient } from "@/hooks/use-check-in-data"
 import { useInvalidateClientGoals } from "@/hooks/use-client-goals"
+import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal"
 
 const NARROW_BREAKPOINT = 1024
 
@@ -32,6 +33,7 @@ export function FloatingIntakePanel() {
   const [syncing, setSyncing] = useState(false)
   const { mutate } = useSWRConfig()
   const invalidateClientGoals = useInvalidateClientGoals()
+  const clearNutritionGoal = useClearNutritionGoal()
   const router = useRouter()
 
   // Always fetch activation readiness when panel is open
@@ -63,9 +65,11 @@ export function FloatingIntakePanel() {
       })
       void mutate(`/api/clients/${panel.clientId}`)
       void mutate(`/api/clients/${panel.clientId}/activation-readiness`)
-      // The sync may set the client's first goal, which the page under the
-      // panel reads through the goals area.
+      // The sync may set the client's first goal, readings and profile, which
+      // the page under the panel reads through the goals area and the
+      // nutrition drawer prices.
       void invalidateClientGoals(panel.clientId)
+      void clearNutritionGoal(panel.clientId)
     } catch (err) {
       console.error("Failed to sync metrics:", err)
       toast.error("Sync failed", {

@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from "react";
 import type { Client, DietType, ActivityLevel } from "@/types/check-in";
-import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
-import type { NutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 
 // No `onUpdate`: its only consumer here was the deleted unit-change handler.
 // The callback is still live one level up in useNutritionBuilder (plan
@@ -28,9 +26,6 @@ type NutritionTargetsData = {
    *  it instead of their hardcoded defaults. Absent when there is no plan. */
   workActivityLevel?: ActivityLevel;
   proteinTargetGPerKg?: number;
-  /** Server-resolved inputs for the live preview. Present on BOTH the has-plan
-   *  and no-plan responses; null only when the resolver itself failed. */
-  calcInputs?: NutritionCalcInputs | null;
   /** The latest-saved version's two surplus settings (migration 196) — the
    *  drawer's switches seed from them. Absent when there is no plan. */
   includeActivityBurn?: boolean;
@@ -51,7 +46,11 @@ type NutritionTargetsData = {
    *  (the covering version keeps running until then) from "Starts X" (a first
    *  plan, nothing in the interim). */
   hasCurrentTargets?: boolean;
-  goalChanged?: GoalDrift;
+  /** The client's today, on their calendar — present on both the has-plan and
+   *  no-plan responses. The drawer's Starts on defaults to it and floors on it;
+   *  the goal and the calculator's inputs for that day are their own read
+   *  (`hooks/use-nutrition-goal.ts`). */
+  clientToday?: string;
   /** Does a training plan cover today, or start after it? Mirrors GET /training's
    *  `plan: activePlan ?? nextFullPlan`, so the tab no longer fetches that
    *  210 kB payload just to test it for truthiness. Present on both the

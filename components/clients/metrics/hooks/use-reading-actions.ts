@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { useInvalidateMeasurementSeries } from "@/hooks/use-measurement-series";
 import { useInvalidateClientGoals } from "@/hooks/use-client-goals";
+import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
 import type { LogRow } from "../metrics-view-types";
 
 /**
@@ -16,7 +17,8 @@ import type { LogRow } from "../metrics-view-types";
  *    its "now" readings and the energy pair live there (the record carries no
  *    girth, so a girth leaves it alone) — and the goals area, since a weight or
  *    body fat may be the reading on a goal's start day, which its chips
- *    measure from.
+ *    measure from — and how nutrition follows the goal, whose day read prices
+ *    from the newest weight and the energy pair.
  *
  * A reading a check-in reported is corrected in the client's log only: the
  * check-in keeps what it reported (its saved copy, lib/check-in/sent-snapshot.ts;
@@ -25,16 +27,18 @@ import type { LogRow } from "../metrics-view-types";
 export function useReadingActions(clientId: string, onClientUpdated?: () => void) {
   const invalidateSeries = useInvalidateMeasurementSeries();
   const invalidateGoals = useInvalidateClientGoals();
+  const clearNutritionGoal = useClearNutritionGoal();
 
   const settle = useCallback(
     async (row: LogRow) => {
       await invalidateSeries(clientId);
       if (row.metricId === "weight" || row.metricId === "bodyFat") {
         await invalidateGoals(clientId);
+        void clearNutritionGoal(clientId);
         onClientUpdated?.();
       }
     },
-    [clientId, invalidateSeries, onClientUpdated, invalidateGoals]
+    [clientId, invalidateSeries, onClientUpdated, invalidateGoals, clearNutritionGoal]
   );
 
   const send = useCallback(

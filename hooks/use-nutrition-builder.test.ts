@@ -30,6 +30,35 @@ vi.mock("@/components/clients/metrics/hooks/use-client-blocks", () => ({
   useClearBlockFacts: () => vi.fn().mockResolvedValue(undefined),
 }));
 
+// The day read (docs/MEASUREMENT-LOG-PLAN.md commit 8d1): the goal and the
+// calculator's inputs for the drawer's Starts on day. Every day a render asks
+// for is recorded; `inputsFor` answers per day, so a test can put a planned
+// goal on a later day.
+const dayState = vi.hoisted(() => ({
+  reads: [] as Array<string | null>,
+  pending: false,
+  failed: false,
+  inputsFor: (_day: string): unknown => null,
+  goalFor: (_day: string): unknown => null,
+  retry: vi.fn(),
+  clear: vi.fn(),
+}));
+vi.mock("@/hooks/use-nutrition-goal", () => ({
+  useNutritionGoalForDay: (_clientId: string, day: string | null) => {
+    dayState.reads.push(day);
+    const answered = day !== null && !dayState.pending && !dayState.failed;
+    return {
+      goalForDay: answered
+        ? { date: day, goal: dayState.goalFor(day), calcInputs: dayState.inputsFor(day) }
+        : null,
+      isLoading: dayState.pending,
+      isError: dayState.failed,
+      retry: dayState.retry,
+    };
+  },
+  useClearNutritionGoal: () => dayState.clear,
+}));
+
 // What the coach GET ships, held where the module mock below can reach it.
 const planState = vi.hoisted(() => ({
   nutritionData: null as unknown,
@@ -66,6 +95,15 @@ const CALC_INPUTS: NutritionCalcInputs = {
   goalDeadline: "2026-09-30",
   today: CLIENT_TODAY,
 };
+
+beforeEach(() => {
+  dayState.reads = [];
+  dayState.pending = false;
+  dayState.failed = false;
+  dayState.inputsFor = () => CALC_INPUTS;
+  dayState.goalFor = () => null;
+  dayState.clear.mockReset();
+});
 
 const CLIENT = {
   id: "client-1",
@@ -104,7 +142,7 @@ function mockFetch() {
 describe("useNutritionBuilder — the day the plan takes effect", () => {
   beforeEach(() => {
     planState.nutritionData = {
-      calcInputs: CALC_INPUTS,
+      clientToday: CLIENT_TODAY,
       hasPlan: false,
       includeActivityBurn: true,
       scheduledFor: null,
@@ -203,7 +241,7 @@ describe("useNutritionBuilder — the start is the client's today, whatever they
 
   beforeEach(() => {
     planState.nutritionData = {
-      calcInputs: CALC_INPUTS,
+      clientToday: CLIENT_TODAY,
       hasPlan: false,
       includeActivityBurn: true,
       scheduledFor: null,
@@ -257,7 +295,7 @@ describe("useNutritionBuilder — the Block field", () => {
 
   beforeEach(() => {
     planState.nutritionData = {
-      calcInputs: CALC_INPUTS,
+      clientToday: CLIENT_TODAY,
       hasPlan: false,
       includeActivityBurn: true,
       scheduledFor: null,
@@ -391,7 +429,7 @@ describe("useNutritionBuilder — the manual save carries the balancer's numbers
 
   beforeEach(() => {
     planState.nutritionData = {
-      calcInputs: CALC_INPUTS,
+      clientToday: CLIENT_TODAY,
       hasPlan: false,
       includeActivityBurn: true,
       scheduledFor: null,
@@ -447,7 +485,7 @@ describe("useNutritionBuilder — the manual save carries the balancer's numbers
 describe("useNutritionBuilder — the surplus settings are saved with the plan", () => {
   beforeEach(() => {
     planState.nutritionData = {
-      calcInputs: CALC_INPUTS,
+      clientToday: CLIENT_TODAY,
       hasPlan: true,
       includeActivityBurn: false,
       surplusAsCarbs: true,
@@ -465,7 +503,7 @@ describe("useNutritionBuilder — the surplus settings are saved with the plan",
   });
 
   it("with no plan, starts from the defaults a first plan has: surplus on, kept to the split", () => {
-    planState.nutritionData = { calcInputs: CALC_INPUTS, hasPlan: false, scheduledFor: null };
+    planState.nutritionData = { clientToday: CLIENT_TODAY, hasPlan: false, scheduledFor: null };
     const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
     expect(result.current.includeActivityBurn).toBe(true);
     expect(result.current.surplusAsCarbs).toBe(false);
@@ -521,5 +559,146 @@ describe("useNutritionBuilder — the surplus settings are saved with the plan",
 
     expect(result.current.includeActivityBurn).toBe(true);
     expect(result.current.surplusAsCarbs).toBe(false);
+  });
+});
+
+// docs/MEASUREMENT-LOG-PLAN.md commit 8d1: the drawer prices a plan for the goal
+// in force on its Starts on day — the goal the save resolves for its own start
+// through the same resolver — so preview and save agree even inside a planned
+// goal. The goal and the inputs are one read per day.
+describe("useNutritionBuilder — the goal on the Starts on day", () => {
+  // Build (88 kg by 31 Dec) is planned from 20 Jul, inside the three weeks.
+  const PLANNED_FROM = "2026-07-20";
+  const BUILD_INPUTS: NutritionCalcInputs = {
+    ...CALC_INPUTS,
+    goalWeightKg: 88,
+    goalDeadline: "2026-12-31",
+  };
+  const BUILD_GOAL = { id: "g-build", name: "Build", targetWeight: 88, deadline: "2026-12-31" };
+  const FUTURE_BLOCK = { id: "b-peak", name: "Peak", startsOn: "2026-08-10", endsOn: "2026-09-06" };
+
+  beforeEach(() => {
+    planState.nutritionData = {
+      clientToday: CLIENT_TODAY,
+      hasPlan: true,
+      includeActivityBurn: true,
+      scheduledFor: null,
+    };
+    planState.refetchNutrition.mockReset();
+    dayState.inputsFor = (day) => (day >= PLANNED_FROM ? BUILD_INPUTS : CALC_INPUTS);
+    dayState.goalFor = (day) => (day >= PLANNED_FROM ? BUILD_GOAL : null);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    blocksState.blocks = [];
+  });
+
+  it("reads the goal for the Starts on day, and a new date is a new read", () => {
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    expect(dayState.reads.at(-1)).toBe(CLIENT_TODAY);
+
+    act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
+    expect(dayState.reads.at(-1)).toBe(THREE_WEEKS_OUT);
+  });
+
+  it("prices that day's goal: inside a planned goal the preview is the planned goal's, and so is the Goal line", () => {
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
+
+    expect(result.current.dayGoal).toEqual(BUILD_GOAL);
+    expect(result.current.autoPlan).toEqual(
+      generateNutritionPlan({
+        ...BUILD_INPUTS,
+        proteinTargetGPerKg: result.current.settings.proteinTargetGPerKg,
+        dietType: result.current.settings.dietType,
+        startDate: THREE_WEEKS_OUT,
+      })
+    );
+    // Not the goal on the client's today.
+    expect(result.current.autoPlan).not.toEqual(
+      generateNutritionPlan({
+        ...CALC_INPUTS,
+        proteinTargetGPerKg: result.current.settings.proteinTargetGPerKg,
+        dietType: result.current.settings.dietType,
+        startDate: THREE_WEEKS_OUT,
+      })
+    );
+  });
+
+  it("while the day is loading, nothing is previewed and a save sends nothing", async () => {
+    dayState.pending = true;
+    const fetchSpy = mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+
+    expect(result.current.isDayPending).toBe(true);
+    expect(result.current.autoPlan).toBeNull();
+    let saved = true;
+    await act(async () => {
+      saved = await result.current.generatePlan();
+    });
+    expect(saved).toBe(false);
+    expect(fetchSpy.mock.calls.find(([, init]) => init?.method === "POST")).toBeUndefined();
+  });
+
+  it("a failed day read refuses the save", async () => {
+    dayState.failed = true;
+    const fetchSpy = mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+
+    expect(result.current.isDayError).toBe(true);
+    expect(result.current.isDayPending).toBe(false);
+    let saved = true;
+    await act(async () => {
+      saved = await result.current.generatePlan();
+    });
+    expect(saved).toBe(false);
+    expect(fetchSpy.mock.calls.find(([, init]) => init?.method === "POST")).toBeUndefined();
+  });
+
+  it("an arrival's start day is where the drawer starts; the coach's own pick wins over it", () => {
+    const { result } = renderHook(() =>
+      useNutritionBuilder({ client: CLIENT, roundTripStartsOn: THREE_WEEKS_OUT })
+    );
+    expect(result.current.effectiveFrom).toBe(THREE_WEEKS_OUT);
+    // Never a render on the client's today first.
+    expect(dayState.reads).not.toContain(CLIENT_TODAY);
+
+    act(() => result.current.handleEffectiveFromChange("2026-08-03"));
+    expect(result.current.effectiveFrom).toBe("2026-08-03");
+  });
+
+  it("a chosen block wins over an arrival's start day", () => {
+    blocksState.blocks = [FUTURE_BLOCK];
+    const { result } = renderHook(() =>
+      useNutritionBuilder({
+        client: CLIENT,
+        roundTripBlockId: FUTURE_BLOCK.id,
+        roundTripStartsOn: THREE_WEEKS_OUT,
+      })
+    );
+    expect(result.current.effectiveFrom).toBe(FUTURE_BLOCK.startsOn);
+  });
+
+  it("Set nutrition from a day moves to the dash and that day in one update", () => {
+    blocksState.blocks = [FUTURE_BLOCK];
+    const { result } = renderHook(() =>
+      useNutritionBuilder({ client: CLIENT, roundTripBlockId: FUTURE_BLOCK.id })
+    );
+    expect(result.current.blockValue).toBe(FUTURE_BLOCK.id);
+
+    act(() => result.current.setStartsOn(THREE_WEEKS_OUT));
+    expect(result.current.blockValue).toBe("none");
+    expect(result.current.effectiveFrom).toBe(THREE_WEEKS_OUT);
+  });
+
+  it("a save clears the reads of how nutrition follows the goal", async () => {
+    mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+
+    await act(async () => {
+      await result.current.generatePlan();
+    });
+    expect(dayState.clear).toHaveBeenCalledWith("client-1");
   });
 });

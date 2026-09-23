@@ -121,11 +121,15 @@ export async function orchestrateNutritionPlanCreation(
     throw new NutritionPlanError("Effective date cannot be in the past", 400);
   }
 
-  // One resolver, shared with the coach GET, so the numbers the builder
-  // previewed are the numbers this save computes from. `clientToday` is handed
-  // in rather than re-resolved: the past-date check above already needed it.
+  // One resolver, shared with the drawer's day read, so the numbers the
+  // builder previewed are the numbers this save computes from: the goal in
+  // force on the day the version takes effect, which is the goal the version
+  // records it was built for (docs/MEASUREMENT-LOG-PLAN.md commit 8d1).
+  // `clientToday` is handed in rather than re-resolved: the past-date check
+  // above already needed it.
   const calcInputs = await resolveNutritionCalcInputs(clientId, client, {
     today: clientToday,
+    day: effectiveDate,
   });
 
   // The resolver COMPUTES validity; the write path is where it becomes an

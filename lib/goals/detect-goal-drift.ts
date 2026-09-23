@@ -1,19 +1,20 @@
 import type { EffectiveGoal } from "./resolve-effective-goal";
 
 /**
- * Goal-drift detection (pure, Session 7.8). Compares the goal an active nutrition
- * plan was built against (its frozen snapshot: `goal_weight_kg` + `goal_deadline`)
- * with the goal that drives the client NOW (the effective-goal resolver result).
- * When they differ, the coach sees a "Goal changed — regenerate" prompt — distinct
- * from the weight-delta regeneration banner (which compares the client's CURRENT
- * weight to the plan's base weight, not the goal).
+ * Goal-drift detection (pure, Session 7.8). Compares the goal a nutrition version
+ * was built for (its frozen snapshot: `goal_weight_kg` + `goal_deadline`) with the
+ * goal in force on a day (the effective-goal resolver result) — the comparison the
+ * out-of-date rule makes for each of a version's days from today
+ * (`lib/nutrition/nutrition-out-of-date.ts`). Distinct from the weight-delta
+ * regeneration note, which compares the client's CURRENT weight to the plan's
+ * base weight, not the goal.
  */
-export type GoalDrift = {
+type GoalDrift = {
   changed: boolean;
   /** The active plan's frozen snapshot. */
   planGoalWeightKg: number | null;
   planDeadline: string | null;
-  /** The current effective goal (resolver). */
+  /** The goal in force on the day judged (resolver). */
   currentGoalWeightKg: number | null;
   currentDeadline: string | null;
 };

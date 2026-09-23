@@ -12,14 +12,21 @@ import {
   type StatCellData,
 } from "./overview-primitives";
 import { formatDateOnlyWeekday, pluralize } from "./overview-format";
+import { NutritionOutOfDateNotice } from "@/components/clients/nutrition/nutrition-out-of-date-notice";
+import { useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { KG_PER_LB } from "@/utils/unit-conversions";
 
 type PlanNutritionCardProps = {
+  clientId: string;
   nutrition: OverviewPlanSummary["nutrition"];
   upcomingNutrition: OverviewPlanSummary["upcomingNutrition"];
   onOpenNutrition: () => void;
+  /** The Nutrition tab with the drawer open — from `startsOn` when given
+   *  ("Set nutrition from 19 Oct"), else from the client's today
+   *  ("Regenerate"). */
+  onOpenNutritionDrawer: (startsOn?: string) => void;
 };
 
 function dietLabel(dietType: string): string {
@@ -47,6 +54,30 @@ function nutritionChips(
   return chips;
 }
 
+/**
+ * The out-of-date line (docs/MEASUREMENT-LOG-PLAN.md commit 8d1), between the
+ * title and the numbers, on either state that has versions — the running one
+ * and the queued one. Nothing while the answer is loading or when there is
+ * nothing to say.
+ */
+function OutOfDateLine({
+  clientId,
+  onOpenNutritionDrawer,
+}: Pick<PlanNutritionCardProps, "clientId" | "onOpenNutritionDrawer">) {
+  const { outOfDate, clientToday } = useNutritionOutOfDate(clientId);
+  if (!outOfDate || !clientToday) return null;
+  return (
+    <div className="px-5 pb-4">
+      <NutritionOutOfDateNotice
+        outOfDate={outOfDate}
+        clientToday={clientToday}
+        onRegenerate={() => onOpenNutritionDrawer()}
+        onSetFrom={(day) => onOpenNutritionDrawer(day)}
+      />
+    </div>
+  );
+}
+
 function ChipRow({ chips }: { chips: string[] }) {
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -58,9 +89,11 @@ function ChipRow({ chips }: { chips: string[] }) {
 }
 
 export function PlanNutritionCard({
+  clientId,
   nutrition,
   upcomingNutrition,
   onOpenNutrition,
+  onOpenNutritionDrawer,
 }: PlanNutritionCardProps) {
   const { preference } = useUnits();
 
@@ -79,6 +112,7 @@ export function PlanNutritionCard({
           subtitle={<ChipRow chips={nutritionChips(upcomingNutrition, preference)} />}
           right={<OpenTabLink label="Open Nutrition" onClick={onOpenNutrition} />}
         />
+        <OutOfDateLine clientId={clientId} onOpenNutritionDrawer={onOpenNutritionDrawer} />
         {/* Same frame as the training card's queued state: the body under a
             FIXED header hairline, the number at the program name's size so
             the two bodies are one height, and the footer pinned to the bottom. */}
@@ -170,6 +204,7 @@ export function PlanNutritionCard({
         subtitle={<ChipRow chips={chips} />}
         right={<OpenTabLink label="Open Nutrition" onClick={onOpenNutrition} />}
       />
+      <OutOfDateLine clientId={clientId} onOpenNutritionDrawer={onOpenNutritionDrawer} />
 
       {/* Header, hairline, stat strip — structurally identical to the training
           card beside it, which is what makes the two strips line up. A macro

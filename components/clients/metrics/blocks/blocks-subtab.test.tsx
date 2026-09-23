@@ -15,6 +15,9 @@ const api = vi.hoisted(() => ({
   deletePlanRequest: vi.fn(),
   putBlockChain: vi.fn(),
   seedBlocks: vi.fn(),
+  // Trims and deletes end nutrition versions, which the out-of-date rule
+  // judges (docs/MEASUREMENT-LOG-PLAN.md commit 8d1).
+  clearNutritionGoal: vi.fn(),
 }));
 
 function makeBlock(overrides: Partial<ClientBlockView>): ClientBlockView {
@@ -54,6 +57,7 @@ vi.mock("@/hooks/use-calendar-events", () => ({ useInvalidateTrainingData: () =>
 vi.mock("@/hooks/use-nutrition-calendar-events", () => ({ useInvalidateNutritionCalendar: () => vi.fn() }));
 vi.mock("@/hooks/use-client-overview", () => ({ useClearClientOverview: () => vi.fn() }));
 vi.mock("@/hooks/use-attention-feed", () => ({ useClearAttentionFeed: () => vi.fn() }));
+vi.mock("@/hooks/use-nutrition-goal", () => ({ useClearNutritionGoal: () => api.clearNutritionGoal }));
 // Read lazily, at render: the factory is hoisted above the fixtures.
 vi.mock("../hooks/use-client-blocks", () => ({
   useClientBlocks: () => ({
@@ -238,6 +242,7 @@ beforeEach(() => {
   api.deletePlanRequest.mockReset();
   api.putBlockChain.mockReset();
   api.seedBlocks.mockReset();
+  api.clearNutritionGoal.mockReset();
 });
 afterEach(cleanup);
 
@@ -271,6 +276,7 @@ describe("BlocksSubtab — the block delete confirm", () => {
       await request.promise;
     });
     expect(blockDialog()).toMatchObject({ open: "false", subject: "blk-1", deleting: "true" });
+    expect(api.clearNutritionGoal).toHaveBeenCalledWith("c1");
 
     click("Delete Build 1");
     expect(blockDialog()).toMatchObject({ open: "true", subject: "blk-2", deleting: "false" });
@@ -347,6 +353,7 @@ describe("BlocksSubtab — the one question a save that trims plans asks", () =>
       await confirm.promise;
     });
     expect(api.seedBlocks).toHaveBeenCalledWith("c1", SAVED);
+    expect(api.clearNutritionGoal).toHaveBeenCalledWith("c1");
     expect(screen.queryByTestId("edit-form")).toBeNull();
     // The closing card keeps its trims and its spinner; the next open clears it.
     expect(trimDialog()).toMatchObject({ open: "false", subject: "save:Cut 2:p-power", saving: "true" });
@@ -397,6 +404,7 @@ describe("BlocksSubtab — the per-plan delete confirm", () => {
       await request.promise;
     });
     expect(planDialog()).toMatchObject({ open: "false", subject: "plan-blk-1", deleting: "true" });
+    expect(api.clearNutritionGoal).toHaveBeenCalledWith("c1");
 
     click("End Build 1 program");
     expect(planDialog()).toMatchObject({ open: "true", subject: "plan-blk-2", deleting: "false" });

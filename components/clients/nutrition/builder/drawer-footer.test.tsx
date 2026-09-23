@@ -23,6 +23,9 @@ const builder = {
   // at save time — nothing stands between the button and the save.
   effectiveFrom: CLIENT_TODAY as string | null,
   clientToday: CLIENT_TODAY as string | null,
+  // The Starts on day's goal (docs/MEASUREMENT-LOG-PLAN.md commit 8d1).
+  isDayPending: false,
+  isDayError: false,
   generatePlan,
 };
 
@@ -34,6 +37,8 @@ beforeEach(() => {
   cleanup();
   generatePlan.mockReset();
   builder.effectiveFrom = CLIENT_TODAY;
+  builder.isDayPending = false;
+  builder.isDayError = false;
 });
 
 function clickGenerate() {
@@ -90,5 +95,29 @@ describe("DrawerFooter — Generate saves directly from the drawer's settings", 
     clickGenerate();
     await waitFor(() => expect(generatePlan).toHaveBeenCalledTimes(1));
     expect(screen.queryByText(/has already logged/)).toBeNull();
+  });
+});
+
+// docs/MEASUREMENT-LOG-PLAN.md commit 8d1: Generate waits for the Starts on
+// day's goal — a save priced for a day the drawer has not shown would not be
+// the plan on screen.
+describe("DrawerFooter — Generate waits for the day's goal", () => {
+  it("is held while the day's goal is loading", () => {
+    builder.isDayPending = true;
+    render(<DrawerFooter />);
+    expect(screen.getByRole("button", { name: /Generate Plan/ })).toBeDisabled();
+  });
+
+  it("is held while the day's read has failed", () => {
+    builder.isDayError = true;
+    render(<DrawerFooter />);
+    expect(screen.getByRole("button", { name: /Generate Plan/ })).toBeDisabled();
+  });
+
+  it("saves once the day's goal is in", async () => {
+    generatePlan.mockResolvedValue(true);
+    render(<DrawerFooter />);
+    clickGenerate();
+    await waitFor(() => expect(generatePlan).toHaveBeenCalledTimes(1));
   });
 });
