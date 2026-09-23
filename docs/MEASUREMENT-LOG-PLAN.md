@@ -1000,38 +1000,47 @@ One night's score can swing cards 1 and 3 and the hero, and a coach cannot tell 
 | D32 | The Wellness hero's Total change | **First week against last week**: the average of the client's first 7 days of entries against the last 7 days' | The same 7-day grain as card 1, so the hero reads "from their first week to this one". Alternative: the first 30 days against the last 30 — steadier for a sparse logger, slower to show a change |
 
 ```text
-Read CONVENTIONS.md in full; from docs/ARCHITECTURE.md read "Client page tab structure"
-(the Journey row) and "The client's origin"; from docs/MEASUREMENT-LOG-PLAN.md read §6
-commit 9a, and D4 and D20 where it points to them. Open another section only when
-something you touch points to it. Plan for my review before writing anything. Read my
-answers to D30–D32; if one is blank, stop and ask.
+Build commit 9a of docs/MEASUREMENT-LOG-PLAN.md §6, the Journey's metric cards on fixed
+windows. You have my go: don't show me a plan; build it, and stop only for a decision the
+entry doesn't answer. D30–D32 are answered in its STATUS line.
+
+Read these first, and only these:
+- CONVENTIONS.md, whole.
+- docs/MEASUREMENT-LOG-PLAN.md: the §6 entry for commit 9a, and D4 and D20 where it points
+  to them.
+- docs/ARCHITECTURE.md: "client_measurements table"; "The client's origin"; "Daily Logs";
+  "Timezone model"; "SWR fetching"; "Client page tab structure" (the Journey row).
+- docs/newdesignsystem.md: "Mono = numbers only", "Reusable components index", "Loading &
+  async states", "Stat band", "Empty state".
+Open another section only when something you touch points to it. Read the code you change
+or call. Don't read old transcripts or superseded plans.
 
 The Journey's three metric cards change what they measure with the client's data — a
 "30-day change" that can compare two days 13 days apart, a "Last 7 days" that turns into
 "Latest", a single best day — so a coach cannot tell which measure a card is showing, and
 one night's score can swing them. This commit gives every card one label and one window
 for every client: averages over fixed windows ending the client's today, each saying how
-many entries it stands on; card 3 fixed per metric; the Wellness hero's total change
-compares averages too. Where ARCHITECTURE or CONVENTIONS state a rule that contradicts
-this commit, do not silently follow it and do not silently override it: list each
-contradiction with the doc line and what the plan says instead, and I will review before
-you write.
+many entries it stands on; card 3 fixed per metric (Goal on weight and body fat, Lowest
+in 30 days on the wellness scores, Last 90 days on the girths); the Wellness hero's total
+change compares the client's first week with the last 7 days.
 
-Job: Commit 9a of docs/MEASUREMENT-LOG-PLAN.md §6 — `feat(journey): the metric cards read
-fixed windows`. Build exactly what that section lists: the windows kernel, the three
-cards, the Wellness hero's total change, the client's today per D30; the deletions, each
-grepped at execution time for a surviving caller; the tests and their mutations; the
-docs, current shape only. The scope rule is a hard boundary.
+Job: what the entry lists — the windows kernel, the three cards, the Wellness hero, the
+client's today on both series payloads; the deletions, each grepped at execution time for
+a surviving caller; the tests and their mutations; the docs: current shape only, fewest
+words. The scope rule is a hard boundary. Where a doc states a rule this commit
+contradicts, change the doc and list it in the handover.
 
-Working method: the Edit tool, not shell scripts, for code edits; the full suite with the
-gates after the build and again after the review's fixes only; an independent review of
-the whole diff, docs included, running while you write the seed and the smokelist;
-mutations for the new logic only; seed only what the app can't set up.
+Working method: edit files with the Edit tool, not shell scripts. Run the full suite with
+the other gates once the build and its docs are done, and again after the review's fixes,
+not in between. When the gates are green, start an independent review of the whole diff,
+docs included, and write the smoke seed and the smokelist while it runs; fix what it
+finds, then rerun the gates. Mutations for the new logic only. Seed only what the smoke
+can't set up in the app.
 
 Rules: every fixture number distinct; cp backups before mutating, never git stash or git
 checkout --; gates: npx tsc --noEmit, npx eslint ., npx vitest run, npm run
 check:labels, npx knip, npm run check:service-key. Commit directly to main. Then replace
-this commit's STATUS line with SHIPPED, the hash and the date, and hand me a browser
+this entry's STATUS line with SHIPPED, the hash and the date, and hand me a browser
 smokelist: the cards and the Wellness hero for a client who logs daily, one who logs 2–3
 times a week, and one who stopped logging (Sam Kalepa); a girth; a weight with a goal
 target; the Physique hero unchanged.
