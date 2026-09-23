@@ -513,8 +513,9 @@ export function DetailsGroups({
 
         {/* What saving ACTUALLY does. The nutrition plan snapshots its calorie
             targets and the TDEE it was built from (services/nutrition-plan-service.ts),
-            so nothing here moves a target — it creates goal drift, which the
-            Nutrition tab surfaces as "Goal changed — regenerate". Saying the
+            so nothing here moves a target — a goal that prices differently
+            leaves the plan out of date, which the nutrition card, the Nutrition
+            tab and the drawer say (NutritionOutOfDateNotice). Saying the
             targets recalculate would be a comfortable lie. */}
         <div className="mt-4 flex items-start gap-2.5 rounded-[6px] bg-[rgba(245,158,11,0.07)] px-3 py-2.5">
           <AlertTriangle
