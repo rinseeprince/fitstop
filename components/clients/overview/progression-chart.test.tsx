@@ -70,6 +70,7 @@ function series(overrides: Partial<MeasurementSeries> = {}): MeasurementSeries {
     baseline: {},
     startDate: null,
     readings: [],
+    clientToday: "2026-08-28",
     ...overrides,
   };
 }

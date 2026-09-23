@@ -1,4 +1,4 @@
-import { getTrend } from "@/utils/metric-shaping";
+import { getTrend, trendOfChange } from "@/utils/metric-shaping";
 import {
   addDaysToDate,
   daysBetween,
@@ -26,8 +26,8 @@ export type HeroBaseline = { value: number; date: string; source: MeasurementSou
  * What a PHYSIQUE hero is anchored on (docs/MEASUREMENT-LOG-PLAN.md D4):
  * "Current" is the newest reading of ANY date and never waits for the start
  * date; every "since start" figure reads the baseline, and reads `Starts …`
- * while the start date is ahead. Wellness metrics pass nothing and keep the
- * first-point anchor, their series being the client's daily logs.
+ * while the start date is ahead. Wellness metrics pass nothing: their Total
+ * change is `deriveFirstWeekChange`'s.
  */
 type HeroJourney = {
   current: MetricPoint | null;
@@ -35,9 +35,17 @@ type HeroJourney = {
   startDate: string | null;
 };
 
+/** The Physique hero's Total change: since the start date, against the baseline. */
+type SinceStartChange = {
+  kind: "sinceStart";
+  delta: number;
+  sinceDate: string;
+  baseline: HeroBaseline;
+};
+
 type HeroStats = {
   current: { value: number; date: string; daysAgo: number };
-  totalChange: { delta: number; sinceDate: string; baseline?: HeroBaseline } | null;
+  totalChange: SinceStartChange | null;
   /** The start date while it is still ahead — the since-start cell reads it. */
   startsOn: string | null;
   avgRate: { perWeek: number; weeks: number } | null;
@@ -61,18 +69,15 @@ export function deriveHeroStats(
   const showRate = category === "body" && n >= 2 && spanDays >= 7;
   const startsAhead = journey?.startDate != null && journey.startDate > today;
 
-  let totalChange: HeroStats["totalChange"] = null;
-  if (journey) {
-    if (!startsAhead && journey.baseline && journey.startDate) {
-      totalChange = {
-        delta: latest.value - journey.baseline.value,
-        sinceDate: journey.startDate,
-        baseline: journey.baseline,
-      };
-    }
-  } else if (first && n >= 2) {
-    totalChange = { delta: latest.value - first.value, sinceDate: first.date };
-  }
+  const totalChange: HeroStats["totalChange"] =
+    journey && !startsAhead && journey.baseline && journey.startDate
+      ? {
+          kind: "sinceStart",
+          delta: latest.value - journey.baseline.value,
+          sinceDate: journey.startDate,
+          baseline: journey.baseline,
+        }
+      : null;
 
   return {
     current: {
@@ -93,92 +98,130 @@ export function deriveHeroStats(
   };
 }
 
-type WindowChange = {
-  kind: "30day" | "sinceFirst";
-  delta: number;
-  sinceDate?: string;
-  trend: TrendDirection;
-  tone: Tone;
+// ---------------------------------------------------------------------------
+// The windows the Journey's cards read (docs/MEASUREMENT-LOG-PLAN.md commit
+// 9a): fixed windows of days ending the client's today (D30), so a card keeps
+// one label and one window for every client, compares averages and never one
+// entry against another, and says how many entries its average stands on.
+
+/** The windows, in days: the last week (card 1, the Wellness hero), the last
+ *  30 days (card 2, a wellness score's card 3) and a girth's card 3 (D31). */
+export const WINDOW_DAYS = { week: 7, month: 30, girth: 90 } as const;
+
+const round1 = (n: number): number => Math.round(n * 10) / 10;
+
+/**
+ * A metric's entries dated inside a window, both ends included: how many, and
+ * their average to one decimal — the figure a card shows. No entries, no
+ * average.
+ */
+export type WindowAverage = { average: number | null; count: number };
+
+export function averageInWindow(
+  points: readonly MetricPoint[],
+  from: string,
+  to: string
+): WindowAverage {
+  const inside = points.filter((p) => p.date >= from && p.date <= to);
+  if (inside.length === 0) return { average: null, count: 0 };
+  const sum = inside.reduce((total, p) => total + p.value, 0);
+  return { average: round1(sum / inside.length), count: inside.length };
+}
+
+/** A move between two averages, toned by the metric's good direction. */
+export type AverageChange = { amount: number; trend: TrendDirection; tone: Tone };
+
+// Taken between the averages AS SHOWN, so the three figures on a card agree:
+// 4.3 against 5.0 reads −0.7, never the −0.8 an unrounded 4.25 would print.
+function changeBetween(current: number, previous: number, downIsGood: boolean): AverageChange {
+  const amount = round1(current - previous);
+  const trend = trendOfChange(amount);
+  return { amount, trend, tone: toneFor(trend, downIsGood) };
+}
+
+/** The first day of the last `days` days ending `today` — `today` is the last. */
+const windowStart = (today: string, days: number): string => addDaysToDate(today, 1 - days);
+
+/** The last `days` days ending the client's today, against the `days` before them. */
+export type WindowComparison = {
+  days: number;
+  current: WindowAverage;
+  previous: WindowAverage;
+  /** Between the two averages; null unless both windows hold an entry. */
+  change: AverageChange | null;
 };
 
-export function deriveWindowChange(
-  points: MetricPoint[],
+export function compareLastDays(
+  points: readonly MetricPoint[],
+  today: string,
+  days: number,
   downIsGood: boolean
-): WindowChange | null {
-  const n = points.length;
-  if (n < 2) return null;
-  const latest = points[n - 1];
-  // Anchor on the latest entry, not today: the card means "change over the
-  // ~30 days ending at the last measurement", which stays meaningful when a
-  // client stops logging.
-  const target = addDaysToDate(latest.date, -30);
-  if (points[0].date > target) {
-    const trend = getTrend(latest.value, points[0].value);
-    return {
-      kind: "sinceFirst",
-      delta: latest.value - points[0].value,
-      sinceDate: points[0].date,
-      trend,
-      tone: toneFor(trend, downIsGood),
-    };
-  }
-  let baseline = points[0];
-  let bestDist = Math.abs(daysBetween(baseline.date, target));
-  for (let i = 1; i < n - 1; i++) {
-    const dist = Math.abs(daysBetween(points[i].date, target));
-    // strictly-less keeps the EARLIER point on equidistant ties
-    if (dist < bestDist) {
-      baseline = points[i];
-      bestDist = dist;
-    }
-  }
-  const trend = getTrend(latest.value, baseline.value);
-  return {
-    kind: "30day",
-    delta: latest.value - baseline.value,
-    trend,
-    tone: toneFor(trend, downIsGood),
-  };
+): WindowComparison {
+  const current = averageInWindow(points, windowStart(today, days), today);
+  const previous = averageInWindow(
+    points,
+    windowStart(today, 2 * days),
+    addDaysToDate(today, -days)
+  );
+  const change =
+    current.average != null && previous.average != null
+      ? changeBetween(current.average, previous.average, downIsGood)
+      : null;
+  return { days, current, previous, change };
 }
 
-type WeekComparison =
-  | { kind: "weekAvg"; currentAvg: number; prevAvg: number }
-  | { kind: "latest"; value: number; date: string };
-
-function mean(points: MetricPoint[]): number {
-  return points.reduce((sum, p) => sum + p.value, 0) / points.length;
-}
-
-export function deriveWeekComparison(
-  points: MetricPoint[],
-  today: string
-): WeekComparison | null {
-  const n = points.length;
-  if (n === 0) return null;
-  const curStart = addDaysToDate(today, -6);
-  const prevStart = addDaysToDate(today, -13);
-  const prevEnd = addDaysToDate(today, -7);
-  const cur = points.filter((p) => p.date >= curStart && p.date <= today);
-  const prev = points.filter((p) => p.date >= prevStart && p.date <= prevEnd);
-  if (cur.length >= 1 && prev.length >= 1) {
-    return { kind: "weekAvg", currentAvg: mean(cur), prevAvg: mean(prev) };
-  }
-  const latest = points[n - 1];
-  return { kind: "latest", value: latest.value, date: latest.date };
-}
-
-export function deriveBest(
-  points: MetricPoint[],
+/**
+ * The worst entry of the last `days` days — the lowest, the highest where
+ * down is good — and the day it was logged; a score reached on several days
+ * shows the latest. null when the window holds no entry.
+ */
+export function worstOfLastDays(
+  points: readonly MetricPoint[],
+  today: string,
+  days: number,
   downIsGood: boolean
 ): { value: number; date: string } | null {
-  if (points.length === 0) return null;
-  let best = points[0];
+  const from = windowStart(today, days);
+  let worst: MetricPoint | null = null;
   for (const p of points) {
-    // strict improvement only — a record is set the FIRST time it is reached
-    if (downIsGood ? p.value < best.value : p.value > best.value) best = p;
+    if (p.date < from || p.date > today) continue;
+    // Not strict: the points ascend by date, so a tie moves to the later day.
+    if (!worst || (downIsGood ? p.value >= worst.value : p.value <= worst.value)) worst = p;
   }
-  return { value: best.value, date: best.date };
+  return worst ? { value: worst.value, date: worst.date } : null;
 }
+
+/**
+ * The Wellness hero's Total change (D32): the last 7 days' average against
+ * the average of the client's first week of entries — their first entry's day
+ * and the 6 after — dated by that first day. Too soon while the two weeks
+ * share a day, which they do until the first entry is 13 days old (owner,
+ * 2026-09-23); null with no entry at all.
+ */
+type FirstWeekChange =
+  | { kind: "firstWeek"; delta: number; firstWeekOf: string }
+  | { kind: "tooSoon" }
+  | { kind: "noRecentEntries" };
+
+export function deriveFirstWeekChange(
+  points: readonly MetricPoint[],
+  today: string
+): FirstWeekChange | null {
+  if (points.length === 0) return null;
+  const firstWeekOf = points[0].date;
+  const firstWeekEnd = addDaysToDate(firstWeekOf, WINDOW_DAYS.week - 1);
+  const lastWeekStart = windowStart(today, WINDOW_DAYS.week);
+  const lastWeek = averageInWindow(points, lastWeekStart, today);
+  if (lastWeek.average == null) return { kind: "noRecentEntries" };
+  if (firstWeekEnd >= lastWeekStart) return { kind: "tooSoon" };
+  const firstWeek = averageInWindow(points, firstWeekOf, firstWeekEnd);
+  // Unreachable — the first week holds the first entry — and here for the type.
+  if (firstWeek.average == null) return null;
+  return { kind: "firstWeek", delta: round1(lastWeek.average - firstWeek.average), firstWeekOf };
+}
+
+/** The hero's Total change, per pane: since the start (Physique), since the first week (Wellness). */
+export type TotalChange = SinceStartChange | FirstWeekChange;
 
 type DerivedLogRow = {
   id: string;

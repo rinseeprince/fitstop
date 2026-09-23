@@ -27,6 +27,7 @@ const SERIES: WellnessSeries = {
   sleep: [],
   stress: [],
   soreness: [],
+  clientToday: "2026-07-24",
 };
 
 describe("GET /api/clients/[id]/wellness-series", () => {

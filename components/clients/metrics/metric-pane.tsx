@@ -4,6 +4,7 @@ import { useMemo, type ComponentProps } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MetricHero } from "./metric-hero";
 import { MetricProgressionSection } from "./metric-progression-section";
+import { MetricStatCardsPending } from "./metric-stat-cards";
 import { MeasurementLogSection } from "./measurement-log-section";
 import { useClientBlocks } from "./hooks/use-client-blocks";
 import {
@@ -12,7 +13,7 @@ import {
   type MetricPaneData,
 } from "./hooks/use-merged-metrics";
 import { shapeBlockBandIdentity } from "./blocks/block-chart-bands";
-import type { LogRow } from "./metrics-view-types";
+import { cardThreeKind, type LogRow } from "./metrics-view-types";
 import type { Client } from "@/types/check-in";
 
 type ProgressionRange = ComponentProps<typeof MetricProgressionSection>["range"];
@@ -88,10 +89,8 @@ function MetricPaneBody({
         <div className="mb-4">
           <MetricHero metric={null} metrics={[]} onSelectMetric={() => {}} />
         </div>
-        <div className="mb-4 grid grid-cols-3 gap-[10px]">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-[88px] rounded-[6px]" />
-          ))}
+        <div className="mb-4">
+          <MetricStatCardsPending cardThree={cardThreeKind(focusedMetricId)} />
         </div>
         <Skeleton className="h-[380px] w-full rounded-[6px]" />
       </div>

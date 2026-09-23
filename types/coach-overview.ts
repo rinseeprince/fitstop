@@ -161,9 +161,9 @@ export type AdherenceSummary = {
 /**
  * The client's measurement journey, from the measurement log: every metric's
  * day-values (rule 2 — one value per day, the reading written last), the baseline
- * per metric (the reading as of the start date, derived by the database) and
- * the start date itself. One read serves the Overview progression chart, the
- * Journey's Physique pane and its measurement log.
+ * per metric (the reading as of the start date, derived by the database), the
+ * start date itself and the client's today. One read serves the Overview
+ * progression chart, the Journey's Physique pane and its measurement log.
  *
  * The full history, deliberately: the Journey lists readings dated before the
  * start under "Before start" and excludes them from its chart and maths, so
@@ -225,6 +225,9 @@ export type MeasurementSeries = Record<MeasurementKey, MeasurementSeriesPoint[]>
   startDate: string | null;
   /** Every reading in the log, newest first, removed ones included. */
   readings: MeasurementReadingEntry[];
+  /** YYYY-MM-DD — the client's today (`getClientTodayString`), where the
+   *  Journey's card windows end. */
+  clientToday: string;
 };
 
 /**
@@ -239,7 +242,8 @@ export type MeasurementSeries = Record<MeasurementKey, MeasurementSeriesPoint[]>
  * a point (one source, and it carries no notes), no `baseline` and no
  * `startDate` (D20 — a mood as of the start date is not a figure a coach
  * reasons about, and the "Before start" split is physique's), no `readings`
- * list (a day holds one row, and nothing is ever removed).
+ * list (a day holds one row, and nothing is ever removed). The client's today
+ * rides along, as on the measurement series.
  *
  * Values are the unitless scores the client logged (mood 1-5, the rest 1-10).
  */
@@ -257,7 +261,11 @@ export type WellnessSeriesPoint = {
   recordedAt: string;
 };
 
-export type WellnessSeries = Record<WellnessKey, WellnessSeriesPoint[]>;
+export type WellnessSeries = Record<WellnessKey, WellnessSeriesPoint[]> & {
+  /** YYYY-MM-DD — the client's today (`getClientTodayString`), where the
+   *  Journey's card windows end. */
+  clientToday: string;
+};
 
 export type ClientNote = {
   id: string;

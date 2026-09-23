@@ -55,6 +55,7 @@ function series(weights: { date: string; value: number; id: string }[]): Measure
     baseline: {},
     startDate: "2026-03-01",
     readings: [],
+    clientToday: "2026-09-21",
   };
 }
 
@@ -102,7 +103,7 @@ function answer(url: string): Promise<unknown> {
   if (path.endsWith("/wellness-series")) {
     return Promise.resolve({
       success: true,
-      data: { mood: [], energy: [], sleep: [], stress: [], soreness: [] },
+      data: { mood: [], energy: [], sleep: [], stress: [], soreness: [], clientToday: "2026-09-21" },
     });
   }
   if (path.endsWith("/exercise-history")) return Promise.resolve({ success: true, data: [] });
@@ -222,6 +223,10 @@ describe("MetricsTabContent — Log measurement never shows an old reading", () 
     // Loading — the pane's own pending hero — and never the 90 it held before
     expect(heroCurrent()).toBeNull();
     expect(screen.getByText("Current").nextElementSibling?.textContent).not.toContain("90");
+    // The cards wait with it: their labels — Weight's card 3 is its Goal — and no claim
+    expect(screen.getByText("Last 7 days")).toBeInTheDocument();
+    expect(screen.getByText("Goal")).toBeInTheDocument();
+    expect(screen.queryByText(/No entries|No target/)).not.toBeInTheDocument();
     await act(async () => {
       refetch.resolve({ success: true, data: NEW_SERIES });
       await refetch.promise;

@@ -1,19 +1,24 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   LABEL_CLASS,
   MONO,
-  MONO_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { formatShortDate, formatSigned, TONE_TEXT } from "./metrics-format";
-import type { MetricSummary } from "./metrics-view-types";
+import { TextSkeleton } from "@/components/text-skeleton";
+import { WINDOW_DAYS, type WindowComparison } from "@/utils/metric-derived-stats";
+import { containsDigit, formatShortDate, formatSigned, TONE_TEXT } from "./metrics-format";
+import type { CardThree, CardThreeKind, GoalCard, MetricSummary } from "./metrics-view-types";
 import type { TrendDirection } from "@/types/check-in";
 
-// Three white progression cards (30-day change / week comparison / goal-or-best).
-// Anatomy copied from exercise-kpi-strip.tsx; the sub-line tone colouring is a
-// deliberate divergence (direction-aware via TONE_TEXT, not hardcoded teal).
+// Three white cards under the hero, each with one label and one window for
+// every client: the last 7 days and the last 30 days — averages of the entries
+// dated in a window ending the client's today, each against the window before
+// it and saying how many entries it stands on — and card 3, fixed per metric
+// (D31). Anatomy copied from exercise-kpi-strip.tsx; the change is toned by
+// the metric's good direction (TONE_TEXT), not hardcoded teal.
 
 type MetricStatCardsProps = {
   metric: MetricSummary;
@@ -25,13 +30,13 @@ const TREND_ICON: Record<TrendDirection, typeof TrendingUp> = {
   stable: Minus,
 };
 
-const TREND_WORD: Record<TrendDirection, string> = {
-  up: "Trending up",
-  down: "Trending down",
-  stable: "Holding steady",
-};
+// Sub-lines: number-bearing = mono, word-only = sans (the dynamic-slot rule).
+const SUB_MONO_CLASS = cn(MONO, "mt-1 text-[11px] text-[#93b0b4]");
+const SUB_SANS_CLASS = "mt-1 text-[11px] text-[#93b0b4]";
+// TextSkeleton's own fill is the dark bands'; these cards are white.
+const PENDING_FILL = "bg-[rgba(13,148,136,0.08)]";
 
-function CardShell({ children }: { children: React.ReactNode }) {
+function CardShell({ children }: { children: ReactNode }) {
   return (
     <div className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] px-[14px] py-[16px]">
       {children}
@@ -39,7 +44,7 @@ function CardShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function CardValue({ value, unit }: { value: string; unit?: string }) {
+function CardValue({ value, unit }: { value: ReactNode; unit?: string }) {
   return (
     <p className={cn(MONO, "mt-1 tabular-nums")}>
       <span className="text-[22px] font-semibold text-[#0c1a1e]">{value}</span>
@@ -56,110 +61,166 @@ function DashValue() {
   );
 }
 
+const fromEntries = (count: number) => `from ${count} ${count === 1 ? "entry" : "entries"}`;
+
+/** The change, arrow first, then the average it is taken against. A flex line,
+ *  as exercise-kpi-strip's: an icon inside inline text sets the text's baseline. */
+function ChangeLine({
+  change,
+  previous,
+  days,
+}: {
+  change: NonNullable<WindowComparison["change"]>;
+  previous: number;
+  days: number;
+}) {
+  const TrendIcon = TREND_ICON[change.trend];
+  return (
+    <p className={cn(SUB_MONO_CLASS, "flex flex-wrap items-center gap-x-1")}>
+      <TrendIcon strokeWidth={1.5} className={cn("h-3 w-3 shrink-0", TONE_TEXT[change.tone])} />
+      <span className={cn("font-medium", TONE_TEXT[change.tone])}>{formatSigned(change.amount)}</span>
+      <span>
+        vs {previous.toFixed(1)} the {days} days before
+      </span>
+    </p>
+  );
+}
+
+/** Cards 1 and 2, and card 3 on a girth: a window's average against the window before it. */
+function WindowCard({ comparison, unit }: { comparison: WindowComparison; unit: string }) {
+  const { days, current, previous, change } = comparison;
+  return (
+    <CardShell>
+      <p className={LABEL_CLASS}>Last {days} days</p>
+      {current.average == null ? (
+        <>
+          <DashValue />
+          <p className={SUB_SANS_CLASS}>No entries in the last {days} days</p>
+        </>
+      ) : (
+        <>
+          <CardValue value={current.average.toFixed(1)} unit={unit} />
+          {change && previous.average != null ? (
+            <ChangeLine change={change} previous={previous.average} days={days} />
+          ) : (
+            <p className={SUB_SANS_CLASS}>no entries the {days} days before</p>
+          )}
+          <p className={SUB_MONO_CLASS}>{fromEntries(current.count)}</p>
+        </>
+      )}
+    </CardShell>
+  );
+}
+
+/** Card 3's label, one per kind — the same before its figure lands and after. */
+const CARD_THREE_LABEL: Record<CardThreeKind, string> = {
+  goal: "Goal",
+  lowest: `Lowest in ${WINDOW_DAYS.month} days`,
+  highest: `Highest in ${WINDOW_DAYS.month} days`,
+  last90: `Last ${WINDOW_DAYS.girth} days`,
+};
+
+/** Weight and body fat: the target in force on the client's today, and how far the newest reading is from it. */
+function GoalCardView({ goal, unit }: { goal: GoalCard; unit: string }) {
+  return (
+    <CardShell>
+      <p className={LABEL_CLASS}>{CARD_THREE_LABEL.goal}</p>
+      {goal.status === "pending" ? (
+        <>
+          <CardValue value={<TextSkeleton className={cn("w-14", PENDING_FILL)} />} />
+          <p className={SUB_MONO_CLASS}>
+            <TextSkeleton className={cn("w-20", PENDING_FILL)} />
+          </p>
+        </>
+      ) : goal.status === "set" ? (
+        <>
+          <CardValue value={goal.target.toFixed(1)} unit={unit} />
+          {goal.progress && (
+            // "Goal reached" is words; "1.2 kg to go" carries its number.
+            <p className={containsDigit(goal.progress.text) ? SUB_MONO_CLASS : SUB_SANS_CLASS}>
+              {goal.progress.text}
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <DashValue />
+          <p className={SUB_SANS_CLASS}>
+            {goal.status === "failed" ? "Couldn't load the goal" : "No target"}
+          </p>
+        </>
+      )}
+    </CardShell>
+  );
+}
+
+/** A wellness score: its worst of the last 30 days, and the day it was logged. */
+function WorstCard({
+  card,
+  unit,
+}: {
+  card: Extract<CardThree, { kind: "lowest" | "highest" }>;
+  unit: string;
+}) {
+  return (
+    <CardShell>
+      <p className={LABEL_CLASS}>{CARD_THREE_LABEL[card.kind]}</p>
+      {card.worst ? (
+        <>
+          <CardValue value={String(card.worst.value)} unit={unit} />
+          <p className={SUB_MONO_CLASS}>on {formatShortDate(card.worst.date)}</p>
+        </>
+      ) : (
+        <>
+          <DashValue />
+          <p className={SUB_SANS_CLASS}>No entries in the last {WINDOW_DAYS.month} days</p>
+        </>
+      )}
+    </CardShell>
+  );
+}
+
+function CardThreeView({ card, unit }: { card: CardThree; unit: string }) {
+  if (card.kind === "goal") return <GoalCardView goal={card.goal} unit={unit} />;
+  if (card.kind === "last90") return <WindowCard comparison={card.comparison} unit={unit} />;
+  return <WorstCard card={card} unit={unit} />;
+}
+
 export function MetricStatCards({ metric }: MetricStatCardsProps) {
-  const { change30d, week, goal, goalToGo, best, unit } = metric;
-
-  const TrendIcon = change30d ? TREND_ICON[change30d.trend] : null;
-
-  // Goal distance sub-line: "%" units bind to the number ("1.2% to go"),
-  // word units read as words ("1.2 kg to go"). Score units ("/10") never
-  // carry goals, so no third case.
-  const goalSub =
-    goalToGo != null
-      ? unit === "%"
-        ? `${goalToGo}% to go`
-        : `${goalToGo} ${unit} to go`
-      : null;
-
   return (
     <div className="grid grid-cols-3 gap-[10px]">
-      {/* Card 1 — 30-day change (or since-first fallback) */}
-      <CardShell>
-        {change30d?.kind === "sinceFirst" && change30d.sinceDate ? (
-          <p className={MONO_LABEL_CLASS}>
-            Since {formatShortDate(change30d.sinceDate)}
+      <WindowCard comparison={metric.lastWeek} unit={metric.unit} />
+      <WindowCard comparison={metric.lastMonth} unit={metric.unit} />
+      <CardThreeView card={metric.cardThree} unit={metric.unit} />
+    </div>
+  );
+}
+
+/**
+ * The cards before the series lands: the same cards, labels and elements,
+ * pending text inside them, so a card keeps its size when its figures arrive.
+ * Card 3's label is known from the metric alone.
+ */
+export function MetricStatCardsPending({ cardThree }: { cardThree: CardThreeKind }) {
+  const labels = [
+    `Last ${WINDOW_DAYS.week} days`,
+    `Last ${WINDOW_DAYS.month} days`,
+    CARD_THREE_LABEL[cardThree],
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-[10px]">
+      {labels.map((label) => (
+        <CardShell key={label}>
+          <p className={LABEL_CLASS}>{label}</p>
+          <CardValue value={<TextSkeleton className={cn("w-14", PENDING_FILL)} />} />
+          <p className={SUB_MONO_CLASS}>
+            <TextSkeleton className={cn("w-32", PENDING_FILL)} />
           </p>
-        ) : (
-          <p className={LABEL_CLASS}>30-day change</p>
-        )}
-        {change30d ? (
-          <>
-            <CardValue value={formatSigned(change30d.delta)} unit={unit} />
-            <p className="flex items-center gap-1 mt-1">
-              {TrendIcon && (
-                <TrendIcon
-                  strokeWidth={1.5}
-                  className={cn("h-3 w-3", TONE_TEXT[change30d.tone])}
-                />
-              )}
-              <span
-                className={cn(
-                  "text-[11px] font-medium",
-                  TONE_TEXT[change30d.tone]
-                )}
-              >
-                {TREND_WORD[change30d.trend]}
-              </span>
-            </p>
-          </>
-        ) : (
-          <DashValue />
-        )}
-      </CardShell>
-
-      {/* Card 2 — last 7 days vs previous (or latest fallback) */}
-      <CardShell>
-        {week?.kind === "weekAvg" ? (
-          <>
-            <p className={LABEL_CLASS}>Last 7 days</p>
-            <CardValue value={week.currentAvg.toFixed(1)} unit={unit} />
-            <p className={cn(MONO, "text-[11px] text-[#93b0b4] mt-1")}>
-              vs {week.prevAvg.toFixed(1)} previous 7 days
-            </p>
-          </>
-        ) : week?.kind === "latest" ? (
-          <>
-            <p className={LABEL_CLASS}>Latest</p>
-            <CardValue value={String(week.value)} unit={unit} />
-            <p className={cn(MONO, "text-[11px] text-[#93b0b4] mt-1")}>
-              on {formatShortDate(week.date)}
-            </p>
-          </>
-        ) : (
-          <>
-            <p className={LABEL_CLASS}>Last 7 days</p>
-            <DashValue />
-          </>
-        )}
-      </CardShell>
-
-      {/* Card 3 — goal (or best fallback) */}
-      <CardShell>
-        {goal != null ? (
-          <>
-            <p className={LABEL_CLASS}>Goal</p>
-            <CardValue value={String(goal)} unit={unit} />
-            {goalSub && (
-              <p className={cn(MONO, "text-[11px] text-[#93b0b4] mt-1")}>
-                {goalSub}
-              </p>
-            )}
-          </>
-        ) : best != null ? (
-          <>
-            <p className={LABEL_CLASS}>Best</p>
-            <CardValue value={String(best.value)} unit={unit} />
-            <p className={cn(MONO, "text-[11px] text-[#93b0b4] mt-1")}>
-              on {formatShortDate(best.date)}
-            </p>
-          </>
-        ) : (
-          <>
-            <p className={LABEL_CLASS}>Goal</p>
-            <DashValue />
-          </>
-        )}
-      </CardShell>
+          <p className={SUB_MONO_CLASS}>
+            <TextSkeleton className={cn("w-20", PENDING_FILL)} />
+          </p>
+        </CardShell>
+      ))}
     </div>
   );
 }

@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { MetricProgressionSection } from "./metric-progression-section";
 import type { MetricSummary } from "./metrics-view-types";
 
+const NO_ENTRIES = { average: null, count: 0 };
+
 function empty(id: string, name: string, tab: MetricSummary["tab"], unit: string): MetricSummary {
   return {
     id,
@@ -18,11 +20,13 @@ function empty(id: string, name: string, tab: MetricSummary["tab"], unit: string
     totalChange: null,
     startsOn: null,
     avgRate: null,
-    change30d: null,
-    week: null,
+    lastWeek: { days: 7, current: NO_ENTRIES, previous: NO_ENTRIES, change: null },
+    lastMonth: { days: 30, current: NO_ENTRIES, previous: NO_ENTRIES, change: null },
+    cardThree:
+      tab === "wellness"
+        ? { kind: "lowest", worst: null }
+        : { kind: "last90", comparison: { days: 90, current: NO_ENTRIES, previous: NO_ENTRIES, change: null } },
     goal: null,
-    goalToGo: null,
-    best: null,
   };
 }
 

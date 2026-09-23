@@ -6,6 +6,7 @@ vi.mock("./measurements-service", () => ({
   getBaseline: vi.fn(),
   getMeasurementReadings: vi.fn(),
 }));
+vi.mock("./today-service", () => ({ getClientTodayString: vi.fn() }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import {
@@ -15,6 +16,7 @@ import {
   type MeasurementLogReading,
   type StandingReading,
 } from "./measurements-service";
+import { getClientTodayString } from "./today-service";
 import {
   getMeasurementSeriesPayload,
   toMeasurementSeries,
@@ -54,6 +56,9 @@ const standing = (
   source: MeasurementSource = "intake"
 ): StandingReading => ({ id, metricKey, value, date, source });
 
+/** The client's today in the pure assembly's fixtures. */
+const TODAY = "2026-09-17";
+
 describe("toMeasurementSeries", () => {
   it("emits every one of the seven metrics, empty when the log holds no reading for it", () => {
     const series = toMeasurementSeries(
@@ -61,7 +66,8 @@ describe("toMeasurementSeries", () => {
         ["weight", [dayValue("m-1", "weight", "2026-07-06", 90)]],
       ]),
       {},
-      "2026-03-01"
+      "2026-03-01",
+      TODAY
     );
 
     for (const key of MEASUREMENT_KEYS) {
@@ -71,10 +77,11 @@ describe("toMeasurementSeries", () => {
     expect(series.bodyFat).toEqual([]);
     expect(series.thighs).toEqual([]);
     // Nothing else rides along: the seven series, the baseline, the start
-    // date and the readings list.
+    // date, the readings list and the client's today.
     expect(Object.keys(series).sort()).toEqual(
-      [...MEASUREMENT_KEYS, "baseline", "startDate", "readings"].sort()
+      [...MEASUREMENT_KEYS, "baseline", "startDate", "readings", "clientToday"].sort()
     );
+    expect(series.clientToday).toBe(TODAY);
   });
 
   it("maps each day-value to the point shape — date, value, source, note, id, recordedAt — in the order given", () => {
@@ -94,7 +101,8 @@ describe("toMeasurementSeries", () => {
         ],
       ]),
       {},
-      null
+      null,
+      TODAY
     );
 
     expect(series.waist).toEqual([
@@ -124,7 +132,8 @@ describe("toMeasurementSeries", () => {
         weight: standing("m-0", "weight", "2026-02-20", 92),
         waist: standing("m-3", "waist", "2026-03-01", 86, "check_in"),
       },
-      "2026-03-01"
+      "2026-03-01",
+      TODAY
     );
 
     expect(series.baseline).toEqual({
@@ -135,8 +144,8 @@ describe("toMeasurementSeries", () => {
   });
 
   it("carries the start date through, null included", () => {
-    expect(toMeasurementSeries(new Map(), {}, "2026-03-01").startDate).toBe("2026-03-01");
-    expect(toMeasurementSeries(new Map(), {}, null).startDate).toBeNull();
+    expect(toMeasurementSeries(new Map(), {}, "2026-03-01", TODAY).startDate).toBe("2026-03-01");
+    expect(toMeasurementSeries(new Map(), {}, null, TODAY).startDate).toBeNull();
   });
 
   it("carries every reading, removed ones with their removal, in the order given", () => {
@@ -169,7 +178,7 @@ describe("toMeasurementSeries", () => {
       },
     ];
 
-    const series = toMeasurementSeries(new Map(), {}, null, readings);
+    const series = toMeasurementSeries(new Map(), {}, null, TODAY, readings);
 
     expect(series.readings).toEqual([
       {
@@ -199,7 +208,7 @@ describe("toMeasurementSeries", () => {
         voided: { at: "2026-09-03T10:00:00+00:00", byName: "Sam", reason: null },
       },
     ]);
-    expect(toMeasurementSeries(new Map(), {}, null).readings).toEqual([]);
+    expect(toMeasurementSeries(new Map(), {}, null, TODAY).readings).toEqual([]);
   });
 });
 
@@ -221,10 +230,11 @@ describe("getMeasurementSeriesPayload", () => {
     vi.mocked(getMeasurementSeries).mockReset();
     vi.mocked(getBaseline).mockReset();
     vi.mocked(getMeasurementReadings).mockReset().mockResolvedValue([]);
+    vi.mocked(getClientTodayString).mockReset().mockResolvedValue("2026-09-18");
     vi.mocked(supabaseAdmin.from).mockReset();
   });
 
-  it("reads the series, the baseline, the readings and the start date for the one client, and assembles them", async () => {
+  it("reads the series, the baseline, the readings, the start date and the client's today for the one client, and assembles them", async () => {
     vi.mocked(getMeasurementSeries).mockResolvedValue(
       new Map<MeasurementKey, DayValue[]>([
         ["weight", [dayValue("m-1", "weight", "2026-07-06", 90)]],
@@ -243,8 +253,10 @@ describe("getMeasurementSeriesPayload", () => {
     expect(supabaseAdmin.from).toHaveBeenCalledWith("clients");
     expect(builder.select).toHaveBeenCalledWith("start_date");
     expect(builder.eq).toHaveBeenCalledWith("id", "client-1");
+    expect(getClientTodayString).toHaveBeenCalledWith("client-1");
 
     expect(payload.startDate).toBe("2026-03-01");
+    expect(payload.clientToday).toBe("2026-09-18");
     expect(payload.weight.map((point) => point.value)).toEqual([90]);
     expect(payload.baseline.weight).toEqual({
       value: 92,

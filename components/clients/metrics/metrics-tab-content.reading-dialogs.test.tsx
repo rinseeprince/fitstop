@@ -97,6 +97,8 @@ vi.mock("./hooks/use-merged-metrics", () => ({
   }),
 }));
 
+const NO_ENTRIES = { average: null, count: 0 };
+
 function metric(id: string, name: string): MetricSummary {
   return {
     id,
@@ -110,11 +112,10 @@ function metric(id: string, name: string): MetricSummary {
     totalChange: null,
     startsOn: null,
     avgRate: null,
-    change30d: null,
-    week: null,
+    lastWeek: { days: 7, current: NO_ENTRIES, previous: NO_ENTRIES, change: null },
+    lastMonth: { days: 30, current: NO_ENTRIES, previous: NO_ENTRIES, change: null },
+    cardThree: { kind: "goal", goal: { status: "none" } },
     goal: null,
-    goalToGo: null,
-    best: null,
   };
 }
 

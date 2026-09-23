@@ -5,8 +5,8 @@ import { getMeasurementSeriesPayload } from "@/services/measurement-series-servi
 
 // The client's measurement journey (MeasurementSeries contract): every
 // metric's day-values from the measurement log, the derived baseline per
-// metric and the start date. Read by the Overview progression chart and the
-// Journey's Physique pane alike — one key, one cache.
+// metric, the start date and the client's today. Read by the Overview
+// progression chart and the Journey's Physique pane alike — one key, one cache.
 //
 // The whole history, not a window: the browser holds the start date and does
 // the split itself, because the Journey lists readings dated before the start

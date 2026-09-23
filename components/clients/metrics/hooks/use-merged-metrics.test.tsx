@@ -7,25 +7,41 @@ import type { MeasurementSeries, WellnessSeries } from "@/types/coach-overview";
 
 // The two panes over two mocked series: each pane's figures and log come from
 // its own series and nothing else — the Wellness pane's from the client's
-// daily log, the Physique pane's from the measurement log.
+// daily log, the Physique pane's from the measurement log — and the cards'
+// windows end on the client's today, which the series carries.
 
 type SeriesState<T> = { series: T | null; isLoading: boolean; isError: boolean };
+type GoalsState = {
+  current: {
+    type: "lose_weight";
+    targetWeight: number | null;
+    targetBodyFatPercentage: number | null;
+    deadline: null;
+    startReadings: { weight: number | null; bodyFat: number | null };
+  } | null;
+  isLoading: boolean;
+  isError: boolean;
+};
 
 let wellness: SeriesState<WellnessSeries>;
 let measurements: SeriesState<MeasurementSeries>;
+let goals: GoalsState;
 
 vi.mock("@/hooks/use-wellness-series", () => ({ useWellnessSeries: () => wellness }));
 vi.mock("@/hooks/use-measurement-series", () => ({ useMeasurementSeries: () => measurements }));
-vi.mock("@/hooks/use-client-goals", () => ({ useClientGoals: () => ({ current: null }) }));
+vi.mock("@/hooks/use-client-goals", () => ({ useClientGoals: () => goals }));
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars.
 vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
 }));
+// The device's day. The client's is a day behind it (a coach ahead of their
+// client's time zone), so a window counted from the wrong one shows.
 vi.mock("@/lib/date-helpers", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/date-helpers")>()),
   getTodayDateString: () => "2026-09-20",
 }));
+const CLIENT_TODAY = "2026-09-19";
 
 const CLIENT_ID = "client-1";
 const client = { id: CLIENT_ID, startDate: null } as unknown as Client;
@@ -42,15 +58,23 @@ const day = (date: string, value: number, id: string) => ({
 const WELLNESS: WellnessSeries = {
   mood: [day("2026-09-18", 4, "w-3")],
   energy: [],
-  sleep: [day("2026-09-05", 6, "w-1"), day("2026-09-12", 8, "w-2"), day("2026-09-18", 7, "w-3")],
+  sleep: [day("2026-09-05", 6, "w-1"), day("2026-09-12", 8, "w-2"), day("2026-09-18", 3, "w-3")],
   stress: [],
   soreness: [],
+  clientToday: CLIENT_TODAY,
 };
 
+const weighIn = (date: string, value: number, id: string) => ({
+  date,
+  value,
+  source: "coach_entry" as const,
+  note: null,
+  id,
+  recordedAt: `${date}T08:00:00+00:00`,
+});
+
 const MEASUREMENTS: MeasurementSeries = {
-  weight: [
-    { date: "2026-09-18", value: 83.9, source: "coach_entry", note: null, id: "m-1", recordedAt: "2026-09-18T08:00:00+00:00" },
-  ],
+  weight: [weighIn("2026-09-18", 83.9, "m-1")],
   bodyFat: [],
   waist: [],
   hips: [],
@@ -74,11 +98,13 @@ const MEASUREMENTS: MeasurementSeries = {
       voided: null,
     },
   ],
+  clientToday: CLIENT_TODAY,
 };
 
 beforeEach(() => {
   wellness = { series: WELLNESS, isLoading: false, isError: false };
   measurements = { series: MEASUREMENTS, isLoading: false, isError: false };
+  goals = { current: null, isLoading: false, isError: false };
 });
 
 describe("useWellnessMetrics — the client's daily log, nothing else", () => {
@@ -90,12 +116,13 @@ describe("useWellnessMetrics — the client's daily log, nothing else", () => {
     expect(sleep.points.map((p) => [p.date, p.value])).toEqual([
       ["2026-09-05", 6],
       ["2026-09-12", 8],
-      ["2026-09-18", 7],
+      ["2026-09-18", 3],
     ]);
-    expect(sleep.latest).toEqual({ value: 7, date: "2026-09-18", daysAgo: 2 });
+    // The hero's "logged … ago" counts from the device's day, as before
+    expect(sleep.latest).toEqual({ value: 3, date: "2026-09-18", daysAgo: 2 });
     expect(sleep.entryCount).toBe(3);
-    // The last 7 days against the 7 before, over the days logged in each
-    expect(sleep.week).toEqual({ kind: "weekAvg", currentAvg: 7, prevAvg: 8 });
+    // The last 30 days, 21 Aug–19 Sep: (6 + 8 + 3) / 3 = 5.67, shown 5.7
+    expect(sleep.lastMonth.current).toEqual({ average: 5.7, count: 3 });
 
     expect(byId("mood").points.map((p) => p.value)).toEqual([4]);
     expect(byId("energy").points).toEqual([]);
@@ -106,7 +133,7 @@ describe("useWellnessMetrics — the client's daily log, nothing else", () => {
     const sleepRows = result.current.logRows.filter((row) => row.metricId === "sleep");
 
     expect(sleepRows.map((row) => [row.date, row.value, row.change?.amount ?? null])).toEqual([
-      ["2026-09-18", 7, -1],
+      ["2026-09-18", 3, -5],
       ["2026-09-12", 8, 2],
       ["2026-09-05", 6, null],
     ]);
@@ -121,18 +148,78 @@ describe("useWellnessMetrics — the client's daily log, nothing else", () => {
     expect(JSON.stringify(result.current)).not.toContain("83.9");
   });
 
-  it("is loading, or failed, exactly when the wellness series is", () => {
+  it("is loading, or failed, exactly when the wellness series is — and has no figures before it lands", () => {
     measurements = { series: null, isLoading: true, isError: true };
     const { result, rerender } = renderHook(() => useWellnessMetrics(CLIENT_ID));
     expect(result.current).toMatchObject({ isLoading: false, isError: false });
 
     wellness = { series: null, isLoading: true, isError: false };
     rerender();
-    expect(result.current).toMatchObject({ isLoading: true, isError: false });
+    expect(result.current).toMatchObject({ isLoading: true, isError: false, metrics: [], logRows: [] });
 
     wellness = { series: null, isLoading: false, isError: true };
     rerender();
     expect(result.current).toMatchObject({ isLoading: false, isError: true });
+  });
+
+  it("ends every window on the client's today, never the device's", () => {
+    // Client's today 19 Sep: the last 7 days are 13–19 Sep, the 7 before 6–12
+    // Sep. Counted from the device's 20 Sep, 13 Sep would fall in the week
+    // before and the figures would read 2.0 against 9.0.
+    wellness = {
+      series: {
+        ...WELLNESS,
+        sleep: [day("2026-09-06", 5, "w-4"), day("2026-09-13", 9, "w-5"), day("2026-09-17", 2, "w-6")],
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const { result } = renderHook(() => useWellnessMetrics(CLIENT_ID));
+    const sleep = result.current.metrics.find((m) => m.id === "sleep")!;
+
+    expect(sleep.lastWeek.current).toEqual({ average: 5.5, count: 2 });
+    expect(sleep.lastWeek.previous).toEqual({ average: 5, count: 1 });
+    expect(sleep.lastWeek.change).toMatchObject({ amount: 0.5, trend: "up", tone: "good" });
+  });
+
+  it("gives the hero's Total change as the last 7 days against the first week", () => {
+    wellness = {
+      series: {
+        ...WELLNESS,
+        sleep: [
+          day("2026-09-01", 6, "w-10"),
+          day("2026-09-07", 9, "w-11"),
+          day("2026-09-10", 3, "w-12"),
+          day("2026-09-13", 8, "w-13"),
+          day("2026-09-19", 1, "w-14"),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const { result } = renderHook(() => useWellnessMetrics(CLIENT_ID));
+    const sleep = result.current.metrics.find((m) => m.id === "sleep")!;
+
+    // First week 1–7 Sep: 7.5. Last 7 days 13–19 Sep: 4.5. Never the last
+    // entry minus the first (1 − 6).
+    expect(sleep.totalChange).toEqual({ kind: "firstWeek", delta: -3, firstWeekOf: "2026-09-01" });
+  });
+
+  it("makes card 3 the worst score of the last 30 days — the lowest, the highest where down is good", () => {
+    wellness = {
+      series: {
+        ...WELLNESS,
+        stress: [day("2026-08-14", 10, "w-7"), day("2026-09-01", 7, "w-8"), day("2026-09-15", 1, "w-9")],
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const { result } = renderHook(() => useWellnessMetrics(CLIENT_ID));
+    const byId = (id: string) => result.current.metrics.find((m) => m.id === id)!;
+
+    expect(byId("sleep").cardThree).toEqual({ kind: "lowest", worst: { value: 3, date: "2026-09-18" } });
+    // 14 Aug's 10 is before the window
+    expect(byId("stress").cardThree).toEqual({ kind: "highest", worst: { value: 7, date: "2026-09-01" } });
   });
 });
 
@@ -146,5 +233,83 @@ describe("usePhysiqueMetrics — the measurement log, nothing else", () => {
     expect(result.current.logRows.map((row) => row.value)).toEqual([83.9]);
     expect(result.current.metrics.map((m) => m.id)).not.toContain("sleep");
     expect(result.current).toMatchObject({ isLoading: false, isError: false });
+  });
+
+  it("has no figures before the measurement series lands: its windows end on the client's today it carries", () => {
+    measurements = { series: null, isLoading: true, isError: false };
+    const { result } = renderHook(() => usePhysiqueMetrics(client));
+
+    expect(result.current).toMatchObject({ isLoading: true, metrics: [], logRows: [] });
+  });
+
+  it("makes card 3 the goal on weight and body fat, and the last 90 days on a girth", () => {
+    measurements = {
+      series: {
+        ...MEASUREMENTS,
+        waist: [
+          weighIn("2026-05-02", 91.4, "m-2"),
+          weighIn("2026-07-11", 88.6, "m-3"),
+          weighIn("2026-08-29", 87.2, "m-4"),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const { result } = renderHook(() => usePhysiqueMetrics(client));
+    const byId = (id: string) => result.current.metrics.find((m) => m.id === id)!;
+
+    expect(byId("weight").cardThree.kind).toBe("goal");
+    expect(byId("bodyFat").cardThree.kind).toBe("goal");
+    // The last 90 days are 22 Jun–19 Sep, the 90 before them 24 Mar–21 Jun
+    expect(byId("waist").cardThree).toEqual({
+      kind: "last90",
+      comparison: {
+        days: 90,
+        current: { average: 87.9, count: 2 },
+        previous: { average: 91.4, count: 1 },
+        change: { amount: -3.5, trend: "down", tone: "good" },
+      },
+    });
+  });
+
+  it("holds the goal card until the goals read settles, and says why it has no target", () => {
+    goals = { current: null, isLoading: true, isError: false };
+    const { result, rerender } = renderHook(() => usePhysiqueMetrics(client));
+    const weightCard = () => result.current.metrics.find((m) => m.id === "weight")!.cardThree;
+
+    expect(weightCard()).toEqual({ kind: "goal", goal: { status: "pending" } });
+
+    goals = { current: null, isLoading: false, isError: true };
+    rerender();
+    expect(weightCard()).toEqual({ kind: "goal", goal: { status: "failed" } });
+
+    goals = { current: null, isLoading: false, isError: false };
+    rerender();
+    expect(weightCard()).toEqual({ kind: "goal", goal: { status: "none" } });
+
+    // The goal in force targets weight alone: a cut to 80.5 kg from 86.2
+    goals = {
+      current: {
+        type: "lose_weight",
+        targetWeight: 80.5,
+        targetBodyFatPercentage: null,
+        deadline: null,
+        startReadings: { weight: 86.2, bodyFat: null },
+      },
+      isLoading: false,
+      isError: false,
+    };
+    rerender();
+    // Said as the Overview's goal card says it
+    expect(weightCard()).toEqual({
+      kind: "goal",
+      goal: { status: "set", target: 80.5, progress: { text: "3.4 kg to go", tone: "warning" } },
+    });
+    expect(result.current.metrics.find((m) => m.id === "bodyFat")!.cardThree).toEqual({
+      kind: "goal",
+      goal: { status: "none" },
+    });
+    // The chart's goal line reads the same target
+    expect(result.current.metrics.find((m) => m.id === "weight")!.goal).toBe(80.5);
   });
 });

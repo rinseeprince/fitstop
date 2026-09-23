@@ -6,6 +6,7 @@ import {
   type MeasurementLogReading,
   type StandingReading,
 } from "./measurements-service";
+import { getClientTodayString } from "./today-service";
 import { MEASUREMENT_KEYS, type MeasurementKey } from "@/lib/measurements/keys";
 import type { DayValue } from "@/lib/measurements/day-values";
 import type {
@@ -17,17 +18,17 @@ import type {
 
 /**
  * The client's measurement journey for the coach: every metric's day-values
- * from the log, the derived baseline per metric, the start date, and the
- * list of every reading — one payload for the Overview progression chart and
- * status band, the Journey's Physique pane and its measurement log
- * (`GET /api/clients/[id]/measurement-series`).
+ * from the log, the derived baseline per metric, the start date, the list of
+ * every reading and the client's today — one payload for the Overview
+ * progression chart and status band, the Journey's Physique pane and its
+ * measurement log (`GET /api/clients/[id]/measurement-series`).
  *
- * Four reads, in parallel and all complete: the series and the readings are
+ * Five reads, in parallel and all complete: the series and the readings are
  * paged past PostgREST's row cap because they feed aggregates and the whole
- * list, the baseline is one view read, the start date one column. The
- * day-values come from the live view and the readings from the table, on
- * purpose: every figure sees live rows only, and only the list sees a
- * removed one.
+ * list, the baseline is one view read, the start date one column, the
+ * client's today one timezone read. The day-values come from the live view
+ * and the readings from the table, on purpose: every figure sees live rows
+ * only, and only the list sees a removed one.
  */
 
 /** Pure assembly over fetched rows — unit-tested against fixtures. */
@@ -35,6 +36,7 @@ export function toMeasurementSeries(
   series: Map<MeasurementKey, DayValue[]>,
   baseline: Partial<Record<MeasurementKey, StandingReading>>,
   startDate: string | null,
+  clientToday: string,
   readings: readonly MeasurementLogReading[] = []
 ): MeasurementSeries {
   const byMetric = {} as Record<MeasurementKey, MeasurementSeriesPoint[]>;
@@ -76,17 +78,24 @@ export function toMeasurementSeries(
     voided: reading.voided,
   }));
 
-  return { ...byMetric, baseline: baselineByMetric, startDate, readings: readingEntries };
+  return {
+    ...byMetric,
+    baseline: baselineByMetric,
+    startDate,
+    readings: readingEntries,
+    clientToday,
+  };
 }
 
 export const getMeasurementSeriesPayload = async (
   clientId: string
 ): Promise<MeasurementSeries> => {
-  const [series, baseline, readings, { data: client, error }] = await Promise.all([
+  const [series, baseline, readings, { data: client, error }, clientToday] = await Promise.all([
     getMeasurementSeries(clientId),
     getBaseline(clientId),
     getMeasurementReadings(clientId),
     supabaseAdmin.from("clients").select("start_date").eq("id", clientId).maybeSingle(),
+    getClientTodayString(clientId),
   ]);
 
   if (error) {
@@ -94,5 +103,5 @@ export const getMeasurementSeriesPayload = async (
     throw new Error("Failed to read measurement data");
   }
 
-  return toMeasurementSeries(series, baseline, client?.start_date ?? null, readings);
+  return toMeasurementSeries(series, baseline, client?.start_date ?? null, clientToday, readings);
 };

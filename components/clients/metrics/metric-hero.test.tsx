@@ -4,6 +4,8 @@ import { render, screen, cleanup } from "@testing-library/react";
 import { MetricHero } from "./metric-hero";
 import type { MetricSummary } from "./metrics-view-types";
 
+const NO_ENTRIES = { average: null, count: 0 };
+
 function metric(overrides: Partial<MetricSummary> = {}): MetricSummary {
   return {
     id: "weight",
@@ -17,11 +19,10 @@ function metric(overrides: Partial<MetricSummary> = {}): MetricSummary {
     totalChange: null,
     startsOn: null,
     avgRate: null,
-    change30d: null,
-    week: null,
+    lastWeek: { days: 7, current: NO_ENTRIES, previous: NO_ENTRIES, change: null },
+    lastMonth: { days: 30, current: NO_ENTRIES, previous: NO_ENTRIES, change: null },
+    cardThree: { kind: "goal", goal: { status: "none" } },
     goal: null,
-    goalToGo: null,
-    best: null,
     ...overrides,
   };
 }
@@ -40,6 +41,7 @@ describe("MetricHero — total change", () => {
       <MetricHero
         metric={metric({
           totalChange: {
+            kind: "sinceStart",
             delta: -5,
             sinceDate: "2026-03-01",
             baseline: { value: 92, date: "2026-02-20", source: "intake" },
@@ -54,7 +56,9 @@ describe("MetricHero — total change", () => {
     expect(screen.queryByText("since 1 Mar")).not.toBeInTheDocument();
   });
 
-  it("falls back to the since-date for a change with no baseline (wellness)", () => {
+  // A wellness score's change runs from the client's first week of entries to
+  // the last 7 days (D32), and says which week it started from.
+  it("dates a wellness change by the week it runs from", () => {
     render(
       <MetricHero
         metric={metric({
@@ -62,14 +66,50 @@ describe("MetricHero — total change", () => {
           name: "Sleep",
           tab: "wellness",
           unit: "/10",
-          totalChange: { delta: 2, sinceDate: "2026-04-01" },
+          totalChange: { kind: "firstWeek", delta: 1.6, firstWeekOf: "2026-04-01" },
         })}
         {...PROPS}
       />
     );
 
-    expect(screen.getByText("+2.0")).toBeInTheDocument();
-    expect(screen.getByText("since 1 Apr")).toBeInTheDocument();
+    expect(screen.getByText("+1.6")).toBeInTheDocument();
+    expect(screen.getByText("since the week of 1 Apr")).toBeInTheDocument();
+  });
+
+  it("says a wellness change has no last week to stand on when nothing was logged in the last 7 days", () => {
+    render(
+      <MetricHero
+        metric={metric({
+          id: "sleep",
+          name: "Sleep",
+          tab: "wellness",
+          unit: "/10",
+          totalChange: { kind: "noRecentEntries" },
+        })}
+        {...PROPS}
+      />
+    );
+
+    expect(screen.getByText("No entries in the last 7 days")).toBeInTheDocument();
+    expect(screen.queryByText(/since the week of/)).not.toBeInTheDocument();
+  });
+
+  it("says it is too soon while the client's first week and the last 7 days share a day", () => {
+    render(
+      <MetricHero
+        metric={metric({
+          id: "sleep",
+          name: "Sleep",
+          tab: "wellness",
+          unit: "/10",
+          totalChange: { kind: "tooSoon" },
+        })}
+        {...PROPS}
+      />
+    );
+
+    expect(screen.getByText("Too soon to compare")).toBeInTheDocument();
+    expect(screen.queryByText("0.0")).not.toBeInTheDocument();
   });
 
   it("draws no tag pills beside the switcher — no unit, frequency or entry-count chip", () => {

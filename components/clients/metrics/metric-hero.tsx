@@ -12,6 +12,7 @@ import { MetricSwitcher } from "./metric-switcher";
 import { formatShortDate, formatSigned, SOURCE_LABELS } from "./metrics-format";
 import type { MetricSummary } from "./metrics-view-types";
 import { TextSkeleton } from "@/components/text-skeleton";
+import { WINDOW_DAYS } from "@/utils/metric-derived-stats";
 
 type MetricHeroProps = {
   /** null = the metrics read is still in flight: the band renders pending
@@ -173,19 +174,31 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
 
         {/* TOTAL CHANGE — since the START DATE for a physique metric, against
             the baseline (the reading as of it, named with its own date and
-            source); `Starts …` while the start date is still ahead. */}
+            source), `Starts …` while the start date is still ahead; for a
+            wellness score, the last 7 days' average against the client's
+            first week of entries (D32), once the two weeks no longer share a
+            day. */}
         <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.07)]">
           <p className={STAT_LABEL_DARK_CLASS}>Total change</p>
-          {totalChange ? (
+          {totalChange?.kind === "noRecentEntries" || totalChange?.kind === "tooSoon" ? (
+            <>
+              <p className={EMPTY_VALUE_CLASS}>—</p>
+              <p className={SUB_SANS_CLASS}>
+                {totalChange.kind === "tooSoon"
+                  ? "Too soon to compare"
+                  : `No entries in the last ${WINDOW_DAYS.week} days`}
+              </p>
+            </>
+          ) : totalChange ? (
             <>
               <p className={cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1 text-[22px]")}>
                 {formatSigned(totalChange.delta)}
                 {unit && <span className={UNIT_SUFFIX_CLASS}>{unit}</span>}
               </p>
               <p className={SUB_MONO_CLASS}>
-                {totalChange.baseline
+                {totalChange.kind === "sinceStart"
                   ? `from ${totalChange.baseline.value}${unit ? ` ${unit}` : ""} · ${SOURCE_LABELS[totalChange.baseline.source]} ${formatShortDate(totalChange.baseline.date)}`
-                  : `since ${formatShortDate(totalChange.sinceDate)}`}
+                  : `since the week of ${formatShortDate(totalChange.firstWeekOf)}`}
               </p>
             </>
           ) : startsOn ? (

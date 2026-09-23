@@ -92,6 +92,7 @@ function seriesOf(readings: { weight?: Readings; bodyFat?: Readings } = {}): Mea
     baseline: {},
     startDate: null,
     readings: [],
+    clientToday: "2026-08-28",
   };
   for (const key of ["weight", "bodyFat"] as const) {
     const pair = readings[key];

@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  averageInWindow,
   buildLogRows,
-  deriveBest,
+  compareLastDays,
+  deriveFirstWeekChange,
   deriveHeroStats,
-  deriveWeekComparison,
-  deriveWindowChange,
+  worstOfLastDays,
   type LogRowDefinition,
 } from "./metric-derived-stats";
 import type { MetricPoint } from "./metric-points";
@@ -42,14 +43,16 @@ describe("deriveHeroStats", () => {
     expect(stats!.entries).toEqual({ count: 1, sinceDate: "2026-07-15" });
   });
 
-  it("never rates a wellness metric, even with a wide span", () => {
+  it("never rates a wellness metric, even with a wide span, and leaves its total change to the first week", () => {
     const stats = deriveHeroStats(
       [pt("2026-07-01", 5), pt("2026-07-15", 8)],
       "wellness",
       "2026-07-20"
     );
     expect(stats!.avgRate).toBeNull();
-    expect(stats!.totalChange).toEqual({ delta: 3, sinceDate: "2026-07-01" });
+    // Without a journey there is no since-start figure: a wellness score's
+    // Total change is `deriveFirstWeekChange`'s.
+    expect(stats!.totalChange).toBeNull();
   });
 
   it("withholds the rate when a body span is under 7 days", () => {
@@ -59,7 +62,6 @@ describe("deriveHeroStats", () => {
       "2026-07-20"
     );
     expect(stats!.avgRate).toBeNull();
-    expect(stats!.totalChange).toEqual({ delta: -1, sinceDate: "2026-07-01" });
   });
 
   it("rates a body metric with 2 points 14 days apart: perWeek = delta / 2", () => {
@@ -89,7 +91,12 @@ describe("deriveHeroStats — a physique journey", () => {
       startDate: "2026-03-01",
     });
 
-    expect(stats!.totalChange).toEqual({ delta: -5, sinceDate: "2026-03-01", baseline });
+    expect(stats!.totalChange).toEqual({
+      kind: "sinceStart",
+      delta: -5,
+      sinceDate: "2026-03-01",
+      baseline,
+    });
     expect(stats!.startsOn).toBeNull();
     // The rate and the entry count are the journey's own: two readings, three
     // weeks apart — the baseline is not a point of it.
@@ -120,7 +127,7 @@ describe("deriveHeroStats — a physique journey", () => {
     });
 
     expect(stats!.startsOn).toBeNull();
-    expect(stats!.totalChange).toEqual({ delta: -1, sinceDate: today, baseline });
+    expect(stats!.totalChange).toEqual({ kind: "sinceStart", delta: -1, sinceDate: today, baseline });
   });
 
   it("anchors 'current' on the journey's newest reading even when the journey has no points", () => {
@@ -145,149 +152,166 @@ describe("deriveHeroStats — a physique journey", () => {
   });
 });
 
-describe("deriveWindowChange", () => {
-  it("returns null with fewer than 2 points", () => {
-    expect(deriveWindowChange([], true)).toBeNull();
-    expect(deriveWindowChange([pt("2026-07-01", 80)], true)).toBeNull();
+// The windows the Journey's cards read: fixed windows of days ending the
+// client's today, averaged, and compared average against average.
+describe("averageInWindow", () => {
+  it("counts an entry on either end of the window, and none outside it", () => {
+    const points = [
+      pt("2026-07-09", 6.3),
+      pt("2026-07-10", 7.4),
+      pt("2026-07-13", 8.2),
+      pt("2026-07-16", 5.9),
+      pt("2026-07-17", 9.1),
+    ];
+
+    // (7.4 + 8.2 + 5.9) / 3 = 7.1666… — shown, and so returned, as 7.2
+    expect(averageInWindow(points, "2026-07-10", "2026-07-16")).toEqual({ average: 7.2, count: 3 });
   });
 
-  it("falls back to sinceFirst when history is shorter than 30 days", () => {
-    const change = deriveWindowChange(
-      [pt("2026-07-01", 80), pt("2026-07-20", 78)],
-      true
-    );
-    expect(change).toEqual({
-      kind: "sinceFirst",
-      delta: -2,
-      sinceDate: "2026-07-01",
-      trend: "down",
-      tone: "good",
-    });
-  });
+  it("gives an empty window no average, never a zero", () => {
+    const points = [pt("2026-07-01", 4.6), pt("2026-07-30", 5.2)];
 
-  it("baselines on the point nearest to latest-minus-30-days", () => {
-    // latest 07-31 -> target 07-01. 06-28 (3 days off) beats 05-01 and 07-05.
-    const change = deriveWindowChange(
-      [
-        pt("2026-05-01", 90),
-        pt("2026-06-28", 85),
-        pt("2026-07-05", 82),
-        pt("2026-07-31", 80),
-      ],
-      true
-    );
-    expect(change).toEqual({
-      kind: "30day",
-      delta: -5,
-      trend: "down",
-      tone: "good",
-    });
-    expect(change!.sinceDate).toBeUndefined();
-  });
-
-  it("keeps the EARLIER point on an equidistant tie", () => {
-    // target 07-01: 06-29 and 07-03 are both 2 days away -> 06-29 (v 90) wins.
-    const change = deriveWindowChange(
-      [
-        pt("2026-06-01", 100),
-        pt("2026-06-29", 90),
-        pt("2026-07-03", 70),
-        pt("2026-07-31", 80),
-      ],
-      true
-    );
-    expect(change!.kind).toBe("30day");
-    expect(change!.delta).toBe(-10);
-  });
-
-  it("tones a falling non-downIsGood metric (energy) as bad", () => {
-    const change = deriveWindowChange(
-      [pt("2026-07-01", 10), pt("2026-07-10", 6)],
-      false
-    );
-    expect(change!.trend).toBe("down");
-    expect(change!.tone).toBe("bad");
-  });
-
-  it("reads a move the size of the number shown - 0.3 kg up is up, not stable", () => {
-    // The card prints "+0.3" over the trend word; under the 0.5 cut-off this
-    // helper used to apply, that read "Holding steady" in grey.
-    const change = deriveWindowChange(
-      [pt("2026-07-01", 80), pt("2026-07-10", 80.3)],
-      true
-    );
-    expect(change!.delta).toBeCloseTo(0.3);
-    expect(change!.trend).toBe("up");
-    expect(change!.tone).toBe("bad"); // downIsGood: rising weight is the wrong way
-  });
-
-  it("is stable only when the change rounds to nothing at one decimal", () => {
-    const change = deriveWindowChange(
-      [pt("2026-07-01", 80), pt("2026-07-10", 80.04)],
-      true
-    );
-    expect(change!.trend).toBe("stable");
-    expect(change!.tone).toBe("neutral");
+    expect(averageInWindow(points, "2026-07-10", "2026-07-16")).toEqual({ average: null, count: 0 });
   });
 });
 
-describe("deriveWeekComparison", () => {
+describe("compareLastDays", () => {
+  const today = "2026-07-20";
+  // The last 7 days are 14–20 Jul; the 7 before them 7–13 Jul.
+  const points = [
+    pt("2026-07-06", 8.8),
+    pt("2026-07-07", 4.5),
+    pt("2026-07-13", 5.5),
+    pt("2026-07-14", 3.5),
+    pt("2026-07-17", 4.0),
+    pt("2026-07-20", 5.25),
+    pt("2026-07-21", 2.7),
+  ];
+
+  it("takes the change between the averages as shown: 4.3 against 5.0 is -0.7", () => {
+    const comparison = compareLastDays(points, today, 7, false);
+
+    // 12.75 / 3 = 4.25, shown as 4.3; 10 / 2 = 5.0
+    expect(comparison.current).toEqual({ average: 4.3, count: 3 });
+    expect(comparison.previous).toEqual({ average: 5, count: 2 });
+    expect(comparison.change).toEqual({ amount: -0.7, trend: "down", tone: "bad" });
+    expect(comparison.days).toBe(7);
+  });
+
+  it("rounds each average before the change, never the change alone: 4.3 against 5.0 is -0.7, not the -0.8 of 4.26 against 5.04", () => {
+    const comparison = compareLastDays(
+      [pt("2026-07-08", 4.8), pt("2026-07-11", 5.28), pt("2026-07-15", 3.9), pt("2026-07-19", 4.62)],
+      today,
+      7,
+      false
+    );
+
+    expect(comparison.current.average).toBe(4.3);
+    expect(comparison.previous.average).toBe(5);
+    expect(comparison.change?.amount).toBe(-0.7);
+  });
+
+  it("tones the change by the metric's good direction", () => {
+    expect(compareLastDays(points, today, 7, true).change?.tone).toBe("good");
+  });
+
+  it("has no change when the window before is empty — the average stands alone", () => {
+    const comparison = compareLastDays(points.slice(3), today, 7, false);
+
+    expect(comparison.current).toEqual({ average: 4.3, count: 3 });
+    expect(comparison.previous).toEqual({ average: null, count: 0 });
+    expect(comparison.change).toBeNull();
+  });
+});
+
+describe("worstOfLastDays", () => {
+  const today = "2026-07-20";
+  // The last 30 days are 21 Jun–20 Jul.
+
+  it("takes the lowest entry of the window, and the day it was logged", () => {
+    const points = [
+      pt("2026-06-20", 2),
+      pt("2026-06-21", 6),
+      pt("2026-07-02", 3),
+      pt("2026-07-09", 8),
+      pt("2026-07-20", 5),
+      pt("2026-07-21", 1),
+    ];
+
+    expect(worstOfLastDays(points, today, 30, false)).toEqual({ value: 3, date: "2026-07-02" });
+  });
+
+  it("takes the highest where down is good", () => {
+    const points = [
+      pt("2026-06-20", 10),
+      pt("2026-06-22", 3),
+      pt("2026-07-04", 9),
+      pt("2026-07-12", 6),
+      pt("2026-07-20", 2),
+    ];
+
+    expect(worstOfLastDays(points, today, 30, true)).toEqual({ value: 9, date: "2026-07-04" });
+  });
+
+  it("shows the latest day a score reached on several days was logged", () => {
+    const points = [pt("2026-07-03", 4), pt("2026-07-11", 4), pt("2026-07-15", 7)];
+
+    expect(worstOfLastDays(points, today, 30, false)).toEqual({ value: 4, date: "2026-07-11" });
+  });
+
+  it("is null when the window holds no entry", () => {
+    expect(worstOfLastDays([pt("2026-06-01", 5)], today, 30, false)).toBeNull();
+  });
+});
+
+describe("deriveFirstWeekChange", () => {
   const today = "2026-07-20";
 
-  it("averages both 7-day windows when each has points", () => {
-    const comparison = deriveWeekComparison(
-      [
-        pt("2026-07-08", 84),
-        pt("2026-07-12", 86),
-        pt("2026-07-15", 80),
-        pt("2026-07-19", 82),
-      ],
-      today
-    );
-    expect(comparison).toEqual({ kind: "weekAvg", currentAvg: 81, prevAvg: 85 });
-  });
+  it("compares the last 7 days' average with the client's first week of entries", () => {
+    const points = [
+      // The first week: 1–7 Jun, the first entry's day and the 6 after
+      pt("2026-06-01", 3),
+      pt("2026-06-03", 5),
+      pt("2026-06-07", 8),
+      pt("2026-06-08", 10),
+      pt("2026-06-20", 9),
+      pt("2026-07-01", 2),
+      pt("2026-07-13", 1),
+      // The last 7 days: 14–20 Jul
+      pt("2026-07-14", 6),
+      pt("2026-07-19", 7),
+    ];
 
-  it("falls back to the latest point when the previous week is empty", () => {
-    const comparison = deriveWeekComparison(
-      [pt("2026-07-15", 80), pt("2026-07-19", 82)],
-      today
-    );
-    expect(comparison).toEqual({
-      kind: "latest",
-      value: 82,
-      date: "2026-07-19",
+    // 16 / 3 = 5.33…, shown 5.3; 13 / 2 = 6.5 — never the last entry minus the first (7 − 3)
+    expect(deriveFirstWeekChange(points, today)).toEqual({
+      kind: "firstWeek",
+      delta: 1.2,
+      firstWeekOf: "2026-06-01",
     });
   });
 
-  it("returns null for an empty series", () => {
-    expect(deriveWeekComparison([], today)).toBeNull();
-  });
-});
+  it("is too soon to compare while the first week and the last 7 days share a day", () => {
+    // First entry 8 Jul, 12 days before today: its week, 8–14 Jul, ends on
+    // the last week's first day. From 7 Jul, 13 days back, the weeks part.
+    const recent = [pt("2026-07-15", 6), pt("2026-07-18", 9)];
 
-describe("deriveBest", () => {
-  it("returns null for an empty series", () => {
-    expect(deriveBest([], true)).toBeNull();
-  });
-
-  it("takes the minimum when down is good, earliest tie wins", () => {
-    const best = deriveBest(
-      [pt("2026-07-01", 80), pt("2026-07-05", 78), pt("2026-07-10", 78)],
-      true
-    );
-    expect(best).toEqual({ value: 78, date: "2026-07-05" });
+    expect(deriveFirstWeekChange([pt("2026-07-08", 4), ...recent], today)).toEqual({ kind: "tooSoon" });
+    // (4 + 5) / 2 = 4.5 against (6 + 9) / 2 = 7.5
+    expect(
+      deriveFirstWeekChange([pt("2026-07-07", 4), pt("2026-07-12", 5), ...recent], today)
+    ).toEqual({ kind: "firstWeek", delta: 3, firstWeekOf: "2026-07-07" });
   });
 
-  it("takes the maximum when up is good, earliest tie wins", () => {
-    const best = deriveBest(
-      [
-        pt("2026-07-01", 5),
-        pt("2026-07-05", 9),
-        pt("2026-07-08", 9),
-        pt("2026-07-10", 7),
-      ],
-      false
-    );
-    expect(best).toEqual({ value: 9, date: "2026-07-05" });
+  it("has no change to show when nothing was logged in the last 7 days", () => {
+    expect(deriveFirstWeekChange([pt("2026-06-01", 3), pt("2026-07-13", 1)], today)).toEqual({
+      kind: "noRecentEntries",
+    });
+    // Said the same way for a client whose first entry is recent
+    expect(deriveFirstWeekChange([pt("2026-07-10", 2)], today)).toEqual({ kind: "noRecentEntries" });
+  });
+
+  it("is null with no entry at all", () => {
+    expect(deriveFirstWeekChange([], today)).toBeNull();
   });
 });
 

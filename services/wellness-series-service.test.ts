@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
+vi.mock("./today-service", () => ({ getClientTodayString: vi.fn() }));
 
 import { supabaseAdmin } from "./supabase-admin";
+import { getClientTodayString } from "./today-service";
 import { getWellnessSeriesPayload, toWellnessSeries } from "./wellness-series-service";
 import { WELLNESS_KEYS, type WellnessKey } from "@/lib/wellness/keys";
 import type { WellnessDayValue } from "@/lib/wellness/day-values";
@@ -60,18 +62,23 @@ function wireWellnessLogsRead(
   return builder;
 }
 
+/** The client's today in the pure assembly's fixtures. */
+const TODAY = "2026-05-14";
+
 describe("toWellnessSeries", () => {
-  it("emits every one of the five metrics, empty when the log holds no reading of it, and nothing else", () => {
+  it("emits every one of the five metrics, empty when the log holds no reading of it, and the client's today — nothing else", () => {
     const series = toWellnessSeries(
       new Map<WellnessKey, WellnessDayValue[]>([
         ["mood", [dayValue("w-1", "mood", "2026-05-11", 3)]],
-      ])
+      ]),
+      TODAY
     );
 
-    expect(Object.keys(series).sort()).toEqual([...WELLNESS_KEYS].sort());
+    expect(Object.keys(series).sort()).toEqual([...WELLNESS_KEYS, "clientToday"].sort());
     expect(series.mood).toHaveLength(1);
     expect(series.energy).toEqual([]);
     expect(series.soreness).toEqual([]);
+    expect(series.clientToday).toBe(TODAY);
   });
 
   it("maps each day-value to the point shape — date, value, id, recordedAt — in the order given", () => {
@@ -81,7 +88,8 @@ describe("toWellnessSeries", () => {
           "sleep",
           [dayValue("w-1", "sleep", "2026-05-11", 6), dayValue("w-2", "sleep", "2026-05-12", 8)],
         ],
-      ])
+      ]),
+      TODAY
     );
 
     expect(series.sleep).toEqual([
@@ -94,6 +102,16 @@ describe("toWellnessSeries", () => {
 describe("getWellnessSeriesPayload", () => {
   beforeEach(() => {
     vi.mocked(supabaseAdmin.from).mockReset();
+    vi.mocked(getClientTodayString).mockReset().mockResolvedValue("2026-05-13");
+  });
+
+  it("reads the client's today, for the one client", async () => {
+    wireWellnessLogsRead([{ data: [] }]);
+
+    const payload = await getWellnessSeriesPayload("client-1");
+
+    expect(getClientTodayString).toHaveBeenCalledWith("client-1");
+    expect(payload.clientToday).toBe("2026-05-13");
   });
 
   it("reads the client's wellness log — the eight columns, scoped, ordered by day then id — and assembles day-values", async () => {

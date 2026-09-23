@@ -4,10 +4,10 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getWellnessSeriesPayload } from "@/services/wellness-series-service";
 
 // The client's wellness journey (WellnessSeries contract): the five wellness
-// metrics as day-values from the client's own daily log. Read by the
-// Journey's Wellness pane — its own key and cache, apart from the measurement
-// series the Overview chart shares, which draws no wellness point (owner
-// decision D19).
+// metrics as day-values from the client's own daily log, and the client's
+// today. Read by the Journey's Wellness pane — its own key and cache, apart
+// from the measurement series the Overview chart shares, which draws no
+// wellness point (owner decision D19).
 //
 // The whole history, not a window, like the measurement series: the pane's
 // hero and chart span the journey.

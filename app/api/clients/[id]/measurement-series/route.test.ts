@@ -45,6 +45,7 @@ const SERIES: MeasurementSeries = {
   },
   startDate: "2026-07-01",
   readings: [],
+  clientToday: "2026-07-24",
 };
 
 describe("GET /api/clients/[id]/measurement-series", () => {

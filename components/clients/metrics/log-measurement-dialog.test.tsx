@@ -18,6 +18,8 @@ vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 
+const NO_ENTRIES = { average: null, count: 0 };
+
 function metric(overrides: Partial<MetricSummary> = {}): MetricSummary {
   return {
     id: "weight",
@@ -31,11 +33,10 @@ function metric(overrides: Partial<MetricSummary> = {}): MetricSummary {
     totalChange: null,
     startsOn: null,
     avgRate: null,
-    change30d: null,
-    week: null,
+    lastWeek: { days: 7, current: NO_ENTRIES, previous: NO_ENTRIES, change: null },
+    lastMonth: { days: 30, current: NO_ENTRIES, previous: NO_ENTRIES, change: null },
+    cardThree: { kind: "goal", goal: { status: "none" } },
     goal: null,
-    goalToGo: null,
-    best: null,
     ...overrides,
   } as MetricSummary;
 }

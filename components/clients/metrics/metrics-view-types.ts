@@ -1,7 +1,9 @@
 import type { MetricPoint } from "@/utils/metric-points";
 import type { MeasurementSource } from "@/lib/measurements/keys";
-import type { HeroBaseline, Tone } from "@/utils/metric-derived-stats";
-import type { TrendDirection } from "@/types/check-in";
+import { WELLNESS_KEYS } from "@/lib/wellness/keys";
+import { DOWN_IS_GOOD } from "@/lib/metrics/metric-entry-definitions";
+import type { GoalChipTone } from "@/lib/goals/goal-chip";
+import type { Tone, TotalChange, WindowComparison } from "@/utils/metric-derived-stats";
 
 export type { Tone };
 
@@ -76,29 +78,57 @@ export type MetricSummary = {
   first: { value: number; date: string } | null;
   entryCount: number;
   /** Physique: since the START DATE, against the baseline (the reading as of
-   *  it, whose own date and source are carried). Wellness: since the first point. */
-  totalChange: { delta: number; sinceDate: string; baseline?: HeroBaseline } | null;
+   *  it, whose own date and source are carried). Wellness: the last 7 days'
+   *  average against the client's first week of entries (D32). */
+  totalChange: TotalChange | null;
   /** The start date while it is ahead — the since-start cell reads `Starts …`. */
   startsOn: string | null;
   /** null → the ENTRIES fallback stat is shown instead. */
   avgRate: { perWeek: number; weeks: number } | null;
-  change30d: {
-    kind: "30day" | "sinceFirst";
-    delta: number;
-    sinceDate?: string;
-    trend: TrendDirection;
-    tone: Tone;
-  } | null;
-  week:
-    | { kind: "weekAvg"; currentAvg: number; prevAvg: number }
-    | { kind: "latest"; value: number; date: string }
-    | null;
-  /** Resolved goal in display units (weight/bodyFat only), else null. */
+  /** Card 1: the last 7 days, ending the client's today, against the 7 before. */
+  lastWeek: WindowComparison;
+  /** Card 2: the last 30 days against the 30 before. */
+  lastMonth: WindowComparison;
+  /** Card 3, fixed per metric (D31). */
+  cardThree: CardThree;
+  /** The goal target in display units (weight/bodyFat only), else null — the chart's goal line. */
   goal: number | null;
-  /** Pre-formatted distance remaining, e.g. "1.2" (unit rendered by the UI). */
-  goalToGo: string | null;
-  best: { value: number; date: string } | null;
 };
+
+/** Card 3's kind — fixed per metric, so known before any figure is. */
+export type CardThreeKind = "goal" | "lowest" | "highest" | "last90";
+
+// Method bivariance makes the narrow ReadonlySet usable for a plain string id.
+const DOWN_SET: ReadonlySet<string> = DOWN_IS_GOOD;
+
+/**
+ * Card 3 by metric (D31): the goal on weight and body fat, the worst score of
+ * the last 30 days on a wellness score — the lowest, the highest where down is
+ * good (stress, soreness) — and the last 90 days on a girth.
+ */
+export function cardThreeKind(metricId: string): CardThreeKind {
+  if (metricId === "weight" || metricId === "bodyFat") return "goal";
+  if ((WELLNESS_KEYS as readonly string[]).includes(metricId)) {
+    return DOWN_SET.has(metricId) ? "highest" : "lowest";
+  }
+  return "last90";
+}
+
+export type CardThree =
+  | { kind: "goal"; goal: GoalCard }
+  /** `worst` is null when the last 30 days hold no entry. */
+  | { kind: "lowest" | "highest"; worst: { value: number; date: string } | null }
+  | { kind: "last90"; comparison: WindowComparison };
+
+/** The Goal card: the goal read's state, then the target in force on the client's today. */
+export type GoalCard =
+  | { status: "pending" }
+  | { status: "failed" }
+  /** The goal in force sets no target for this metric, or no goal is in force. */
+  | { status: "none" }
+  /** `progress`: how far the newest reading is from the target, in the goal
+   *  card's own words (`goalProgressChip`); null with no reading. */
+  | { status: "set"; target: number; progress: { text: string; tone: GoalChipTone } | null };
 
 export type LogRow = {
   /** A measurement row's id for a physique reading; a derived key for a wellness day. */

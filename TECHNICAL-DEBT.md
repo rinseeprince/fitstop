@@ -802,6 +802,7 @@ Logged: 2026-09-03 (`docs/MEASUREMENT-LOG-PLAN.md`; the shape is ARCHITECTURE â†
 
 ### P2 - Deferred
 - **Nothing captures girths at intake or manual add, and a client cannot log a reading between check-ins.** `client_measurements` accepts `intake` rows for all seven keys and `client_log` rows from the client, so each is a writer and nothing more: the intake questionnaire's step 1 asks weight and body fat only (`intakeStep1Schema`), the add-client form the same, and no `/api/client/**` route writes the log (a `client_log` route is additive to the RN contract). Until then a girth exists only when a check-in form asks for it or a coach logs it.
+- **A coach can date a reading on the client's tomorrow.** `recorded_on` is the day on the CLIENT's calendar, but Log measurement refuses only a date after the COACH's today (`app/api/clients/[id]/metric-entries/route.ts`, `getCoachTodayString`). A coach ahead of the client's time zone who logs on their own today writes the client's tomorrow: the Journey's hero shows it as Current at once, and the cards, whose windows end on the client's today, leave it out until the client's day reaches it â€” under a day. Owner, 2026-09-23 (commit 9a): the windows stay; the root cause is the writer's bound.
 
 ---
 
