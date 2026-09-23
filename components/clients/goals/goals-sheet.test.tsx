@@ -123,6 +123,9 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** The sheet's close — the host owns its open state. */
+const onOpenChange = vi.fn();
+
 function renderSheet(overview: ClientGoalsOverview = OVERVIEW) {
   goalsStore.set(overview);
   render(
@@ -130,7 +133,7 @@ function renderSheet(overview: ClientGoalsOverview = OVERVIEW) {
       clientId="client-2"
       clientName="Alex Kim"
       open
-      onOpenChange={vi.fn()}
+      onOpenChange={onOpenChange}
       readings={{ weight: 82.3, bodyFat: 21.7 }}
     />
   );
@@ -255,9 +258,9 @@ describe("the goals sheet — planning a goal", () => {
   });
 
   // The frame test: the form stays open, busy, until the write answers; the
-  // answer is landed and the form closed together, so no frame shows the list
-  // without the goal just planned.
-  it("plans the goal, then lands its answer and closes the form together", async () => {
+  // answer is landed and the sheet closed together, so no frame shows the goal
+  // card without the goal just planned.
+  it("plans the goal, then lands its answer and closes the sheet together", async () => {
     const write = deferred<ClientGoalsOverview>();
     api.run.mockReturnValue(write.promise);
     const user = renderSheet();
@@ -281,12 +284,14 @@ describe("the goals sheet — planning a goal", () => {
     });
     expect(saveButton()).toBeDisabled();
     expect(api.land).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
 
     await act(async () => {
       write.resolve(ANSWER);
       await write.promise;
     });
     expect(api.land).toHaveBeenCalledWith(ANSWER);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(formOpen()).toBe(false);
     expect(toast.success).toHaveBeenCalledWith("Goal saved");
   });
@@ -305,7 +310,7 @@ describe("the goals sheet — editing a goal", () => {
     expect(screen.queryByLabelText("Starts")).not.toBeInTheDocument();
   });
 
-  it("records a new deadline against the goal, and closes on its answer", async () => {
+  it("records a new deadline against the goal, and closes the sheet on its answer", async () => {
     api.run.mockResolvedValue(ANSWER);
     const user = renderSheet();
     await user.click(screen.getByRole("button", { name: "Edit Lean out" }));
@@ -315,7 +320,7 @@ describe("the goals sheet — editing a goal", () => {
     await waitFor(() => expect(api.land).toHaveBeenCalledWith(ANSWER));
     expect(api.run).toHaveBeenCalledTimes(1);
     expect(api.run).toHaveBeenCalledWith({ kind: "deadline", goalId: "goal-lean", deadline: "2027-01-08" });
-    expect(formOpen()).toBe(false);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it("says a changed target starts a new goal from today, and saves it as one", async () => {
@@ -449,13 +454,14 @@ describe("the goals sheet — editing a goal", () => {
     expect(saveButton()).toBeEnabled();
   });
 
-  it("closes without a write when nothing changed", async () => {
+  it("closes the form without a write when nothing changed, and leaves the sheet open", async () => {
     const user = renderSheet();
     await user.click(screen.getByRole("button", { name: "Edit Peak" }));
     await user.click(saveButton());
 
     expect(api.run).not.toHaveBeenCalled();
     expect(formOpen()).toBe(false);
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 });
 
@@ -480,6 +486,7 @@ describe("the goals sheet — a refused save says what would clear it", () => {
     expect(screen.getAllByRole("button", { name: "Delete Peak" })).toHaveLength(1);
     expect(api.land).not.toHaveBeenCalled();
     expect(saveButton()).toBeEnabled();
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 
   it("holds the refusal only while the fields read as refused", async () => {
@@ -531,6 +538,7 @@ describe("the goals sheet — a refused save says what would clear it", () => {
       expect(toast.error).toHaveBeenCalledWith("Save failed", { description: "Failed to save the goal" })
     );
     expect(formOpen()).toBe(true);
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 });
 
@@ -581,6 +589,8 @@ describe("the goals sheet — deleting a goal", () => {
     expect(screen.queryByRole("dialog", { name: /^Delete / })).not.toBeInTheDocument();
     expect(screen.queryByText("Peak")).not.toBeInTheDocument();
     expect(toast.success).toHaveBeenCalledWith("Goal deleted");
+    // A delete leaves the sheet open on the goals left
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 
   it("a failed delete says so and leaves the confirm open", async () => {

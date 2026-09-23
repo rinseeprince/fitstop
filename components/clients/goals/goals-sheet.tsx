@@ -78,7 +78,7 @@ function GoalRow({
  * time, in place of what it edits.
  *
  * Every write's answer is landed in the same tick its surface closes — the
- * form on a save, the confirm on a delete — so no frame shows the goal it just
+ * sheet on a save, the confirm on a delete — so no frame shows the goal it just
  * changed.
  */
 export function GoalsSheet({
@@ -107,10 +107,11 @@ export function GoalsSheet({
     setEditing((previousForm) => ({ goalId, opening: (previousForm?.opening ?? 0) + 1 }));
 
   // The goals table is not on screen here, so landing is done when it returns:
-  // the answer and the closing surface render together.
+  // the answer and the closing sheet render together — a save closes the sheet.
   const onSaved = (answer: ClientGoalsOverview) => {
     void writes.land(answer);
     setEditing(null);
+    onOpenChange(false);
     toast.success("Goal saved");
   };
 
