@@ -1,20 +1,7 @@
 import type { MetricEntryKey } from "@/lib/metrics/metric-entry-definitions";
 
-// Snake_case row as stored in client_metric_entries — the coach-logged
-// WELLNESS entries (matches the generated types/database.ts shape; hand-typed
-// for narrowing).
-export interface MetricEntryRow {
-  id: string;
-  client_id: string;
-  metric_key: string;
-  value: number;
-  entry_date: string;
-  note: string | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
+/** A coach's Log-measurement entry as the route answers it: the measurement
+ *  log's row, in the entry shape the Journey's caller reads. */
 export interface MetricEntry {
   id: string;
   clientId: string;
@@ -32,9 +19,4 @@ export interface CreateMetricEntryRequest {
   value: number;
   entryDate: string; // YYYY-MM-DD
   note?: string;
-}
-
-export interface GetMetricEntriesResponse {
-  success: boolean;
-  data: MetricEntry[];
 }

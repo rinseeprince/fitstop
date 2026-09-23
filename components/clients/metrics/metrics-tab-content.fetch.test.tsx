@@ -99,10 +99,12 @@ function answer(url: string): Promise<unknown> {
       data: { blocks: [], clientToday: "2026-09-21", planStartFloor: "2026-09-21" },
     });
   }
-  if (path.endsWith("/check-ins")) {
-    return Promise.resolve({ checkIns: [], nextCursor: null, hasMore: false, total: 0 });
+  if (path.endsWith("/wellness-series")) {
+    return Promise.resolve({
+      success: true,
+      data: { mood: [], energy: [], sleep: [], stress: [], soreness: [] },
+    });
   }
-  if (path.endsWith("/metric-entries")) return Promise.resolve({ success: true, data: [] });
   if (path.endsWith("/exercise-history")) return Promise.resolve({ success: true, data: [] });
   return Promise.reject(new Error(`unexpected read ${url}`));
 }
@@ -181,14 +183,7 @@ describe("MetricsTabContent — each pane requests only its own reads", () => {
         `/api/clients/${CLIENT_ID}/measurement-series`,
       ],
     ],
-    [
-      "wellness",
-      [
-        `/api/clients/${CLIENT_ID}/blocks`,
-        `/api/clients/${CLIENT_ID}/check-ins?limit=20`,
-        `/api/clients/${CLIENT_ID}/metric-entries`,
-      ],
-    ],
+    ["wellness", [`/api/clients/${CLIENT_ID}/blocks`, `/api/clients/${CLIENT_ID}/wellness-series`]],
     ["training", [`/api/clients/${CLIENT_ID}/training/exercise-history?metric=list`]],
     ["blocks", [`/api/clients/${CLIENT_ID}/blocks`, `/api/clients/${CLIENT_ID}/blocks/facts`]],
   ];

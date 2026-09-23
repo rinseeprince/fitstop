@@ -17,12 +17,16 @@ function wellnessSeriesKey(clientId: string): string {
  * day-values from their own daily log. Its own key beside the measurement
  * series (owner decision D19): the Overview chart shares that one and draws
  * no wellness point. Read by the Journey's Wellness pane.
+ *
+ * Revalidates on focus, against the §7 default: its only writer is the
+ * client logging their day on their own device, which no coach-side
+ * invalidator can reach.
  */
 export function useWellnessSeries(clientId: string) {
   const { data, error, isLoading } = useSWR<WellnessSeriesResponse>(
     clientId ? wellnessSeriesKey(clientId) : null,
     swrFetcher,
-    { revalidateOnFocus: false, errorRetryCount: 3, errorRetryInterval: 1000 }
+    { revalidateOnFocus: true, errorRetryCount: 3, errorRetryInterval: 1000 }
   );
 
   return { series: data?.data ?? null, isLoading, isError: !!error };

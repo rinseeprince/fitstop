@@ -80,22 +80,27 @@ export function MetricProgressionSection({
       />
 
       {metric.points.length === 0 ? (
-        // Zero entries: cards + chart collapse into one quiet invitation card.
+        // Zero entries: cards + chart collapse into one quiet card. A wellness
+        // score is the client's own log, so only a physique metric invites one.
         <div className="mb-4">
           <div className="bg-white rounded-[6px] py-12 px-5 text-center">
             <p className="text-sm text-[#5a7d82]">
               No {metric.name} entries yet
             </p>
             <p className="text-xs text-[#93b0b4] mt-1">
-              Entries from check-ins and coach logs will chart here.
+              {metric.tab === "wellness"
+                ? "The client's daily logs will chart here."
+                : "Entries from check-ins and coach logs will chart here."}
             </p>
-            <button
-              type="button"
-              onClick={onLogFirst}
-              className="mt-3 text-[13px] font-medium text-[#0d9488] hover:text-[#0b7f75]"
-            >
-              Log the first entry
-            </button>
+            {metric.tab === "body" && (
+              <button
+                type="button"
+                onClick={onLogFirst}
+                className="mt-3 text-[13px] font-medium text-[#0d9488] hover:text-[#0b7f75]"
+              >
+                Log the first entry
+              </button>
+            )}
           </div>
         </div>
       ) : (

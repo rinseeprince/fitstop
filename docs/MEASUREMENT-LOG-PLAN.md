@@ -976,8 +976,8 @@ pane unchanged.
 
 - PROD probe first (CONVENTIONS §8: a destructive change re-probes PROD): `client_metric_entries` row count per client on PROD and on DEV (DEV: 2 rows, both the owner's, 29 Aug 2026), printed in the commit body; the rows go with the table.
 - Migration (the next free number at execution time — commit 8 and the training-completion plan also take numbers): `DROP TABLE IF EXISTS public.client_metric_entries` (its unique constraint, CHECK and index go with it). `gen types`; diff. PROD after `migration list --linked`; `npm run check:rls` on both (a table fewer).
-- Code deleted, each grepped at execution time: the wellness branch of `services/metric-entries-service.ts` and `listMetricEntries` (dead since commit 9); the activity feed's wellness-entry rows (`services/client-activity-feed-service.ts`); `AUDIT_ACTIONS`' `metric_entry.upsert`; the entry shapes of `types/metric-entries.ts`; the seeds' and fixtures' entry rows (grep `client_metric_entries` under `scripts/` and `__tests__/`). What remains of the "metric entries" family is the Log-measurement dialog's physique writer, `upsertMetricEntry` → `appendMeasurements`, and D22 decides its name.
-- Docs, current shape only: ARCHITECTURE → the "client_metric_entries table" section and its line in the Data Hierarchy go; the Journey row's dialog clause; the audit call-site list. TECHNICAL-DEBT → "No DELETE/edit path for client_metric_entries" and "Coach-logged wellness has a store of its own" close by deletion.
+- Code deleted, each grepped at execution time: the activity feed's wellness-entry rows (`services/client-activity-feed-service.ts`); `AUDIT_ACTIONS`' `metric_entry.upsert`; the entry shapes of `types/metric-entries.ts`; the seeds' and fixtures' entry rows (grep `client_metric_entries` under `scripts/` and `__tests__/`). What remains of the "metric entries" family is the Log-measurement dialog's physique writer, `upsertMetricEntry` → `appendMeasurements`, and D22 decides its name.
+- Docs, current shape only: ARCHITECTURE → the "client_metric_entries table" section and its line in the Data Hierarchy go. TECHNICAL-DEBT → "`client_metric_entries` is a dead store" closes by deletion.
 - `npx knip` exits clean.
 
 | # | Decision | Recommendation | Why, and the alternatives |
@@ -989,8 +989,8 @@ Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 c
 and 10 before planning. Plan for my review before writing anything.
 
 Commit 9 shipped: no surface and no wire accepts a coach-logged wellness entry any more.
-This commit removes the dead store — client_metric_entries, its writer's wellness branch,
-its readers, its audit action — and, per my answer to D22, renames the dialog's remaining
+This commit removes the dead store — client_metric_entries, its reader, its audit
+action — and, per my answer to D22, renames the dialog's remaining
 physique writer into the measurements family. Where ARCHITECTURE or CONVENTIONS state a
 rule that contradicts this commit, do not silently follow it and do not silently
 override it: list each contradiction with the doc line and what the plan says instead,

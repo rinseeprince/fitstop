@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
-import { GET, POST } from "./route";
+import { POST } from "./route";
+import { WELLNESS_KEYS } from "@/lib/wellness/keys";
 
 vi.mock("@/lib/rate-limit", () => ({
   coachApiRateLimit: vi.fn().mockResolvedValue(null),
@@ -15,7 +16,6 @@ vi.mock("@/lib/require-coach-auth", () => ({
 }));
 
 vi.mock("@/services/metric-entries-service", () => ({
-  listMetricEntries: vi.fn(),
   upsertMetricEntry: vi.fn(),
 }));
 
@@ -33,10 +33,7 @@ vi.mock("@/services/today-service", () => ({
 }));
 
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import {
-  listMetricEntries,
-  upsertMetricEntry,
-} from "@/services/metric-entries-service";
+import { upsertMetricEntry } from "@/services/metric-entries-service";
 import { getCoachTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import type { MetricEntry } from "@/types/metric-entries";
@@ -87,37 +84,6 @@ describe("/api/clients/[id]/metric-entries", () => {
     });
     vi.mocked(getCoachTodayString).mockResolvedValue("2026-07-24");
     vi.mocked(upsertMetricEntry).mockResolvedValue(mockEntry);
-    vi.mocked(listMetricEntries).mockResolvedValue([mockEntry]);
-  });
-
-  describe("GET", () => {
-    it("returns the unauthorized response verbatim when the coach doesn't own the client", async () => {
-      const unauthorized = NextResponse.json(
-        { error: "Client not found" },
-        { status: 404 }
-      );
-      vi.mocked(requireCoachOwnsClient).mockResolvedValue({
-        authorized: false,
-        response: unauthorized,
-      });
-
-      const response = await GET(createMockRequest("GET"), mockParams);
-
-      expect(response).toBe(unauthorized);
-      expect(response.status).toBe(404);
-      expect(listMetricEntries).not.toHaveBeenCalled();
-    });
-
-    it("returns the client's metric entries", async () => {
-      const response = await GET(createMockRequest("GET"), mockParams);
-      const data = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(data.success).toBe(true);
-      expect(data.data).toHaveLength(1);
-      expect(data.data[0].metricKey).toBe("weight");
-      expect(listMetricEntries).toHaveBeenCalledWith("client-1");
-    });
   });
 
   describe("POST", () => {
@@ -189,29 +155,21 @@ describe("/api/clients/[id]/metric-entries", () => {
       expect(upsertMetricEntry).toHaveBeenCalled();
     });
 
-    it("rejects a mood above its 1-5 scale (6)", async () => {
-      const response = await POST(
-        createMockRequest("POST", validBody({ metricKey: "mood", value: 6 })),
-        mockParams
-      );
-      const data = await response.json();
+    // A wellness score is the client's own report: no coach writes one.
+    it.each(WELLNESS_KEYS.map((key, i) => [key, i + 2] as const))(
+      "refuses a wellness key (%s) and writes nothing",
+      async (metricKey, value) => {
+        const response = await POST(
+          createMockRequest("POST", validBody({ metricKey, value })),
+          mockParams
+        );
+        const data = await response.json();
 
-      expect(response.status).toBe(400);
-      expect(data.success).toBe(false);
-      expect(upsertMetricEntry).not.toHaveBeenCalled();
-    });
-
-    it("rejects a non-integer value for an integer wellness scale (energy 5.5)", async () => {
-      const response = await POST(
-        createMockRequest("POST", validBody({ metricKey: "energy", value: 5.5 })),
-        mockParams
-      );
-      const data = await response.json();
-
-      expect(response.status).toBe(400);
-      expect(data.success).toBe(false);
-      expect(upsertMetricEntry).not.toHaveBeenCalled();
-    });
+        expect(response.status).toBe(400);
+        expect(data.success).toBe(false);
+        expect(upsertMetricEntry).not.toHaveBeenCalled();
+      }
+    );
 
     it("rejects a malformed entryDate at the schema (25-07-2026)", async () => {
       const response = await POST(
@@ -272,10 +230,8 @@ describe("/api/clients/[id]/metric-entries", () => {
       });
     });
 
-    // The audit names the store the row landed in: a physique key is a row in
-    // the measurement log (migration 158), a wellness key stays on
-    // client_metric_entries.
-    it("audits a physique key as a measurement.create on client_measurements, metric + date only", async () => {
+    // Every entry is a row in the measurement log (migration 158).
+    it("audits the entry as a measurement.create on client_measurements, metric + date only", async () => {
       await POST(createMockRequest("POST", validBody()), mockParams);
 
       expect(recordAuditEvent).toHaveBeenCalledTimes(1);
@@ -288,31 +244,6 @@ describe("/api/clients/[id]/metric-entries", () => {
       // metric + date only — the measurement value is health data and stays out
       expect(event.metadata).toEqual({
         metricKey: "weight",
-        entryDate: "2026-07-24",
-      });
-      expect(event.metadata).not.toHaveProperty("value");
-    });
-
-    it("audits a wellness key as a metric_entry.upsert on client_metric_entries", async () => {
-      vi.mocked(upsertMetricEntry).mockResolvedValue({
-        ...mockEntry,
-        id: "entry-2",
-        metricKey: "mood",
-        value: 3,
-      });
-
-      await POST(
-        createMockRequest("POST", validBody({ metricKey: "mood", value: 3 })),
-        mockParams
-      );
-
-      expect(recordAuditEvent).toHaveBeenCalledTimes(1);
-      const event = vi.mocked(recordAuditEvent).mock.calls[0][0];
-      expect(event.action).toBe("metric_entry.upsert");
-      expect(event.targetTable).toBe("client_metric_entries");
-      expect(event.targetId).toBe("entry-2");
-      expect(event.metadata).toEqual({
-        metricKey: "mood",
         entryDate: "2026-07-24",
       });
       expect(event.metadata).not.toHaveProperty("value");

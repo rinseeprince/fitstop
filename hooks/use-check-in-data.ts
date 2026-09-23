@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import useSWRInfinite from "swr/infinite";
 import type {
@@ -21,8 +21,8 @@ function clientCheckInsKeyPrefix(clientId: string) {
   return `/api/clients/${clientId}/check-ins`;
 }
 
-// Shared SWRInfinite key builder for the KEYSET-paginated coach check-ins reads
-// (the "Load older" tab and the Metrics full-history fetch).
+// SWRInfinite key builder for the Check-ins tab's KEYSET-paginated "Load older"
+// list.
 //
 // Page n is addressed by page n-1's cursor, never by an absolute offset, and that
 // derivation is the whole fix: a window pinned to `offset = n * size` is defined
@@ -42,8 +42,8 @@ const buildCheckInsPageKey =
     return cursor ? `${base}&cursor=${encodeURIComponent(cursor)}` : null;
   };
 
-// The newest page SWR has actually loaded. `hasMore` and the auto-advance both
-// read it, because the payload's own flag is the only honest answer once pages
+// The newest page SWR has actually loaded. `hasMore` reads it, because the
+// payload's own flag is the only honest answer once pages
 // no longer map onto a total (`checkIns.length < total` counts a stale flattened
 // list against a fresh count).
 function lastLoadedPage(
@@ -61,8 +61,8 @@ function lastLoadedPage(
 // and for the same reason: the dominant writer of a client's check-in list is that
 // CLIENT submitting in another session, which no coach-side invalidator can ever
 // reach. `revalidateFirstPage` is left at its default `true` for the same reason;
-// with it off (and no focus revalidation) these readers revalidated NOTHING and
-// only a hard reload refreshed them.
+// with it off (and no focus revalidation) the reader revalidates NOTHING and
+// only a hard reload refreshes it.
 const CHECK_IN_LIST_SWR_CONFIG = {
   revalidateOnFocus: true,
 } as const;
@@ -71,14 +71,14 @@ const CHECK_IN_LIST_SWR_CONFIG = {
  * Invalidates every cached read of a client's check-in list from outside the
  * hook that read it — the ONE sanctioned way (CONVENTIONS §7).
  *
- * Two legs, because both readers are `useSWRInfinite` hooks and a
+ * Two legs, because the reader is a `useSWRInfinite` hook and a
  * filter-function mutate cannot reach one of those: swr skips its `$inf$` key
  * outright, and the per-page keys it stores have no revalidator (verified in
  * swr 2.3.6). So:
  * 1. a plain revalidate over the area, for any mounted plain reader (none yet —
  *    an area-wide matcher is what keeps the next one covered);
  * 2. the per-page caches are CLEARED (data → undefined, no fetch), so the next
- *    mount of either infinite reader finds every page missing and refetches the
+ *    mount of the infinite reader finds every page missing and refetches the
  *    whole list. Restricted to the page-key shape, because a data-less,
  *    revalidate-less mutate would blank a plain reader without refreshing it.
  *
@@ -132,39 +132,6 @@ export const useClientCheckInsInfinite = (clientId: string) => {
     size,
     setSize,
     mutate,
-  };
-};
-
-// Eagerly pages through a client's ENTIRE check-in history (keyset contract) so
-// trend charts aren't silently capped at the default page size.
-export const useAllClientCheckIns = (clientId: string) => {
-  const { data, error, size, setSize, isLoading } =
-    useSWRInfinite<GetClientCheckInsPageResponse>(
-      buildCheckInsPageKey(clientId),
-      fetcher,
-      CHECK_IN_LIST_SWR_CONFIG
-    );
-
-  const checkIns = data ? data.flatMap((page) => page.checkIns) : [];
-  const total = data?.[0]?.total ?? 0;
-  const lastPageLoaded = !data || typeof data[size - 1] !== "undefined";
-  const hasMore = Boolean(lastLoadedPage(data)?.hasMore);
-
-  // Auto-advance until the full history is loaded.
-  useEffect(() => {
-    if (hasMore && lastPageLoaded) {
-      void setSize((s) => s + 1);
-    }
-  }, [hasMore, lastPageLoaded, setSize]);
-
-  return {
-    checkIns,
-    total,
-    // Don't report "loading" once a page errors — otherwise hasMore stays true
-    // forever (the failed page never loads) and the consumer is stuck on a
-    // spinner instead of reaching its error state.
-    isLoading: !error && (isLoading || hasMore),
-    isError: error,
   };
 };
 

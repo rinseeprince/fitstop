@@ -31,7 +31,7 @@ import {
 import type { MetricSummary } from "./metrics-view-types";
 
 // Generic entry-series fork of exercise-trend-chart.tsx: one teal Area over the
-// merged check-in + coach-entry points, with an amber dashed goal line and
+// metric's day-values, with an amber dashed goal line and
 // (Session 3.5) journey-block background bands.
 //
 // The X axis is NUMERIC TIME (UTC-midnight epoch ms), not the old category

@@ -43,7 +43,7 @@ function metric(overrides: Partial<MetricSummary> = {}): MetricSummary {
 const METRICS: MetricSummary[] = [
   metric(),
   metric({ id: "waist", name: "Waist", unit: "cm" }),
-  metric({ id: "sleep", name: "Sleep", tab: "wellness", unit: "/10" }),
+  metric({ id: "bodyFat", name: "Body Fat", unit: "%" }),
 ];
 
 type SubmitSpy = Mock<(input: CreateMetricEntryRequest) => Promise<void>>;
@@ -113,12 +113,12 @@ describe("LogMeasurementDialog", () => {
       expect(onSubmit.mock.calls[0][0].value).toBeCloseTo(86.36, 4);
     });
 
-    it("leaves an unitless wellness score alone", async () => {
+    it("leaves a unitless body fat alone", async () => {
       const onSubmit = submitSpy();
-      await logValue("sleep", "8", onSubmit);
+      await logValue("bodyFat", "18.5", onSubmit);
 
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-      expect(onSubmit.mock.calls[0][0].value).toBe(8);
+      expect(onSubmit.mock.calls[0][0].value).toBe(18.5);
     });
 
     // METRIC_VALUE_RANGES is kilograms, so validating the TYPED string would

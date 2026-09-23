@@ -1,14 +1,20 @@
-import type { CheckIn } from "@/types/check-in";
 import type { UnitSystem } from "@/utils/unit-conversions";
 import type { MeasurementKey } from "@/lib/measurements/keys";
+import type { WellnessKey } from "@/lib/wellness/keys";
 
 // Retained for the shared MetricChartCard (also consumed by the client portal's
 // metrics-hub).
 export type DateRangeFilter = "7d" | "30d" | "90d" | "all";
 
-type MetricDefinitionBase = {
-  id: string;
+/**
+ * A Journey metric. Its id IS the key of the store its series comes from — a
+ * measurement-log key for a physique metric, a daily-log column for a
+ * wellness one — so the id alone finds the metric's series.
+ */
+export type MetricDefinition<Id extends MeasurementKey | WellnessKey = MeasurementKey | WellnessKey> = {
+  id: Id;
   name: string;
+  category: "body" | "wellness";
   /**
    * The VIEWER's unit for this metric. Previously took the client's stored
    * weight/measurement tags — which by migration 141 were mapper constants, so
@@ -20,33 +26,11 @@ type MetricDefinitionBase = {
   domain?: [number, number];
 };
 
-/**
- * A PHYSIQUE metric. Its series is the measurement log's day-values, read
- * through the series route, so it names no check-in field: a check-in owns no
- * measurement column — its readings are log rows stamped with its id.
- */
-export type BodyMetricDefinition = MetricDefinitionBase & {
-  id: MeasurementKey;
-  category: "body";
-};
-
-/**
- * A WELLNESS metric. Its series is the merge of the check-ins' weekly averages
- * — `key` names the CheckIn field — with the coach's client_metric_entries
- * (owner decision D2: wellness keeps its own model).
- */
-export type WellnessMetricDefinition = MetricDefinitionBase & {
-  key: keyof CheckIn;
-  category: "wellness";
-};
-
-export type MetricDefinition = BodyMetricDefinition | WellnessMetricDefinition;
-
 // The coach metric catalog — the single source for metric ids/names/units.
-// use-merged-metrics builds the Physique series from the log and the Wellness
-// series through utils/metric-points; the trend semantics live in
+// use-merged-metrics builds the Physique series from the measurement log and
+// the Wellness series from the client's daily log; the trend semantics live in
 // utils/metric-shaping and utils/metric-derived-stats.
-export const BODY_METRIC_DEFINITIONS: BodyMetricDefinition[] = [
+export const BODY_METRIC_DEFINITIONS: MetricDefinition<MeasurementKey>[] = [
   { id: "weight", name: "Weight", category: "body", getUnit: (v) => (v === "imperial" ? "lbs" : "kg"), convert: "weight" },
   { id: "bodyFat", name: "Body Fat", category: "body", getUnit: () => "%" },
   { id: "waist", name: "Waist", category: "body", getUnit: (v) => (v === "imperial" ? "in" : "cm"), convert: "length" },
@@ -56,12 +40,12 @@ export const BODY_METRIC_DEFINITIONS: BodyMetricDefinition[] = [
   { id: "thighs", name: "Thighs", category: "body", getUnit: (v) => (v === "imperial" ? "in" : "cm"), convert: "length" },
 ];
 
-export const WELLNESS_METRIC_DEFINITIONS: WellnessMetricDefinition[] = [
-  { id: "mood", name: "Mood", key: "mood", category: "wellness", getUnit: () => "/5", domain: [1, 5] },
-  { id: "energy", name: "Energy", key: "energy", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
-  { id: "sleep", name: "Sleep", key: "sleep", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
-  { id: "stress", name: "Stress", key: "stress", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
-  { id: "soreness", name: "Soreness", key: "soreness", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
+export const WELLNESS_METRIC_DEFINITIONS: MetricDefinition<WellnessKey>[] = [
+  { id: "mood", name: "Mood", category: "wellness", getUnit: () => "/5", domain: [1, 5] },
+  { id: "energy", name: "Energy", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
+  { id: "sleep", name: "Sleep", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
+  { id: "stress", name: "Stress", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
+  { id: "soreness", name: "Soreness", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
 ];
 
 export const METRIC_DEFINITIONS: MetricDefinition[] = [

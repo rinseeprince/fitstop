@@ -18,27 +18,9 @@ function pt(
     metricId: "weight",
     value,
     date,
-    sortKey: `${date}|1|${date}T08:00:00Z|ci-${date}`,
-    source: "check_in",
-    note: null,
-    sourceRecordId: `ci-${date}`,
+    sortKey: `${date}|${date}T08:00:00Z|m-${date}`,
+    sourceRecordId: `m-${date}`,
     ...overrides,
-  };
-}
-
-function coachPt(
-  date: string,
-  value: number,
-  note: string | null = null
-): MetricPoint {
-  return {
-    metricId: "weight",
-    value,
-    date,
-    sortKey: `${date}|2||e-${date}`,
-    source: "coach_entry",
-    note,
-    sourceRecordId: `e-${date}`,
   };
 }
 
@@ -319,9 +301,8 @@ describe("buildLogRows", () => {
 
   it("orders newest-first by date, then definition order; deltas are per-metric", () => {
     const points = new Map<string, MetricPoint[]>([
-      ["weight", [pt("2026-07-01", 80), coachPt("2026-07-03", 79, "gym scale")]],
-      // check-in point carrying a stray note: it must NOT surface on the row
-      ["waist", [pt("2026-07-01", 90.2), pt("2026-07-03", 90, { note: "stray" })]],
+      ["weight", [pt("2026-07-01", 80), pt("2026-07-03", 79)]],
+      ["waist", [pt("2026-07-01", 90.2), pt("2026-07-03", 90)]],
       ["stress", [pt("2026-07-02", 7)]],
     ]);
 
@@ -338,17 +319,13 @@ describe("buildLogRows", () => {
     expect(rows[2].change).toBeNull();
     expect(rows[3].change).toBeNull();
 
-    // weight -1 with downIsGood -> good; note only on the coach_entry row
+    // weight -1 with downIsGood -> good
     expect(rows[0].change).toEqual({ amount: -1, tone: "good" });
-    expect(rows[0].source).toBe("coach_entry");
-    expect(rows[0].note).toBe("gym scale");
 
     // waist -0.2 is toned the way the row prints it: down, and down is good for
     // waist. (A 0.5 deadband used to grey this out under a printed "-0.2".)
     expect(rows[1].change!.amount).toBeCloseTo(-0.2);
     expect(rows[1].change!.tone).toBe("good");
-    expect(rows[1].source).toBe("check_in");
-    expect(rows[1].note).toBeNull();
   });
 
   it("emits rows only for the requested category, with stress drops toned good", () => {

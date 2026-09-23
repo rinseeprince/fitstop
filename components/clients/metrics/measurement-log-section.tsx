@@ -24,7 +24,7 @@ import type { LogRow, MetricSummary } from "./metrics-view-types";
 /**
  * The three row actions of a physique reading (docs/MEASUREMENT-LOG-PLAN.md
  * commit 8): Edit reading and Remove reading on any live reading, Restore
- * reading on a removed one. A wellness entry has none. Hover-revealed, like
+ * reading on a removed one. A wellness day has none. Hover-revealed, like
  * every other table's row actions.
  */
 type ReadingActionHandlers = {
@@ -189,7 +189,7 @@ export function MeasurementLogSection({
   );
 
   // The actions column exists only where a row can carry an action — the
-  // Wellness pane's entries have none, and an empty column there is noise.
+  // Wellness pane's days have none, and an empty column there is noise.
   const withActions = rows.some((row) => row.isMeasurement);
   const columns = useMemo(
     () =>
@@ -223,7 +223,7 @@ export function MeasurementLogSection({
           columns={columns}
           data={pageRows}
           isLoading={false}
-          // D15: the chart section's sentence, whose call to action sits directly above.
+          // D15: the chart section's sentence.
           emptyMessage={`No ${metric.name} entries yet`}
           rowClassName={rowClassName}
         />

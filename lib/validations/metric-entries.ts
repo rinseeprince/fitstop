@@ -26,12 +26,5 @@ export const createMetricEntrySchema = z
         message: `${data.metricKey} must be between ${range.min} and ${range.max}`,
       });
     }
-    if (range.integer && !Number.isInteger(data.value)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["value"],
-        message: `${data.metricKey} must be a whole number`,
-      });
-    }
   });
 

@@ -1,15 +1,15 @@
 "use client";
 
 import { useMemo } from "react";
-import { useAllClientCheckIns } from "@/hooks/use-check-in-data";
 import { useClientGoals } from "@/hooks/use-client-goals";
-import { useMetricEntries } from "@/hooks/use-metric-entries";
 import { useMeasurementSeries } from "@/hooks/use-measurement-series";
+import { useWellnessSeries } from "@/hooks/use-wellness-series";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { DOWN_IS_GOOD } from "@/lib/metrics/metric-entry-definitions";
 import type { MeasurementKey } from "@/lib/measurements/keys";
+import type { WellnessKey } from "@/lib/wellness/keys";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
-import { buildMetricPoints, type MetricPoint } from "@/utils/metric-points";
+import type { MetricPoint } from "@/utils/metric-points";
 import { buildMeasurementLogRows } from "@/utils/measurement-log-rows";
 import {
   buildLogRows,
@@ -28,21 +28,21 @@ import { useUnits } from "@/contexts/units-context";
 import { formatLength, formatWeight, type UnitSystem } from "@/utils/unit-conversions";
 import type { LogRow, MetricSummary } from "../metrics-view-types";
 import type { Client } from "@/types/check-in";
-import type { MeasurementSeries } from "@/types/coach-overview";
+import type { MeasurementSeriesPoint, WellnessSeriesPoint } from "@/types/coach-overview";
 
 /**
- * The Journey's two metric panes read two stores, deliberately (owner decision
- * D2), and each pane reads its own alone — the hook below it is the only one
- * it calls, so a pane never loads what another shows:
+ * The Journey's two metric panes read two stores, and each pane reads its own
+ * alone — the hook below it is the only one it calls, so a pane never loads
+ * what another shows:
  *
  *  - PHYSIQUE (the seven body measurements) reads the measurement log's
  *    day-values through the series route — one value per day, of any source,
  *    with the baseline (the reading as of the start date) beside it — and the
  *    goal. Readings dated before the start date are listed under "Before
  *    start" and kept out of the chart and every derived figure.
- *  - WELLNESS keeps the merge of check-in weekly averages ⊕ coach-logged
- *    client_metric_entries (`buildMetricPoints`, coach entry winning a
- *    same-day tie), because wellness has its own source of truth (daily logs).
+ *  - WELLNESS (the five scores) reads the client's own daily log through the
+ *    wellness series route — one value per day, from one source: a wellness
+ *    score is the client's self-report, so its log rows carry no action.
  */
 
 // Stored values are canonical kg/cm and are converted HERE, at the point the
@@ -65,19 +65,20 @@ const convertPoint = (value: number, kind: MetricDefinition["convert"], viewer: 
       ? round1(formatLength(value, viewer).value)
       : value;
 
-// Method bivariance makes the narrow ReadonlySet<MetricEntryKey> usable where
-// plain string ids are looked up.
+// Method bivariance makes the narrow ReadonlySet<MeasurementKey | WellnessKey>
+// usable where plain string ids are looked up.
 const DOWN_SET: ReadonlySet<string> = DOWN_IS_GOOD;
 
-/** The series route's points as the page's point shape — one per day already. */
-function seriesPoints(series: MeasurementSeries | null, key: MeasurementKey): MetricPoint[] {
-  return (series?.[key] ?? []).map((point) => ({
+/** A series route's points as the page's point shape — one per day already. */
+function seriesPoints(
+  points: readonly (MeasurementSeriesPoint | WellnessSeriesPoint)[] | undefined,
+  key: MeasurementKey | WellnessKey
+): MetricPoint[] {
+  return (points ?? []).map((point) => ({
     metricId: key,
     value: point.value,
     date: point.date,
     sortKey: `${point.date}|${point.recordedAt}|${point.id}`,
-    source: point.source,
-    note: point.note,
     sourceRecordId: point.id,
   }));
 }
@@ -134,7 +135,7 @@ export const usePhysiqueMetrics = (client: Client): MetricPaneData => {
     const pointsByMetric = new Map(
       BODY_METRIC_DEFINITIONS.map((def) => [
         def.id,
-        seriesPoints(series, def.id).map((p) => ({
+        seriesPoints(series?.[def.id], def.id).map((p) => ({
           ...p,
           value: convertPoint(p.value, def.convert, preference),
         })),
@@ -240,33 +241,32 @@ export const usePhysiqueMetrics = (client: Client): MetricPaneData => {
   return { metrics, logRows, isLoading, isError };
 };
 
-/** The Wellness pane: the check-ins' weekly averages and the coach's entries, nothing else. */
+/** The Wellness pane: the wellness series — the client's daily log — nothing else. */
 export const useWellnessMetrics = (clientId: string): MetricPaneData => {
-  const {
-    checkIns,
-    isLoading: checkInsLoading,
-    isError: checkInsError,
-  } = useAllClientCheckIns(clientId);
-  const {
-    entries,
-    isLoading: entriesLoading,
-    isError: entriesError,
-  } = useMetricEntries(clientId);
+  const { series, isLoading, isError } = useWellnessSeries(clientId);
   const { preference } = useUnits();
 
   const { metrics, logRows } = useMemo(() => {
     const today = getTodayDateString();
     // A score is unitless: its points are its values as logged
-    const pointsByMetric = buildMetricPoints(checkIns, entries, WELLNESS_METRIC_DEFINITIONS);
+    const pointsByMetric = new Map<string, MetricPoint[]>(
+      WELLNESS_METRIC_DEFINITIONS.map((def) => [
+        def.id,
+        seriesPoints(series?.[def.id], def.id),
+      ])
+    );
 
     const summaries = WELLNESS_METRIC_DEFINITIONS.map((def) => {
       const points = pointsByMetric.get(def.id) ?? [];
       return summariseMetric(def, points, deriveHeroStats(points, "wellness", today), today, preference);
     });
 
-    // One row per point, no row action (D2).
-    const nameById = new Map(WELLNESS_METRIC_DEFINITIONS.map((d) => [d.id, d.name]));
-    const unitById = new Map(WELLNESS_METRIC_DEFINITIONS.map((d) => [d.id, d.getUnit(preference)]));
+    // One row per logged day — the client's own log, so no note and no row
+    // action.
+    const nameById = new Map<string, string>(WELLNESS_METRIC_DEFINITIONS.map((d) => [d.id, d.name]));
+    const unitById = new Map<string, string>(
+      WELLNESS_METRIC_DEFINITIONS.map((d) => [d.id, d.getUnit(preference)])
+    );
     const rows: LogRow[] = buildLogRows(
       pointsByMetric,
       WELLNESS_METRIC_DEFINITIONS,
@@ -277,6 +277,8 @@ export const useWellnessMetrics = (clientId: string): MetricPaneData => {
       metricName: nameById.get(row.metricId) ?? row.metricId,
       unit: unitById.get(row.metricId) ?? "",
       canonicalValue: row.value,
+      note: null,
+      source: "client_log",
       sourceId: null,
       isMeasurement: false,
       voided: null,
@@ -286,12 +288,7 @@ export const useWellnessMetrics = (clientId: string): MetricPaneData => {
     }));
 
     return { metrics: summaries, logRows: rows };
-  }, [checkIns, entries, preference]);
+  }, [series, preference]);
 
-  return {
-    metrics,
-    logRows,
-    isLoading: checkInsLoading || entriesLoading,
-    isError: Boolean(checkInsError || entriesError),
-  };
+  return { metrics, logRows, isLoading, isError };
 };

@@ -60,8 +60,15 @@ const WAIST_ROWS: LogRow[] = [
 ];
 const WAIST_BEFORE_START = waist("w-0", "2026-02-18", 81.6, { beforeStart: true, source: "intake" });
 
+// A wellness day as the Wellness pane builds it: the client's own log, no note.
 const wellness = (metricId: string, metricName: string, unit: string, date: string, value: number) =>
-  row(`${metricId}|${date}`, date, value, { metricId, metricName, unit, isMeasurement: false });
+  row(`${metricId}|${date}`, date, value, {
+    metricId,
+    metricName,
+    unit,
+    source: "client_log",
+    isMeasurement: false,
+  });
 
 const tablesOf = (container: HTMLElement) =>
   Array.from(container.querySelectorAll("table"));
@@ -318,19 +325,25 @@ describe("MeasurementLogSection — the three row actions", () => {
     expect(screen.getByRole("button", { name: "Restore reading" })).toBeDisabled();
   });
 
-  it("gives a wellness entry no action, and the Wellness pane no actions column", () => {
-    const entry = wellness("mood", "Mood", "/5", "2026-08-14", 4);
+  it("gives a wellness day no action and no note, and the Wellness pane no actions column", () => {
+    const day = wellness("mood", "Mood", "/5", "2026-08-14", 4);
     const { container } = render(
       <MeasurementLogSection
         metric={MOOD}
-        rows={[entry]}
+        rows={[day]}
         onEditReading={vi.fn()}
         onRemoveReading={vi.fn()}
+        onRestoreReading={vi.fn()}
       />
     );
 
     expect(screen.queryByRole("button", { name: /reading/ })).not.toBeInTheDocument();
     // Five columns — Date, Day, Value, Change, Notes — and no sixth.
     expect(container.querySelectorAll("thead th")).toHaveLength(5);
+    const [only] = Array.from(bodyRowsOf(tablesOf(container)[0])) as HTMLElement[];
+    const cells = Array.from(only.querySelectorAll("td"));
+    expect(cells).toHaveLength(5);
+    // Notes: the dash — a day of the client's log carries no note.
+    expect(cells[4].textContent).toBe("—");
   });
 });

@@ -4,21 +4,18 @@ import { SWRConfig, type Cache } from "swr";
 import type { ReactNode } from "react";
 
 import { useLogMeasurement } from "./use-log-measurement";
-import { useMetricEntries } from "@/hooks/use-metric-entries";
 import { useMeasurementSeries } from "@/hooks/use-measurement-series";
 import { useClientGoals } from "@/hooks/use-client-goals";
 import { useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import type { MetricTab } from "../metrics-view-types";
 
-// Real SWR over a shared cache: what the save does to the two stores it owes a
-// refresh (CONVENTIONS §7) — refresh in place the one the pane on screen shows,
-// clear the one no pane on screen shows.
+// Real SWR over a shared cache: what the save does to the stores it owes a
+// refresh (CONVENTIONS §7) — refresh in place the ones the pane on screen
+// shows, clear the ones no pane on screen shows.
 
 vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
 
 const CLIENT_ID = "client-1";
-const ENTRIES_KEY = `/api/clients/${CLIENT_ID}/metric-entries`;
 const SERIES_KEY = `/api/clients/${CLIENT_ID}/measurement-series`;
 const GOALS_KEY = `/api/clients/${CLIENT_ID}/goals`;
 const OUT_OF_DATE_KEY = `/api/clients/${CLIENT_ID}/nutrition/goal/out-of-date`;
@@ -47,26 +44,17 @@ function wrapperFor(cache: Cache) {
   };
 }
 
-/** The store each key belongs to, read through its own hook. */
-const READERS = {
-  entries: { key: ENTRIES_KEY, metricKey: "mood" as const, pane: "wellness" as MetricTab },
-  series: { key: SERIES_KEY, metricKey: "weight" as const, pane: "body" as MetricTab },
-};
-
-function useReader(store: keyof typeof READERS) {
-  const entries = useMetricEntries(store === "entries" ? CLIENT_ID : "");
-  const series = useMeasurementSeries(store === "series" ? CLIENT_ID : "");
-  return store === "entries"
-    ? { data: entries.entries.length ? entries.entries : undefined, isLoading: entries.isLoading }
-    : { data: series.series ?? undefined, isLoading: series.isLoading };
+/** The measurement series, read through its own hook. */
+function useSeriesReader() {
+  const { series, isLoading } = useMeasurementSeries(CLIENT_ID);
+  return { data: series ?? undefined, isLoading };
 }
 
-const input = (metricKey: "mood" | "weight") => ({ metricKey, value: 4, entryDate: "2026-09-21" });
+const input = (metricKey: "waist" | "weight") => ({ metricKey, value: 4, entryDate: "2026-09-21" });
 
 beforeEach(() => {
   reads = [];
   answers = {
-    [ENTRIES_KEY]: () => Promise.resolve(OLD),
     [SERIES_KEY]: () => Promise.resolve(OLD),
     [GOALS_KEY]: () => Promise.resolve(GOALS_OLD),
     [OUT_OF_DATE_KEY]: () =>
@@ -85,28 +73,25 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe.each(Object.entries(READERS))("useLogMeasurement — the %s", (store, { key, metricKey, pane }) => {
-  const reader = store as keyof typeof READERS;
-  const otherPane: MetricTab = pane === "body" ? "wellness" : "body";
-
+describe("useLogMeasurement — the measurement series", () => {
   it.each([
-    ["the other metric pane", otherPane],
-    ["Training or Blocks", null],
+    ["Training", "training" as const],
+    ["no Journey pane", null],
   ])("cleared when %s is on screen: no refetch now, and the next reader starts loading, never on the old copy", async (_label, onScreen) => {
     const cache: Cache = new Map();
     const wrapper = wrapperFor(cache);
     // A reader held it once — the pane the coach visited before — then left
-    const first = renderHook(() => useReader(reader), { wrapper });
+    const first = renderHook(() => useSeriesReader(), { wrapper });
     await waitFor(() => expect(first.result.current.data).toBeDefined());
     first.unmount();
 
     const { result } = renderHook(() => useLogMeasurement(CLIENT_ID, onScreen), { wrapper });
-    await act(() => result.current(input(metricKey)));
-    expect(reads.filter((url) => url === key)).toHaveLength(1);
+    await act(() => result.current(input("weight")));
+    expect(reads.filter((url) => url === SERIES_KEY)).toHaveLength(1);
 
     const refetch = deferred<unknown>();
-    answers[key] = () => refetch.promise;
-    const next = renderHook(() => useReader(reader), { wrapper });
+    answers[SERIES_KEY] = () => refetch.promise;
+    const next = renderHook(() => useSeriesReader(), { wrapper });
     expect(next.result.current).toEqual({ data: undefined, isLoading: true });
     await act(async () => {
       refetch.resolve(NEW);
@@ -115,26 +100,26 @@ describe.each(Object.entries(READERS))("useLogMeasurement — the %s", (store, {
     await waitFor(() => expect(next.result.current.data).toBeDefined());
   });
 
-  it("refreshed in place when its pane is on screen: the old copy stays until the new lands, and the save waits for it", async () => {
+  it("refreshed in place when Physique is on screen: the old copy stays until the new lands, and the save waits for it", async () => {
     const wrapper = wrapperFor(new Map());
     const { result } = renderHook(
-      () => ({ shown: useReader(reader), log: useLogMeasurement(CLIENT_ID, pane) }),
+      () => ({ shown: useSeriesReader(), log: useLogMeasurement(CLIENT_ID, "body") }),
       { wrapper }
     );
     await waitFor(() => expect(result.current.shown.data).toBeDefined());
     const before = result.current.shown.data;
 
     const refetch = deferred<unknown>();
-    answers[key] = () => refetch.promise;
+    answers[SERIES_KEY] = () => refetch.promise;
     let saved = false;
     let save!: Promise<void>;
     act(() => {
-      save = result.current.log(input(metricKey)).then(() => {
+      save = result.current.log(input("weight")).then(() => {
         saved = true;
       });
     });
 
-    await waitFor(() => expect(reads.filter((url) => url === key)).toHaveLength(2));
+    await waitFor(() => expect(reads.filter((url) => url === SERIES_KEY)).toHaveLength(2));
     // Mid-refresh: what was shown is still shown, and the save has not returned
     expect(result.current.shown).toEqual({ data: before, isLoading: false });
     expect(saved).toBe(false);
@@ -149,14 +134,14 @@ describe.each(Object.entries(READERS))("useLogMeasurement — the %s", (store, {
 });
 
 describe("useLogMeasurement — the client record", () => {
-  it("refreshes the client record for a weight or a body fat, which may be the newest reading, and not for a score", async () => {
+  it("refreshes the client record for a weight or a body fat, which may be the newest reading, and not for a girth", async () => {
     const onClientUpdated = vi.fn();
     const { result } = renderHook(() => useLogMeasurement(CLIENT_ID, null, onClientUpdated), {
       wrapper: wrapperFor(new Map()),
     });
     await act(() => result.current(input("weight")));
     expect(onClientUpdated).toHaveBeenCalledTimes(1);
-    await act(() => result.current(input("mood")));
+    await act(() => result.current(input("waist")));
     expect(onClientUpdated).toHaveBeenCalledTimes(1);
   });
 
@@ -178,7 +163,7 @@ describe("useLogMeasurement — the client record", () => {
 
 describe("useLogMeasurement — the goals read", () => {
   // A goal's progress runs from the reading on its start day, which the goals
-  // read carries: a weight or body fat may move it, a girth or a score never.
+  // read carries: a weight or body fat may move it, a girth never.
   const useGoalsReader = () => {
     const { current, isLoading } = useClientGoals(CLIENT_ID);
     return { data: current ?? undefined, isLoading };
@@ -221,14 +206,14 @@ describe("useLogMeasurement — the goals read", () => {
     expect(next.result.current).toEqual({ data: undefined, isLoading: true });
   });
 
-  it("leaves it alone for a score", async () => {
+  it("leaves it alone for a girth", async () => {
     const wrapper = wrapperFor(new Map());
     const { result } = renderHook(
       () => ({ shown: useGoalsReader(), log: useLogMeasurement(CLIENT_ID, "body") }),
       { wrapper }
     );
     await waitFor(() => expect(result.current.shown.data).toBeDefined());
-    await act(() => result.current.log(input("mood")));
+    await act(() => result.current.log(input("waist")));
     expect(reads.filter((url) => url === GOALS_KEY)).toHaveLength(1);
   });
 
@@ -267,7 +252,7 @@ describe("useLogMeasurement — the goals read", () => {
 
 // docs/MEASUREMENT-LOG-PLAN.md commit 8d1: the nutrition drawer prices from the
 // newest weight and the energy pair, on no screen this dialog shows — so a
-// weight or body fat CLEARS how nutrition follows the goal, and a score leaves
+// weight or body fat CLEARS how nutrition follows the goal, and a girth leaves
 // it alone.
 describe("useLogMeasurement — how nutrition follows the goal", () => {
   const useRuleReader = () => {
@@ -290,14 +275,14 @@ describe("useLogMeasurement — how nutrition follows the goal", () => {
     expect(next.result.current).toEqual({ data: undefined, isLoading: true });
   });
 
-  it("leaves it alone for a score", async () => {
+  it("leaves it alone for a girth", async () => {
     const wrapper = wrapperFor(new Map());
     const { result } = renderHook(
-      () => ({ shown: useRuleReader(), log: useLogMeasurement(CLIENT_ID, "wellness") }),
+      () => ({ shown: useRuleReader(), log: useLogMeasurement(CLIENT_ID, "body") }),
       { wrapper }
     );
     await waitFor(() => expect(result.current.shown.data).toBeDefined());
-    await act(() => result.current.log(input("mood")));
+    await act(() => result.current.log(input("waist")));
     expect(reads.filter((url) => url === OUT_OF_DATE_KEY)).toHaveLength(1);
   });
 });

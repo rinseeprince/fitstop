@@ -50,7 +50,6 @@ describe("useInvalidateWellnessSeries", () => {
     expect(predicate("/api/clients/c1/daily-logs?startDate=2026-08-20&endDate=2026-09-02")).toBe(false);
     expect(predicate("/api/clients/c1/history/wellness")).toBe(false);
     expect(predicate("/api/clients/c1/history/wellness/summary?days=7")).toBe(false);
-    expect(predicate("/api/clients/c1/metric-entries")).toBe(false);
   });
 
   it("rejects non-string keys", () => {
@@ -79,5 +78,11 @@ describe("useWellnessSeries", () => {
     const { result } = renderHook(() => useWellnessSeries("c1"));
     expect(result.current.series).toBeNull();
     expect(result.current.isError).toBe(false);
+  });
+
+  it("refetches when the coach comes back to the page — its writer is the client, on their own device", () => {
+    renderHook(() => useWellnessSeries("c1"));
+    const config = swrSubscribeMock.mock.calls[0][2] as { revalidateOnFocus?: boolean };
+    expect(config.revalidateOnFocus).toBe(true);
   });
 });

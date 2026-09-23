@@ -12,9 +12,7 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -29,7 +27,6 @@ import {
   FOCUS_RING,
   LABEL_CLASS,
   MONO_INPUT_CLASS,
-  SECTION_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import {
   METRIC_ENTRY_CONVERSION,
@@ -46,8 +43,8 @@ import type { MetricSummary } from "./metrics-view-types";
 type LogMeasurementDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Every metric it offers, as the catalog names it — no series is read here. */
-  metrics: Pick<MetricSummary, "id" | "name" | "tab" | "unit">[];
+  /** Every metric it offers — the physique metrics, as the catalog names them; no series is read here. */
+  metrics: Pick<MetricSummary, "id" | "name" | "unit">[];
   /** Focused metric — seeds the select each time the dialog opens. */
   initialMetricId: string;
   onSubmit: (input: CreateMetricEntryRequest) => Promise<void>;
@@ -59,10 +56,10 @@ type LogMeasurementDialogProps = {
 const TRIGGER_CLASS =
   "font-medium [&>svg]:hover:text-[#0d9488]";
 
-/** "7/10" and "18%" attach; word units ("kg", "in") get a space. */
+/** "18%" attaches; word units ("kg", "in") get a space. */
 function proseValue(value: number, unit: string): string {
   if (!unit) return String(value);
-  if (unit.startsWith("/") || unit === "%") return `${value}${unit}`;
+  if (unit === "%") return `${value}${unit}`;
   return `${value} ${unit}`;
 }
 
@@ -94,8 +91,6 @@ export function LogMeasurementDialog({
 
   const today = getTodayDateString();
   const selected = metrics.find((m) => m.id === metricId) ?? null;
-  const bodyMetrics = metrics.filter((m) => m.tab === "body");
-  const wellnessMetrics = metrics.filter((m) => m.tab === "wellness");
 
   const range = selected
     ? METRIC_VALUE_RANGES[selected.id as MetricEntryKey]
@@ -127,11 +122,7 @@ export function LogMeasurementDialog({
     canonical > 0 &&
     range !== undefined &&
     canonical >= range.min &&
-    canonical <= range.max &&
-    // Integer-ness is a property of the SCALE, so it is judged on what the
-    // coach typed — a 1-10 wellness score never converts, and asking whether a
-    // converted kilogram value is a whole number would be meaningless.
-    (!range.integer || Number.isInteger(parsed));
+    canonical <= range.max;
   const canSubmit =
     selected !== null && valueValid && date !== "" && date <= today && !isSubmitting;
 
@@ -205,26 +196,11 @@ export function LogMeasurementDialog({
                 <SelectValue placeholder="Select a metric" />
               </SelectTrigger>
               <SelectContent className="bg-white rounded-[6px] shadow-lg border border-[rgba(13,148,136,0.08)] p-1">
-                <SelectGroup>
-                  <SelectLabel className={SECTION_LABEL_CLASS}>
-                    Physique
-                  </SelectLabel>
-                  {bodyMetrics.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel className={SECTION_LABEL_CLASS}>
-                    Wellness
-                  </SelectLabel>
-                  {wellnessMetrics.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
+                {metrics.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

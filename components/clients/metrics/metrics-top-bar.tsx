@@ -6,7 +6,8 @@ import type { JourneySubtab } from "./metrics-view-types";
 type MetricsTopBarProps = {
   tab: JourneySubtab;
   onTabChange: (t: JourneySubtab) => void;
-  onLogClick: () => void;
+  /** Log measurement; the bar shows no button without it. */
+  onLogClick?: () => void;
 };
 
 // The Journey tab's pane bar: the Training tab's TopContentBar silhouette.
@@ -30,13 +31,15 @@ export function MetricsTopBar({
       />
 
       <div className="ml-auto flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onLogClick}
-          className="rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#0b7f75]"
-        >
-          Log measurement
-        </button>
+        {onLogClick && (
+          <button
+            type="button"
+            onClick={onLogClick}
+            className="rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#0b7f75]"
+          >
+            Log measurement
+          </button>
+        )}
       </div>
     </div>
   );

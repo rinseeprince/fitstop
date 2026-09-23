@@ -3,42 +3,10 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { createMetricEntrySchema } from "@/lib/validations/metric-entries";
-import {
-  listMetricEntries,
-  upsertMetricEntry,
-} from "@/services/metric-entries-service";
+import { upsertMetricEntry } from "@/services/metric-entries-service";
 import { getCoachTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
-import { isMeasurementKey } from "@/lib/measurements/keys";
-
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const rateLimitResult = await coachApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  try {
-    const { id: clientId } = await params;
-
-    const auth = await requireCoachOwnsClient(clientId);
-    if (!auth.authorized) return auth.response;
-
-    const entries = await listMetricEntries(clientId);
-
-    return NextResponse.json(
-      { success: true, data: entries },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error("Error fetching metric entries:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch metric entries" },
-      { status: 500 }
-    );
-  }
-}
 
 export async function POST(
   request: NextRequest,
@@ -81,16 +49,11 @@ export async function POST(
       coachId: auth.coachId,
     });
 
-    // A physique key landed in the measurement log, a wellness key on the
-    // entries table — the audit names the store the row is in.
-    const isMeasurement = isMeasurementKey(entry.metricKey);
     void recordAuditEvent({
       actorId: auth.coachId,
       actorRole: "trainer",
-      action: isMeasurement
-        ? AUDIT_ACTIONS.MEASUREMENT_CREATE
-        : AUDIT_ACTIONS.METRIC_ENTRY_UPSERT,
-      targetTable: isMeasurement ? "client_measurements" : "client_metric_entries",
+      action: AUDIT_ACTIONS.MEASUREMENT_CREATE,
+      targetTable: "client_measurements",
       targetId: entry.id,
       clientId,
       // metric + date only — measurement values are health data and stay out

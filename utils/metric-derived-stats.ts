@@ -27,7 +27,7 @@ export type HeroBaseline = { value: number; date: string; source: MeasurementSou
  * "Current" is the newest reading of ANY date and never waits for the start
  * date; every "since start" figure reads the baseline, and reads `Starts …`
  * while the start date is ahead. Wellness metrics pass nothing and keep the
- * first-point anchor, their series being the merged weekly averages.
+ * first-point anchor, their series being the client's daily logs.
  */
 type HeroJourney = {
   current: MetricPoint | null;
@@ -186,8 +186,6 @@ type DerivedLogRow = {
   metricId: string;
   value: number;
   change: { amount: number; tone: Tone } | null;
-  note: string | null;
-  source: MetricPoint["source"];
 };
 
 /** The metric ids a pane lists, in tab order — the subset of a definition the
@@ -218,8 +216,6 @@ export function buildLogRows(
               tone: toneFor(trend, downIsGood.has(def.id)),
             }
           : null,
-        note: point.source === "coach_entry" ? point.note : null,
-        source: point.source,
         defIndex,
         sortKey: point.sortKey,
       });
@@ -228,7 +224,7 @@ export function buildLogRows(
   rows.sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? 1 : -1; // date DESC
     if (a.defIndex !== b.defIndex) return a.defIndex - b.defIndex; // tab order
-    return a.sortKey < b.sortKey ? 1 : -1; // within a day, newest source last-in first
+    return a.sortKey < b.sortKey ? 1 : -1; // the point's own order, newest first
   });
   return rows.map(({ defIndex: _defIndex, sortKey: _sortKey, ...row }) => row);
 }

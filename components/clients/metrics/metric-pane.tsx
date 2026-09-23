@@ -45,7 +45,7 @@ export function PhysiquePane({ client, ...props }: MetricPaneProps & { client: C
   return <MetricPaneBody data={data} {...props} />;
 }
 
-/** The Wellness pane: the check-ins' weekly averages and the coach's entries. */
+/** The Wellness pane: the wellness series — the client's daily log. */
 export function WellnessPane(props: MetricPaneProps) {
   const data = useWellnessMetrics(props.clientId);
   return <MetricPaneBody data={data} {...props} />;

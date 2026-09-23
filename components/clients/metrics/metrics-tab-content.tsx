@@ -11,7 +11,6 @@ import { useLogMeasurement } from "./hooks/use-log-measurement";
 import { useReadingActions } from "./hooks/use-reading-actions";
 import {
   BODY_METRIC_DEFINITIONS,
-  METRIC_DEFINITIONS,
   WELLNESS_METRIC_DEFINITIONS,
 } from "./hooks/use-metrics-data";
 import { useDialogSubject } from "@/hooks/use-dialog-subject";
@@ -44,13 +43,14 @@ type MetricsTabContentProps = {
 };
 
 /**
- * The Journey tab: the pane bar, the pane on screen, and the dialogs every pane
- * shares. It reads NOTHING itself — each pane reads its own data, so only the
+ * The Journey tab: the pane bar, the pane on screen, and the dialogs the panes
+ * share. It reads NOTHING itself — each pane reads its own data, so only the
  * pane on screen loads (Physique: the measurements, the goal and the blocks;
  * Goals: the goals table, the measurements and the goal; Wellness: the
- * check-in history, the coach's entries and the blocks; Training: its exercise
- * reads; Blocks: the blocks and their plans). Log measurement sits on every
- * pane, its metric list the fixed catalog.
+ * wellness series and the blocks; Training: its exercise reads; Blocks: the
+ * blocks and their plans). Log measurement sits on every pane but Wellness —
+ * a wellness score is the client's own log — its metric list the seven
+ * physique metrics of the catalog.
  */
 export const MetricsTabContent = ({
   client,
@@ -109,15 +109,14 @@ export const MetricsTabContent = ({
   // plan time); the checkbox lives in the chart card's legend slot.
   const [showBlocks, setShowBlocks] = useState(true);
 
-  // The dialog lists every metric of both panes, from the catalog: opening it
-  // loads nothing, on any pane.
+  // The dialog lists the physique metrics, from the catalog: opening it loads
+  // nothing, on any pane.
   const { preference } = useUnits();
   const logMetrics = useMemo(
     () =>
-      METRIC_DEFINITIONS.map((def) => ({
+      BODY_METRIC_DEFINITIONS.map((def) => ({
         id: def.id,
         name: def.name,
-        tab: def.category,
         unit: def.getUnit(preference),
       })),
     [preference]
@@ -170,7 +169,7 @@ export const MetricsTabContent = ({
       <MetricsTopBar
         tab={pane}
         onTabChange={setPane}
-        onLogClick={() => setLogOpen(true)}
+        onLogClick={pane === "wellness" ? undefined : () => setLogOpen(true)}
       />
 
       {pane === "blocks" ? (
@@ -188,11 +187,13 @@ export const MetricsTabContent = ({
         <PhysiquePane client={client} {...metricPaneProps} />
       )}
 
+      {/* Seeded with one of its own metrics on every pane: a browser Back onto
+          Wellness with the dialog open lands it on the physique default. */}
       <LogMeasurementDialog
         open={logOpen}
         onOpenChange={setLogOpen}
         metrics={logMetrics}
-        initialMetricId={focusedMetricId}
+        initialMetricId={tab === "body" ? focusedMetricId : DEFAULT_FOCUS.body}
         onSubmit={logMeasurement}
       />
       {/* Keyed by the opening: each open mounts the card fresh on its reading,

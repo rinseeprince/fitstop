@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { MetricsTabContent } from "./metrics-tab-content";
@@ -43,6 +43,9 @@ vi.mock("./hooks/use-log-measurement", () => ({
 vi.mock("./metric-progression-section", () => ({
   MetricProgressionSection: () => null,
 }));
+// The Log-measurement dialog's Radix Select calls this on open; jsdom has none.
+Element.prototype.scrollIntoView = () => {};
+
 // Read lazily, at render: the factory is hoisted above the fixtures below.
 // Each pane's reads are its own hook's (metrics-tab-content.fetch.test.tsx
 // proves which requests each pane makes through real SWR).
@@ -214,5 +217,50 @@ describe("MetricsTabContent — the selected metric lives in the URL", () => {
     search = new URLSearchParams("journey=body&metric=waist");
     rerender(<MetricsTabContent client={client} />);
     expect(screen.getByText("Showing 3 of 3 waist entries")).toBeInTheDocument();
+  });
+});
+
+// A coach logs body measurements; a wellness score is the client's own log.
+describe("MetricsTabContent — Log measurement", () => {
+  it("lists the seven physique metrics and nothing else", async () => {
+    const user = userEvent.setup();
+    render(<MetricsTabContent client={client} />);
+
+    await user.click(screen.getByRole("button", { name: "Log measurement" }));
+    // Keyboard open: Radix opens a Select on ArrowDown (see block-start-picker.test.tsx).
+    fireEvent.keyDown(screen.getByLabelText("Metric"), { key: "ArrowDown" });
+    const options = await screen.findAllByRole("option");
+
+    expect(options.map((option) => option.textContent)).toEqual([
+      "Weight",
+      "Body Fat",
+      "Waist",
+      "Hips",
+      "Chest",
+      "Arms",
+      "Thighs",
+    ]);
+  });
+
+  it("stays on one of its own metrics when Back lands on Wellness with it open", async () => {
+    const user = userEvent.setup();
+    search = new URLSearchParams("journey=body&metric=waist");
+    const { rerender } = render(<MetricsTabContent client={client} />);
+    await user.click(screen.getByRole("button", { name: "Log measurement" }));
+    expect(screen.getByLabelText("Metric")).toHaveTextContent("Waist");
+
+    // Browser Back: the address is Wellness's; the dialog is local state and stays open
+    search = new URLSearchParams("journey=wellness");
+    rerender(<MetricsTabContent client={client} />);
+    expect(screen.getByLabelText("Metric")).toHaveTextContent("Weight");
+  });
+
+  it("is offered on the Physique pane and not on the Wellness pane", () => {
+    const { rerender } = render(<MetricsTabContent client={client} />);
+    expect(screen.getByRole("button", { name: "Log measurement" })).toBeInTheDocument();
+
+    search = new URLSearchParams("journey=wellness");
+    rerender(<MetricsTabContent client={client} />);
+    expect(screen.queryByRole("button", { name: "Log measurement" })).not.toBeInTheDocument();
   });
 });

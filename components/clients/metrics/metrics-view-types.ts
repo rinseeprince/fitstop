@@ -101,7 +101,7 @@ export type MetricSummary = {
 };
 
 export type LogRow = {
-  /** A measurement row's id for a physique reading; a derived key for a wellness entry. */
+  /** A measurement row's id for a physique reading; a derived key for a wellness day. */
   id: string;
   date: string; // YYYY-MM-DD
   metricId: string;
@@ -116,7 +116,7 @@ export type LogRow = {
   source: MeasurementSource;
   /** The check-in stamp a physique reading carries; null otherwise. */
   sourceId: string | null;
-  /** A measurement-log row: Edit, Remove and Restore apply. A wellness entry has no row action. */
+  /** A measurement-log row: Edit, Remove and Restore apply. A wellness day has no row action. */
   isMeasurement: boolean;
   /** Set when the reading has been removed: muted, in no figure, restorable. */
   voided: { at: string; byName: string | null } | null;
