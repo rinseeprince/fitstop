@@ -39,6 +39,8 @@ export type NutritionOutOfDate = {
   built: GoalPricing;
   /** The goal in force on `fromDay`. */
   goal: GoalPricing;
+  /** That goal's name, which the notice says; null when no goal is in force. */
+  goalName: string | null;
 };
 
 /** The weight target and deadline in force on `day`; no goal is maintenance. */
@@ -85,7 +87,13 @@ export function findNutritionOutOfDate(
       const goal = pricingOnDay(goals, day);
       if (!detectGoalDrift(version.built, goal).changed) continue;
       if (earliest === null || day < earliest.fromDay) {
-        earliest = { versionId: version.id, fromDay: day, built: version.built, goal };
+        earliest = {
+          versionId: version.id,
+          fromDay: day,
+          built: version.built,
+          goal,
+          goalName: goalOnDay(goals, day)?.name ?? null,
+        };
       }
       break;
     }

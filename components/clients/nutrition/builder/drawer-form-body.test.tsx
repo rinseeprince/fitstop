@@ -151,6 +151,7 @@ describe("DrawerFormBody — the out-of-date notice moves Starts on", () => {
     fromDay: "2026-10-19",
     built: { goalWeightKg: 81.5, deadline: "2026-11-09" },
     goal: { goalWeightKg: 84.2, deadline: "2027-01-15" },
+    goalName: "Build",
   };
 
   it("offers Set nutrition from that day, which moves Starts on to it", () => {
@@ -166,7 +167,11 @@ describe("DrawerFormBody — the out-of-date notice moves Starts on", () => {
     builder.effectiveFrom = "2026-10-19";
     render(<DrawerFormBody />);
 
-    expect(screen.getByText("The targets from 19 Oct weren't built for that day's goal.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "From 19 Oct the goal is Build (84.2 kg by 15 Jan), but the calories still aim for 81.5 kg by 9 Nov."
+      )
+    ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Set nutrition from/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Regenerate" })).not.toBeInTheDocument();
   });

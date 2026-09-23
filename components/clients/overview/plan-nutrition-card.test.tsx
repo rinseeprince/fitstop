@@ -138,12 +138,16 @@ describe("PlanNutritionCard — targets that no longer fit the goal", () => {
       fromDay: CLIENT_TODAY,
       built: { goalWeightKg: 80, deadline: "2026-10-01" },
       goal: { goalWeightKg: 81.5, deadline: "2026-11-09" },
+      goalName: "Lean out",
     };
     const { onOpenNutritionDrawer } = renderCard({ nutrition: RUNNING });
 
     expect(outOfDateState.clientIds).toContain("client-9");
-    expect(screen.getByText("Goal changed since these targets were built.")).toBeInTheDocument();
-    expect(screen.getByText("80.0 kg by 1 Oct → 81.5 kg by 9 Nov")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The goal is now Lean out (81.5 kg by 9 Nov), but the calories still aim for 80.0 kg by 1 Oct."
+      )
+    ).toBeInTheDocument();
     screen.getByRole("button", { name: "Regenerate" }).click();
     expect(onOpenNutritionDrawer).toHaveBeenCalledWith();
   });
@@ -154,13 +158,13 @@ describe("PlanNutritionCard — targets that no longer fit the goal", () => {
       fromDay: "2026-10-19",
       built: { goalWeightKg: 81.5, deadline: "2026-11-09" },
       goal: { goalWeightKg: null, deadline: null },
+      goalName: "Maintain",
     };
     const { onOpenNutritionDrawer } = renderCard({ upcomingNutrition: QUEUED });
 
     expect(
-      screen.getByText("The targets from 19 Oct weren't built for that day's goal.")
+      screen.getByText("From 19 Oct the goal is Maintain, but the calories still aim for 81.5 kg by 9 Nov.")
     ).toBeInTheDocument();
-    expect(screen.getByText("81.5 kg by 9 Nov → Maintenance")).toBeInTheDocument();
     screen.getByRole("button", { name: "Set nutrition from 19 Oct" }).click();
     expect(onOpenNutritionDrawer).toHaveBeenCalledWith("2026-10-19");
   });

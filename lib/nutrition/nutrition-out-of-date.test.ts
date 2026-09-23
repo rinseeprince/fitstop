@@ -50,6 +50,7 @@ describe("findNutritionOutOfDate", () => {
       fromDay: TODAY,
       built: { goalWeightKg: 80.3, deadline: "2026-10-01" },
       goal: { goalWeightKg: 81.5, deadline: "2026-11-09" },
+      goalName: "Goal lean",
     });
   });
 
@@ -58,6 +59,8 @@ describe("findNutritionOutOfDate", () => {
     const found = findNutritionOutOfDate([running], [leanOut, build], TODAY);
     expect(found?.fromDay).toBe("2026-10-19");
     expect(found?.goal).toEqual({ goalWeightKg: 84.2, deadline: "2027-01-20" });
+    // The goal named is the one in force on that day, not today's.
+    expect(found?.goalName).toBe("Goal build");
     // The same version, ending the day before Build: every day it covers is
     // Lean out's, so nothing is out of date.
     const endsBefore = version("v-run", "2026-09-01", "2026-10-18", 81.5, "2026-11-09");
@@ -134,6 +137,7 @@ describe("findNutritionOutOfDate", () => {
       fromDay: TODAY,
       built: { goalWeightKg: 82.9, deadline: "2026-12-01" },
       goal: { goalWeightKg: null, deadline: null },
+      goalName: null,
     });
   });
 });

@@ -63,9 +63,9 @@ describe("useClearNutritionGoal", () => {
   });
 
   it("CLEARS rather than revalidates: undefined data, then a refetch", () => {
-    // The notice and the Goal line are definite answers ("Goal changed since
-    // these targets were built", "No deadline, so calories are at
-    // maintenance"); a stale entry served through the refetch would say
+    // The notice and the Goal line are definite answers ("The goal is now
+    // Build …, but the calories still aim for …", "No deadline, so calories
+    // are at maintenance"); a stale entry served through the refetch would say
     // something that has just stopped being true.
     const { data, opts } = clear("c1");
     expect(data).toBeUndefined();

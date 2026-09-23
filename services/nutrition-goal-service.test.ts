@@ -100,6 +100,7 @@ describe("getNutritionOutOfDate", () => {
         fromDay: "2026-10-19",
         built: { goalWeightKg: 81.2, deadline: "2026-11-30" },
         goal: { goalWeightKg: 89.4, deadline: "2027-01-15" },
+        goalName: "Build",
       },
     });
   });

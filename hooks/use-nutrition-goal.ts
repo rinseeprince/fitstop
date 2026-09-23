@@ -78,10 +78,10 @@ export function useNutritionOutOfDate(clientId: string) {
 /**
  * Drops every cached read of this area and refetches whichever is mounted.
  * CLEARED, not revalidated (CONVENTIONS §7): the notice and the drawer's Goal
- * line render definite answers — "Goal changed since these targets were
- * built", "No deadline, so calories are at maintenance" — and a stale entry
- * served through the refetch would state something that has just stopped
- * being true.
+ * line render definite answers — "The goal is now Build (84.6 kg by 14 Dec),
+ * but the calories still aim for…", "No deadline, so calories are at
+ * maintenance" — and a stale entry served through the refetch would state
+ * something that has just stopped being true.
  */
 export function useClearNutritionGoal() {
   const { mutate } = useSWRConfig();
