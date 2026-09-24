@@ -46,8 +46,8 @@ function isMetricTab(pane: JourneySubtab): pane is MetricTab {
 /**
  * The metric derivations want a MetricTab, but a Journey pane may be one that
  * keys nothing (Goals, Training, Blocks). Those idle on "body" — nothing
- * metric-keyed renders on them, and Log measurement opens on the body default
- * from them.
+ * metric-keyed renders on them, and a Log measurement dialog a browser Back
+ * carries onto one of them shows the body default.
  *
  * It WHITELISTS the metric panes rather than naming the non-metric ones. The
  * blacklist this replaced (`pane === "blocks" ? "body" : pane`) put the burden

@@ -48,9 +48,8 @@ type MetricsTabContentProps = {
  * pane on screen loads (Physique: the measurements, the goal and the blocks;
  * Goals: the goals table, the measurements and the goal; Wellness: the
  * wellness series and the blocks; Training: its exercise reads; Blocks: the
- * blocks and their plans). Log measurement sits on every pane but Wellness —
- * a wellness score is the client's own log — its metric list the seven
- * physique metrics of the catalog.
+ * blocks and their plans). Log measurement sits on the Physique pane alone,
+ * its metric list the seven physique metrics of the catalog.
  */
 export const MetricsTabContent = ({
   client,
@@ -110,7 +109,7 @@ export const MetricsTabContent = ({
   const [showBlocks, setShowBlocks] = useState(true);
 
   // The dialog lists the physique metrics, from the catalog: opening it loads
-  // nothing, on any pane.
+  // nothing.
   const { preference } = useUnits();
   const logMetrics = useMemo(
     () =>
@@ -122,7 +121,9 @@ export const MetricsTabContent = ({
     [preference]
   );
   // The pane on screen is refreshed in place by the save; a store no pane on
-  // screen shows is cleared (use-log-measurement.ts).
+  // screen shows is cleared (use-log-measurement.ts). The dialog opens on
+  // Physique, but it is local state: a browser Back while it is open leaves it
+  // open over another pane, so the save reads the pane from the address.
   const logMeasurement = useLogMeasurement(client.id, pane, onClientUpdated);
 
   // The log's three row actions: Edit and Remove open a dialog, Restore is one
@@ -169,7 +170,7 @@ export const MetricsTabContent = ({
       <MetricsTopBar
         tab={pane}
         onTabChange={setPane}
-        onLogClick={pane === "wellness" ? undefined : () => setLogOpen(true)}
+        onLogClick={pane === "body" ? () => setLogOpen(true) : undefined}
       />
 
       {pane === "blocks" ? (

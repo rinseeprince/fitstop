@@ -45,8 +45,8 @@ export function useInvalidateMeasurementSeries() {
 
 /**
  * Drops a client's cached series, then lets it refetch — for a write made
- * while nothing on screen reads it (the Journey's Log measurement from a pane
- * other than Physique). CLEARED, not merely revalidated (CONVENTIONS §7): with
+ * while nothing on screen reads it (the Journey's Log measurement saved after a
+ * browser Back has left Physique). CLEARED, not merely revalidated (CONVENTIONS §7): with
  * no reader mounted a revalidation fetches nothing, and the next Physique view
  * or Overview would serve the stale series — a "current" weight that is no
  * longer current — for the whole refetch. Cleared, each opens in the pending

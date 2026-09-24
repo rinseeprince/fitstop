@@ -43,6 +43,13 @@ vi.mock("./hooks/use-log-measurement", () => ({
 vi.mock("./metric-progression-section", () => ({
   MetricProgressionSection: () => null,
 }));
+// The three panes that key no metric are under their own tests; here they
+// stand in so the pane bar can be read on each.
+vi.mock("./goals/goals-pane", () => ({ GoalsPane: () => null }));
+vi.mock("./blocks/blocks-subtab", () => ({ BlocksSubtab: () => null }));
+vi.mock("@/components/clients/training/exercise-data/exercise-data-view", () => ({
+  ExerciseDataView: () => null,
+}));
 // The Log-measurement dialog's Radix Select calls this on open; jsdom has none.
 Element.prototype.scrollIntoView = () => {};
 
@@ -220,7 +227,7 @@ describe("MetricsTabContent — the selected metric lives in the URL", () => {
   });
 });
 
-// A coach logs body measurements; a wellness score is the client's own log.
+// A coach logs body measurements, from the Physique pane.
 describe("MetricsTabContent — Log measurement", () => {
   it("lists the seven physique metrics and nothing else", async () => {
     const user = userEvent.setup();
@@ -255,12 +262,14 @@ describe("MetricsTabContent — Log measurement", () => {
     expect(screen.getByLabelText("Metric")).toHaveTextContent("Weight");
   });
 
-  it("is offered on the Physique pane and not on the Wellness pane", () => {
+  it("is offered on the Physique pane alone", () => {
     const { rerender } = render(<MetricsTabContent client={client} />);
     expect(screen.getByRole("button", { name: "Log measurement" })).toBeInTheDocument();
 
-    search = new URLSearchParams("journey=wellness");
-    rerender(<MetricsTabContent client={client} />);
-    expect(screen.queryByRole("button", { name: "Log measurement" })).not.toBeInTheDocument();
+    for (const pane of ["wellness", "goals", "training", "blocks"]) {
+      search = new URLSearchParams(`journey=${pane}`);
+      rerender(<MetricsTabContent client={client} />);
+      expect(screen.queryByRole("button", { name: "Log measurement" }), pane).not.toBeInTheDocument();
+    }
   });
 });

@@ -11,8 +11,8 @@ import type { CreateMeasurementInput } from "@/lib/validations/measurements";
 import type { JourneySubtab } from "../metrics-view-types";
 
 /**
- * The Journey's Log measurement, the same from every pane that offers it: one
- * POST, then the refresh the reading owes (CONVENTIONS §7).
+ * The Journey's Log measurement, opened on the Physique pane: one POST, then
+ * the refresh the reading owes (CONVENTIONS §7).
  *
  * A body measurement lands in the measurement log, which the Physique and Goals
  * panes and the Overview read — and a weight or body fat may be the reading a

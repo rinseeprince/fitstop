@@ -140,11 +140,21 @@ function heroCurrent(): string | null {
 
 const seriesReads = () => requested.filter((url) => url.endsWith("/measurement-series")).length;
 
-async function logWeight(value: string) {
+/** Log measurement lives on the Physique pane's bar. */
+async function openLog() {
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Log measurement" }));
+}
+
+async function saveWeight(value: string) {
+  const user = userEvent.setup();
   await user.type(await screen.findByLabelText("Value"), value);
   await user.click(screen.getByRole("button", { name: /log entry/i }));
+}
+
+async function logWeight(value: string) {
+  await openLog();
+  await saveWeight(value);
 }
 
 beforeEach(() => {
@@ -200,6 +210,9 @@ describe("MetricsTabContent — each pane requests only its own reads", () => {
   });
 });
 
+// The dialog opens on Physique, but it is local state: a browser Back while it
+// is open lands on another pane with it still open, and the save refreshes the
+// pane that is on screen then.
 describe("MetricsTabContent — Log measurement never shows an old reading", () => {
   it("off Physique, it drops the series: Physique then opens loading and shows the new weight, never the old", async () => {
     const cache: Cache = new Map();
@@ -207,10 +220,11 @@ describe("MetricsTabContent — Log measurement never shows an old reading", () 
     const { rerender } = render(tree(cache));
     await waitFor(() => expect(heroCurrent()).toBe("90kg"));
 
-    // The coach moves to Training and logs a weight there
+    // The coach opens Log measurement, goes Back to Training with it open, and logs there
+    await openLog();
     search = new URLSearchParams("journey=training");
     rerender(tree(cache));
-    await logWeight("89.5");
+    await saveWeight("89.5");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // Nothing on screen reads the series, so nothing refetched it
     expect(seriesReads()).toBe(1);
@@ -241,17 +255,27 @@ describe("MetricsTabContent — Log measurement never shows an old reading", () 
       planned: [],
     };
     historyData = [{ ...GOAL, deadline: null, endsOn: null, status: "current", lines: [] }];
+    const cache: Cache = new Map();
+    search = new URLSearchParams("journey=body");
+    const { rerender } = render(tree(cache));
+    await waitFor(() => expect(heroCurrent()).toBe("90kg"));
+
+    // The coach opens Log measurement, then goes Back to Goals with it open
+    await openLog();
     search = new URLSearchParams("journey=goals");
-    render(tree(new Map()));
+    rerender(tree(cache));
     await waitFor(() => expect(screen.getByText("2.0 kg to go")).toBeInTheDocument());
+    // The pane's own reads on arrival land here, before the count the save is judged by
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    const readsBefore = seriesReads();
 
     const refetch = deferred<unknown>();
     answerSeries = () => refetch.promise;
-    await logWeight("89.5");
+    await saveWeight("89.5");
 
     // The save has landed and the refetch is in flight: the result as it was,
     // no loading frame, the dialog still open on its spinner
-    await waitFor(() => expect(seriesReads()).toBe(2));
+    await waitFor(() => expect(seriesReads()).toBe(readsBefore + 1));
     expect(screen.getByText("2.0 kg to go")).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
