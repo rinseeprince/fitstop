@@ -7,7 +7,7 @@ import {
 } from "@/hooks/use-measurement-series";
 import { useClearClientGoals, useInvalidateClientGoals } from "@/hooks/use-client-goals";
 import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
-import type { CreateMetricEntryRequest } from "@/types/metric-entries";
+import type { CreateMeasurementInput } from "@/lib/validations/measurements";
 import type { JourneySubtab } from "../metrics-view-types";
 
 /**
@@ -38,8 +38,8 @@ export function useLogMeasurement(
   const clearNutritionGoal = useClearNutritionGoal();
 
   return useCallback(
-    async (input: CreateMetricEntryRequest) => {
-      const res = await fetch(`/api/clients/${clientId}/metric-entries`, {
+    async (input: CreateMeasurementInput) => {
+      const res = await fetch(`/api/clients/${clientId}/measurements`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),

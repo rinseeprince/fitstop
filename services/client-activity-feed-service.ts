@@ -18,11 +18,13 @@ export const ACTIVITY_FEED_CAP = 20;
 // 5) — the per-exercise RPC fan-out isn't worth it on a backlog that large.
 const PR_NEW_SESSION_GUARD = 20;
 
-export type MetricEntryFeedRow = {
+/** A coach's reading, as the measurement log holds it: the day it belongs to
+ *  (`recorded_on`) and when it was written (`recorded_at`, the feed anchor). */
+export type MeasurementFeedRow = {
   metric_key: string;
   value: number;
-  entry_date: string;
-  created_at: string;
+  recorded_on: string;
+  recorded_at: string;
 };
 
 /**
@@ -61,27 +63,27 @@ export function mergeAndCapActivity(
     .slice(0, cap);
 }
 
-/** Key for a resolved predecessor lookup: one entry per (metric, date). */
-export function predecessorKey(metricKey: string, entryDate: string): string {
-  return `${metricKey}|${entryDate}`;
+/** Key for a resolved predecessor lookup: one entry per (metric, day). */
+export function predecessorKey(metricKey: string, recordedOn: string): string {
+  return `${metricKey}|${recordedOn}`;
 }
 
 /**
- * Measurement items with the previous same-metric value (this table only —
- * check-in-derived values deliberately excluded, mig 132 note). Predecessors
- * are resolved per row by the caller (one bounded query each) and passed in
- * keyed by predecessorKey, so a long measurement history can never truncate
- * the lookup.
+ * Measurement items, each with the value of the same metric on the latest
+ * earlier day — of any source, by the log's day rule. Predecessors are
+ * resolved per row by the caller (one bounded query each) and passed in keyed
+ * by predecessorKey, so a long measurement history can never truncate the
+ * lookup.
  */
 export function buildMeasurementItems(
-  newRows: MetricEntryFeedRow[],
+  newRows: MeasurementFeedRow[],
   predecessorValues: Map<string, number>
 ): ActivityItem[] {
   return newRows.map((row) => {
-    const previous = predecessorValues.get(predecessorKey(row.metric_key, row.entry_date));
+    const previous = predecessorValues.get(predecessorKey(row.metric_key, row.recorded_on));
     return {
       type: "measurement" as const,
-      at: row.created_at,
+      at: row.recorded_at,
       metricKey: row.metric_key,
       value: Number(row.value),
       previousValue: previous === undefined ? null : Number(previous),
@@ -233,23 +235,11 @@ async function fetchCheckInItems(clientId: string, since: string): Promise<Activ
 }
 
 /**
- * Coach-logged measurements since the coach's last visit: the seven physique
- * metrics from the measurement log (`source = 'coach_entry'`, keyed on
- * `recorded_at` — when the row was written) and the five wellness metrics
- * from client_metric_entries. Both halves degrade to empty on a failed read.
+ * Coach-logged measurements since the coach's last visit: the measurement
+ * log's `coach_entry` rows, keyed on `recorded_at` — when the row was written.
+ * Degrades to empty on a failed read.
  */
 async function fetchMeasurementItems(
-  clientId: string,
-  since: string
-): Promise<ActivityItem[]> {
-  const [physique, wellness] = await Promise.all([
-    fetchLoggedMeasurementItems(clientId, since),
-    fetchWellnessEntryItems(clientId, since),
-  ]);
-  return [...physique, ...wellness];
-}
-
-async function fetchLoggedMeasurementItems(
   clientId: string,
   since: string
 ): Promise<ActivityItem[]> {
@@ -266,9 +256,9 @@ async function fetchLoggedMeasurementItems(
     console.error("Failed to read new measurements for the activity feed:", error);
     return [];
   }
-  const rows: MetricEntryFeedRow[] = (newRows ?? []).flatMap((row) =>
+  const rows: MeasurementFeedRow[] = (newRows ?? []).flatMap((row) =>
     row.metric_key != null && row.value != null && row.recorded_on != null && row.recorded_at != null
-      ? [{ metric_key: row.metric_key, value: Number(row.value), entry_date: row.recorded_on, created_at: row.recorded_at }]
+      ? [{ metric_key: row.metric_key, value: Number(row.value), recorded_on: row.recorded_on, recorded_at: row.recorded_at }]
       : []
   );
   if (rows.length === 0) return [];
@@ -285,7 +275,7 @@ async function fetchLoggedMeasurementItems(
         .select("value")
         .eq("client_id", clientId)
         .eq("metric_key", row.metric_key)
-        .lt("recorded_on", row.entry_date)
+        .lt("recorded_on", row.recorded_on)
         .order("recorded_on", { ascending: false })
         .order("recorded_at", { ascending: false })
         .limit(1)
@@ -296,58 +286,12 @@ async function fetchLoggedMeasurementItems(
         return;
       }
       if (data?.value != null) {
-        predecessorValues.set(predecessorKey(row.metric_key, row.entry_date), Number(data.value));
+        predecessorValues.set(predecessorKey(row.metric_key, row.recorded_on), Number(data.value));
       }
     })
   );
 
   return buildMeasurementItems(rows, predecessorValues);
-}
-
-async function fetchWellnessEntryItems(
-  clientId: string,
-  since: string
-): Promise<ActivityItem[]> {
-  const { data: newRows, error } = await supabaseAdmin
-    .from("client_metric_entries")
-    .select("metric_key, value, entry_date, created_at")
-    .eq("client_id", clientId)
-    .in("metric_key", ["mood", "energy", "sleep", "stress", "soreness"])
-    .gt("created_at", since)
-    .order("created_at", { ascending: false })
-    .limit(ACTIVITY_FEED_CAP);
-
-  if (error) {
-    console.error("Failed to read new metric entries for the activity feed:", error);
-    return [];
-  }
-  if (!newRows?.length) return [];
-
-  // One bounded predecessor read per new row (≤20, one row each) rather than
-  // pulling the client's whole measurement history, which would silently
-  // truncate at PostgREST's row cap and yield an arbitrary "previous" value.
-  const predecessorValues = new Map<string, number>();
-  await Promise.all(
-    newRows.map(async (row) => {
-      const { data, error: prevError } = await supabaseAdmin
-        .from("client_metric_entries")
-        .select("value")
-        .eq("client_id", clientId)
-        .eq("metric_key", row.metric_key)
-        .lt("entry_date", row.entry_date)
-        .order("entry_date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (prevError) {
-        console.error("Failed to read the previous metric entry:", prevError);
-        return;
-      }
-      if (data) predecessorValues.set(predecessorKey(row.metric_key, row.entry_date), data.value);
-    })
-  );
-
-  return buildMeasurementItems(newRows, predecessorValues);
 }
 
 async function fetchSessionActivity(

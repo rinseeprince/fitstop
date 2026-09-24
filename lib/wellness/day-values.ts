@@ -4,8 +4,7 @@ import { WELLNESS_KEYS, type WellnessKey } from "./keys";
  * The day's value for a wellness metric (docs/MEASUREMENT-LOG-PLAN.md §6
  * commit 7, D16): the client's own daily log, one row per day — a non-null
  * column is that day's reading, a null column no reading of that metric that
- * day. There is one source, because a wellness score is the client's
- * self-report (D18), so there is no merge and no tie rule.
+ * day. There is one source: a wellness score is the client's self-report.
  *
  * `wellness_logs` holds ONE row per client and day (the spine is unique on
  * client and date, the wellness row on its spine id), and the client's write

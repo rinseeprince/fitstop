@@ -50,7 +50,7 @@ function useSeriesReader() {
   return { data: series ?? undefined, isLoading };
 }
 
-const input = (metricKey: "waist" | "weight") => ({ metricKey, value: 4, entryDate: "2026-09-21" });
+const input = (metricKey: "waist" | "weight") => ({ metricKey, value: 4, recordedOn: "2026-09-21" });
 
 beforeEach(() => {
   reads = [];
@@ -130,6 +130,21 @@ describe("useLogMeasurement — the measurement series", () => {
     });
     expect(saved).toBe(true);
     expect(result.current.shown.data).not.toEqual(before);
+  });
+});
+
+describe("useLogMeasurement — the save", () => {
+  it("posts the reading to the client's measurements, as the dialog gave it", async () => {
+    const { result } = renderHook(() => useLogMeasurement(CLIENT_ID, null), {
+      wrapper: wrapperFor(new Map()),
+    });
+    await act(() => result.current(input("waist")));
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(url).toBe(`/api/clients/${CLIENT_ID}/measurements`);
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({ metricKey: "waist", value: 4, recordedOn: "2026-09-21" });
   });
 });
 

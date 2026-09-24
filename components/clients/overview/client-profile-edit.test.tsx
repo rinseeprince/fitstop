@@ -278,11 +278,9 @@ describe("the client details sheet", () => {
       ).not.toBeInTheDocument();
     });
 
-    // The current pair is a denormalized cache of LOGGED measurements. Editing
-    // it here moved the number the form shows without adding a point to the
-    // series the chart and the Physique page draw from, so the two could
-    // disagree permanently — and it bypassed the no-regression rule
-    // upsertMetricEntry applies to that cache.
+    // The current pair is the client's newest readings in the measurement log,
+    // and the Journey's Log measurement is where a coach adds one (ARCHITECTURE
+    // → "The client's origin"), so the sheet shows them read-only.
     it("shows the current pair read-only, with no way to type over it", async () => {
       await openEditor(MEASURED);
 

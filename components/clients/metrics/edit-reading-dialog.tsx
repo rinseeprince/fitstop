@@ -23,11 +23,8 @@ import {
   MONO,
   MONO_INPUT_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import {
-  METRIC_ENTRY_CONVERSION,
-  METRIC_VALUE_RANGES,
-  type MetricEntryKey,
-} from "@/lib/metrics/metric-entry-definitions";
+import { MEASUREMENT_CONVERSION, MEASUREMENT_VALUE_RANGES } from "@/lib/measurements/bounds";
+import type { MeasurementKey } from "@/lib/measurements/keys";
 import { formatLogDate, SOURCE_LABELS } from "./metrics-format";
 import type { LogRow } from "./metrics-view-types";
 
@@ -55,7 +52,7 @@ export function EditReadingDialog({ open, row, onOpenChange, onConfirm }: EditRe
   const [isSaving, setIsSaving] = useState(false);
 
   const conversion = row
-    ? (METRIC_ENTRY_CONVERSION[row.metricId as MetricEntryKey] ?? null)
+    ? (MEASUREMENT_CONVERSION[row.metricId as MeasurementKey] ?? null)
     : null;
   // One input path for every metric: a unit-bearing reading collects in the
   // viewer's unit; a unitless one (body fat) takes the hook's identity path
@@ -66,7 +63,7 @@ export function EditReadingDialog({ open, row, onOpenChange, onConfirm }: EditRe
     conversion ?? "weight"
   );
 
-  const range = row ? METRIC_VALUE_RANGES[row.metricId as MetricEntryKey] : null;
+  const range = row ? MEASUREMENT_VALUE_RANGES[row.metricId as MeasurementKey] : null;
   const commit = input.commit;
   // Bounds describe STORAGE (CONVENTIONS §20): judged on the canonical commit.
   const inRange = commit != null && range != null && commit >= range.min && commit <= range.max;

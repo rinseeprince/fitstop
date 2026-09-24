@@ -552,7 +552,7 @@
 
   - Security-relevant actions on client-owned data are recorded in an immutable, append-only `audit_logs` table for incident investigation (`services/audit-log-service.ts`, migration 108). Call `recordAuditEvent(...)` **fire-and-forget** (`void`-prefixed) AFTER a successful, already-authorized write — it records what the route already authorized; it never authorizes or blocks the request.
   - Pass a caller-verified `actorId` + `clientId`. Use `action` names from `AUDIT_ACTIONS` (`lib/constants.ts`); `metadata` is small, non-sensitive context only — never health PII. If you pass `request`, the helper hashes the IP (SHA-256 prefix), never the raw address.
-  - When to log: the actions `AUDIT_ACTIONS` names — client invitation and activation, goals, measurements and metric entries, the intake metrics sync, nutrition and training plans, blocks and check-in forms. Failures go to Sentry, not the user.
+  - When to log: the actions `AUDIT_ACTIONS` names — client invitation and activation, goals, measurements, the intake metrics sync, nutrition and training plans, blocks and check-in forms. Failures go to Sentry, not the user.
 
   ### General
   - Migrations: Version controlled, never edit directly

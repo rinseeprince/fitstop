@@ -193,7 +193,6 @@ export const AUDIT_ACTIONS = {
   MEASUREMENT_UPDATE: "measurement.update",
   MEASUREMENT_VOID: "measurement.void",
   MEASUREMENT_RESTORE: "measurement.restore",
-  METRIC_ENTRY_UPSERT: "metric_entry.upsert",
   INTAKE_SYNC_METRICS: "intake.sync_metrics",
   NUTRITION_PLAN_CREATE: "nutrition_plan.create",
   NUTRITION_PLAN_DELETE: "nutrition_plan.delete",

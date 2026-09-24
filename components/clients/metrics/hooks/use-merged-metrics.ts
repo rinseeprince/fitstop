@@ -5,7 +5,7 @@ import { useClientGoals } from "@/hooks/use-client-goals";
 import { useMeasurementSeries } from "@/hooks/use-measurement-series";
 import { useWellnessSeries } from "@/hooks/use-wellness-series";
 import { getTodayDateString } from "@/lib/date-helpers";
-import { DOWN_IS_GOOD } from "@/lib/metrics/metric-entry-definitions";
+import { DOWN_IS_GOOD } from "@/lib/metrics/good-direction";
 import type { MeasurementKey } from "@/lib/measurements/keys";
 import type { WellnessKey } from "@/lib/wellness/keys";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";

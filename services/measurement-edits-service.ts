@@ -8,7 +8,7 @@ import {
   fromRpcMessage,
 } from "@/lib/measurements/edit-errors";
 import { isMeasurementKey, type MeasurementKey } from "@/lib/measurements/keys";
-import { METRIC_VALUE_RANGES } from "@/lib/metrics/metric-entry-definitions";
+import { MEASUREMENT_VALUE_RANGES } from "@/lib/measurements/bounds";
 
 /**
  * The three row actions of the measurement log (docs/MEASUREMENT-LOG-PLAN.md
@@ -73,7 +73,7 @@ async function readOwn(clientId: string, measurementId: string): Promise<Measure
 }
 
 function assertWithinBounds(metricKey: MeasurementKey, value: number): void {
-  const range = METRIC_VALUE_RANGES[metricKey];
+  const range = MEASUREMENT_VALUE_RANGES[metricKey];
   if (value < range.min || value > range.max) {
     throw new MeasurementValueError(
       `${metricKey} must be between ${range.min} and ${range.max}`

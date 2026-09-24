@@ -11,27 +11,27 @@ import {
   predecessorKey,
   prItemsFor,
   ACTIVITY_FEED_CAP,
-  type MetricEntryFeedRow,
+  type MeasurementFeedRow,
 } from "./client-activity-feed-service";
 import { getExercisePRs } from "./exercise-analytics-service";
 import type { ActivityItem } from "@/types/coach-brief";
 import type { ExerciseBest, ExercisePR } from "@/types/training";
 
-const entry = (
+const reading = (
   metricKey: string,
   value: number,
-  entryDate: string,
-  createdAt: string
-): MetricEntryFeedRow => ({
+  recordedOn: string,
+  recordedAt: string
+): MeasurementFeedRow => ({
   metric_key: metricKey,
   value,
-  entry_date: entryDate,
-  created_at: createdAt,
+  recorded_on: recordedOn,
+  recorded_at: recordedAt,
 });
 
 describe("buildMeasurementItems", () => {
   it("attaches the resolved predecessor value and the canonical stored value", () => {
-    const newRow = entry("weight", 80.2, "2026-06-15", "2026-06-15T08:00:00Z");
+    const newRow = reading("weight", 80.2, "2026-06-15", "2026-06-15T08:00:00Z");
     const predecessors = new Map([[predecessorKey("weight", "2026-06-15"), 81]]);
     const items = buildMeasurementItems([newRow], predecessors);
     expect(items).toEqual([
@@ -46,7 +46,7 @@ describe("buildMeasurementItems", () => {
   });
 
   it("returns null previousValue with no predecessor, and leaves the value canonical", () => {
-    const newRow = entry("hips", 100, "2026-06-15", "2026-06-15T08:00:00Z");
+    const newRow = reading("hips", 100, "2026-06-15", "2026-06-15T08:00:00Z");
     const items = buildMeasurementItems([newRow], new Map());
     expect(items[0].type).toBe("measurement");
     if (items[0].type === "measurement") {
@@ -57,9 +57,9 @@ describe("buildMeasurementItems", () => {
     }
   });
 
-  it("keys predecessors per (metric, date) so sibling metrics don't cross over", () => {
-    const weightRow = entry("weight", 80, "2026-06-15", "2026-06-15T08:00:00Z");
-    const waistRow = entry("waist", 89, "2026-06-15", "2026-06-15T08:05:00Z");
+  it("keys predecessors per (metric, day) so sibling metrics don't cross over", () => {
+    const weightRow = reading("weight", 80, "2026-06-15", "2026-06-15T08:00:00Z");
+    const waistRow = reading("waist", 89, "2026-06-15", "2026-06-15T08:05:00Z");
     const predecessors = new Map([[predecessorKey("waist", "2026-06-15"), 90]]);
     const items = buildMeasurementItems([weightRow, waistRow], predecessors);
     const byKey = new Map(

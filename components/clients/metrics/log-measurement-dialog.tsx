@@ -28,15 +28,12 @@ import {
   LABEL_CLASS,
   MONO_INPUT_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import {
-  METRIC_ENTRY_CONVERSION,
-  METRIC_VALUE_RANGES,
-  type MetricEntryKey,
-} from "@/lib/metrics/metric-entry-definitions";
+import { MEASUREMENT_CONVERSION, MEASUREMENT_VALUE_RANGES } from "@/lib/measurements/bounds";
+import type { MeasurementKey } from "@/lib/measurements/keys";
 import { useUnits } from "@/contexts/units-context";
 import { parseLengthToCm, parseWeightToKg } from "@/utils/unit-conversions";
 import { getTodayDateString } from "@/lib/date-helpers";
-import type { CreateMetricEntryRequest } from "@/types/metric-entries";
+import type { CreateMeasurementInput } from "@/lib/validations/measurements";
 import { formatShortDate } from "./metrics-format";
 import type { MetricSummary } from "./metrics-view-types";
 
@@ -47,7 +44,7 @@ type LogMeasurementDialogProps = {
   metrics: Pick<MetricSummary, "id" | "name" | "unit">[];
   /** Focused metric — seeds the select each time the dialog opens. */
   initialMetricId: string;
-  onSubmit: (input: CreateMetricEntryRequest) => Promise<void>;
+  onSubmit: (input: CreateMeasurementInput) => Promise<void>;
 };
 
 // Select recipes copied from the (to-be-deleted) time-scope-selector.tsx —
@@ -93,7 +90,7 @@ export function LogMeasurementDialog({
   const selected = metrics.find((m) => m.id === metricId) ?? null;
 
   const range = selected
-    ? METRIC_VALUE_RANGES[selected.id as MetricEntryKey]
+    ? MEASUREMENT_VALUE_RANGES[selected.id as MeasurementKey]
     : undefined;
   const parsed = Number(value);
   const hasValue = value.trim() !== "";
@@ -102,11 +99,11 @@ export function LogMeasurementDialog({
   // The coach types in THEIR unit (the suffix beside the box is
   // `def.getUnit(preference)`); storage is canonical kg/cm. Converting here
   // rather than at submit means the range check below judges the number that
-  // will actually be stored — METRIC_VALUE_RANGES is kilograms and
+  // will actually be stored — MEASUREMENT_VALUE_RANGES is kilograms and
   // centimetres, so validating the typed string would compare 180 lbs against
   // a 20-250 kg bound and wave it through.
   const conversion = selected
-    ? METRIC_ENTRY_CONVERSION[selected.id as MetricEntryKey]
+    ? MEASUREMENT_CONVERSION[selected.id as MeasurementKey]
     : null;
   const canonical = !Number.isFinite(parsed)
     ? parsed
@@ -132,10 +129,10 @@ export function LogMeasurementDialog({
     try {
       const trimmedNote = note.trim();
       await onSubmit({
-        metricKey: selected.id as MetricEntryKey,
+        metricKey: selected.id as MeasurementKey,
         // Canonical kg/cm on the wire; the coach typed their own unit.
         value: canonical,
-        entryDate: date,
+        recordedOn: date,
         note: trimmedNote || undefined,
       });
       onOpenChange(false);

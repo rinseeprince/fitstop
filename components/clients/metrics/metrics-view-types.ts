@@ -1,7 +1,7 @@
 import type { MetricPoint } from "@/utils/metric-points";
 import type { MeasurementSource } from "@/lib/measurements/keys";
 import { WELLNESS_KEYS } from "@/lib/wellness/keys";
-import { DOWN_IS_GOOD } from "@/lib/metrics/metric-entry-definitions";
+import { DOWN_IS_GOOD } from "@/lib/metrics/good-direction";
 import type { GoalChipTone } from "@/lib/goals/goal-chip";
 import type { Tone, TotalChange, WindowComparison } from "@/utils/metric-derived-stats";
 

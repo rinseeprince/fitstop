@@ -40,7 +40,6 @@ import { countRows, countTotalRows } from "./db";
  */
 export const TEARDOWN_ORDER: readonly string[] = [
   "check_ins",
-  "client_metric_entries",
   "set_logs",
   "exercise_logs",
   "session_logs",

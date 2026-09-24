@@ -67,7 +67,6 @@ coaches
         │     └── client_goal_deadlines  -- every deadline the goal has had, each with the day it took effect
         ├── client_phases             -- journey blocks: name, focus, [starts_on, ends_on], archived_at
         ├── client_notes              -- coach notes about the client (one pinned max)
-        ├── client_metric_entries     -- coach-logged WELLNESS entries (one per client, metric, day)
         └── client_measurements       -- every body measurement, one row per reading (edited in place, removed by a mark, never deleted)
 ```
 
@@ -140,18 +139,9 @@ coaches
 
 **Security.** RLS enabled; one policy, `clients_view_own_measurements` — `SELECT` for `authenticated`, scoped by `clients.user_id = auth.uid()` and never by source, so a client sees every reading about them. It exists because the client app reads its own readings through the session client under RLS (`services/client-portal-progress.ts` → `GET /api/client/progress`; the profile embeds under `GET /api/client/me`); coach reads go through `service_role`. `npm run check:rls`.
 
-**Writers**, all through `appendMeasurements` (an edit is not a writer — it changes a row through `update_measurement`, rule 8): check-in submit (`check_in`, stamped); the Journey's "Log measurement" (`POST /api/clients/[id]/metric-entries` → `upsertMetricEntry`; `coach_entry`, dated the day the coach picks, never after the coach's today); the metrics PUT and a `currentWeight` / `currentBodyFatPercentage` carried by `PATCH /api/clients/[id]` (`coach_entry`, dated the coach's today); the details sheet's Baseline fields (`coach_entry` dated ON the start date; an `intake` row dated today before activation); `createClient` (`intake`, the weight and body fat it was given, dated the coach's today); the intake sync (`intake`, dated the questionnaire's completion day on the client's calendar, only for a metric the client has no reading of). A coach's write is audited as `measurement.create`, an edit as `measurement.update`, a removal and a restore as `measurement.void` / `measurement.restore` (metric and date only). The seeds write the log; `scripts/seed/teardown.ts` relies on the `ON DELETE CASCADE` from `clients`, because the app role has no `DELETE`.
+**Writers**, all through `appendMeasurements` (an edit is not a writer — it changes a row through `update_measurement`, rule 8): check-in submit (`check_in`, stamped); the Journey's "Log measurement" (`POST /api/clients/[id]/measurements`; `coach_entry`, dated the day the coach picks, never after the coach's today); the metrics PUT and a `currentWeight` / `currentBodyFatPercentage` carried by `PATCH /api/clients/[id]` (`coach_entry`, dated the coach's today); the details sheet's Baseline fields (`coach_entry` dated ON the start date; an `intake` row dated today before activation); `createClient` (`intake`, the weight and body fat it was given, dated the coach's today); the intake sync (`intake`, dated the questionnaire's completion day on the client's calendar, only for a metric the client has no reading of). A coach's write is audited as `measurement.create`, an edit as `measurement.update`, a removal and a restore as `measurement.void` / `measurement.restore` (metric and date only). The seeds write the log; `scripts/seed/teardown.ts` relies on the `ON DELETE CASCADE` from `clients`, because the app role has no `DELETE`.
 
 **Readers:** the copy of a check-in sent before copies existed, filled once from its own rows (`services/check-in-sent-snapshot-fill.ts`); `GET /api/clients/[id]/measurement-series` (`services/measurement-series-service.ts` — every metric's day-values, the baseline per metric, the start date, the client's today and `readings`, every row of the log newest first with its removal; one payload for the Overview chart and status band, the Journey's Physique pane, its measurement log and the blocks); `services/client-portal-progress.ts` (`GET /api/client/progress`, under the client's JWT); the saved copy's builders at a check-in's day (`getReadingsAsOf`, `getReadingsOnDay`, `getBaseline`); `services/client-journey-service.ts`; the activity feed (`coach_entry` rows since the coach's last visit); `services/nutrition-calc-inputs.ts` and `services/client-energy-service.ts` (through the current view).
-
-### client_metric_entries table (migration 132; wellness keys since migration 159)
-
-Coach-logged WELLNESS entries — mood, energy, sleep, stress, soreness:
-- One row per `(client_id, metric_key, entry_date)`, carrying `updated_at`
-- `metric_key` is CHECK-constrained to the five wellness keys
-- Values are unitless scores (mood 1-5, the rest 1-10); `note` is an optional coach note
-- Read by the Overview's activity feed alone (the entries since the coach's last visit, `services/client-activity-feed-service.ts`); no path writes it
-- RLS enabled with **no policies**, `GRANT ALL … TO service_role` only
 
 ### client_notes table (migration 134)
 

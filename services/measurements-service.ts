@@ -32,8 +32,7 @@ import type { Database } from "@/types/database";
  *    rule 2, D23). An edit changes a value and nothing else: `updated_at`
  *    records it and orders nothing.
  *  - A writer appends only on change (rule 3): a value equal to the day's
- *    standing value for the same source and stamp is not written again, which
- *    is what ends the phantom duplicates the entries dual-write produced.
+ *    standing value for the same source and stamp is not written again.
  *  - No cache. "Now" is `client_current_measurements`, the baseline is
  *    `client_baseline_measurements` (the reading as of `clients.start_date`),
  *    both views over the live rows. The energy pair recomputes when an

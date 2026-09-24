@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { LogMeasurementDialog } from "./log-measurement-dialog";
 import type { MetricSummary } from "./metrics-view-types";
 import type { UnitSystem } from "@/utils/unit-conversions";
-import type { CreateMetricEntryRequest } from "@/types/metric-entries";
+import type { CreateMeasurementInput } from "@/lib/validations/measurements";
 
 // The dialog reaches useUnits() -> auth-context -> the browser Supabase client,
 // which throws without env vars. Same mock ~20 other suites carry since Phase 3.
@@ -45,10 +45,10 @@ const METRICS: MetricSummary[] = [
   metric({ id: "bodyFat", name: "Body Fat", unit: "%" }),
 ];
 
-type SubmitSpy = Mock<(input: CreateMetricEntryRequest) => Promise<void>>;
+type SubmitSpy = Mock<(input: CreateMeasurementInput) => Promise<void>>;
 
 const submitSpy = (): SubmitSpy =>
-  vi.fn<(input: CreateMetricEntryRequest) => Promise<void>>().mockResolvedValue(
+  vi.fn<(input: CreateMeasurementInput) => Promise<void>>().mockResolvedValue(
     undefined,
   );
 
@@ -120,7 +120,7 @@ describe("LogMeasurementDialog", () => {
       expect(onSubmit.mock.calls[0][0].value).toBe(18.5);
     });
 
-    // METRIC_VALUE_RANGES is kilograms, so validating the TYPED string would
+    // MEASUREMENT_VALUE_RANGES is kilograms, so validating the TYPED string would
     // compare 180 lbs against a 20-250 kg bound and wave it through — while
     // 600 lbs (272 kg) would be accepted as "under 700" under the old range.
     it("judges the range against the converted value", async () => {

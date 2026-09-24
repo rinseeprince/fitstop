@@ -216,6 +216,8 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 
 > Query 3's table was dropped in migration 172 (2026-09-10): the current block's notes come off `nutrition_plans` now. Re-measure before quoting.
 
+> Query 5's table was dropped in migration 199 (2026-09-24): the journey's weight comes from the measurement log (`getMeasurementSeries`, `getCurrentMeasurements`). Re-measure before quoting.
+
 ## getHabitLogs
 
 **File:** `services/daily-habits-service.ts:273` · **Call:** `getHabitLogs(PERF_CLIENT_ID, today-90d, today)`

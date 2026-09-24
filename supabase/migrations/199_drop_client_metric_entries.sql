@@ -1,0 +1,14 @@
+-- Coach wellness logging is retired (docs/MEASUREMENT-LOG-PLAN.md §6 commit
+-- 10; owner decision 2026-09-03): a wellness score is the client's
+-- self-report, read from their own daily log (wellness_logs). Since migration
+-- 159 this table held only coach-logged wellness scores, and since commit 9 no
+-- surface or wire writes it; its one reader, the Overview's activity feed,
+-- stops reading it in the same commit.
+--
+-- Its rows go with it. Probed 2026-09-24: DEV holds 3 (two test clients, all
+-- logged before commit 9), PROD holds none. On both databases nothing depends
+-- on the table -- no view, function, trigger, policy, publication or foreign
+-- key into it -- so the drop takes only its own constraints, indexes and
+-- grants. No CASCADE: anything that came to depend on it since the probe
+-- fails this migration instead of going with it.
+DROP TABLE IF EXISTS public.client_metric_entries;

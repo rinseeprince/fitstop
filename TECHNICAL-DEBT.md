@@ -785,22 +785,13 @@ Logged: 2026-06-10; updated 2026-06-12 (Session 7.85). Sessions 7.81–7.84 (`do
 
 ---
 
-## Metrics page — coach-logged entries (post-redesign tail)
-
-Logged: 2026-07-25 (Metrics page redesign, migration 132).
-
-### P2 - Deferred
-- **`client_metric_entries` is a dead store.** It holds the coach-logged wellness entries (mood, energy, sleep, stress, soreness); no path writes it, and the Overview's activity feed is its one reader. `docs/MEASUREMENT-LOG-PLAN.md` commit 10 drops it.
-- **~~`hooks/use-client-metrics.ts` dead save/dialog members~~ — RESOLVED 2026-08-12 (Session 4B, Task 4b.3).** The whole hook was deleted with the `calculate-bmr` route: the pair recomputes on every input change, so the manual button had no job, and `page.tsx` destructured only those two members. That also removed the broken `saveOption: "update-only"` value by deleting the unreachable code carrying it rather than "fixing" a bug nothing could reach.
-
-
 ## Measurement log — follow-ups
 
 Logged: 2026-09-03 (`docs/MEASUREMENT-LOG-PLAN.md`; the shape is ARCHITECTURE → "client_measurements table").
 
 ### P2 - Deferred
 - **Nothing captures girths at intake or manual add, and a client cannot log a reading between check-ins.** `client_measurements` accepts `intake` rows for all seven keys and `client_log` rows from the client, so each is a writer and nothing more: the intake questionnaire's step 1 asks weight and body fat only (`intakeStep1Schema`), the add-client form the same, and no `/api/client/**` route writes the log (a `client_log` route is additive to the RN contract). Until then a girth exists only when a check-in form asks for it or a coach logs it.
-- **A coach can date a reading on the client's tomorrow.** `recorded_on` is the day on the CLIENT's calendar, but Log measurement refuses only a date after the COACH's today (`app/api/clients/[id]/metric-entries/route.ts`, `getCoachTodayString`). A coach ahead of the client's time zone who logs on their own today writes the client's tomorrow: the Journey's hero shows it as Current at once, and the cards, whose windows end on the client's today, leave it out until the client's day reaches it — under a day. Owner, 2026-09-23 (commit 9a): the windows stay; the root cause is the writer's bound.
+- **A coach can date a reading on the client's tomorrow.** `recorded_on` is the day on the CLIENT's calendar, but Log measurement refuses only a date after the COACH's today (`app/api/clients/[id]/measurements/route.ts`, `getCoachTodayString`). A coach ahead of the client's time zone who logs on their own today writes the client's tomorrow: the Journey's hero shows it as Current at once, and the cards, whose windows end on the client's today, leave it out until the client's day reaches it — under a day. Owner, 2026-09-23 (commit 9a): the windows stay; the root cause is the writer's bound.
 
 ---
 
