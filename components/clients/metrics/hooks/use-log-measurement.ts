@@ -7,6 +7,7 @@ import {
 } from "@/hooks/use-measurement-series";
 import { useClearClientGoals, useInvalidateClientGoals } from "@/hooks/use-client-goals";
 import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
 import type { CreateMeasurementInput } from "@/lib/validations/measurements";
 import type { JourneySubtab } from "../metrics-view-types";
 
@@ -24,7 +25,9 @@ import type { JourneySubtab } from "../metrics-view-types";
  * CLEARED: nothing is mounted to refetch it, so a revalidation would fetch
  * nothing and the next view to open it — Physique, Goals or the Overview —
  * would serve the old reading first. Cleared, that view starts from its
- * loading state.
+ * loading state. The Overview's own reads are cleared on every save: its
+ * "Since your last visit" lists the coach's readings, and no Journey pane
+ * shows it.
  */
 export function useLogMeasurement(
   clientId: string,
@@ -36,6 +39,7 @@ export function useLogMeasurement(
   const refreshGoals = useInvalidateClientGoals();
   const clearGoals = useClearClientGoals();
   const clearNutritionGoal = useClearNutritionGoal();
+  const clearOverview = useClearClientOverview();
 
   return useCallback(
     async (input: CreateMeasurementInput) => {
@@ -48,6 +52,7 @@ export function useLogMeasurement(
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Failed to log measurement");
       }
+      void clearOverview(clientId);
       // Physique and Goals both read the series and the goals.
       const readsMeasurements = onScreen === "body" || onScreen === "goals";
       await (readsMeasurements ? refreshSeries : clearSeries)(clientId);
@@ -71,6 +76,7 @@ export function useLogMeasurement(
       refreshGoals,
       clearGoals,
       clearNutritionGoal,
+      clearOverview,
     ]
   );
 }

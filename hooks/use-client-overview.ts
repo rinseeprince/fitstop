@@ -36,10 +36,12 @@ export function overviewPlanSummaryKey(clientId: string) {
  *
  * Called from every calendar writer's success path — the placement, the
  * nutrition save and delete, the training delete, the plan editor's save, the block
- * screen's writes and the per-day calendar edits — none of which writes an
- * Overview table. The Overview is DERIVED from what they write, so the area
- * that owes the invalidator is the one that READS what you wrote
- * (CONVENTIONS §7). `hooks/use-client-overview.test.ts` scans for the callers.
+ * screen's writes and the per-day calendar edits — and from the Journey's
+ * measurement writers (Log measurement; Edit, Remove and Restore reading), whose
+ * readings "Since your last visit" lists. None of them writes an Overview
+ * table. The Overview is DERIVED from what they write, so the area that owes
+ * the invalidator is the one that READS what you wrote (CONVENTIONS §7).
+ * `hooks/use-client-overview.test.ts` scans for the callers.
  */
 export function useClearClientOverview() {
   const { mutate } = useSWRConfig();

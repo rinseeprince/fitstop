@@ -7,6 +7,7 @@ import { useLogMeasurement } from "./use-log-measurement";
 import { useMeasurementSeries } from "@/hooks/use-measurement-series";
 import { useClientGoals } from "@/hooks/use-client-goals";
 import { useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
+import { useOverviewBrief } from "@/hooks/use-overview-brief";
 import { swrFetcher } from "@/lib/swr-fetcher";
 
 // Real SWR over a shared cache: what the save does to the stores it owes a
@@ -145,6 +146,30 @@ describe("useLogMeasurement — the save", () => {
     expect(url).toBe(`/api/clients/${CLIENT_ID}/measurements`);
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({ metricKey: "waist", value: 4, recordedOn: "2026-09-21" });
+  });
+});
+
+// The Overview's "Since your last visit" lists the coach's readings, and no
+// Journey pane shows it: every save clears its reads, so the next Overview opens
+// on its loading state and never on the feed from before the reading.
+describe("useLogMeasurement — the Overview", () => {
+  const BRIEF_KEY = `/api/clients/${CLIENT_ID}/overview-brief`;
+
+  it("clears its reads after any save: the next Overview opens loading, never on the old feed", async () => {
+    const cache: Cache = new Map();
+    const wrapper = wrapperFor(cache);
+    answers[BRIEF_KEY] = () =>
+      Promise.resolve({ success: true, data: { lastViewedAt: "2026-09-20T08:00:00Z", activity: [] } });
+    const first = renderHook(() => useOverviewBrief(CLIENT_ID), { wrapper });
+    await waitFor(() => expect(first.result.current.brief).not.toBeNull());
+    first.unmount();
+
+    const { result } = renderHook(() => useLogMeasurement(CLIENT_ID, "body"), { wrapper });
+    await act(() => result.current(input("waist")));
+
+    answers[BRIEF_KEY] = () => deferred<unknown>().promise;
+    const next = renderHook(() => useOverviewBrief(CLIENT_ID), { wrapper });
+    expect(next.result.current).toMatchObject({ brief: null, isLoading: true });
   });
 });
 

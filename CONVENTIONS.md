@@ -337,8 +337,9 @@
   (`hooks/use-nutrition-calendar-events.ts`). The clearing form's are
   `useClearBlockFacts`, `useClearClientOverview` (`hooks/use-client-overview.ts`)
   and `useClearAttentionFeed` (`hooks/use-attention-feed.ts`): every calendar
-  writer calls the last two on success, and `hooks/use-client-overview.test.ts`
-  scans the tree for one that does not.
+  writer calls the last two on success, every measurement writer on the Journey
+  calls `useClearClientOverview`, and `hooks/use-client-overview.test.ts` scans
+  the tree for one that does not.
 
   **Known gap:** this is a rule for new and touched code, not a claim about the
   codebase. Coach-side SWR reads written before the rule may sit behind no invalidator, and

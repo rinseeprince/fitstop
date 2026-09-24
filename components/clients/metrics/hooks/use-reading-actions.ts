@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import { useInvalidateMeasurementSeries } from "@/hooks/use-measurement-series";
 import { useInvalidateClientGoals } from "@/hooks/use-client-goals";
 import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
 import type { LogRow } from "../metrics-view-types";
 
 /**
@@ -13,6 +14,9 @@ import type { LogRow } from "../metrics-view-types";
  *
  *  - the series area — the Journey's pane and log, the Overview's chart and
  *    status band, all readers of one key;
+ *  - the Overview's own reads, CLEARED: its "Since your last visit" lists the
+ *    coach's readings — a removed one leaves it, an edited one changes, a
+ *    restored one returns — and no Journey pane shows it;
  *  - the client record, through `onClientUpdated`, for a weight or body fat:
  *    its "now" readings and the energy pair live there (the record carries no
  *    girth, so a girth leaves it alone) — and the goals area, since a weight or
@@ -28,9 +32,11 @@ export function useReadingActions(clientId: string, onClientUpdated?: () => void
   const invalidateSeries = useInvalidateMeasurementSeries();
   const invalidateGoals = useInvalidateClientGoals();
   const clearNutritionGoal = useClearNutritionGoal();
+  const clearOverview = useClearClientOverview();
 
   const settle = useCallback(
     async (row: LogRow) => {
+      void clearOverview(clientId);
       await invalidateSeries(clientId);
       if (row.metricId === "weight" || row.metricId === "bodyFat") {
         await invalidateGoals(clientId);
@@ -38,7 +44,7 @@ export function useReadingActions(clientId: string, onClientUpdated?: () => void
         onClientUpdated?.();
       }
     },
-    [clientId, invalidateSeries, onClientUpdated, invalidateGoals, clearNutritionGoal]
+    [clientId, invalidateSeries, onClientUpdated, invalidateGoals, clearNutritionGoal, clearOverview]
   );
 
   const send = useCallback(

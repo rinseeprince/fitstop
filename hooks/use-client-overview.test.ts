@@ -73,6 +73,28 @@ describe("useClearClientOverview", () => {
   });
 });
 
+const ROOT = join(__dirname, "..");
+const SCAN_DIRS = ["app", "components", "hooks"];
+
+function walk(dir: string, out: string[]) {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      if (entry === "node_modules" || entry.startsWith(".")) continue;
+      walk(full, out);
+    } else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) {
+      out.push(full);
+    }
+  }
+}
+
+/** Every non-test source file under the scanned folders. */
+function sourceFiles(): string[] {
+  const files: string[] = [];
+  for (const dir of SCAN_DIRS) walk(join(ROOT, dir), files);
+  return files;
+}
+
 /**
  * Every calendar writer clears the Overview and the dashboard feed.
  *
@@ -84,8 +106,6 @@ describe("useClearClientOverview", () => {
  * calendar writer added later without them fails here.
  */
 describe("every calendar writer clears the Overview and the feed", () => {
-  const ROOT = join(__dirname, "..");
-  const SCAN_DIRS = ["app", "components", "hooks"];
   const INVALIDATOR_CALLS = [
     "useInvalidateTrainingData()",
     "useInvalidateNutritionCalendar()",
@@ -97,21 +117,8 @@ describe("every calendar writer clears the Overview and the feed", () => {
     "components/clients/metrics/hooks/use-client-blocks.ts",
   ]);
 
-  function walk(dir: string, out: string[]) {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) {
-        if (entry === "node_modules" || entry.startsWith(".")) continue;
-        walk(full, out);
-      } else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) {
-        out.push(full);
-      }
-    }
-  }
-
   it("holds across the tree, and the scan matches the writers it exists for", () => {
-    const files: string[] = [];
-    for (const dir of SCAN_DIRS) walk(join(ROOT, dir), files);
+    const files = sourceFiles();
 
     const writers: string[] = [];
     const violations: string[] = [];
@@ -129,6 +136,41 @@ describe("every calendar writer clears the Overview and the feed", () => {
     // The ten files this shipped against; a scan matching fewer has lost its
     // subject and is not a guard.
     expect(writers.length).toBeGreaterThanOrEqual(10);
+    expect(violations).toEqual([]);
+  });
+});
+
+/**
+ * Every measurement writer clears the Overview.
+ *
+ * The Overview's "Since your last visit" lists the coach's readings, so a
+ * success path that refreshes the measurement series — a reading logged,
+ * edited, removed or restored — owes the Overview's clearer too, the same rule
+ * as above. Derived from the tree, never a list. The Overview itself is not a
+ * writer this covers: its own saves refresh the reads it has mounted.
+ */
+describe("every measurement writer clears the Overview", () => {
+  const SERIES_CALLS = ["useInvalidateMeasurementSeries()", "useClearMeasurementSeries()"];
+  const OWNERS = new Set([
+    "hooks/use-measurement-series.ts",
+    "components/clients/client-overview-tab.tsx",
+  ]);
+
+  it("holds across the tree, and the scan matches the writers it exists for", () => {
+    const writers: string[] = [];
+    const violations: string[] = [];
+    for (const file of sourceFiles()) {
+      const rel = relative(ROOT, file);
+      if (OWNERS.has(rel)) continue;
+      const source = readFileSync(file, "utf8");
+      if (!SERIES_CALLS.some((call) => source.includes(call))) continue;
+      writers.push(rel);
+      if (!source.includes("useClearClientOverview()")) violations.push(rel);
+    }
+
+    // Log measurement and the measurement log's row actions; a scan matching
+    // fewer has lost its subject and is not a guard.
+    expect(writers.length).toBeGreaterThanOrEqual(2);
     expect(violations).toEqual([]);
   });
 });

@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useReadingActions } from "./use-reading-actions";
 import { useClientGoals } from "@/hooks/use-client-goals";
 import { useNutritionOutOfDate } from "@/hooks/use-nutrition-goal";
+import { useOverviewBrief } from "@/hooks/use-overview-brief";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { LogRow } from "../metrics-view-types";
 
@@ -79,6 +80,42 @@ describe("useReadingActions — the goals read", () => {
     await waitFor(() => expect(result.current.goals.isLoading).toBe(false));
     await act(() => result.current.actions.remove(row("waist")));
     expect(reads.filter((url) => url === GOALS_KEY)).toHaveLength(1);
+  });
+});
+
+// The Overview's "Since your last visit" lists the coach's readings — a removed
+// one leaves it, an edited one changes, a restored one returns — so every row
+// action clears its reads, whatever the metric.
+describe("useReadingActions — the Overview", () => {
+  const BRIEF_KEY = `/api/clients/${CLIENT_ID}/overview-brief`;
+
+  it.each([
+    ["an edited girth", "waist", "update"],
+    ["a removed weight", "weight", "remove"],
+    ["a restored body fat", "bodyFat", "restore"],
+  ] as const)("is cleared after %s: it drops what it held while it fetches again", async (_label, metricId, action) => {
+    const { result } = renderHook(
+      () => ({ overview: useOverviewBrief(CLIENT_ID), actions: useReadingActions(CLIENT_ID) }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.overview.brief).not.toBeNull());
+
+    // Hold the refetch, so the frame between the clear and the answer can be read
+    vi.mocked(swrFetcher).mockImplementation((url: string) => {
+      reads.push(url);
+      return (
+        url === BRIEF_KEY
+          ? new Promise(() => {})
+          : Promise.resolve({ success: true, data: { current: null, planned: [] } })
+      ) as never;
+    });
+    await act(async () => {
+      if (action === "update") await result.current.actions.update(row(metricId), 82.4);
+      else await result.current.actions[action](row(metricId));
+    });
+
+    expect(result.current.overview.brief).toBeNull();
+    expect(reads.filter((url) => url === BRIEF_KEY)).toHaveLength(2);
   });
 });
 
