@@ -133,6 +133,29 @@ describe("MetricHero — total change", () => {
     expect(dashLine?.className).toBe(entriesLine?.className);
   });
 
+  // Current's number is a size up; its line is not, or the line under it
+  // drops below its neighbours' (smoke, 2026-09-24).
+  it("gives every cell's number line one height, so the lines under the numbers sit level", () => {
+    render(
+      <MetricHero
+        metric={metric({
+          id: "sleep",
+          name: "Sleep",
+          tab: "wellness",
+          unit: "/10",
+          totalChange: { kind: "firstWeek", delta: 1.3, firstWeekOf: "2026-04-01" },
+        })}
+        {...PROPS}
+      />
+    );
+
+    const lineHeight = (text: string) =>
+      screen.getByText(text).closest("p")?.className.match(/leading-\S+/)?.[0];
+    expect(lineHeight("87")).toBeDefined();
+    expect(lineHeight("+1.3")).toBe(lineHeight("87"));
+    expect(lineHeight("2")).toBe(lineHeight("87"));
+  });
+
   it("draws no tag pills beside the switcher — no unit, frequency or entry-count chip", () => {
     const { container } = render(<MetricHero metric={metric({ entryCount: 15 })} {...PROPS} />);
 

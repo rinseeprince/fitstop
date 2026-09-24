@@ -30,11 +30,14 @@ const SUB_MONO_CLASS = cn(
 const SUB_SANS_CLASS = "text-[11px] text-[rgba(255,255,255,0.35)] mt-1";
 const UNIT_SUFFIX_CLASS =
   "text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5";
-// A cell's number line — Current's a size up. An empty cell draws its faint
-// dash INSIDE the same line, so the line under it sits level with its
-// neighbours' rather than riding up under a shorter one.
-const CURRENT_VALUE_CLASS = cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1 text-[24px]");
-const VALUE_CLASS = cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1 text-[22px]");
+// A cell's number line. Every cell's is one height — the 36px Current's 24px
+// number has always taken at the page's 1.5 line height — so the lines under
+// the numbers sit level across the band; an empty cell draws its faint dash
+// INSIDE the same line, never a shorter one. The height goes AFTER the size:
+// `cn` (tailwind-merge) drops a line height that a later text size follows.
+const NUMBER_LINE_HEIGHT = "leading-[36px]";
+const CURRENT_VALUE_CLASS = cn(STAT_VALUE_DARK_CLASS, "mt-1 text-[24px]", NUMBER_LINE_HEIGHT);
+const VALUE_CLASS = cn(STAT_VALUE_DARK_CLASS, "mt-1 text-[22px]", NUMBER_LINE_HEIGHT);
 const EMPTY_DASH_CLASS = "text-[13px] font-normal text-[rgba(255,255,255,0.3)]";
 
 function EmptyValue({ lineClass }: { lineClass: string }) {
@@ -51,13 +54,13 @@ function EmptyValue({ lineClass }: { lineClass: string }) {
 // the slab nor render sans subs).
 function PendingCell({
   label,
-  valueClass,
+  lineClass,
   valueWidth,
   subWidth,
   className,
 }: {
   label: string;
-  valueClass: string;
+  lineClass: string;
   valueWidth: string;
   subWidth: string;
   className?: string;
@@ -65,7 +68,7 @@ function PendingCell({
   return (
     <div className={cn("flex flex-col", className)}>
       <p className={STAT_LABEL_DARK_CLASS}>{label}</p>
-      <p className={cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1", valueClass)}>
+      <p className={lineClass}>
         <TextSkeleton className={valueWidth} />
       </p>
       <p className={SUB_SANS_CLASS}>
@@ -97,21 +100,21 @@ function MetricHeroPending() {
       <div className="grid grid-cols-3">
         <PendingCell
           label="Current"
-          valueClass="text-[24px]"
+          lineClass={CURRENT_VALUE_CLASS}
           valueWidth="w-16"
           subWidth="w-20"
           className="pr-5 border-r border-[rgba(255,255,255,0.07)]"
         />
         <PendingCell
           label="Total change"
-          valueClass="text-[22px]"
+          lineClass={VALUE_CLASS}
           valueWidth="w-14"
           subWidth="w-20"
           className="pl-5 pr-5 border-r border-[rgba(255,255,255,0.07)]"
         />
         <PendingCell
           label="Avg rate"
-          valueClass="text-[22px]"
+          lineClass={VALUE_CLASS}
           valueWidth="w-14"
           subWidth="w-16"
           className="pl-5"
