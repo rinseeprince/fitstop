@@ -1,12 +1,13 @@
 import { createPortalClient } from "./client-portal-service";
 import { CLIENT_MEASUREMENT_EMBEDS } from "./measurements-service";
-import { getCurrentGoal } from "./client-goals-service";
+import { getGoalsOverview } from "./client-goals-service";
 import { getTrend, calculatePercentChange } from "@/utils/metric-shaping";
 import { fetchAllPages } from "@/lib/paged-fetch";
 import { dayValues, type MeasurementReading } from "@/lib/measurements/day-values";
 import { isMeasurementKey, type MeasurementKey, type MeasurementSource } from "@/lib/measurements/keys";
 import type { ClientMeasurementEmbed } from "@/lib/database-helpers";
 import type { TrendDirection } from "@/types/check-in";
+import type { GoalType } from "@/lib/goals/goal-types";
 
 // Render-ready, locale-neutral metric series emitted by the API. `chartData[].date`
 // is the RAW ISO date (YYYY-MM-DD) from each history point — the client formats it
@@ -68,6 +69,12 @@ export type ProgressData = {
     startingBodyFatPercentage?: number;
     currentWeight?: number;
     currentBodyFatPercentage?: number;
+    /** That goal's type, and the client's readings on its start day (kg, %):
+     *  which way the goal points, so the goals section can tell a client past
+     *  the target from one short of it. */
+    goalType?: GoalType;
+    goalStartWeight?: number;
+    goalStartBodyFatPercentage?: number;
   };
 };
 
@@ -160,10 +167,11 @@ export async function getClientProgressData(
   // lets this client see their own — every reading about them, of any source)
   // and the client row with its two reading views embedded. The log read is
   // paged: it feeds a series and must be complete past PostgREST's row cap. The
-  // fourth is the goal in force on the client's today, whose targets the
-  // goals section reads; the service role reads it, scoped by this client's id,
-  // because `client_goals` has no client-facing policy.
-  const [{ data: checkIns }, readingRows, { data: clientData, error: clientError }, goal] =
+  // fourth is the goal in force on the client's today with their readings on
+  // its start day — the goals section reads its targets, its type and where it
+  // started; the service role reads it, scoped by this client's id, because
+  // `client_goals` has no client-facing policy.
+  const [{ data: checkIns }, readingRows, { data: clientData, error: clientError }, goals] =
     await Promise.all([
       supabase
         .from("check_ins")
@@ -189,8 +197,9 @@ export async function getClientProgressData(
         .select(`current_streak, check_in_adherence_rate, ${CLIENT_MEASUREMENT_EMBEDS}`)
         .eq("id", clientId)
         .single(),
-      getCurrentGoal(clientId),
+      getGoalsOverview(clientId),
     ]);
+  const goal = goals.current;
 
   // Surface a failed client fetch instead of swallowing it. A silent failure
   // here is exactly what made every weight/measurement default to lbs/in for
@@ -311,6 +320,9 @@ export async function getClientProgressData(
       startingBodyFatPercentage: embeddedReading(client?.client_baseline_measurements, "bodyFat"),
       currentWeight: embeddedReading(client?.client_current_measurements, "weight"),
       currentBodyFatPercentage: embeddedReading(client?.client_current_measurements, "bodyFat"),
+      goalType: goal?.type,
+      goalStartWeight: goal?.startReadings.weight ?? undefined,
+      goalStartBodyFatPercentage: goal?.startReadings.bodyFat ?? undefined,
     },
   };
 }

@@ -80,7 +80,7 @@ const goalNow: ClientGoal = {
 /** The copy the check-in saved when it was sent (lib/check-in/sent-snapshot.ts). */
 function sentCopy(overrides: Partial<SentSnapshot> = {}): SentSnapshot {
   return parseSentSnapshot({
-    version: 1,
+    version: 2,
     day: '2026-05-31',
     readings: { weight: 80.2, bodyFat: 17.1, waist: null, hips: null, chest: null, arms: null, thighs: null },
     standing: { weight: 80.2, bodyFat: 17.1 },
@@ -103,7 +103,7 @@ function sentCopy(overrides: Partial<SentSnapshot> = {}): SentSnapshot {
           remaining: -3.2,
           percentComplete: 64.8,
           status: 'approaching',
-          isOnTrack: true,
+          trend: 'towards',
           paceStatus: 'behind_pace',
         },
       },
@@ -116,7 +116,7 @@ function sentCopy(overrides: Partial<SentSnapshot> = {}): SentSnapshot {
           remaining: -2.1,
           percentComplete: 41.7,
           status: 'approaching',
-          isOnTrack: false,
+          trend: 'away',
         },
       },
       deadline: { date: '2026-07-04', daysRemaining: 34, isPastDeadline: false },
@@ -203,13 +203,16 @@ describe("a sent check-in's goal section is the one it saved", () => {
     const { comparison, goalProgress } = await buildCheckInComparison(sentCheckIn(), client)
 
     const saved = sentCopy()
-    expect(goalProgress).toEqual({ ...saved.goalProgress, goalIsCurrent: false })
+    // The goal judged, by name and type — what a goal with no target shows.
+    expect(goalProgress).toEqual({
+      ...saved.goalProgress,
+      goal: { name: 'Lose weight', type: 'lose_weight' },
+      goalIsCurrent: false,
+    })
+    // The client carries no goal of its own: the goal section is the copy's.
     expect(comparison.client).toEqual({
       id: 'client-1',
       name: 'Test Client',
-      goalWeight: 77,
-      goalBodyFatPercentage: 15,
-      goalDeadline: '2026-07-04',
       currentWeight: 80.2,
       currentBodyFatPercentage: 17.1,
       unitPreference: 'metric',
@@ -252,14 +255,12 @@ describe("a sent check-in's goal section is the one it saved", () => {
   })
 
   it('shows no goal when the check-in judged none, even though the client has one now', async () => {
-    const { comparison, goalProgress } = await buildCheckInComparison(
+    const { goalProgress } = await buildCheckInComparison(
       sentCheckIn({ sentSnapshot: sentCopy({ goal: null, goalProgress: {} }) }),
       client
     )
 
-    expect(goalProgress).toEqual({ goalIsCurrent: false })
-    expect(comparison.client.goalWeight).toBeUndefined()
-    expect(comparison.client.goalDeadline).toBeUndefined()
+    expect(goalProgress).toEqual({ goal: null, goalIsCurrent: false })
   })
 
   it('leaves out the drift plan when none covered the check-in day', async () => {

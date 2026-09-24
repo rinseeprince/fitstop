@@ -19,6 +19,8 @@ const fromToday: NutritionOutOfDate = {
   built: { goalWeightKg: 81.5, deadline: "2026-11-09" },
   goal: { goalWeightKg: 79, deadline: "2026-12-20" },
   goalName: "Cut deeper",
+  goalChangedOn: TODAY,
+  setByHand: false,
 };
 
 // A planned goal takes over on 19 Oct while Lean out's calories still run.
@@ -28,6 +30,8 @@ const fromLater: NutritionOutOfDate = {
   built: { goalWeightKg: 81.9, deadline: "2026-10-18" },
   goal: { goalWeightKg: 84.6, deadline: "2026-12-14" },
   goalName: "Build",
+  goalChangedOn: "2026-10-19",
+  setByHand: false,
 };
 
 beforeEach(() => {
@@ -166,6 +170,93 @@ describe("NutritionOutOfDateNotice", () => {
       screen.getByText(
         "The goal is now Cut deeper (174.2 lbs by 20 Dec), but the calories still aim for 179.7 lbs by 9 Nov."
       )
+    ).toBeInTheDocument();
+  });
+});
+
+describe("NutritionOutOfDateNotice — calories typed by hand (commit 8d4)", () => {
+  // Typed calories were priced for no goal, so they never "still aim for"
+  // one: the notice says when the goal changed and asks for a check.
+  it("says the day the goal changed — days ago, not today — and offers the same button", () => {
+    const onRegenerate = vi.fn();
+    render(
+      <NutritionOutOfDateNotice
+        outOfDate={{ ...fromToday, setByHand: true, goalChangedOn: "2026-09-16" }}
+        clientToday={TODAY}
+        onRegenerate={onRegenerate}
+      />
+    );
+
+    expect(
+      screen.getByText("The goal changed on 16 Sept. These calories were set by hand — check they still fit.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/still aim for/)).not.toBeInTheDocument();
+    screen.getByRole("button", { name: "Regenerate" }).click();
+    expect(onRegenerate).toHaveBeenCalledOnce();
+  });
+
+  it("says a planned goal changes it from its day", () => {
+    const onSetFrom = vi.fn();
+    render(
+      <NutritionOutOfDateNotice
+        outOfDate={{ ...fromLater, setByHand: true }}
+        clientToday={TODAY}
+        onSetFrom={onSetFrom}
+      />
+    );
+
+    expect(
+      screen.getByText("From 19 Oct the goal changes. These calories were set by hand — check they still fit.")
+    ).toBeInTheDocument();
+    screen.getByRole("button", { name: "Set nutrition from 19 Oct" }).click();
+    expect(onSetFrom).toHaveBeenCalledWith("2026-10-19");
+  });
+
+  it("says so when there is no goal now", () => {
+    render(
+      <NutritionOutOfDateNotice
+        outOfDate={{
+          ...fromToday,
+          goal: { goalWeightKg: null, deadline: null },
+          goalName: null,
+          goalChangedOn: null,
+          setByHand: true,
+        }}
+        clientToday={TODAY}
+      />
+    );
+
+    expect(
+      screen.getByText("There's no goal now. These calories were set by hand — check they still fit.")
+    ).toBeInTheDocument();
+  });
+
+  it("says a later day has no goal", () => {
+    render(
+      <NutritionOutOfDateNotice
+        outOfDate={{
+          ...fromLater,
+          goal: { goalWeightKg: null, deadline: null },
+          goalName: null,
+          goalChangedOn: null,
+          setByHand: true,
+        }}
+        clientToday={TODAY}
+      />
+    );
+
+    expect(
+      screen.getByText("From 19 Oct there's no goal. These calories were set by hand — check they still fit.")
+    ).toBeInTheDocument();
+  });
+
+  it("leaves a change with no day undated — a goal deleted, or edited before its start", () => {
+    render(
+      <NutritionOutOfDateNotice outOfDate={{ ...fromToday, setByHand: true, goalChangedOn: null }} clientToday={TODAY} />
+    );
+
+    expect(
+      screen.getByText("The goal has changed. These calories were set by hand — check they still fit.")
     ).toBeInTheDocument();
   });
 });

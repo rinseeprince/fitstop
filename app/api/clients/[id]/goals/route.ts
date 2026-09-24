@@ -15,7 +15,7 @@ type Params = { params: Promise<{ id: string }> };
 
 /**
  * Today's goal — with the readings its progress runs from — the planned ones,
- * the goal before today's, and the client's today.
+ * and the client's today.
  */
 export async function GET(request: NextRequest, { params }: Params) {
   const rateLimitResult = await coachApiRateLimit(request);

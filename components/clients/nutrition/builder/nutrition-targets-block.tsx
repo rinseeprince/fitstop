@@ -34,7 +34,8 @@ type NutritionTargetsBlockProps = {
   /** Whether the Starts on day's goal has BOTH a weight target and a deadline —
    *  the pair the calculator needs before it can solve for anything but
    *  maintenance. Only then does this block explain a maintenance result
-   *  itself; every other reason is the Goal line's. */
+   *  itself — a deadline before the plan starts, or a goal weight the client
+   *  already weighs; every other reason is the Goal line's. */
   hasGoalTarget: boolean;
   /** The Starts on day's goal and inputs are still loading: the auto numbers
    *  are pending, never another day's. */
@@ -139,6 +140,10 @@ export function NutritionTargetsBlock({
     autoPlan != null &&
     autoPlan.requiredDailyDeficit === 0 &&
     autoPlan.weeklyWeightChangeKg === 0;
+  // The calculator holds a deadline before the plan's first day at
+  // maintenance and says so with this code (services/nutrition-service.ts).
+  const deadlineBeforeStart =
+    autoPlan?.warnings.some((warning) => warning.code === "deadline_passed") ?? false;
 
   return (
     <div className="space-y-2.5">
@@ -204,16 +209,18 @@ export function NutritionTargetsBlock({
 
       {/* Both spans above are suppressed at exactly zero. When the goal has a
           weight target and a deadline and the numbers still hold at
-          maintenance, the target IS the client's weight — said here, because
-          nothing else explains it. No goal, no weight target and no deadline
-          are the Goal line's to say (docs/MEASUREMENT-LOG-PLAN.md commit 8d1):
-          one place per reason.
+          maintenance, either the deadline falls before the plan starts or the
+          target IS the client's weight — said here, because nothing else
+          explains it; the Goal line above shows the goal itself. No goal, no
+          weight target and no deadline are the Goal line's to say
+          (docs/MEASUREMENT-LOG-PLAN.md commit 8d1): one place per reason.
 
           A full sentence, so 100% sans (prose rule) — including the numerals. */}
       {autoPlan && !manualEnabled && isMaintenance && hasGoalTarget && (
         <p className="text-[11px] leading-[1.4] text-[#93b0b4]">
-          The goal weight matches the client&apos;s current weight, so these targets hold at
-          maintenance.
+          {deadlineBeforeStart
+            ? "The goal's deadline is before this plan starts, so these targets hold at maintenance."
+            : "The goal weight matches the client's current weight, so these targets hold at maintenance."}
         </p>
       )}
 

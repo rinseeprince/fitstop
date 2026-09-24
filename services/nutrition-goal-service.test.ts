@@ -93,6 +93,7 @@ describe("getNutritionOutOfDate", () => {
         effectiveUntil: "2026-12-06",
         built: { goalWeightKg: 81.2, deadline: "2026-11-30" },
         kept: [],
+        setByHand: false,
       },
     ]);
 
@@ -108,6 +109,8 @@ describe("getNutritionOutOfDate", () => {
         built: { goalWeightKg: 81.2, deadline: "2026-11-30" },
         goal: { goalWeightKg: 89.4, deadline: "2027-01-15" },
         goalName: "Build",
+        goalChangedOn: "2026-10-19",
+        setByHand: false,
       },
     });
   });
@@ -115,7 +118,7 @@ describe("getNutritionOutOfDate", () => {
   it("is null when every version fits the goal on its days", async () => {
     vi.mocked(listClientGoals).mockResolvedValue([]);
     vi.mocked(getNutritionVersionGoalsFrom).mockResolvedValue([
-      { id: "v-m", effectiveFrom: TODAY, effectiveUntil: "2026-11-17", built: { goalWeightKg: null, deadline: null }, kept: [] },
+      { id: "v-m", effectiveFrom: TODAY, effectiveUntil: "2026-11-17", built: { goalWeightKg: null, deadline: null }, kept: [], setByHand: false },
     ]);
 
     expect(await getNutritionOutOfDate("client-6")).toEqual({ clientToday: TODAY, outOfDate: null });
@@ -129,7 +132,7 @@ describe("keepNutritionForGoal — the notice's ×", () => {
       { ...build, startsOn: "2026-09-02", deadlines: [{ effectiveOn: "2026-09-02", deadline: "2027-01-15", setBy: null }] },
     ]);
     vi.mocked(getNutritionVersionGoalsFrom).mockResolvedValue([
-      { id: "v-x", effectiveFrom: "2026-09-02", effectiveUntil: "2026-11-24", built: { goalWeightKg: 80.9, deadline: "2026-10-30" }, kept: [] },
+      { id: "v-x", effectiveFrom: "2026-09-02", effectiveUntil: "2026-11-24", built: { goalWeightKg: 80.9, deadline: "2026-10-30" }, kept: [], setByHand: false },
     ]);
   });
 

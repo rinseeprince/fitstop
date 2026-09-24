@@ -20,13 +20,16 @@ export function calculateDaysBetween(date1: string, date2: string): number {
 // Calculate goal progress
 /**
  * Where the client stands RELATIVE TO the goal. Position, not trend — the trend
- * is `isOnTrack`, and keeping them apart is the point: this module used to model
+ * is its own answer, and keeping them apart is the point: this module used to model
  * a goal as a scalar distance with no direction and no end, so passing the goal
  * read as distance still to travel. A client 5 kg beyond a weight-loss target
  * showed "100% Complete", "On track" and "Remaining 5kg" at once, and the pace
  * check quietly computed the rate needed to travel back up to it.
  */
 export type GoalStatus = "approaching" | "achieved" | "overshot";
+
+/** Which way the recent readings moved the client relative to the goal. */
+export type TrendToGoal = "towards" | "away" | "unchanged";
 
 // A goal is "met" within this much of its target. Values are stored to 1-2
 // decimals, so an exact equality test would almost never fire.
@@ -63,7 +66,7 @@ export function calculateGoalProgress(
 ): {
   remaining: number;
   percentComplete: number;
-  isOnTrack: boolean;
+  trend: TrendToGoal | null;
   status: GoalStatus;
 } {
   // Signed, deliberately. A renderer showing a magnitude ("5 kg to go") takes
@@ -82,27 +85,26 @@ export function calculateGoalProgress(
     );
   }
 
-  // The TREND: on track while the recent average change points at the goal.
-  // With no average (fewer than two recent readings) there is nothing to
-  // contradict, so the answer is true.
-  let isOnTrack = true;
-
-  if (avgChange && avgChange !== 0) {
-    const needToLose = goal < current;
-    const isLosingWeight = avgChange < 0;
-    const needToGain = goal > current;
-    const isGainingWeight = avgChange > 0;
-
-    isOnTrack = (needToLose && isLosingWeight) || (needToGain && isGainingWeight);
-  }
-
   return {
     remaining,
     // Clamped for the progress BAR, which cannot render past its own track.
     // 100% is truthful once the goal is met; what was wrong was the "Remaining"
     // and pace figures printed beside it, not the percentage.
     percentComplete: Math.min(100, Math.max(0, percentComplete)),
-    isOnTrack,
+    trend: trendToGoal(current, goal, avgChange),
     status,
   };
+}
+
+/**
+ * The TREND: which way the recent average change moves the client relative to
+ * the goal. With no average — fewer than two recent readings — there is no
+ * trend, so null: never a guess either way. An average of exactly zero is a
+ * client who has not moved.
+ */
+function trendToGoal(current: number, goal: number, avgChange: number | undefined): TrendToGoal | null {
+  if (avgChange === undefined) return null;
+  if (avgChange === 0) return "unchanged";
+  const towards = (goal < current && avgChange < 0) || (goal > current && avgChange > 0);
+  return towards ? "towards" : "away";
 }

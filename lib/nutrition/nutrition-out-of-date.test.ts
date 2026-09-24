@@ -38,9 +38,10 @@ function version(
   effectiveUntil: string,
   goalWeightKg: number | null,
   deadline: string | null,
-  kept: GoalPricing[] = []
+  kept: GoalPricing[] = [],
+  setByHand = false
 ): NutritionVersionGoal {
-  return { id, effectiveFrom, effectiveUntil, built: { goalWeightKg, deadline }, kept };
+  return { id, effectiveFrom, effectiveUntil, built: { goalWeightKg, deadline }, kept, setByHand };
 }
 
 // Lean out runs from 6 Aug, 81.5 kg by 9 Nov; Build is planned from 19 Oct.
@@ -56,6 +57,10 @@ describe("findNutritionOutOfDate", () => {
       built: { goalWeightKg: 80.3, deadline: "2026-10-01" },
       goal: { goalWeightKg: 81.5, deadline: "2026-11-09" },
       goalName: "Goal lean",
+      // Lean out took its shape on 6 Aug, before these calories (1 Sep): what
+      // changed since carries no day.
+      goalChangedOn: null,
+      setByHand: false,
     });
   });
 
@@ -177,6 +182,37 @@ describe("findNutritionOutOfDate", () => {
       built: { goalWeightKg: 82.9, deadline: "2026-12-01" },
       goal: { goalWeightKg: null, deadline: null },
       goalName: null,
+      goalChangedOn: null,
+      setByHand: false,
     });
+  });
+
+  it("says when the goal took the shape the version no longer fits (commit 8d4)", () => {
+    // The deadline moved on 16 Sep: a week later the notice still dates the
+    // change to that day, not to today.
+    const moved = goal("lean", "2026-08-06", [["2026-08-06", "2026-11-09"], ["2026-09-16", "2026-12-04"]], 81.5);
+    const running = version("v-run", "2026-09-01", "2026-10-31", 81.5, "2026-11-09");
+    expect(findNutritionOutOfDate([running], [moved], TODAY)?.goalChangedOn).toBe("2026-09-16");
+    // A planned goal changes it on its own day.
+    const beforeBuild = version("v-run", "2026-09-01", "2026-10-31", 81.5, "2026-11-09");
+    expect(findNutritionOutOfDate([beforeBuild], [leanOut, build], TODAY)?.goalChangedOn).toBe("2026-10-19");
+  });
+
+  it("leaves a change with no day undated — a goal deleted puts back one shaped long before", () => {
+    // Typed on 1 Sep under Summer cut; Summer cut deleted, so Spring cut (from
+    // 10 Mar) covers the days again. Spring cut did not change on 10 Mar.
+    const spring = goal("spring", "2026-03-10", [["2026-03-10", "2026-06-01"]], 85.3);
+    const typed = version("v-typed", "2026-09-01", "2026-10-31", 79.9, "2026-11-09", [], true);
+    const found = findNutritionOutOfDate([typed], [spring], TODAY);
+    expect(found?.fromDay).toBe(TODAY);
+    expect(found?.goalName).toBe("Goal spring");
+    expect(found?.goalChangedOn).toBeNull();
+  });
+
+  it("carries whether the calories were typed by hand, and judges them all the same", () => {
+    const typed = version("v-typed", "2026-09-01", "2026-10-31", 80.3, "2026-10-01", [], true);
+    const found = findNutritionOutOfDate([typed], [leanOut], TODAY);
+    expect(found?.fromDay).toBe(TODAY);
+    expect(found?.setByHand).toBe(true);
   });
 });

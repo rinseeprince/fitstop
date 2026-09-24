@@ -13,6 +13,7 @@ import type {
   GoalPosition,
   GoalProgress,
   GoalProgressRows,
+  JudgedGoal,
 } from "@/types/check-in";
 
 afterEach(cleanup);
@@ -21,8 +22,8 @@ type WeightRow = NonNullable<GoalProgressRows["weight"]>;
 type BodyFatRow = NonNullable<GoalProgressRows["bodyFat"]>;
 
 // The live case: start 88, goal 77, then 72 — five kilos PAST a weight-loss goal.
-// calculateGoalProgress reports isOnTrack:false (correct, they are moving away
-// from 77) but computeGoalPace used to Math.abs the remainder into a safe-looking
+// The trend reads away (correct, they are moving away from 77) but
+// computeGoalPace used to Math.abs the remainder into a safe-looking
 // 0.6 kg/week, and the card let that override the trend.
 function weightGoal(position: Partial<GoalPosition> = {}): WeightRow {
   return {
@@ -30,7 +31,7 @@ function weightGoal(position: Partial<GoalPosition> = {}): WeightRow {
     startingWeight: 88,
     position: {
       current: 72, status: "overshot", remaining: 5, percentComplete: 100,
-      isOnTrack: false,
+      trend: "away",
       ...position,
     },
   };
@@ -42,7 +43,7 @@ function bodyFatGoal(position: Partial<GoalPosition> = {}): BodyFatRow {
     startingBodyFat: 20,
     position: {
       current: 12, status: "overshot", remaining: 3, percentComplete: 100,
-      isOnTrack: false,
+      trend: "away",
       ...position,
     },
   };
@@ -51,6 +52,9 @@ function bodyFatGoal(position: Partial<GoalPosition> = {}): BodyFatRow {
 /** A goal that is set, with no reading as of the check-in's day behind it. */
 const UNREAD_WEIGHT: WeightRow = { goal: 66, startingWeight: 91, goalStartWeight: 91, position: null };
 const UNREAD_BODY_FAT: BodyFatRow = { goal: 14, startingBodyFat: 23, position: null };
+
+/** The goal the check-in judged, unless a case says otherwise. */
+const CUT: JudgedGoal = { name: "Cut to 77", type: "lose_weight" };
 
 const NO_CLIENT = {} as CheckInComparison["client"];
 
@@ -62,14 +66,19 @@ const DRIFTED = {
 } as CheckInComparison["client"];
 
 /** The rows against the goal that is still live unless a case says otherwise. */
-function progress(rows: GoalProgressRows, goalIsCurrent = true): GoalProgress {
-  return { ...rows, goalIsCurrent };
+function progress(rows: GoalProgressRows, goalIsCurrent = true, goal: JudgedGoal | null = CUT): GoalProgress {
+  return { ...rows, goal, goalIsCurrent };
 }
 
-function renderStrip(rows: GoalProgressRows, client = NO_CLIENT, goalIsCurrent = true) {
+function renderStrip(
+  rows: GoalProgressRows,
+  client = NO_CLIENT,
+  goalIsCurrent = true,
+  goal: JudgedGoal | null = CUT,
+) {
   return render(
     <CheckInGoalStrip
-      goalProgress={progress(rows, goalIsCurrent)}
+      goalProgress={progress(rows, goalIsCurrent, goal)}
       clientName="Sam"
       clientData={client}
     />,
@@ -90,11 +99,11 @@ describe("a goal that has been overshot", () => {
   it("body fat reaches the SAME verdict as weight for the same situation", () => {
     // Both rows resolve through one function. Body fat has no pace check, so
     // when the two were resolved separately weight read "On track" beside body
-    // fat reading "Needs attention" about one client.
+    // fat reading otherwise about one client.
     renderStrip({ weight: weightGoal(), bodyFat: bodyFatGoal() });
 
     expect(screen.getAllByText(/Reached/)).toHaveLength(2);
-    expect(screen.queryByText(/Needs attention/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Moving away/)).not.toBeInTheDocument();
   });
 
   it("renders no pace check and no projected date", () => {
@@ -113,9 +122,10 @@ describe("a goal that has been overshot", () => {
   });
 });
 
-describe("the state column's precedence", () => {
-  // status > paceStatus > isOnTrack. Recorded in ARCHITECTURE; each row here is
-  // one branch of it.
+describe("the state column — direction before speed (commit 8d4)", () => {
+  // Reached, then Deadline passed, then which way the client is moving, and
+  // the pace only for a client moving towards the target. Recorded in
+  // ARCHITECTURE; each case here is one branch of it.
   const approaching = { status: "approaching" as const, percentComplete: 40, remaining: 5 };
 
   it("prefers status over an otherwise-safe pace", () => {
@@ -125,41 +135,71 @@ describe("the state column's precedence", () => {
     expect(screen.queryByText(/On track/)).not.toBeInTheDocument();
   });
 
-  it("prefers paceStatus over the trend while approaching", () => {
-    // isOnTrack true, but the rate required to hit the deadline is not safe.
-    renderStrip({ weight: weightGoal({ ...approaching, isOnTrack: true, paceStatus: "behind_pace" }) });
+  it("says a client moving away is moving away, however safe the pace", () => {
+    // The rate required to reach 77 in time is safe; the client is going the
+    // other way. Read pace-first, this said "On track".
+    renderStrip({ weight: weightGoal({ ...approaching, remaining: 3.6, trend: "away", paceStatus: "on_track" }) });
+
+    expect(screen.getByText("Moving away")).toBeInTheDocument();
+    expect(screen.getByText(/3.6 kg to go/)).toBeInTheDocument();
+    expect(screen.queryByText(/On track/)).not.toBeInTheDocument();
+    expect(screen.getByText("Moving away").parentElement).toHaveClass("text-[#d97706]");
+  });
+
+  it("says a client who has not moved has not moved", () => {
+    renderStrip({ weight: weightGoal({ ...approaching, remaining: 2.8, trend: "unchanged", paceStatus: "on_track" }) });
+
+    expect(screen.getByText("No change")).toBeInTheDocument();
+    expect(screen.getByText("No change").parentElement).toHaveClass("text-[#d97706]");
+  });
+
+  it("says it is too early to tell with fewer than two check-ins — neutral, never on track", () => {
+    renderStrip({ weight: weightGoal({ ...approaching, remaining: 6.1, trend: null, paceStatus: "on_track" }) });
+
+    expect(screen.getByText("Too early to tell")).toBeInTheDocument();
+    expect(screen.queryByText(/On track/)).not.toBeInTheDocument();
+    expect(screen.getByText("Too early to tell").parentElement).toHaveClass("text-[#93b0b4]");
+  });
+
+  it("says the deadline passed when it went by short of the target", () => {
+    renderStrip({
+      weight: weightGoal({ ...approaching, remaining: 4.3, trend: "towards", paceStatus: "unrealistic" }),
+      bodyFat: bodyFatGoal({ ...approaching, remaining: 1.4, trend: "towards" }),
+      deadline: { date: "2026-08-31", daysRemaining: -9, isPastDeadline: true },
+    });
+
+    expect(screen.getAllByText("Deadline passed")).toHaveLength(2);
+    expect(screen.queryByText(/Deadline unrealistic/)).not.toBeInTheDocument();
+  });
+
+  it("gives a client moving towards the target the pace's words", () => {
+    renderStrip({ weight: weightGoal({ ...approaching, trend: "towards", paceStatus: "behind_pace" }) });
 
     expect(screen.getByText(/Behind pace/)).toBeInTheDocument();
     expect(screen.queryByText(/On track/)).not.toBeInTheDocument();
   });
 
   it("says the deadline is unrealistic when the required rate is far past safe", () => {
-    renderStrip({ weight: weightGoal({ ...approaching, paceStatus: "unrealistic" }) });
+    renderStrip({ weight: weightGoal({ ...approaching, trend: "towards", paceStatus: "unrealistic" }) });
 
     expect(screen.getByText(/Deadline unrealistic/)).toBeInTheDocument();
   });
 
-  it("falls through to the trend when there is no pace check", () => {
-    renderStrip({ weight: weightGoal({ ...approaching, isOnTrack: true }) });
+  it("says on track for a client moving towards it with no pace to judge", () => {
+    renderStrip({ weight: weightGoal({ ...approaching, trend: "towards" }) });
 
     expect(screen.getByText(/On track/)).toBeInTheDocument();
   });
 
-  it("says a client moving away from the goal needs attention", () => {
-    renderStrip({ weight: weightGoal({ ...approaching, isOnTrack: false }) });
-
-    expect(screen.getByText(/Needs attention/)).toBeInTheDocument();
-  });
-
   it("shows the distance LEFT while a goal is being approached", () => {
-    renderStrip({ weight: weightGoal({ ...approaching, isOnTrack: true }) });
+    renderStrip({ weight: weightGoal({ ...approaching, trend: "towards" }) });
 
     expect(screen.getByText(/5 kg to go/)).toBeInTheDocument();
     expect(screen.queryByText(/past target/)).not.toBeInTheDocument();
   });
 
   it("withholds the new-target note while a goal is still being worked towards", () => {
-    renderStrip({ weight: weightGoal(), bodyFat: bodyFatGoal({ status: "approaching", isOnTrack: true }) });
+    renderStrip({ weight: weightGoal(), bodyFat: bodyFatGoal({ status: "approaching", trend: "towards" }) });
 
     expect(screen.queryByText(/consider setting a new target/i)).not.toBeInTheDocument();
   });
@@ -178,7 +218,7 @@ describe("a goal that could not be judged as of the check-in's day", () => {
     expect(screen.getByText(/91 kg/)).toBeInTheDocument();
     expect(screen.getByText(/66 kg/)).toBeInTheDocument();
     expect(screen.getByText("No reading yet")).toBeInTheDocument();
-    expect(screen.queryByText(/to go|Reached|On track|Needs attention/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/to go|Reached|On track|Moving away/)).not.toBeInTheDocument();
     expect(container.querySelector('[style*="width: 0%"]')).not.toBeNull();
   });
 
@@ -212,6 +252,37 @@ describe("a goal that could not be judged as of the check-in's day", () => {
   });
 });
 
+describe("a goal with no target (commit 8d4)", () => {
+  // Maintain, event prep and general fitness ask for no target, so the goal
+  // has no rows. It is still the goal the check-in judged: it shows itself.
+  const HYROX: JudgedGoal = { name: "Hyrox Manchester", type: "event_prep" };
+  const EVENT_DAY = { date: "2026-10-17", daysRemaining: 23, isPastDeadline: false };
+
+  it("shows the goal's name, its type and its event day, and says there is no target", () => {
+    renderStrip({ deadline: EVENT_DAY }, NO_CLIENT, true, HYROX);
+
+    expect(screen.getByText("Hyrox Manchester")).toBeInTheDocument();
+    expect(screen.getByText("Event prep")).toBeInTheDocument();
+    expect(screen.getByText("event day 17 Oct · 23 days")).toBeInTheDocument();
+    expect(screen.getByText("No target to track progress against")).toBeInTheDocument();
+    expect(screen.queryByText(/No goals have been set/)).not.toBeInTheDocument();
+  });
+
+  it("says the type only where the name doesn't", () => {
+    renderStrip({}, NO_CLIENT, true, { name: "Maintain", type: "maintain" });
+
+    expect(screen.getByText("Maintain")).toBeInTheDocument();
+    expect(screen.getAllByText(/Maintain/)).toHaveLength(1);
+    expect(screen.getByText("No target to track progress against")).toBeInTheDocument();
+  });
+
+  it("still carries the drift note, which is about the targets, not the goal's target", () => {
+    renderStrip({}, DRIFTED, true, HYROX);
+
+    expect(screen.getByText(/Weight has moved 4 kg/)).toBeInTheDocument();
+  });
+});
+
 describe("a goal since replaced (commit 8b)", () => {
   // The rows judge the version in force on the check-in's day. When that
   // version is no longer the client's live goal, "Goal met" is history and the
@@ -232,8 +303,16 @@ describe("a goal since replaced (commit 8b)", () => {
     expect(screen.queryByRole("button", { name: /set new goals/i })).not.toBeInTheDocument();
   });
 
+  it("shows no nutrition note beside a met goal, however far the weight drifted (commit 8d4)", () => {
+    renderStrip({ weight: weightGoal(), bodyFat: bodyFatGoal() }, DRIFTED, false);
+
+    expect(screen.getAllByText(/Reached/)).toHaveLength(2);
+    expect(screen.queryByText(/nutrition plan/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/new target/i)).not.toBeInTheDocument();
+  });
+
   it("still carries the drift note, which describes that day's targets", () => {
-    const approaching = { status: "approaching" as const, percentComplete: 40, remaining: 5, isOnTrack: true };
+    const approaching = { status: "approaching" as const, percentComplete: 40, remaining: 5, trend: "towards" as const };
     renderStrip({ weight: weightGoal(approaching) }, DRIFTED, false);
 
     expect(screen.getByText(/Weight has moved 4 kg/)).toBeInTheDocument();
@@ -241,7 +320,7 @@ describe("a goal since replaced (commit 8b)", () => {
 });
 
 describe("the footer — one slot, two states", () => {
-  const approaching = { status: "approaching" as const, percentComplete: 40, remaining: 5, isOnTrack: true };
+  const approaching = { status: "approaching" as const, percentComplete: 40, remaining: 5, trend: "towards" as const };
 
   it("advises a nutrition review when the weight had drifted past the threshold", () => {
     renderStrip({ weight: weightGoal(approaching) }, DRIFTED);
@@ -319,28 +398,48 @@ describe("the rail", () => {
     expect(screen.getByText(/deadline 31 Oct · 61 days/)).toBeInTheDocument();
   });
 
-  it("says how far past a deadline that has gone", () => {
+  it("says how long since a deadline that has gone", () => {
     renderStrip({
       weight: weightGoal(),
       deadline: { date: "2026-06-30", daysRemaining: -12, isPastDeadline: true },
     });
 
-    expect(screen.getByText(/Overdue by 12 days/)).toBeInTheDocument();
+    expect(screen.getByText("deadline 30 Jun · 12 days ago")).toBeInTheDocument();
   });
 });
 
-describe("without goals", () => {
-  it("names what is missing and where to set it", () => {
-    renderStrip({});
+describe("without a goal on the check-in's day", () => {
+  it("says none was set, and its link opens the goals sheet", () => {
+    const onSetNewGoals = vi.fn();
+    render(
+      <CheckInGoalStrip
+        goalProgress={progress({}, false, null)}
+        clientName="Sam"
+        clientData={NO_CLIENT}
+        onSetNewGoals={onSetNewGoals}
+      />,
+    );
 
     expect(screen.getByText(/No goals have been set for Sam yet/)).toBeInTheDocument();
-    expect(screen.getByText(/Set goals in the client profile/)).toBeInTheDocument();
+    screen.getByRole("button", { name: "Set goals" }).click();
+    expect(onSetNewGoals).toHaveBeenCalledOnce();
   });
 
-  it("renders one row when only one goal is set", () => {
+  it("says it without a link where the page cannot route to the sheet", () => {
+    renderStrip({}, NO_CLIENT, false, null);
+
+    expect(screen.getByText(/No goals have been set for Sam yet/)).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+});
+
+describe("a goal with targets", () => {
+  it("renders a row per target it sets, and nothing of the no-target box", () => {
     renderStrip({ weight: weightGoal() });
 
     expect(screen.getByText("Weight")).toBeInTheDocument();
     expect(screen.queryByText("Body fat")).not.toBeInTheDocument();
+    expect(screen.queryByText("No target to track progress against")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cut to 77")).not.toBeInTheDocument();
   });
 });

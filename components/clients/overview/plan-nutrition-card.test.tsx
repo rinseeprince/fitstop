@@ -141,6 +141,8 @@ describe("PlanNutritionCard — targets that no longer fit the goal", () => {
       built: { goalWeightKg: 80, deadline: "2026-10-01" },
       goal: { goalWeightKg: 81.5, deadline: "2026-11-09" },
       goalName: "Lean out",
+      goalChangedOn: CLIENT_TODAY,
+      setByHand: false,
     };
     const { onOpenNutritionDrawer } = renderCard({ nutrition: RUNNING });
 
@@ -161,6 +163,8 @@ describe("PlanNutritionCard — targets that no longer fit the goal", () => {
       built: { goalWeightKg: 82.4, deadline: "2026-10-08" },
       goal: { goalWeightKg: 79.3, deadline: "2026-12-02" },
       goalName: "Cut deeper",
+      goalChangedOn: CLIENT_TODAY,
+      setByHand: false,
     };
     renderCard({ nutrition: RUNNING });
 
@@ -175,6 +179,8 @@ describe("PlanNutritionCard — targets that no longer fit the goal", () => {
       built: { goalWeightKg: 81.5, deadline: "2026-11-09" },
       goal: { goalWeightKg: null, deadline: null },
       goalName: "Maintain",
+      goalChangedOn: "2026-10-19",
+      setByHand: false,
     };
     const { onOpenNutritionDrawer } = renderCard({ upcomingNutrition: QUEUED });
 

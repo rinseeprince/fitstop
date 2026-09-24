@@ -153,7 +153,7 @@ function positionOf({
     remaining: progress.remaining,
     percentComplete: progress.percentComplete,
     status: progress.status,
-    isOnTrack: progress.isOnTrack,
+    trend: progress.trend,
   };
 
   // Is the rate REQUIRED to hit the goal by the deadline safe? Null for a met

@@ -43,7 +43,7 @@ const checkIn = {
 // East of UTC: the check-in's instant is 18 Sep on the client's calendar.
 const client = { id: "client-1", coachId: "coach-9", name: "Jane Doe", timezone: "Europe/London" };
 const nutrition = { days: [], summary: { periodDays: 7 } };
-const comparison = { comparison: { previous: null, changes: {} }, goalProgress: { goalIsCurrent: false } };
+const comparison = { comparison: { previous: null, changes: {} }, goalProgress: { goal: null, goalIsCurrent: false } };
 
 beforeEach(() => {
   vi.clearAllMocks();

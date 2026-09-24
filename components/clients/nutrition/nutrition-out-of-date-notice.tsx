@@ -13,10 +13,12 @@ import type { GoalPricing, NutritionOutOfDate } from "@/lib/nutrition/nutrition-
  * shown on the Overview's nutrition card, the Nutrition tab and the drawer:
  * a saved version no longer fits the goal on its days. One sentence (the
  * owner's wording, 2026-09-23) names the goal from the day the problem starts
- * and what the calories still aim for, and a button offers the fix —
- * Regenerate when the problem starts today, "Set nutrition from <day>" when a
- * later goal takes over. It never regenerates anything itself. A sentence, so
- * all sans (the prose rule), numbers included.
+ * and what the calories still aim for — or, for calories the coach typed,
+ * which aim for nothing, when the goal changed and to check them (commit
+ * 8d4) — and a button offers the fix: Regenerate when the problem starts
+ * today, "Set nutrition from <day>" when a later goal takes over. It never
+ * regenerates anything itself. Prose, so all sans (the prose rule), numbers
+ * included.
  */
 type NutritionOutOfDateNoticeProps = {
   outOfDate: NutritionOutOfDate;
@@ -55,6 +57,29 @@ function describeGoal(name: string, pricing: GoalPricing, viewer: UnitSystem): s
     : `${name} (${weight}, no deadline)`;
 }
 
+/**
+ * Calories the coach typed were priced for no goal, so they are never said to
+ * aim for one: the notice says when the goal changed — undated when the change
+ * carries no day — and asks for a check.
+ */
+function handTypedSentence(outOfDate: NutritionOutOfDate, clientToday: string): string {
+  const changedOn = outOfDate.goalChangedOn;
+  let when: string;
+  if (outOfDate.goalName === null) {
+    when =
+      outOfDate.fromDay === clientToday
+        ? "There's no goal now."
+        : `From ${formatDateOnlyShort(outOfDate.fromDay)} there's no goal.`;
+  } else if (changedOn === null) {
+    when = "The goal has changed.";
+  } else if (changedOn <= clientToday) {
+    when = `The goal changed on ${formatDateOnlyShort(changedOn)}.`;
+  } else {
+    when = `From ${formatDateOnlyShort(changedOn)} the goal changes.`;
+  }
+  return `${when} These calories were set by hand — check they still fit.`;
+}
+
 export function NutritionOutOfDateNotice({
   outOfDate,
   clientToday,
@@ -70,7 +95,9 @@ export function NutritionOutOfDateNotice({
     outOfDate.goalName == null ? null : describeGoal(outOfDate.goalName, outOfDate.goal, preference);
 
   let sentence: string;
-  if (fromToday) {
+  if (outOfDate.setByHand) {
+    sentence = handTypedSentence(outOfDate, clientToday);
+  } else if (fromToday) {
     sentence = goal
       ? `The goal is now ${goal}, but the calories still aim for ${built}.`
       : `There's no goal now, but the calories still aim for ${built}.`;

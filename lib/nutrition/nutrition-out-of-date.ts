@@ -1,4 +1,4 @@
-import { deadlineOnDay, goalOnDay } from "@/lib/goals/goal-timeline";
+import { deadlineOnDay, goalChangedOn, goalOnDay } from "@/lib/goals/goal-timeline";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { detectGoalDrift } from "@/lib/goals/detect-goal-drift";
 import type { ClientGoal } from "@/types/client-goals";
@@ -11,7 +11,9 @@ import type { ClientGoal } from "@/types/client-goals";
  * priced for (`goal_weight_kg`, `goal_deadline`), so a new goal with the same
  * two does not make it out of date. Days before today are history and never
  * judged; a queued version is judged from its own start. The earliest day
- * across the versions is the one reported.
+ * across the versions is the one reported. Calories the coach typed are judged
+ * the same way — they were saved under a goal all the same — and the answer
+ * says so, for the notice to word (commit 8d4).
  *
  * PURE: the caller reads the versions and the goals and hands in the client's
  * today. Nothing regenerates here or anywhere — the coach decides.
@@ -33,6 +35,9 @@ export type NutritionVersionGoal = {
   /** Goals the coach kept these calories for by closing the notice
    *  (migration 197): a day whose goal prices like one of them fits too. */
   kept: GoalPricing[];
+  /** Calories the coach typed (`custom_macros_enabled`), which the goal they
+   *  were saved under never priced. */
+  setByHand: boolean;
 };
 
 export type NutritionOutOfDate = {
@@ -44,6 +49,12 @@ export type NutritionOutOfDate = {
   goal: GoalPricing;
   /** That goal's name, which the notice says; null when no goal is in force. */
   goalName: string | null;
+  /** The day that goal took the shape it has on `fromDay` — its start, or its
+   *  latest deadline change — when that falls on or after the version's first
+   *  day, and so after its calories were saved; null when the change carries
+   *  no day (a goal deleted, or edited before its start) or no goal is in force. */
+  goalChangedOn: string | null;
+  setByHand: boolean;
 };
 
 /** The weight target and deadline in force on `day`; no goal is maintenance. */
@@ -105,12 +116,21 @@ export function findNutritionOutOfDate(
       // goal on a day prices differently again.
       if (version.kept.some((keptFor) => !pricesDiffer(keptFor, goal))) continue;
       if (earliest === null || day < earliest.fromDay) {
+        const inForce = goalOnDay(goals, day);
+        // A version never starts before the day it is saved, so a goal shaped
+        // on or after its first day changed after the calories were saved.
+        // Shaped before it, the goal differs through an edit or a delete,
+        // which carry no day: the change is left undated rather than dated
+        // to a day the calories already knew.
+        const shapedOn = inForce ? goalChangedOn(inForce, day) : null;
         earliest = {
           versionId: version.id,
           fromDay: day,
           built: version.built,
           goal,
-          goalName: goalOnDay(goals, day)?.name ?? null,
+          goalName: inForce?.name ?? null,
+          goalChangedOn: shapedOn !== null && shapedOn >= version.effectiveFrom ? shapedOn : null,
+          setByHand: version.setByHand,
         };
       }
       break;

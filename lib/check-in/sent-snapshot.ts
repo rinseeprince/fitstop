@@ -21,10 +21,12 @@ import { MEASUREMENT_KEYS, type MeasurementValues } from "@/lib/measurements/key
  *
  * The shape is declared here once, with its version inside, and validated when
  * it is written (`parseSentSnapshot`) and when it is read (`readSentSnapshot`).
- * A later shape is a new version beside this one, never an edit of it.
+ * A later shape is a new version beside this one, never an edit of it: version
+ * 2 records each goal row's trend as a word, where version 1 recorded yes or
+ * no — moving towards the target or not — which reads as towards or away.
  */
 
-export const SENT_SNAPSHOT_VERSION = 1;
+export const SENT_SNAPSHOT_VERSION = 2;
 
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const NUMBER = z.number().finite();
@@ -39,44 +41,55 @@ const readingsSchema = z
   )
   .strict();
 
+const POSITION = {
+  current: NUMBER,
+  remaining: NUMBER,
+  percentComplete: NUMBER,
+  status: z.enum(["approaching", "achieved", "overshot"]),
+};
+const PACE = z.enum(["on_track", "behind_pace", "unrealistic"]).optional();
+
 const positionSchema = z
   .object({
-    current: NUMBER,
-    remaining: NUMBER,
-    percentComplete: NUMBER,
-    status: z.enum(["approaching", "achieved", "overshot"]),
-    isOnTrack: z.boolean(),
-    paceStatus: z.enum(["on_track", "behind_pace", "unrealistic"]).optional(),
+    ...POSITION,
+    /** Null with fewer than two check-ins carrying the metric: no trend yet. */
+    trend: z.enum(["towards", "away", "unchanged"]).nullable(),
+    paceStatus: PACE,
   })
   .strict();
 
+/** Version 1's row: the trend as yes or no — moving towards the target, or not. */
+const positionV1Schema = z.object({ ...POSITION, isOnTrack: z.boolean(), paceStatus: PACE }).strict();
+
 /** The goal section's rows exactly as the review's comparison carries them. */
-const goalProgressSchema = z
-  .object({
-    weight: z
-      .object({
-        goal: NUMBER,
-        startingWeight: NUMBER.optional(),
-        goalStartWeight: NUMBER.optional(),
-        position: positionSchema.nullable(),
-      })
-      .strict()
-      .optional(),
-    bodyFat: z
-      .object({
-        goal: NUMBER,
-        startingBodyFat: NUMBER.optional(),
-        goalStartBodyFat: NUMBER.optional(),
-        position: positionSchema.nullable(),
-      })
-      .strict()
-      .optional(),
-    deadline: z
-      .object({ date: DAY, daysRemaining: z.number().int(), isPastDeadline: z.boolean() })
-      .strict()
-      .optional(),
-  })
-  .strict();
+function goalProgressSchema<Position extends z.ZodTypeAny>(position: Position) {
+  return z
+    .object({
+      weight: z
+        .object({
+          goal: NUMBER,
+          startingWeight: NUMBER.optional(),
+          goalStartWeight: NUMBER.optional(),
+          position: position.nullable(),
+        })
+        .strict()
+        .optional(),
+      bodyFat: z
+        .object({
+          goal: NUMBER,
+          startingBodyFat: NUMBER.optional(),
+          goalStartBodyFat: NUMBER.optional(),
+          position: position.nullable(),
+        })
+        .strict()
+        .optional(),
+      deadline: z
+        .object({ date: DAY, daysRemaining: z.number().int(), isPastDeadline: z.boolean() })
+        .strict()
+        .optional(),
+    })
+    .strict();
+}
 
 /** The goal judged, as it stood on the check-in's day. */
 const goalSchema = z
@@ -140,28 +153,42 @@ const periodSchema = z
   })
   .strict();
 
-const sentSnapshotSchema = z
-  .object({
-    version: z.literal(SENT_SNAPSHOT_VERSION),
-    /** The check-in's day on the client's calendar when it was sent. */
-    day: DAY,
-    /** What the client reported — canonical kg / cm / % — null where the form carried none. */
-    readings: readingsSchema,
-    /** The reading as of the day the goal section judged: the reported one, else the newest before it. */
-    standing: z.object({ weight: NUMBER_OR_NULL, bodyFat: NUMBER_OR_NULL }).strict(),
-    /** The goal in force on the day, or null — none was. */
-    goal: goalSchema.nullable(),
-    goalProgress: goalProgressSchema,
-    /** The nutrition plan covering the day — what the weight-drift note compares with. */
-    nutritionPlan: z.object({ baseWeightKg: NUMBER_OR_NULL, effectiveFrom: DAY }).strict().nullable(),
-    /** Null when the week cannot be resolved: a row from before periods were stored, with no schedule. */
-    period: periodSchema.nullable(),
-    /** Each question the client answered, in the wording they saw. */
-    questions: z.array(z.object({ questionId: z.string().uuid(), prompt: z.string() }).strict()),
-  })
-  .strict();
+function sentSnapshotSchema<Version extends number, Position extends z.ZodTypeAny>(
+  version: Version,
+  position: Position
+) {
+  return z
+    .object({
+      version: z.literal(version),
+      /** The check-in's day on the client's calendar when it was sent. */
+      day: DAY,
+      /** What the client reported — canonical kg / cm / % — null where the form carried none. */
+      readings: readingsSchema,
+      /** The reading as of the day the goal section judged: the reported one, else the newest before it. */
+      standing: z.object({ weight: NUMBER_OR_NULL, bodyFat: NUMBER_OR_NULL }).strict(),
+      /** The goal in force on the day, or null — none was. */
+      goal: goalSchema.nullable(),
+      goalProgress: goalProgressSchema(position),
+      /** The nutrition plan covering the day — what the weight-drift note compares with. */
+      nutritionPlan: z.object({ baseWeightKg: NUMBER_OR_NULL, effectiveFrom: DAY }).strict().nullable(),
+      /** Null when the week cannot be resolved: a row from before periods were stored, with no schedule. */
+      period: periodSchema.nullable(),
+      /** Each question the client answered, in the wording they saw. */
+      questions: z.array(z.object({ questionId: z.string().uuid(), prompt: z.string() }).strict()),
+    })
+    .strict();
+}
 
-export type SentSnapshot = z.infer<typeof sentSnapshotSchema>;
+const currentSchema = sentSnapshotSchema(SENT_SNAPSHOT_VERSION, positionSchema);
+const version1Schema = sentSnapshotSchema(1, positionV1Schema);
+
+/**
+ * A saved copy as every reader has it: the current shape, with the version it
+ * was saved at.
+ */
+export type SentSnapshot = Omit<z.infer<typeof currentSchema>, "version"> & {
+  version: 1 | typeof SENT_SNAPSHOT_VERSION;
+};
 
 /**
  * Validates a snapshot before it is written. Throws: a copy that does not
@@ -169,17 +196,24 @@ export type SentSnapshot = z.infer<typeof sentSnapshotSchema>;
  * it would freeze the defect for ever.
  */
 export function parseSentSnapshot(value: unknown): SentSnapshot {
-  return sentSnapshotSchema.parse(value);
+  return currentSchema.parse(value);
 }
 
 /**
- * The stored copy, validated. Null when the check-in has none yet — a row a
- * seed script inserted and the fill has not reached. Throws when it is there
- * and does not match its shape: that is corruption, never a state to render.
+ * The stored copy, validated against the shape of the version it was saved
+ * at. Null when the check-in has none yet — a row a seed script inserted and
+ * the fill has not reached. Throws when it is there and does not match its
+ * shape: that is corruption, never a state to render.
  */
 export function readSentSnapshot(value: unknown): SentSnapshot | null {
   if (value == null) return null;
-  const parsed = sentSnapshotSchema.safeParse(value);
+  if ((value as { version?: unknown }).version === 1) {
+    return fromVersion1(matched(version1Schema.safeParse(value)));
+  }
+  return matched(currentSchema.safeParse(value));
+}
+
+function matched<Input, Output>(parsed: z.SafeParseReturnType<Input, Output>): Output {
   if (!parsed.success) {
     throw new Error(
       `A check-in's saved copy does not match its shape: ${parsed.error.issues
@@ -188,6 +222,35 @@ export function readSentSnapshot(value: unknown): SentSnapshot | null {
     );
   }
   return parsed.data;
+}
+
+/**
+ * A version 1 copy in the current shape. Its yes or no reads as towards or
+ * away: it never recorded "no trend" or "unchanged", so a copy saved then
+ * reads as it always did.
+ */
+function fromVersion1(copy: z.infer<typeof version1Schema>): SentSnapshot {
+  const { weight, bodyFat, deadline } = copy.goalProgress;
+  return {
+    ...copy,
+    goalProgress: {
+      ...(weight && { weight: { ...weight, position: weight.position && withTrend(weight.position) } }),
+      ...(bodyFat && { bodyFat: { ...bodyFat, position: bodyFat.position && withTrend(bodyFat.position) } }),
+      ...(deadline && { deadline }),
+    },
+  };
+}
+
+function withTrend({
+  isOnTrack,
+  paceStatus,
+  ...position
+}: z.infer<typeof positionV1Schema>): z.infer<typeof positionSchema> {
+  return {
+    ...position,
+    trend: isOnTrack ? "towards" : "away",
+    ...(paceStatus === undefined ? {} : { paceStatus }),
+  };
 }
 
 /** The readings a sent check-in reported, as the check-in object carries them. */

@@ -156,6 +156,8 @@ describe("DrawerFormBody — the out-of-date notice", () => {
     built: { goalWeightKg: 81.5, deadline: "2026-11-09" },
     goal: { goalWeightKg: 84.2, deadline: "2027-01-15" },
     goalName: "Build",
+    goalChangedOn: "2026-10-19",
+    setByHand: false,
   };
 
   it("says it with no action of its own — Starts on sits right above it", () => {

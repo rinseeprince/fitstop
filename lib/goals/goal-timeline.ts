@@ -1,4 +1,4 @@
-import type { ClientGoal, GoalOnDay } from "@/types/client-goals";
+import type { ClientGoal, ClientGoalDeadline, GoalOnDay } from "@/types/client-goals";
 
 /**
  * Which goal, and which deadline, on which day — decided ONCE, here, over a
@@ -21,16 +21,30 @@ export function goalOnDay(goals: readonly ClientGoal[], day: string): ClientGoal
   return found;
 }
 
-/** The goal's deadline on `day`; a goal not started by then reads its first. */
-export function deadlineOnDay(goal: ClientGoal, day: string): string | null {
+/** The goal's deadline entry in force on `day`; a goal not started by then reads its first. */
+function deadlineEntryOnDay(goal: ClientGoal, day: string): ClientGoalDeadline | null {
   const asOf = day > goal.startsOn ? day : goal.startsOn;
-  let found: { effectiveOn: string; deadline: string | null } | null = null;
+  let found: ClientGoalDeadline | null = null;
   for (const entry of goal.deadlines) {
     if (entry.effectiveOn <= asOf && (found === null || entry.effectiveOn > found.effectiveOn)) {
       found = entry;
     }
   }
-  return found?.deadline ?? null;
+  return found;
+}
+
+/** The goal's deadline on `day`; a goal not started by then reads its first. */
+export function deadlineOnDay(goal: ClientGoal, day: string): string | null {
+  return deadlineEntryOnDay(goal, day)?.deadline ?? null;
+}
+
+/**
+ * The day the goal took the targets and deadline it has on `day`: its start,
+ * or the last day on or before it that its deadline changed.
+ */
+export function goalChangedOn(goal: ClientGoal, day: string): string {
+  const entry = deadlineEntryOnDay(goal, day);
+  return entry && entry.effectiveOn > goal.startsOn ? entry.effectiveOn : goal.startsOn;
 }
 
 /** The goal as it stands on `day`. */

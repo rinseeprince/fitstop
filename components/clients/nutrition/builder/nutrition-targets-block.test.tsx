@@ -25,6 +25,7 @@ const AUTO = { calories: 2200, proteinG: 180, carbG: 200, fatG: 70 };
 const autoPlan = (
   weeklyWeightChangeKg: number,
   requiredDailyDeficit = 400,
+  warnings: NutritionPlan["warnings"] = [],
 ): NutritionPlan => ({
   baselineCalories: 2200,
   tdee: 2600,
@@ -35,13 +36,14 @@ const autoPlan = (
   adjustedTdee: 2600,
   weeklyWeightChangeKg,
   requiredDailyDeficit,
-  warnings: [],
+  warnings,
 });
 
 function renderBlock(
   weeklyWeightChangeKg: number,
   opts: {
     requiredDailyDeficit?: number;
+    warnings?: NutritionPlan["warnings"];
     hasGoalTarget?: boolean;
     manualEnabled?: boolean;
     pending?: boolean;
@@ -51,7 +53,7 @@ function renderBlock(
 ) {
   return render(
     <NutritionTargetsBlock
-      autoPlan={autoPlan(weeklyWeightChangeKg, opts.requiredDailyDeficit)}
+      autoPlan={autoPlan(weeklyWeightChangeKg, opts.requiredDailyDeficit, opts.warnings)}
       autoTargets={AUTO}
       manualEnabled={opts.manualEnabled ?? false}
       onEnableManual={vi.fn()}
@@ -122,6 +124,17 @@ describe("NutritionTargetsBlock — the maintenance state is explained, not sile
     renderBlock(0, { requiredDailyDeficit: 0, hasGoalTarget: true });
 
     expect(screen.getByText(/matches the client's current weight/i)).toBeInTheDocument();
+  });
+
+  // The calculator holds a deadline before the plan's first day at maintenance
+  // (commit 8d4): that is the reason, not the client's weight.
+  it("names a deadline before the plan starts as the reason", () => {
+    renderBlock(0, { requiredDailyDeficit: 0, hasGoalTarget: true, warnings: [{ code: "deadline_passed" }] });
+
+    expect(
+      screen.getByText("The goal's deadline is before this plan starts, so these targets hold at maintenance.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/matches the client's current weight/i)).toBeNull();
   });
 
   it("stays quiet when the plan is actually working to a deficit", () => {

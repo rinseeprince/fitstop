@@ -54,13 +54,11 @@ Two design constraints that survive with it: the stored deficit is **intent, not
 
 ## A goal's two targets can contradict each other on the goal cards
 
-Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it). Narrowed 2026-09-02: the check-in review page no longer contradicts itself — its goal strip resolves weight and body fat through one state column (`status` > `paceStatus` > `isOnTrack`, `components/clients/check-ins/check-in-goal-strip.tsx`), so its two rows cannot reach different verdicts about one client.
+Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it). Narrowed 2026-09-02: the check-in review page no longer contradicts itself — its goal strip resolves weight and body fat through one state column (`resolveGoalRowState`, `lib/check-in/review-figures.ts`), so its two rows cannot reach different verdicts about one client.
 
 `goal_weight` and `goal_body_fat_percentage` are solved independently and reconciled by nobody:
 
-- **The coach's goal card and the client's** render teal "Goal reached" on the weight target beside amber "4.0% to go" on the body-fat target — two chips from the same helper (`lib/goals/goal-chip.ts`, in `components/clients/overview/goal-cells.tsx` and `components/client-portal/program/goal-card.tsx`), computed side by side, never compared. A goal carries two targets only when it already held both — the questionnaire's, or one the coach kept: the goal form asks for the one its type needs.
-
-Compounding it: **`isOnTrack` defaults to `true`** when there is no average change (`calculateGoalProgress` in `utils/comparison-utils.ts`, guarded by `if (avgChange && avgChange !== 0)`), so a client with fewer than two recent check-ins carrying the metric reads "On track" on the check-in goal strip no matter how far off they are.
+- **The coach's goal card and the client's** render teal "Goal reached" on the weight target beside amber "4.0% to go" on the body-fat target — two chips from the same helper (`lib/goals/goal-chip.ts`, in `components/clients/overview/goal-cells.tsx`, `components/client-portal/program/goal-card.tsx` and `components/client-portal/metrics/goals-section.tsx`), computed side by side, never compared. A goal carries two targets only when it already held both — the questionnaire's, or one the coach kept: the goal form asks for the one its type needs.
 
 Fixing the card means choosing which target is the headline, or making the summary read both. There is no lean-mass model in the repo, so the two targets cannot be reconciled arithmetically.
 

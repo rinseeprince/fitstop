@@ -57,7 +57,7 @@ const loaded = {
   comparisonData: {
     comparison: { client: {}, changes: {}, timeBetweenCheckIns: 7 },
     chartData: {},
-    goalProgress: { goalIsCurrent: true },
+    goalProgress: { goal: null, goalIsCurrent: false },
   },
   isLoadingComparison: false,
   // The period's workouts, beside the check-in — the review counts these, and

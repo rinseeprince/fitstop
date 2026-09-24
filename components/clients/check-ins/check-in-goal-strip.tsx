@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import {
+  FOCUS_RING,
   MONO,
   MONO_META_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
@@ -15,6 +16,7 @@ import {
   describeGoalDeadline,
   resolveGoalFooter,
 } from "@/lib/check-in/review-figures";
+import { goalTypeBesideName } from "@/lib/goals/goal-types";
 import type { CheckInComparison, GoalProgress } from "@/types/check-in";
 
 type CheckInGoalStripProps = {
@@ -22,8 +24,9 @@ type CheckInGoalStripProps = {
   clientName: string;
   clientData: CheckInComparison["client"];
   /**
-   * Opens the goal editor. Absent when the page cannot route there, and the
-   * footer then renders its note alone rather than a button that goes nowhere.
+   * Opens the goals sheet, from the goal-met note and from the no-goal state.
+   * Absent when the page cannot route there, and both then render their words
+   * alone rather than a button that goes nowhere.
    */
   onSetNewGoals?: () => void;
 };
@@ -37,7 +40,7 @@ export const CheckInGoalStrip = ({
   onSetNewGoals,
 }: CheckInGoalStripProps) => {
   const { preference } = useUnits();
-  const { deadline, goalIsCurrent } = goalProgress;
+  const { goal, deadline, goalIsCurrent } = goalProgress;
 
   // Body weights: formatWeight converts freely and never snaps.
   const kg = (value: number): string => {
@@ -49,25 +52,36 @@ export const CheckInGoalStrip = ({
   // lib/check-in/review-figures.ts, which the AI review's prompt reads too —
   // so the strip and the model never describe one goal two ways.
   const rows = buildGoalRows(goalProgress, kg);
-  const deadlineMeta = describeGoalDeadline(deadline);
+  const deadlineMeta = describeGoalDeadline(deadline, goal?.type ?? null);
 
-  // Rows come from the goals themselves, so an empty list means none is set. A
-  // goal the record cannot judge yet is a row above, never this state.
-  if (rows.length === 0) {
+  // No goal was in force on the check-in's day. A goal the record cannot judge
+  // yet is a row below, and a goal with no target shows itself below — never
+  // this state.
+  if (!goal) {
     return (
       <div>
         <SectionLabel label="Goal progress" />
         <div className="rounded-[6px] bg-white p-8 text-center">
           <Target className="mx-auto mb-4 h-12 w-12 text-[#93b0b4]" strokeWidth={1.5} />
           <p className="text-[13px] text-[#93b0b4]">No goals have been set for {clientName} yet.</p>
-          <p className="mt-1 text-[13px] text-[#93b0b4]">
-            Set goals in the client profile to track progress here.
-          </p>
+          {onSetNewGoals && (
+            <button
+              type="button"
+              onClick={onSetNewGoals}
+              className={cn(
+                FOCUS_RING,
+                "mt-1 rounded-[4px] text-[13px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]"
+              )}
+            >
+              Set goals
+            </button>
+          )}
         </div>
       </div>
     );
   }
 
+  const typeBesideName = goalTypeBesideName(goal.type, goal.name);
   const footer = resolveGoalFooter({
     rows,
     goalIsCurrent,
@@ -84,6 +98,20 @@ export const CheckInGoalStrip = ({
 
 
       <div className="rounded-[6px] bg-white px-5">
+        {/* Rows come from the goal's targets, so a goal that sets none shows
+            itself in their place: its name, its type where the name doesn't
+            say it, and its deadline on the rail. */}
+        {rows.length === 0 && (
+          <div className="py-4">
+            <p className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate text-[13px] font-semibold text-[#0c1a1e]">{goal.name}</span>
+              {typeBesideName && (
+                <span className="shrink-0 text-[12px] text-[#93b0b4]">{typeBesideName}</span>
+              )}
+            </p>
+            <p className="mt-1 text-[13px] text-[#93b0b4]">No target to track progress against</p>
+          </div>
+        )}
         {rows.map((row, i) => (
           <div
             key={row.name}

@@ -125,8 +125,6 @@ const fixture: CheckInReviewInput = {
       client: {
         id: "client-1",
         name: "Jane Doe",
-        goalWeight: 78,
-        goalDeadline: "2026-11-30",
         currentWeight: 82.4,
         unitPreference: "metric",
         nutritionPlanBaseWeightKg: 86,
@@ -140,9 +138,10 @@ const fixture: CheckInReviewInput = {
         goal: 78,
         startingWeight: 86,
         goalStartWeight: 86,
-        position: { current: 82.4, remaining: 4.4, percentComplete: 45, status: "approaching", isOnTrack: true, paceStatus: "on_track" },
+        position: { current: 82.4, remaining: 4.4, percentComplete: 45, status: "approaching", trend: "towards", paceStatus: "on_track" },
       },
       deadline: { date: "2026-11-30", daysRemaining: 74, isPastDeadline: false },
+      goal: { name: "Lose weight", type: "lose_weight" },
       goalIsCurrent: true,
     },
   },
@@ -286,6 +285,32 @@ describe("buildCheckInReviewPrompt — the fixture week, pinned", () => {
     const prompt = buildCheckInReviewPrompt({ ...fixture, viewer: "imperial" });
     expect(prompt).toContain("Weight: 181.7 lbs, -0.6 vs last check-in");
     expect(prompt).toContain("Goal, weight: 172 lbs from a start of 189.6 lbs. On track · 9.7 lbs to go");
+  });
+
+  it("states a goal with no target as the goal itself — its type and its deadline — never as none set (commit 8d4)", () => {
+    const prompt = buildCheckInReviewPrompt({
+      ...fixture,
+      comparison: {
+        ...fixture.comparison!,
+        goalProgress: {
+          deadline: { date: "2026-10-24", daysRemaining: 37, isPastDeadline: false },
+          goal: { name: "Hyrox Manchester", type: "event_prep" },
+          goalIsCurrent: true,
+        },
+      },
+    });
+    expect(prompt).toContain(
+      "Goal: Hyrox Manchester (Event prep), with no target to track progress against\nEvent day 24 Oct · 37 days\n"
+    );
+    expect(prompt).not.toContain("none set");
+  });
+
+  it("says none was set only when no goal was in force on the check-in's day", () => {
+    const prompt = buildCheckInReviewPrompt({
+      ...fixture,
+      comparison: { ...fixture.comparison!, goalProgress: { goal: null, goalIsCurrent: false } },
+    });
+    expect(prompt).toContain("Goal: none set as of this check-in");
   });
 
   it("degrades to what it has: no comparison, no loggedDates, nothing typed", () => {

@@ -42,7 +42,7 @@ describe("computeGoalPace", () => {
   // A met or passed goal has no pace. This function used to take Math.abs of the
   // remainder, so 5 kg BEYOND a weight-loss goal became a 0.6 kg/week "required
   // rate" comfortably inside the 0.72 safe ceiling — and returned on_track,
-  // which the card then used to override a correct isOnTrack: false.
+  // which the card then used to override a trend correctly reading away.
   it("returns no pace at all once the goal is met or passed", () => {
     const overshot = computeGoalPace({
       remainingKg: 5,

@@ -1,7 +1,8 @@
 import { format } from "date-fns";
 import { formatDeltaValue, type DeltaInfo } from "@/components/check-in/delta-format";
 import { shouldShowRegenerationBanner } from "@/utils/nutrition-helpers";
-import type { GoalPosition, GoalProgress } from "@/types/check-in";
+import { GOAL_TYPE_SETTINGS, type GoalType } from "@/lib/goals/goal-types";
+import type { GoalPosition, GoalProgressRows } from "@/types/check-in";
 
 /**
  * The review page's figure rules, spelled once. The KPI ribbon and the goal
@@ -32,17 +33,23 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 /**
  * Where the client stands, then how far — joined by a middot.
  *
- * The verdict half reads `status` before `paceStatus` before `isOnTrack`, and
- * that order is the point. `paceStatus` judges whether the RATE REQUIRED to hit
- * the deadline is safe; `isOnTrack` judges whether the client is moving TOWARDS
- * the goal. Letting the first mask the second put "On track" on a client 5 kg
- * past a weight-loss target whose `isOnTrack` was already, correctly, false.
+ * Direction before speed (docs/MEASUREMENT-LOG-PLAN.md commit 8d4). A met goal
+ * reads Reached, and a deadline gone by short of the target reads Deadline
+ * passed. Then the trend — which way the recent check-ins moved the client —
+ * and only a client moving towards the target hears the pace: `paceStatus`
+ * judges whether the RATE REQUIRED to hit the deadline is safe, which says
+ * nothing about which way the client is going, so read first it put "On track"
+ * on a client moving away from their target.
  *
  * Weight and body fat both resolve here, so the two rows cannot reach different
- * verdicts about one client — body fat carries no `paceStatus` and falls
- * through to the trend legs.
+ * verdicts about one client — body fat carries no `paceStatus`, so direction
+ * alone decides it.
  */
-export function resolveGoalRowState(goal: GoalPosition, distance: string): GoalRowState {
+export function resolveGoalRowState(
+  goal: GoalPosition,
+  distance: string,
+  deadlinePassed: boolean
+): GoalRowState {
   // `remaining` is signed: its magnitude is the distance BACK to the target
   // once the goal has been passed, so `status` decides which sentence it is in.
   if (goal.status === "overshot") {
@@ -51,15 +58,18 @@ export function resolveGoalRowState(goal: GoalPosition, distance: string): GoalR
   if (goal.status === "achieved") return { text: "Reached", tone: "good" };
 
   const toGo = `${distance} to go`;
-  if (goal.paceStatus === "on_track") return { text: `On track · ${toGo}`, tone: "good" };
+  if (deadlinePassed) return { text: `Deadline passed · ${toGo}`, tone: "attention" };
+  if (goal.trend === null) return { text: `Too early to tell · ${toGo}`, tone: "neutral" };
+  if (goal.trend === "away") return { text: `Moving away · ${toGo}`, tone: "attention" };
+  if (goal.trend === "unchanged") return { text: `No change · ${toGo}`, tone: "attention" };
+
   if (goal.paceStatus === "behind_pace") {
     return { text: `Behind pace · ${toGo}`, tone: "attention" };
   }
   if (goal.paceStatus === "unrealistic") {
     return { text: `Deadline unrealistic · ${toGo}`, tone: "attention" };
   }
-  if (goal.isOnTrack) return { text: `On track · ${toGo}`, tone: "good" };
-  return { text: `Needs attention · ${toGo}`, tone: "attention" };
+  return { text: `On track · ${toGo}`, tone: "good" };
 }
 
 /**
@@ -72,10 +82,11 @@ export function resolveGoalRowState(goal: GoalPosition, distance: string): GoalR
  * viewer's unit.
  */
 export function buildGoalRows(
-  goalProgress: GoalProgress,
+  goalProgress: GoalProgressRows,
   formatWeight: (kg: number) => string
 ): GoalRow[] {
-  const { weight, bodyFat } = goalProgress;
+  const { weight, bodyFat, deadline } = goalProgress;
+  const deadlinePassed = deadline?.isPastDeadline === true;
   const rows: GoalRow[] = [];
 
   if (weight) {
@@ -86,7 +97,7 @@ export function buildGoalRows(
       start: weight.goalStartWeight !== undefined ? formatWeight(weight.goalStartWeight) : undefined,
       goal: formatWeight(weight.goal),
       state: position
-        ? resolveGoalRowState(position, formatWeight(Math.abs(position.remaining)))
+        ? resolveGoalRowState(position, formatWeight(Math.abs(position.remaining)), deadlinePassed)
         : NO_READING,
       judged: position !== null,
     });
@@ -100,7 +111,7 @@ export function buildGoalRows(
       start: bodyFat.goalStartBodyFat !== undefined ? `${bodyFat.goalStartBodyFat} %` : undefined,
       goal: `${bodyFat.goal} %`,
       state: position
-        ? resolveGoalRowState(position, `${round1(Math.abs(position.remaining))}%`)
+        ? resolveGoalRowState(position, `${round1(Math.abs(position.remaining))}%`, deadlinePassed)
         : NO_READING,
       judged: position !== null,
     });
@@ -109,12 +120,20 @@ export function buildGoalRows(
   return rows;
 }
 
-/** The rail's meta: the deadline and the days to it, or how far past it is. */
-export function describeGoalDeadline(deadline: GoalProgress["deadline"]): string | undefined {
+/**
+ * The rail's meta: the deadline, under the name the goal's type gives it (an
+ * event prep goal's is its event day), and the days to it — or since it, once
+ * it has passed.
+ */
+export function describeGoalDeadline(
+  deadline: GoalProgressRows["deadline"],
+  type: GoalType | null
+): string | undefined {
   if (!deadline) return undefined;
-  return deadline.isPastDeadline
-    ? `Overdue by ${Math.abs(deadline.daysRemaining)} days`
-    : `deadline ${format(new Date(deadline.date), "d MMM")} · ${deadline.daysRemaining} days`;
+  const label = type ? GOAL_TYPE_SETTINGS[type].deadlineLabel : "Deadline";
+  const days = Math.abs(deadline.daysRemaining);
+  const distance = `${days} ${days === 1 ? "day" : "days"}${deadline.isPastDeadline ? " ago" : ""}`;
+  return `${label.toLowerCase()} ${format(new Date(deadline.date), "d MMM")} · ${distance}`;
 }
 
 type GoalFooter = {
@@ -127,19 +146,19 @@ type GoalFooter = {
 /**
  * ONE footer, and goals outrank nutrition.
  *
- * The goal-met note only once there is nothing left to approach, and only
- * while the goal judged is still the client's live one: a page about a goal
- * since replaced never invites replacing it again (commit 8b). A goal with no
- * reading is neither met nor unmet, so it neither earns the note nor blocks it
- * (owner decision 2026-09-02) — and with nothing judged there is nothing to
- * call met.
+ * Once every judged goal is met there is nothing left to approach: the
+ * goal-met note while the goal judged is still the client's live one, and
+ * nothing once it has been replaced — a page about a goal since replaced never
+ * invites replacing it again (commit 8b), and targets built for a goal the
+ * client has passed need the goal reset first, so a nutrition note never
+ * appears beside a met goal (commit 8d4). A goal with no reading is neither
+ * met nor unmet, so it neither earns the note nor blocks it (owner decision
+ * 2026-09-02) — and with nothing judged there is nothing to call met.
  *
  * Otherwise the drift note: the reading as of the check-in's day has moved far
  * enough from the base weight of the nutrition version covering that day that
  * the plan no longer described them. Symmetric — a gain invalidates the
- * targets as surely as a loss. Targets built for a goal the client has passed
- * need the goal reset first, so a nutrition note never appears beside a met
- * goal.
+ * targets as surely as a loss.
  */
 export function resolveGoalFooter(input: {
   rows: GoalRow[];
@@ -153,8 +172,10 @@ export function resolveGoalFooter(input: {
   const allMet =
     judged.length > 0 &&
     judged.every((row) => row.state.tone === "good" && row.state.text.startsWith("Reached"));
-  if (allMet && input.goalIsCurrent) {
-    return { tone: "good", text: "Goal met - consider setting a new target.", offerNewGoals: true };
+  if (allMet) {
+    return input.goalIsCurrent
+      ? { tone: "good", text: "Goal met - consider setting a new target.", offerNewGoals: true }
+      : null;
   }
 
   const current = input.currentWeightKg;

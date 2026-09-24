@@ -243,7 +243,7 @@ describe("resolveCheckInReportingPeriod", () => {
 /** A check-in's saved copy (lib/check-in/sent-snapshot.ts), with a week or without. */
 function sentCopy(overrides: Partial<SentSnapshot> = {}): SentSnapshot {
   return parseSentSnapshot({
-    version: 1,
+    version: 2,
     day: "2026-05-14",
     readings: { weight: 81.7, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null },
     standing: { weight: 81.7, bodyFat: null },

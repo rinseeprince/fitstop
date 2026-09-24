@@ -567,9 +567,9 @@ export async function getNextFutureNutritionPlan(
 /**
  * Every active version with a day on or after `today`, earliest first, with
  * the goal it was built for — the weight target and deadline its save priced
- * (`goal_weight_kg`, `goal_deadline`). What the out-of-date rule reads
- * (`lib/nutrition/nutrition-out-of-date.ts`); a version that has ended is
- * history and is not returned.
+ * (`goal_weight_kg`, `goal_deadline`) — and whether its calories were typed by
+ * hand. What the out-of-date rule reads (`lib/nutrition/nutrition-out-of-date.ts`);
+ * a version that has ended is history and is not returned.
  */
 export async function getNutritionVersionGoalsFrom(
   clientId: string,
@@ -578,7 +578,7 @@ export async function getNutritionVersionGoalsFrom(
   const { data, error } = await supabaseAdmin
     .from("nutrition_plans")
     .select(
-      "id, effective_from, effective_until, goal_weight_kg, goal_deadline, nutrition_plan_kept_goals!nutrition_plan_kept_goals_nutrition_plan_id_fkey(goal_weight_kg, goal_deadline)"
+      "id, effective_from, effective_until, goal_weight_kg, goal_deadline, custom_macros_enabled, nutrition_plan_kept_goals!nutrition_plan_kept_goals_nutrition_plan_id_fkey(goal_weight_kg, goal_deadline)"
     )
     .eq("client_id", clientId)
     .eq("status", "active")
@@ -600,6 +600,7 @@ export async function getNutritionVersionGoalsFrom(
       goalWeightKg: keptFor.goal_weight_kg == null ? null : Number(keptFor.goal_weight_kg),
       deadline: keptFor.goal_deadline,
     })),
+    setByHand: row.custom_macros_enabled,
   }));
 }
 

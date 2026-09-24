@@ -224,7 +224,7 @@ describe("buildSentSnapshotAtSend", () => {
     // Before it: 80.2 then 80.9 — gaining, against a loss goal. This check-in's
     // 79.8 at the head of the trend turns it into a loss.
     const copy = await build();
-    expect(copy.goalProgress.weight?.position?.isOnTrack).toBe(true);
+    expect(copy.goalProgress.weight?.position?.trend).toBe("towards");
 
     const trendRead = db.state.chains.find((chain) => chain.table === "check_ins")!;
     expect(trendRead.calls).toContainEqual({ method: "lte", args: ["created_at", AT.toISOString()] });
@@ -235,7 +235,14 @@ describe("buildSentSnapshotAtSend", () => {
   it("a trend over reports: the earlier check-ins' saved weights decide it", async () => {
     // Reported 81.9 after 80.2 and 80.9: gaining against a loss goal.
     const copy = await build({ reported: { weight: 81.9 } });
-    expect(copy.goalProgress.weight?.position?.isOnTrack).toBe(false);
+    expect(copy.goalProgress.weight?.position?.trend).toBe("away");
+  });
+
+  it("a first check-in has no trend, and saves none — never a guess (commit 8d4)", async () => {
+    db.state.results.check_ins = { data: [], error: null };
+    const copy = await build({ reported: { weight: 78.3 } });
+    expect(copy.version).toBe(2);
+    expect(copy.goalProgress.weight?.position?.trend).toBeNull();
   });
 
   it("refuses to freeze a trend with a hole in it — an earlier check-in without a saved copy throws", async () => {

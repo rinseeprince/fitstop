@@ -11,6 +11,7 @@ import {
 } from "@/lib/check-in/review-figures";
 import { formatDeltaValue } from "@/components/check-in/delta-format";
 import { AI_PROMPT_TEXT_LIMIT } from "@/lib/constants";
+import { goalTypeBesideName } from "@/lib/goals/goal-types";
 
 /**
  * The two headline blocks of the check-in review prompt: the client's weight
@@ -80,16 +81,23 @@ export function weightAndGoal(input: CheckInReviewInput): string[] {
     lines.push("Goal: not available");
     return lines;
   }
-  const rows = buildGoalRows(comparison.goalProgress, weight);
-  if (rows.length === 0) {
+  const { goal } = comparison.goalProgress;
+  if (!goal) {
     lines.push("Goal: none set as of this check-in");
     return lines;
+  }
+  const rows = buildGoalRows(comparison.goalProgress, weight);
+  if (rows.length === 0) {
+    // A goal with no target, as the strip shows it: the goal itself, its type
+    // where its name doesn't say it, and its deadline below.
+    const type = goalTypeBesideName(goal.type, goal.name);
+    lines.push(`Goal: ${text(goal.name)}${type ? ` (${type})` : ""}, with no target to track progress against`);
   }
   for (const row of rows) {
     const start = row.start ? ` from a start of ${row.start}` : "";
     lines.push(`Goal, ${row.name.toLowerCase()}: ${row.goal}${start}. ${row.state.text}`);
   }
-  const deadline = describeGoalDeadline(comparison.goalProgress.deadline);
+  const deadline = describeGoalDeadline(comparison.goalProgress.deadline, goal.type);
   if (deadline) lines.push(deadline.charAt(0).toUpperCase() + deadline.slice(1));
   const footer = resolveGoalFooter({
     rows,

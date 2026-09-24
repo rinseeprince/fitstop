@@ -50,6 +50,8 @@ describe("NutritionBuilderRightPanel — the out-of-date notice", () => {
       built: { goalWeightKg: 80.7, deadline: "2026-10-01" },
       goal: { goalWeightKg: 81.5, deadline: "2026-11-09" },
       goalName: "Lean out",
+      goalChangedOn: "2026-09-23",
+      setByHand: false,
     };
     const onOpenSettings = vi.fn();
     render(<NutritionBuilderRightPanel onOpenSettings={onOpenSettings} />);
@@ -67,6 +69,8 @@ describe("NutritionBuilderRightPanel — the out-of-date notice", () => {
       built: { goalWeightKg: 80.6, deadline: "2026-10-18" },
       goal: { goalWeightKg: 85.1, deadline: "2027-01-22" },
       goalName: "Build",
+      goalChangedOn: "2026-10-19",
+      setByHand: false,
     };
     outOfDateState.outOfDate = notice;
     render(<NutritionBuilderRightPanel onOpenSettings={vi.fn()} />);
@@ -82,6 +86,8 @@ describe("NutritionBuilderRightPanel — the out-of-date notice", () => {
       built: { goalWeightKg: 81.5, deadline: "2026-11-09" },
       goal: { goalWeightKg: 84.2, deadline: "2027-01-15" },
       goalName: "Build",
+      goalChangedOn: "2026-10-19",
+      setByHand: false,
     };
     const onOpenSettings = vi.fn();
     render(<NutritionBuilderRightPanel onOpenSettings={onOpenSettings} />);

@@ -13,10 +13,10 @@ import {
  * the database stored it (jsonb sorts keys by length).
  */
 
-/** A full version-1 copy, every section present, keys in the kernel's order. */
+/** A full copy in the current version, every section present, keys in the kernel's order. */
 function canonicalCopy() {
   return {
-    version: 1,
+    version: 2,
     day: "2026-09-19",
     readings: {
       weight: 78.4,
@@ -47,7 +47,7 @@ function canonicalCopy() {
           remaining: -3.8,
           percentComplete: 38.7,
           status: "approaching",
-          isOnTrack: true,
+          trend: "towards",
           paceStatus: "on_track",
         },
       },
@@ -60,7 +60,7 @@ function canonicalCopy() {
           remaining: -4.1,
           percentComplete: 30.5,
           status: "approaching",
-          isOnTrack: false,
+          trend: "away",
         },
       },
       deadline: { date: "2026-11-06", daysRemaining: 48, isPastDeadline: false },
@@ -131,10 +131,53 @@ function jsonbOrdered(value: unknown): unknown {
   return value;
 }
 
+/**
+ * The same copy as version 1 saved it: each row's trend a yes or no — moving
+ * towards the target, or not.
+ */
+function version1Copy() {
+  const copy = canonicalCopy();
+  const { weight, bodyFat } = copy.goalProgress;
+  return {
+    ...copy,
+    version: 1,
+    goalProgress: {
+      weight: {
+        ...weight,
+        position: {
+          current: 78.4,
+          remaining: -3.8,
+          percentComplete: 38.7,
+          status: "approaching",
+          isOnTrack: true,
+          paceStatus: "on_track",
+        },
+      },
+      bodyFat: {
+        ...bodyFat,
+        position: { current: 21.3, remaining: -4.1, percentComplete: 30.5, status: "approaching", isOnTrack: false },
+      },
+      deadline: copy.goalProgress.deadline,
+    },
+  };
+}
+
 describe("parseSentSnapshot — the declared shape, version inside", () => {
-  it("accepts a full version-1 copy as it is", () => {
-    expect(SENT_SNAPSHOT_VERSION).toBe(1);
+  it("accepts a full copy in the current version as it is", () => {
+    expect(SENT_SNAPSHOT_VERSION).toBe(2);
     expect(parseSentSnapshot(canonicalCopy())).toEqual(canonicalCopy());
+  });
+
+  it("accepts a row with no trend yet — fewer than two check-ins carrying the metric (commit 8d4)", () => {
+    const copy = canonicalCopy();
+    const parsed = parseSentSnapshot({
+      ...copy,
+      goalProgress: {
+        ...copy.goalProgress,
+        weight: { ...copy.goalProgress.weight, position: { ...copy.goalProgress.weight.position, trend: null } },
+      },
+    });
+    expect(parsed.goalProgress.weight?.position?.trend).toBeNull();
   });
 
   it("gives every object back in the kernel's key order, however jsonb stored it — the coach's wire stays byte-for-byte", () => {
@@ -162,7 +205,7 @@ describe("parseSentSnapshot — the declared shape, version inside", () => {
       "remaining",
       "percentComplete",
       "status",
-      "isOnTrack",
+      "trend",
       "paceStatus",
     ]);
     expect(Object.keys(parsed.period!.habits)).toEqual(["rail", "avgPct", "daysBelow50", "perHabit"]);
@@ -202,8 +245,9 @@ describe("parseSentSnapshot — the declared shape, version inside", () => {
     expect(parsed.period).toBeNull();
   });
 
-  it("refuses another version — a later shape is a new version beside this one", () => {
-    expect(() => parseSentSnapshot({ ...canonicalCopy(), version: 2 })).toThrow();
+  it("refuses another version — a copy is always written in the current one", () => {
+    expect(() => parseSentSnapshot(version1Copy())).toThrow();
+    expect(() => parseSentSnapshot({ ...canonicalCopy(), version: 3 })).toThrow();
   });
 
   it("refuses a key the shape does not declare", () => {
@@ -264,6 +308,45 @@ describe("readSentSnapshot — validated when read", () => {
   it("throws a readable error for a corrupt copy, naming what is wrong", () => {
     expect(() => readSentSnapshot({ version: 1 })).toThrow(/does not match its shape/);
     expect(() => readSentSnapshot({ ...canonicalCopy(), day: 20260919 })).toThrow(/day/);
+  });
+});
+
+describe("readSentSnapshot — a version 1 copy reads in the current shape", () => {
+  it("its yes or no reads as towards or away, and it keeps its version", () => {
+    const read = readSentSnapshot(version1Copy());
+    expect(read?.version).toBe(1);
+    expect(read?.goalProgress.weight?.position).toEqual({
+      current: 78.4,
+      remaining: -3.8,
+      percentComplete: 38.7,
+      status: "approaching",
+      trend: "towards",
+      paceStatus: "on_track",
+    });
+    expect(read?.goalProgress.bodyFat?.position?.trend).toBe("away");
+    // Everything but the version is the current copy, byte for byte.
+    expect(JSON.stringify({ ...read, version: 2 })).toBe(JSON.stringify(canonicalCopy()));
+  });
+
+  it("keeps an absent pace absent and a row with no reading as none", () => {
+    const copy = version1Copy();
+    const read = readSentSnapshot({
+      ...copy,
+      goalProgress: { ...copy.goalProgress, weight: { ...copy.goalProgress.weight, position: null } },
+    });
+    expect(read?.goalProgress.weight?.position).toBeNull();
+    expect("paceStatus" in read!.goalProgress.bodyFat!.position!).toBe(false);
+    expect("deadline" in readSentSnapshot({ ...copy, goalProgress: {} })!.goalProgress).toBe(false);
+  });
+
+  it("reads in the kernel's key order however jsonb stored it", () => {
+    const read = readSentSnapshot(jsonbOrdered(version1Copy()));
+    expect(JSON.stringify({ ...read, version: 2 })).toBe(JSON.stringify(canonicalCopy()));
+  });
+
+  it("is held to version 1's shape: a word for its trend is refused, as is a yes or no in version 2", () => {
+    expect(() => readSentSnapshot({ ...canonicalCopy(), version: 1 })).toThrow(/isOnTrack/);
+    expect(() => readSentSnapshot({ ...version1Copy(), version: 2 })).toThrow(/trend/);
   });
 });
 

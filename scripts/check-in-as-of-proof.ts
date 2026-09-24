@@ -109,12 +109,10 @@ async function mintSession(email: string): Promise<Session> {
   return { cookie: [...jar].map(([name, value]) => `${name}=${value}`).join("; ") };
 }
 
-type GoalRow = { goal?: number; startingWeight?: number; goalStartWeight?: number; startingBodyFat?: number; position: { current: number; isOnTrack: boolean; paceStatus?: string } | null };
+type GoalRow = { goal?: number; startingWeight?: number; goalStartWeight?: number; startingBodyFat?: number; position: { current: number; trend: string | null; paceStatus?: string } | null };
 type Comparison = {
   comparison: {
     client: {
-      goalWeight?: number;
-      goalDeadline?: string;
       currentWeight?: number;
       currentBodyFatPercentage?: number;
       nutritionPlanBaseWeightKg?: number;
@@ -125,6 +123,7 @@ type Comparison = {
     weight?: GoalRow;
     bodyFat?: GoalRow;
     deadline?: { date: string; daysRemaining: number; isPastDeadline: boolean };
+    goal: { name: string; type: string } | null;
     goalIsCurrent: boolean;
   };
 };
@@ -176,7 +175,7 @@ async function currentValue(clientId: string, metric: "weight" | "bodyFat"): Pro
 async function goalInForce(clientId: string, day: string) {
   const { data, error } = await supabaseAdmin
     .from("client_goals")
-    .select("id, target_weight, starts_on, client_goal_deadlines(effective_on, deadline)")
+    .select("id, name, target_weight, starts_on, client_goal_deadlines(effective_on, deadline)")
     .eq("client_id", clientId);
   if (error) throw new Error(error.message);
   const [goal] = (data ?? [])
@@ -188,6 +187,7 @@ async function goalInForce(clientId: string, day: string) {
     .sort((a, b) => (a.effective_on < b.effective_on ? 1 : -1));
   return {
     id: goal.id,
+    name: goal.name,
     targetWeight: goal.target_weight == null ? undefined : Number(goal.target_weight),
     startsOn: goal.starts_on,
     deadline: entry?.deadline ?? undefined,
@@ -267,12 +267,12 @@ async function main(): Promise<void> {
   check(
     "no goal was in force on 31 May, and the page shows no goal — goalIsCurrent false, no rows, no goal on the wire",
     goalThen === undefined &&
+      a.body.goalProgress.goal === null &&
       a.body.goalProgress.goalIsCurrent === false &&
       a.body.goalProgress.weight === undefined &&
       a.body.goalProgress.bodyFat === undefined &&
-      a.body.goalProgress.deadline === undefined &&
-      a.body.comparison.client.goalWeight === undefined,
-    { goalThen, goalProgress: a.body.goalProgress, goalWeight: a.body.comparison.client.goalWeight }
+      a.body.goalProgress.deadline === undefined,
+    { goalThen, goalProgress: a.body.goalProgress }
   );
   check(
     "the nutrition version covering 31 May is not an active one (legacy archived), so the wire carries no base weight",
@@ -280,9 +280,9 @@ async function main(): Promise<void> {
     { planThen, base: a.body.comparison.client.nutritionPlanBaseWeightKg }
   );
   check(
-    "the payload's shape: comparison + goalProgress, goalProgress keys within {weight, bodyFat, deadline, goalIsCurrent}",
+    "the payload's shape: comparison + goalProgress, goalProgress keys within {weight, bodyFat, deadline, goal, goalIsCurrent}",
     Object.keys(a.body).sort().join(",") === "comparison,goalProgress" &&
-      Object.keys(a.body.goalProgress).every((k) => ["weight", "bodyFat", "deadline", "goalIsCurrent"].includes(k)),
+      Object.keys(a.body.goalProgress).every((k) => ["weight", "bodyFat", "deadline", "goal", "goalIsCurrent"].includes(k)),
     Object.keys(a.body.goalProgress)
   );
 
@@ -422,8 +422,8 @@ async function main(): Promise<void> {
       `the goal is goal 1's ${goalOnB?.targetWeight} with its deadline ${goalOnB?.deadline}, not goal 2's ${goalOnC?.targetWeight}`,
       b.body.goalProgress.weight?.goal === goalOnB?.targetWeight &&
         b.body.goalProgress.deadline?.date === goalOnB?.deadline &&
-        b.body.comparison.client.goalWeight === goalOnB?.targetWeight,
-      { goal: b.body.goalProgress.weight?.goal, deadline: b.body.goalProgress.deadline }
+        b.body.goalProgress.goal?.name === goalOnB?.name,
+      { goal: b.body.goalProgress.weight?.goal, deadline: b.body.goalProgress.deadline, judged: b.body.goalProgress.goal }
     );
     check(
       "days remaining are counted from B's day",
@@ -438,7 +438,7 @@ async function main(): Promise<void> {
       Number(startThen?.value) === 85 && b.body.goalProgress.weight?.goalStartWeight === Number(startThen?.value),
       { wire: b.body.goalProgress.weight?.goalStartWeight, expected: startThen }
     );
-    check("the trend stops at B: 86 → 84 reads losing, towards 80 — with C's later 91 in the set it would read gaining", b.body.goalProgress.weight?.position?.isOnTrack === true, b.body.goalProgress.weight?.position);
+    check("the trend stops at B: 86 → 84 reads losing, towards 80 — with C's later 91 in the set it would read gaining", b.body.goalProgress.weight?.position?.trend === "towards", b.body.goalProgress.weight?.position);
     check("the drift note reads the version covering B's day: base 87", b.body.comparison.client.nutritionPlanBaseWeightKg === 87 && b.body.comparison.client.nutritionPlanEffectiveDate === d(-30), b.body.comparison.client);
 
     console.info("B2. Check-in C, inside the current goal 2");

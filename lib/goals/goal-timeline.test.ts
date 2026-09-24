@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ClientGoal } from "@/types/client-goals";
-import { deadlineOnDay, goalAsOf, goalOnDay, plannedGoals } from "./goal-timeline";
+import { deadlineOnDay, goalAsOf, goalChangedOn, goalOnDay, plannedGoals } from "./goal-timeline";
 
 function goal(
   id: string,
@@ -69,6 +69,18 @@ describe("deadlineOnDay", () => {
 
   it("reads a goal that has not started yet as the deadline it starts with", () => {
     expect(deadlineOnDay(peak, "2026-09-01")).toBe("2026-11-06");
+  });
+});
+
+describe("goalChangedOn", () => {
+  it("is the goal's start until its deadline first changes, then the day of the latest change", () => {
+    expect(goalChangedOn(build, "2026-04-21")).toBe("2026-03-10");
+    expect(goalChangedOn(build, "2026-05-14")).toBe("2026-05-14");
+    expect(goalChangedOn(build, "2026-07-08")).toBe("2026-06-02");
+  });
+
+  it("is a planned goal's own start, read before it", () => {
+    expect(goalChangedOn(peak, "2026-08-25")).toBe("2026-09-20");
   });
 });
 

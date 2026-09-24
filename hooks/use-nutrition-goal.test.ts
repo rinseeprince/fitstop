@@ -57,6 +57,8 @@ describe("useCloseNutritionOutOfDate — the notice's ×", () => {
     built: { goalWeightKg: 83.1, deadline: "2026-10-18" },
     goal: { goalWeightKg: 86.2, deadline: "2027-01-29" },
     goalName: "Build",
+    goalChangedOn: "2026-10-19",
+    setByHand: false,
   };
 
   beforeEach(() => vi.mocked(toast.error).mockClear());

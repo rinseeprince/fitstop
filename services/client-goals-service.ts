@@ -99,9 +99,9 @@ export async function getCurrentGoal(clientId: string): Promise<GoalOnDay | null
 }
 
 /**
- * The coach's goal read: today's goal — with the client's readings on its
- * start day, which its progress runs from — the goals planned after it, and
- * the client's today.
+ * The coach's goal read, and the client's progress read's: today's goal — with
+ * the client's readings on its start day, which its progress runs from — the
+ * goals planned after it, and the client's today.
  */
 export async function getGoalsOverview(clientId: string): Promise<ClientGoalsOverview> {
   const [today, goals] = await Promise.all([

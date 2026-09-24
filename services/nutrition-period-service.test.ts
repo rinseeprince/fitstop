@@ -91,7 +91,7 @@ describe("getCheckInNutritionPeriod — a sent check-in reads the rows its copy 
   /** The check-in's saved copy, with or without a week. */
   function sentCopy(period: SentSnapshot["period"]): SentSnapshot {
     return parseSentSnapshot({
-      version: 1,
+      version: 2,
       day: "2026-05-09",
       readings: { weight: 80.4, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null },
       standing: { weight: 80.4, bodyFat: null },

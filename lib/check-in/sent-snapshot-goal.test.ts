@@ -8,7 +8,7 @@ import type { GoalOnDay } from "@/types/client-goals";
  * through the one kernel on the check-in's own day.
  */
 
-describe("checkInTrend — the trend behind isOnTrack", () => {
+describe("checkInTrend — the average behind each row's trend", () => {
   it("is the weekly weight change between the oldest and newest weighed check-ins, newest first", () => {
     const trend = checkInTrend([
       { createdAt: "2026-09-21T09:00:00+00:00", weight: 79.6, bodyFatPercentage: 24.1 },
@@ -156,7 +156,7 @@ describe("composeGoalSection — the goal judged on the check-in's day", () => {
         // (83.7 − 85.3) / (81.4 − 85.3): from the goal's start, not the baseline.
         percentComplete: 41,
         status: "approaching",
-        isOnTrack: true,
+        trend: "towards",
         // 2.3 kg in 10/7 weeks is 1.61 kg a week against a 0.84 ceiling.
         paceStatus: "unrealistic",
       },
@@ -171,7 +171,7 @@ describe("composeGoalSection — the goal judged on the check-in's day", () => {
         remaining: -2.7,
         percentComplete: 34.1,
         status: "approaching",
-        isOnTrack: true,
+        trend: "towards",
       },
     });
   });

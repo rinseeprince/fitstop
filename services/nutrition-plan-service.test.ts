@@ -443,10 +443,12 @@ describe('Nutrition Plan Service', () => {
         data: [
           {
             id: 'v1', effective_from: '2026-09-01', effective_until: '2026-10-31', goal_weight_kg: 81.4, goal_deadline: '2026-11-20',
+            custom_macros_enabled: false,
             nutrition_plan_kept_goals: [{ goal_weight_kg: 78.9, goal_deadline: '2027-01-08' }],
           },
           {
             id: 'v2', effective_from: '2026-11-01', effective_until: '2026-12-26', goal_weight_kg: null, goal_deadline: null,
+            custom_macros_enabled: true,
             nutrition_plan_kept_goals: [],
           },
         ],
@@ -457,7 +459,7 @@ describe('Nutrition Plan Service', () => {
       const versions = await getNutritionVersionGoalsFrom('client-123', '2026-09-23')
 
       expect(query.select).toHaveBeenCalledWith(
-        'id, effective_from, effective_until, goal_weight_kg, goal_deadline, nutrition_plan_kept_goals!nutrition_plan_kept_goals_nutrition_plan_id_fkey(goal_weight_kg, goal_deadline)'
+        'id, effective_from, effective_until, goal_weight_kg, goal_deadline, custom_macros_enabled, nutrition_plan_kept_goals!nutrition_plan_kept_goals_nutrition_plan_id_fkey(goal_weight_kg, goal_deadline)'
       )
       expect(query.eq).toHaveBeenCalledWith('client_id', 'client-123')
       expect(query.eq).toHaveBeenCalledWith('status', 'active')
@@ -469,8 +471,10 @@ describe('Nutrition Plan Service', () => {
           id: 'v1', effectiveFrom: '2026-09-01', effectiveUntil: '2026-10-31', built: { goalWeightKg: 81.4, deadline: '2026-11-20' },
           // The goals the coach kept these calories for (migration 197).
           kept: [{ goalWeightKg: 78.9, deadline: '2027-01-08' }],
+          setByHand: false,
         },
-        { id: 'v2', effectiveFrom: '2026-11-01', effectiveUntil: '2026-12-26', built: { goalWeightKg: null, deadline: null }, kept: [] },
+        // Calories the coach typed (commit 8d4).
+        { id: 'v2', effectiveFrom: '2026-11-01', effectiveUntil: '2026-12-26', built: { goalWeightKg: null, deadline: null }, kept: [], setByHand: true },
       ])
     })
 

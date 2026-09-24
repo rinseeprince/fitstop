@@ -66,7 +66,12 @@ export const buildCheckInComparison = async (
   // strip offers "Set new goals" only for the goal in force.
   const goalIsCurrent =
     snapshot.goal != null && snapshot.goal.id === goalOnDay(goals, today)?.id;
-  const goalProgress: GoalProgress = { ...snapshot.goalProgress, goalIsCurrent };
+  const goalProgress: GoalProgress = {
+    ...snapshot.goalProgress,
+    // The goal judged, by name and type: all a goal with no target has to show.
+    goal: snapshot.goal ? { name: snapshot.goal.name, type: snapshot.goal.type } : null,
+    goalIsCurrent,
+  };
 
   const timeBetweenCheckIns = previousCheckIn
     ? calculateDaysBetween(currentCheckIn.createdAt, previousCheckIn.createdAt)
@@ -79,10 +84,6 @@ export const buildCheckInComparison = async (
     client: {
       id: client.id,
       name: client.name,
-      // The kernel's rounded goals, so the band and the strip print one number.
-      goalWeight: snapshot.goalProgress.weight?.goal,
-      goalBodyFatPercentage: snapshot.goalProgress.bodyFat?.goal,
-      goalDeadline: snapshot.goal?.deadline ?? undefined,
       // The readings then, so the drift note compares like with like.
       currentWeight: snapshot.standing.weight ?? undefined,
       currentBodyFatPercentage: snapshot.standing.bodyFat ?? undefined,

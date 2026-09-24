@@ -3,7 +3,8 @@ import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import type { DailyLog } from "./daily-log";
 import type { OnboardingStatus } from "./client-intake";
 import type { LoggedQuality, TrainingEventStatus } from "@/types/training";
-import type { GoalStatus } from "@/utils/comparison-utils";
+import type { GoalStatus, TrendToGoal } from "@/utils/comparison-utils";
+import type { GoalType } from "@/lib/goals/goal-types";
 
 // Check-in status types
 export type CheckInStatus = "pending" | "ai_processed" | "reviewed";
@@ -791,9 +792,6 @@ export type CheckInComparison = {
   client: {
     id: string;
     name: string;
-    goalWeight?: number;
-    goalBodyFatPercentage?: number;
-    goalDeadline?: string;
     /** The reading as of the check-in's day — its own stamped row, else the
      *  newest before it — not today's; the drift note compares it with the
      *  base weight below. */
@@ -848,10 +846,12 @@ export type GoalPosition = {
   /**
    * POSITION relative to the goal — `approaching` | `achieved` | `overshot`,
    * in the goal type's direction (`goalDirection`, lib/goals/goal-types.ts).
-   * Separate from `isOnTrack`, which is the TREND.
+   * Separate from `trend`, which is the TREND.
    */
   status: GoalStatus;
-  isOnTrack: boolean;
+  /** Which way the recent check-ins moved the client relative to the target;
+   *  null with fewer than two of them carrying the metric. */
+  trend: TrendToGoal | null;
   /** Pace check vs the deadline. Weight only, and only when there is a deadline. */
   paceStatus?: GoalPaceStatus;
 };
@@ -888,13 +888,17 @@ export type GoalProgressRows = {
   };
 };
 
+/** The goal a check-in judged: the goal in force on its day, as it stood then. */
+export type JudgedGoal = { name: string; type: GoalType };
+
 /**
- * The check-in review's goal progress: the rows, judged against the goal in
- * force on the check-in's day, and whether that goal is still the one in force
- * on the client's today. The strip offers "Set new goals" only when it is — a
- * page about a goal already replaced never invites replacing it again.
+ * The check-in review's goal progress: the goal in force on the check-in's day
+ * (null when none was), the rows judged against it, and whether that goal is
+ * still the one in force on the client's today. The strip offers "Set new
+ * goals" only when it is — a page about a goal already replaced never invites
+ * replacing it again.
  */
-export type GoalProgress = GoalProgressRows & { goalIsCurrent: boolean };
+export type GoalProgress = GoalProgressRows & { goal: JudgedGoal | null; goalIsCurrent: boolean };
 
 // Complete comparison response with goal tracking
 export type GetCheckInComparisonResponse = {

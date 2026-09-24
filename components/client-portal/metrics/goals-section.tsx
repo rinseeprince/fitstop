@@ -2,22 +2,19 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Target, TrendingUp, TrendingDown } from "lucide-react";
+import { Target } from "lucide-react";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
+import { goalProgressChip, type GoalChipTone } from "@/lib/goals/goal-chip";
+import type { ProgressData } from "@/services/client-portal-progress";
 
 interface GoalsSectionProps {
-  client: {
-    goalWeight?: number;
-    goalBodyFatPercentage?: number;
-    startingWeight?: number;
-    startingBodyFatPercentage?: number;
-    currentWeight?: number;
-    currentBodyFatPercentage?: number;
-  };
+  client: ProgressData["client"];
   latestWeight?: number;
   latestBodyFat?: number;
 }
+
+type Chip = { text: string; tone: GoalChipTone };
 
 export function GoalsSection({ client, latestWeight, latestBodyFat }: GoalsSectionProps) {
   // The client's own unit. client.weightUnit was a mapper constant, so the
@@ -30,18 +27,34 @@ export function GoalsSection({ client, latestWeight, latestBodyFat }: GoalsSecti
   const currentWeight = client.currentWeight || latestWeight;
   const currentBodyFat = client.currentBodyFatPercentage || latestBodyFat;
 
-  // Between the DISPLAYED values, so "to go" reconciles with the two numbers.
-  const weightProgress = client.goalWeight && currentWeight
-    ? w(currentWeight) - w(client.goalWeight)
-    : null;
-
-  const bodyFatProgress = client.goalBodyFatPercentage && currentBodyFat 
-    ? currentBodyFat - client.goalBodyFatPercentage 
-    : null;
-
   if (!client.goalWeight && !client.goalBodyFatPercentage) {
     return null;
   }
+
+  // How far the client is from each target, in the words every goal card uses
+  // (`goalProgressChip`): the goal's type and its start reading say which way
+  // it points, so a client past the target never reads "to go". Between the
+  // DISPLAYED values, so the amount reconciles with the two numbers beside it.
+  const weightChip = client.goalWeight
+    ? goalProgressChip({
+        type: client.goalType,
+        metric: "weight",
+        start: client.goalStartWeight !== undefined ? w(client.goalStartWeight) : null,
+        current: currentWeight !== undefined ? w(currentWeight) : null,
+        target: w(client.goalWeight),
+        unit: weightUnit,
+      })
+    : null;
+  const bodyFatChip = client.goalBodyFatPercentage
+    ? goalProgressChip({
+        type: client.goalType,
+        metric: "bodyFat",
+        start: client.goalStartBodyFatPercentage,
+        current: currentBodyFat,
+        target: client.goalBodyFatPercentage,
+        unit: "%",
+      })
+    : null;
 
   return (
     <Card>
@@ -74,13 +87,7 @@ export function GoalsSection({ client, latestWeight, latestBodyFat }: GoalsSecti
                   </span>
                 </p>
               </div>
-              {weightProgress !== null && (
-                <ProgressBadge 
-                  progress={weightProgress} 
-                  unit={weightUnit}
-                  label="to go"
-                />
-              )}
+              {weightChip && <ProgressBadge chip={weightChip} />}
             </div>
           )}
 
@@ -101,13 +108,7 @@ export function GoalsSection({ client, latestWeight, latestBodyFat }: GoalsSecti
                   <span className="ml-1 text-sm font-normal text-muted-foreground">%</span>
                 </p>
               </div>
-              {bodyFatProgress !== null && (
-                <ProgressBadge 
-                  progress={bodyFatProgress} 
-                  unit="%"
-                  label="to go"
-                />
-              )}
+              {bodyFatChip && <ProgressBadge chip={bodyFatChip} />}
             </div>
           )}
         </div>
@@ -116,30 +117,10 @@ export function GoalsSection({ client, latestWeight, latestBodyFat }: GoalsSecti
   );
 }
 
-function ProgressBadge({ progress, unit, label }: { progress: number; unit: string; label: string }) {
-  const isOverGoal = progress > 0;
-  const isAtGoal = Math.abs(progress) < 0.1;
-
-  if (isAtGoal) {
-    return (
-      <Badge variant="default" className="flex items-center gap-1">
-        <Target className="h-3 w-3" />
-        Goal reached!
-      </Badge>
-    );
-  }
-
+function ProgressBadge({ chip }: { chip: Chip }) {
   return (
-    <Badge
-      variant={isOverGoal ? "secondary" : "default"}
-      className="flex items-center gap-1"
-    >
-      {isOverGoal ? (
-        <TrendingUp className="h-3 w-3" />
-      ) : (
-        <TrendingDown className="h-3 w-3" />
-      )}
-      {Math.abs(progress).toFixed(1)} {unit} {label}
+    <Badge variant={chip.tone === "positive" ? "default" : "secondary"}>
+      {chip.text}
     </Badge>
   );
 }

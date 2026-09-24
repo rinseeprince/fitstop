@@ -36,7 +36,7 @@ describe("deriveGoalProgress", () => {
         // 6 of the 12 kg from the goal's start (90), not 8 of 14 from the baseline.
         percentComplete: 50,
         status: "approaching",
-        isOnTrack: true,
+        trend: "towards",
         // 6 kg over 9 weeks is 0.67 kg/week, under the 0.84 ceiling (1% of 84).
         paceStatus: "on_track",
       },
@@ -56,7 +56,7 @@ describe("deriveGoalProgress", () => {
         // 4 of the 7 points from the goal's start (23).
         percentComplete: 57.1,
         status: "approaching",
-        isOnTrack: true,
+        trend: "towards",
       },
     });
   });
@@ -113,7 +113,7 @@ describe("deriveGoalProgress", () => {
       ...nineWeeks,
     });
 
-    expect(weight?.position?.isOnTrack).toBe(false);
+    expect(weight?.position?.trend).toBe("away");
     // Pace is the rate REQUIRED, not the client's own, so it is still safe.
     expect(weight?.position?.paceStatus).toBe("on_track");
   });

@@ -54,7 +54,7 @@ describe("calculateGoalProgress", () => {
     expect(p.remaining).toBe(5);
     // Already correct before this change, and the reason the two goal cards
     // disagreed: the weight card let paceStatus mask it.
-    expect(p.isOnTrack).toBe(false);
+    expect(p.trend).toBe("away");
   });
 
   it("keeps remaining signed the other way while the goal is being approached", () => {
@@ -63,8 +63,25 @@ describe("calculateGoalProgress", () => {
     expect(p.status).toBe("approaching");
     expect(p.remaining).toBe(-5);
     // Losing weight towards a lower goal.
-    expect(p.isOnTrack).toBe(true);
+    expect(p.trend).toBe("towards");
     expect(p.percentComplete).toBe(54.5);
+  });
+
+  it("reads the trend against the target, either way (commit 8d4)", () => {
+    // 84.3 now, aiming for 79.1: gaining is away, losing is towards.
+    expect(calculateGoalProgress(84.3, 79.1, 87.6, 0.35).trend).toBe("away");
+    expect(calculateGoalProgress(84.3, 79.1, 87.6, -0.55).trend).toBe("towards");
+    // A gain goal mirrors it: 66.2 aiming for 70.8.
+    expect(calculateGoalProgress(66.2, 70.8, 63.9, 0.45).trend).toBe("towards");
+    expect(calculateGoalProgress(66.2, 70.8, 63.9, -0.25).trend).toBe("away");
+  });
+
+  it("has no trend without an average — fewer than two readings — never a guess", () => {
+    expect(calculateGoalProgress(83.1, 78.7, 88.9).trend).toBeNull();
+  });
+
+  it("reads a client who has not moved at all as unchanged", () => {
+    expect(calculateGoalProgress(81.7, 76.4, 85.2, 0).trend).toBe("unchanged");
   });
 
   it("never returns a percentage outside 0-100", () => {

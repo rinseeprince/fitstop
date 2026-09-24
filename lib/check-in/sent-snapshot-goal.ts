@@ -28,9 +28,9 @@ type GoalTrend = {
 };
 
 /**
- * The TREND behind `isOnTrack`, over the ten check-ins up to and including the
- * judged one, newest first — body fat's only trend signal, and weight's when
- * there is no deadline to pace against.
+ * The average change behind each goal row's `trend`, over the ten check-ins up
+ * to and including the judged one, newest first — which way the client is
+ * moving, read before any pace.
  */
 export function checkInTrend(checkIns: TrendCheckIn[]): GoalTrend {
   const trend: GoalTrend = {};
