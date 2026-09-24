@@ -12,6 +12,9 @@
  * rows are removed first; its readings and its "Mark seen" anchor go with it,
  * ON DELETE CASCADE). Every fixture number is distinct.
  *
+ *   0  a first visit starts the feed: the first Overview load starts the anchor
+ *      and answers it with nothing since (all caught up), the next load gives
+ *      the same answer, and starting it again never moves it
  *   1  a waist and a weight: 200, one coach_entry row each, dated as sent, the
  *      coach as creator, the note kept; audited without the value
  *   2  the same value again on the same day writes nothing, audits nothing and
@@ -30,6 +33,7 @@ import "./env-bootstrap";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { appendMeasurements } from "@/services/measurements-service";
 import { getCoachTodayString } from "@/services/today-service";
+import { startLastViewed } from "@/services/coach-client-views-service";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import type { ActivityItem } from "@/types/coach-brief";
 import { mintSession, send, PROOF_BASE } from "./proof-session";
@@ -113,9 +117,47 @@ async function main(): Promise<void> {
       return { status: res.status, body: res.json as Reply };
     };
 
-    // The feed lists what arrives after the coach's anchor, so set it first.
-    // The anchor is stamped by the app server's clock and a reading by the
-    // database's: a short pause keeps a small skew between the two from
+    console.info("0. A first visit starts the feed");
+    type BriefBody = { data?: { lastViewedAt?: string | null; activity?: ActivityItem[] } };
+    const anchorRow = async () => {
+      const { data, error } = await supabaseAdmin
+        .from("coach_client_views")
+        .select("last_viewed_at")
+        .eq("coach_id", coach.id)
+        .eq("client_id", A)
+        .maybeSingle();
+      if (error) throw new Error(`anchor read failed: ${error.message}`);
+      return data?.last_viewed_at ?? null;
+    };
+    check("setup: the fresh client has no anchor", (await anchorRow()) === null);
+    const firstVisit = await send(session, "GET", `/api/clients/${A}/overview-brief`);
+    const firstBrief = (firstVisit.json as BriefBody)?.data;
+    const started = await anchorRow();
+    const sameMoment = (a: string | null | undefined, b: string | null | undefined) =>
+      a != null && b != null && Date.parse(a) === Date.parse(b);
+    check(
+      "the first Overview load starts the anchor and answers it, with nothing since — all caught up",
+      firstVisit.status === 200 && sameMoment(firstBrief?.lastViewedAt, started) && (firstBrief?.activity ?? []).length === 0,
+      { answered: firstBrief?.lastViewedAt, stored: started }
+    );
+    const nextVisit = await send(session, "GET", `/api/clients/${A}/overview-brief`);
+    const nextBrief = (nextVisit.json as BriefBody)?.data;
+    check(
+      "the next load gives the same answer, the anchor unmoved",
+      sameMoment(nextBrief?.lastViewedAt, started) && sameMoment(await anchorRow(), started) && (nextBrief?.activity ?? []).length === 0,
+      { started, next: nextBrief?.lastViewedAt }
+    );
+    // On the database itself: the start is ON CONFLICT DO NOTHING, so it never moves an anchor.
+    const startedAgain = await startLastViewed(coach.id, A);
+    check(
+      "starting it again writes nothing and answers the anchor that stands",
+      sameMoment(startedAgain, started) && sameMoment(await anchorRow(), started),
+      { startedAgain, started }
+    );
+
+    // The feed lists what arrives after the coach's anchor; Mark seen moves it
+    // to now. The anchor is stamped by the app server's clock and a reading by
+    // the database's: a short pause keeps a small skew between the two from
     // reading as a feed that missed the readings.
     const seen = await send(session, "POST", `/api/clients/${A}/overview-brief/seen`);
     const anchor = (seen.json as { data?: { lastViewedAt?: string } })?.data?.lastViewedAt ?? "";

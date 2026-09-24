@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { evaluateSingleClientAlerts } from "./attention-feed-service";
-import { getLastViewedAt } from "./coach-client-views-service";
+import { getLastViewedAt, startLastViewed } from "./coach-client-views-service";
 import { getActivitySince } from "./client-activity-feed-service";
 import { getClientById } from "./client-service";
 import { listBlocks } from "./client-blocks-service";
@@ -14,6 +14,7 @@ import { formatDateISO } from "@/lib/date-helpers";
 import { UNREVIEWED_CHECK_IN_STATUSES } from "@/lib/constants";
 import { deriveBlockEnding } from "@/lib/blocks/block-derivations";
 import type { Client } from "@/types/check-in";
+import { captureApiError } from "@/lib/error-handler";
 import type {
   BlockEnding,
   CheckInTiming,
@@ -104,13 +105,31 @@ async function getCheckInTiming(
 }
 
 /**
+ * A first visit starts the feed: with no anchor there is nothing unread to
+ * clear, so the anchor is set now and the visit reads like every visit after
+ * it — the anchor, and nothing since. A failed start is reported and answered
+ * as no anchor, the first-visit state, so the next visit tries again; the
+ * brief is answered either way.
+ */
+async function startFeed(coachId: string, clientId: string): Promise<string | null> {
+  try {
+    return await startLastViewed(coachId, clientId);
+  } catch (error) {
+    captureApiError(error, { action: "activity-feed-start", coachId, clientId });
+    return null;
+  }
+}
+
+/**
  * Builds the coach pre-session brief for one client (Session 7.6; activity feed
  * + check-in timing added by the Overview redesign Session 1).
  *
- * READ-ONLY: everything is computed against the stored last_viewed_at anchor
- * and the anchor is NOT advanced here — it moves only via
- * POST …/overview-brief/seen ("Mark seen"). First visit (null anchor) returns
- * an empty feed.
+ * Everything is computed against the stored last_viewed_at anchor, and the
+ * anchor never moves here — it moves only via POST …/overview-brief/seen
+ * ("Mark seen"), so a page load never clears the coach's unread feed. A first
+ * visit (no anchor) starts it, only if none exists (`startFeed`), and is
+ * answered like any later visit, so every load of the Overview gives the same
+ * answer.
  *
  * Caller (the overview-brief route) has verified the coach owns this client.
  */
@@ -118,16 +137,15 @@ export const getOverviewBrief = async (
   coachId: string,
   clientId: string
 ): Promise<OverviewBrief> => {
-  const lastViewedAt = await getLastViewedAt(coachId, clientId);
+  const lastViewedAt =
+    (await getLastViewedAt(coachId, clientId)) ?? (await startFeed(coachId, clientId));
   const client = await getClientById(clientId);
 
   const [attentionAlerts, unreviewedCheckIn, activity, checkInTiming, blockEnding] =
     await Promise.all([
       evaluateSingleClientAlerts(coachId, clientId),
       getUnreviewedCheckIn(clientId),
-      lastViewedAt
-        ? getActivitySince(clientId, lastViewedAt)
-        : Promise.resolve([]),
+      lastViewedAt ? getActivitySince(clientId, lastViewedAt) : Promise.resolve([]),
       getCheckInTiming(client, clientId),
       getBlockEnding(clientId),
     ]);

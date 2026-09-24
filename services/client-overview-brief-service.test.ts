@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const getLastViewedAtMock = vi.fn();
 const upsertLastViewedMock = vi.fn();
+const startLastViewedMock = vi.fn();
 const evaluateSingleClientAlertsMock = vi.fn();
 const getActivitySinceMock = vi.fn();
 const getClientByIdMock = vi.fn();
@@ -14,6 +15,7 @@ const getClientTodayStringMock = vi.fn();
 vi.mock("./coach-client-views-service", () => ({
   getLastViewedAt: (...a: unknown[]) => getLastViewedAtMock(...a),
   upsertLastViewed: (...a: unknown[]) => upsertLastViewedMock(...a),
+  startLastViewed: (...a: unknown[]) => startLastViewedMock(...a),
 }));
 vi.mock("./attention-feed-service", () => ({
   evaluateSingleClientAlerts: (...a: unknown[]) => evaluateSingleClientAlertsMock(...a),
@@ -39,6 +41,10 @@ vi.mock("./today-service", () => ({
 const fromMock = vi.fn();
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: { from: (...a: unknown[]) => fromMock(...a) },
+}));
+const captureApiErrorMock = vi.fn();
+vi.mock("@/lib/error-handler", () => ({
+  captureApiError: (...a: unknown[]) => captureApiErrorMock(...a),
 }));
 
 import { getOverviewBrief } from "./client-overview-brief-service";
@@ -72,6 +78,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   evaluateSingleClientAlertsMock.mockResolvedValue([]);
   getActivitySinceMock.mockResolvedValue([]);
+  startLastViewedMock.mockResolvedValue("2026-06-04T09:15:00Z");
   getClientByIdMock.mockResolvedValue(CLIENT);
   resolveCheckInDueMock.mockReturnValue(new Date("2026-06-05T00:00:00"));
   getDaysUntilOrPastDueMock.mockReturnValue(-2);
@@ -129,23 +136,46 @@ describe("getOverviewBrief", () => {
     }
   });
 
-  it("is read-only: never advances last_viewed_at (the seen route owns that)", async () => {
+  it("a visit with an anchor writes nothing: it never moves last_viewed_at (the seen route owns that)", async () => {
     getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
 
     await getOverviewBrief("coach-1", "client-1");
 
     expect(getLastViewedAtMock).toHaveBeenCalledTimes(1);
     expect(upsertLastViewedMock).not.toHaveBeenCalled();
+    expect(startLastViewedMock).not.toHaveBeenCalled();
   });
 
-  it("first visit (null last_viewed_at): empty feed, no anchored query", async () => {
+  // Every load of the Overview gives the same answer: a first visit is answered
+  // like the visits after it, so no refetch in that visit can change the card.
+  it("first visit (no anchor): starts the feed and answers like any later visit — the anchor and the activity since it", async () => {
     getLastViewedAtMock.mockResolvedValue(null);
+    startLastViewedMock.mockResolvedValue("2026-06-04T09:15:00Z");
+
+    const brief = await getOverviewBrief("coach-1", "client-1");
+
+    expect(startLastViewedMock).toHaveBeenCalledWith("coach-1", "client-1");
+    // Only ever started, never moved: the moving write is Mark seen's alone
+    expect(upsertLastViewedMock).not.toHaveBeenCalled();
+    expect(brief.lastViewedAt).toBe("2026-06-04T09:15:00Z");
+    expect(getActivitySinceMock).toHaveBeenCalledWith("client-1", "2026-06-04T09:15:00Z");
+    expect(brief.activity).toEqual([]);
+  });
+
+  it("a first visit whose anchor fails to start is answered as no anchor — the first-visit state — and reported", async () => {
+    getLastViewedAtMock.mockResolvedValue(null);
+    const failure = new Error("Failed to start the view anchor: boom");
+    startLastViewedMock.mockRejectedValue(failure);
 
     const brief = await getOverviewBrief("coach-1", "client-1");
 
     expect(brief.lastViewedAt).toBeNull();
     expect(brief.activity).toEqual([]);
     expect(getActivitySinceMock).not.toHaveBeenCalled();
+    expect(captureApiErrorMock).toHaveBeenCalledWith(
+      failure,
+      expect.objectContaining({ action: "activity-feed-start", clientId: "client-1" })
+    );
   });
 
   it("surfaces attention alerts from the single-client evaluator", async () => {

@@ -3,10 +3,12 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getOverviewBrief } from "@/services/client-overview-brief-service";
 
-// Read-only: the brief is computed against the stored last_viewed_at anchor.
-// The anchor moves only via POST …/overview-brief/seen — the old GET-side
-// upsert (the sanctioned §9 exception) was removed in the Overview redesign so
-// the coach controls when the activity feed clears.
+// The brief is computed against the stored last_viewed_at anchor, which this
+// GET never moves — it moves only via POST …/overview-brief/seen, so the coach
+// controls when the activity feed clears. Its one write starts the anchor on a
+// first visit, only when none exists (services/client-overview-brief-service.ts).
+// That write needs no CSRF check: a forged cross-site GET could only start the
+// anchor early, on a client the coach owns, and never moves or clears one.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

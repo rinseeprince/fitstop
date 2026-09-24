@@ -53,3 +53,35 @@ export const upsertLastViewed = async (
 
   return lastViewedAt;
 };
+
+/**
+ * Starts the anchor on the coach's first visit and returns it. Written only
+ * when the coach has none for this client (INSERT … ON CONFLICT DO NOTHING on
+ * the primary key), so it never moves an anchor the coach already has — only
+ * Mark seen does that — and a page load can never clear an unread feed. The
+ * row carries no time of its own: the column's default stamps it with the
+ * database's clock, the one every row the feed compares it with is stamped by.
+ * When another request started it first, the anchor that one wrote is returned.
+ */
+export const startLastViewed = async (coachId: string, clientId: string): Promise<string> => {
+  const { data, error } = await supabaseAdmin
+    .from("coach_client_views")
+    .upsert(
+      { coach_id: coachId, client_id: clientId },
+      { onConflict: "coach_id,client_id", ignoreDuplicates: true }
+    )
+    .select("last_viewed_at");
+
+  if (error) {
+    console.error("Failed to start coach_client_views:", error);
+    throw new Error(`Failed to start the view anchor: ${error.message}`);
+  }
+
+  const started = data?.[0]?.last_viewed_at;
+  if (started) return started;
+
+  // Nothing inserted: another request started it between our read and our insert.
+  const existing = await getLastViewedAt(coachId, clientId);
+  if (!existing) throw new Error("Failed to start the view anchor: no anchor after the insert");
+  return existing;
+};

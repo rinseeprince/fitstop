@@ -75,9 +75,10 @@ export type CheckInTiming = {
 };
 
 /**
- * The coach overview "pre-session brief". `lastViewedAt` is null on first visit
- * (the UI shows a first-visit state instead of the activity feed). The GET that
- * serves this is read-only — the anchor moves only via POST …/overview-brief/seen.
+ * The coach overview "pre-session brief". A first visit starts the anchor, so
+ * `lastViewedAt` is null only when that start failed (the UI shows a
+ * first-visit state instead of the activity feed). The GET that serves this
+ * never moves the anchor — it moves only via POST …/overview-brief/seen.
  */
 export type OverviewBrief = {
   lastViewedAt: string | null;

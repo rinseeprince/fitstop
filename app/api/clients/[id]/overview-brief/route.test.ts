@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 
 describe("GET /api/clients/[id]/overview-brief", () => {
-  it("200 returns the brief from getOverviewBrief (a read-only build)", async () => {
+  it("200 returns the brief from getOverviewBrief", async () => {
     requireCoachOwnsClientMock.mockResolvedValue({ authorized: true, coachId: "coach-1" });
     getOverviewBriefMock.mockResolvedValue(BRIEF);
 

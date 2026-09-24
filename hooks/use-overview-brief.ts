@@ -9,11 +9,12 @@ import type { OverviewBrief } from "@/types/coach-brief";
 type BriefResponse = { success: boolean; data: OverviewBrief };
 
 /**
- * Fetches the coach pre-session brief for a client. The GET is read-only — the
- * `last_viewed_at` anchor moves ONLY through `markSeen()` (POST …/seen), so the
- * coach decides when the activity feed clears rather than having it wiped by a
- * page load. `revalidateOnFocus: false` keeps a tab focus from re-querying a
- * payload that only changes when the client acts.
+ * Fetches the coach pre-session brief for a client. The GET never moves the
+ * `last_viewed_at` anchor — it moves ONLY through `markSeen()` (POST …/seen), so
+ * the coach decides when the activity feed clears rather than having it wiped
+ * by a page load; a first visit, with nothing to clear, starts it server-side.
+ * `revalidateOnFocus: false` keeps a tab focus from re-querying a payload that
+ * only changes when the client acts.
  */
 export function useOverviewBrief(clientId: string) {
   const { data, error, isLoading, mutate } = useSWR<BriefResponse>(
