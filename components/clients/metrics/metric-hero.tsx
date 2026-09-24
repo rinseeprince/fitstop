@@ -28,8 +28,6 @@ const SUB_MONO_CLASS = cn(
   "normal-case tracking-normal text-[11px] text-[rgba(255,255,255,0.35)] mt-1"
 );
 const SUB_SANS_CLASS = "text-[11px] text-[rgba(255,255,255,0.35)] mt-1";
-const UNIT_SUFFIX_CLASS =
-  "text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5";
 // A cell's number line. Every cell's is one height — the 36px Current's 24px
 // number has always taken at the page's 1.5 line height — so the lines under
 // the numbers sit level across the band; an empty cell draws its faint dash
@@ -38,7 +36,19 @@ const UNIT_SUFFIX_CLASS =
 const NUMBER_LINE_HEIGHT = "leading-[36px]";
 const CURRENT_VALUE_CLASS = cn(STAT_VALUE_DARK_CLASS, "mt-1 text-[24px]", NUMBER_LINE_HEIGHT);
 const VALUE_CLASS = cn(STAT_VALUE_DARK_CLASS, "mt-1 text-[22px]", NUMBER_LINE_HEIGHT);
-const EMPTY_DASH_CLASS = "text-[13px] font-normal text-[rgba(255,255,255,0.3)]";
+// The small pieces inside a number line — a unit, the empty dash. Their own
+// tight line height: inheriting the line's 36px, a 13px piece sits lower on
+// its baseline than the number does and makes the line taller than a
+// neighbour holding a bare number.
+const INLINE_PIECE_LINE_HEIGHT = "leading-none";
+const UNIT_SUFFIX_CLASS = cn(
+  "text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5",
+  INLINE_PIECE_LINE_HEIGHT
+);
+const EMPTY_DASH_CLASS = cn(
+  "text-[13px] font-normal text-[rgba(255,255,255,0.3)]",
+  INLINE_PIECE_LINE_HEIGHT
+);
 
 function EmptyValue({ lineClass }: { lineClass: string }) {
   return (

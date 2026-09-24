@@ -156,6 +156,27 @@ describe("MetricHero — total change", () => {
     expect(lineHeight("2")).toBe(lineHeight("87"));
   });
 
+  // A 13px piece inheriting its line's 36px sits lower on its baseline and
+  // makes the line taller than a neighbour holding a bare number (smoke,
+  // 2026-09-24): Current's "/10" pushed its line below Entries' "30".
+  it("gives the small pieces inside a number line their own tight line height", () => {
+    render(
+      <MetricHero
+        metric={metric({
+          id: "sleep",
+          name: "Sleep",
+          tab: "wellness",
+          unit: "/10",
+          totalChange: { kind: "tooSoon" },
+        })}
+        {...PROPS}
+      />
+    );
+
+    expect(screen.getByText("/10").className).toContain("leading-none");
+    expect(screen.getByText("—").className).toContain("leading-none");
+  });
+
   it("draws no tag pills beside the switcher — no unit, frequency or entry-count chip", () => {
     const { container } = render(<MetricHero metric={metric({ entryCount: 15 })} {...PROPS} />);
 
