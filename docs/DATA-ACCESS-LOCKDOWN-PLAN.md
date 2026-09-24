@@ -202,7 +202,7 @@ The browser client (`services/supabase-client.ts`) is `auth.*` only.
 
 ### Commit 2 — `fix(security): the Data API's write side door closes — 55 write rules nothing uses are dropped`
 
-**STATUS: SHIPPED `ea186720`, 2026-09-24 — migration 200 on DEV only; browser smoke owed.**
+**STATUS: SHIPPED `ea186720`, 2026-09-24 — migration 200 on DEV only; browser smoke PASSED 2026-09-24.**
 
 - **Probes first, read-only, on DEV and PROD:**
   - the non-SELECT policies: 56 on 23 tables, all PERMISSIVE, named as §4.1
