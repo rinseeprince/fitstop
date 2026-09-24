@@ -280,7 +280,7 @@ describe("a goal with no target (commits 8d4, 9b)", () => {
 
     expect(screen.getByText("Hyrox Manchester")).toBeInTheDocument();
     expect(screen.getByText("Event prep")).toBeInTheDocument();
-    expect(screen.getByText("29 Aug → 17 Oct · 23 days to go")).toBeInTheDocument();
+    expect(screen.getByText("29 Aug – 17 Oct · 23 days")).toBeInTheDocument();
     expect(screen.queryByText(/event day/)).not.toBeInTheDocument();
     expect(screen.getByText("Event day")).toBeInTheDocument();
     expect(screen.getByText(wholeText("29 Aug → 17 Oct"))).toBeInTheDocument();
@@ -441,13 +441,13 @@ describe("the footer — one slot, two states", () => {
 });
 
 describe("the rail — the goal's start to its deadline (commit 9c)", () => {
-  it("carries the goal's start, its deadline and the days to go", () => {
+  it("carries the goal's start, its deadline and the days to it", () => {
     renderStrip({
       weight: weightGoal(),
       deadline: { date: "2026-10-31", daysRemaining: 61, isPastDeadline: false },
     });
 
-    expect(screen.getByText("8 Jun → 31 Oct · 61 days to go")).toBeInTheDocument();
+    expect(screen.getByText("8 Jun – 31 Oct · 61 days")).toBeInTheDocument();
     expect(screen.queryByText(/deadline/)).not.toBeInTheDocument();
   });
 
@@ -457,13 +457,13 @@ describe("the rail — the goal's start to its deadline (commit 9c)", () => {
       deadline: { date: "2026-06-30", daysRemaining: -12, isPastDeadline: true },
     });
 
-    expect(screen.getByText("8 Jun → 30 Jun · 12 days ago")).toBeInTheDocument();
+    expect(screen.getByText("8 Jun – 30 Jun · 12 days ago")).toBeInTheDocument();
   });
 
   it("dates the goal's start when it has no deadline", () => {
     renderStrip({ weight: weightGoal() });
 
-    expect(screen.getByText("8 Jun → no deadline")).toBeInTheDocument();
+    expect(screen.getByText("8 Jun – no deadline")).toBeInTheDocument();
   });
 });
 

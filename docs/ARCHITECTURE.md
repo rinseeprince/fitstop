@@ -1723,8 +1723,8 @@ strip is the goal section the check-in saved when it was sent, so a goal changed
 corrected since never moves it (see "A sent check-in is frozen"). `paceStatus` judges whether the RATE
 REQUIRED to hit the deadline is safe and `trend` which way the client is moving, so the trend is
 read first: a safe rate says nothing about a client moving away. The rail's meta is the goal's
-start to its deadline and the days to it, in the countdown's words (`describeGoalRail`: `3 Aug →
-18 Oct · 27 days to go`, `· Today`, `· 3 days ago`), or `3 Aug → no deadline`. A goal that sets no
+start to its deadline and the days to it, or since it once it has passed (`describeGoalRail`:
+`3 Aug – 18 Oct · 27 days`, `· 3 days ago`), or `3 Aug – no deadline`. A goal that sets no
 target has no rows: it shows
 itself in their place, its name and its type where the name doesn't say it (`goalTypeBesideName`),
 over one row on the grid counting down to its deadline (`buildDeadlineCountdown`): the type's

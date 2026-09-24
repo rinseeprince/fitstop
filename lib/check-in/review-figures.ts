@@ -135,18 +135,22 @@ export function buildGoalRows(
   return rows;
 }
 
-/** "26 days to go", "1 day to go", "Today" on the deadline, then "3 days ago", "1 day ago". */
+/** The countdown row's words: "26 days to go", "1 day to go", "Today" on the deadline, then "3 days ago". */
 function daysToDeadline(daysRemaining: number): string {
   if (daysRemaining === 0) return "Today";
   const days = dayCount(Math.abs(daysRemaining));
   return daysRemaining > 0 ? `${days} to go` : `${days} ago`;
 }
 
+/** The days to a deadline, or since it once it has passed: "27 days", "3 days ago". */
+function daysFromDeadline(deadline: NonNullable<GoalProgressRows["deadline"]>): string {
+  return `${dayCount(Math.abs(deadline.daysRemaining))}${deadline.isPastDeadline ? " ago" : ""}`;
+}
+
 /**
  * The rail's meta (docs/MEASUREMENT-LOG-PLAN.md commit 9c): the goal's start
- * to its deadline, and the days to it or since it, in the countdown row's
- * words — so a coach sees when the goal began without leaving the check-in.
- * Undefined with no goal judged.
+ * to its deadline, and the days to it or since it — so a coach sees when the
+ * goal began without leaving the check-in. Undefined with no goal judged.
  */
 export function describeGoalRail(
   goal: GoalProgress["goal"],
@@ -154,8 +158,8 @@ export function describeGoalRail(
 ): string | undefined {
   if (!goal) return undefined;
   const start = dayMonth(goal.startsOn);
-  if (!deadline) return `${start} → no deadline`;
-  return `${start} → ${dayMonth(deadline.date)} · ${daysToDeadline(deadline.daysRemaining)}`;
+  if (!deadline) return `${start} – no deadline`;
+  return `${start} – ${dayMonth(deadline.date)} · ${daysFromDeadline(deadline)}`;
 }
 
 /**
@@ -169,8 +173,7 @@ export function describeGoalDeadline(
 ): string | undefined {
   if (!deadline) return undefined;
   const label = type ? GOAL_TYPE_SETTINGS[type].deadlineLabel : "Deadline";
-  const distance = `${dayCount(Math.abs(deadline.daysRemaining))}${deadline.isPastDeadline ? " ago" : ""}`;
-  return `${label.toLowerCase()} ${dayMonth(deadline.date)} · ${distance}`;
+  return `${label.toLowerCase()} ${dayMonth(deadline.date)} · ${daysFromDeadline(deadline)}`;
 }
 
 /** A goal with no target, counted down to its deadline: the strip's one row for it. */

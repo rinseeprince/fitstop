@@ -138,23 +138,22 @@ describe("describeGoalRail — the goal's start to its deadline (commit 9c)", ()
   const race: JudgedGoal = { name: "Hyrox Dublin", type: "event_prep", startsOn: "2026-07-13" };
   const deadline = (date: string, daysRemaining: number) => ({ date, daysRemaining, isPastDeadline: daysRemaining < 0 });
 
-  it("dates the goal's start and its deadline, and counts the days to go in the countdown's words", () => {
-    expect(describeGoalRail(cut, deadline("2026-12-04", 58))).toBe("10 Aug → 4 Dec · 58 days to go");
-    expect(describeGoalRail(cut, deadline("2026-10-07", 1))).toBe("10 Aug → 7 Oct · 1 day to go");
+  it("dates the goal's start and its deadline, and counts the days to it", () => {
+    expect(describeGoalRail(cut, deadline("2026-12-04", 58))).toBe("10 Aug – 4 Dec · 58 days");
+    expect(describeGoalRail(cut, deadline("2026-10-07", 1))).toBe("10 Aug – 7 Oct · 1 day");
   });
 
-  it("says Today on the deadline, then the days since", () => {
-    expect(describeGoalRail(cut, deadline("2026-09-30", 0))).toBe("10 Aug → 30 Sep · Today");
-    expect(describeGoalRail(cut, deadline("2026-09-12", -6))).toBe("10 Aug → 12 Sep · 6 days ago");
-    expect(describeGoalRail(cut, deadline("2026-09-13", -1))).toBe("10 Aug → 13 Sep · 1 day ago");
+  it("counts the days since the deadline once it has passed", () => {
+    expect(describeGoalRail(cut, deadline("2026-09-12", -6))).toBe("10 Aug – 12 Sep · 6 days ago");
+    expect(describeGoalRail(cut, deadline("2026-09-13", -1))).toBe("10 Aug – 13 Sep · 1 day ago");
   });
 
   it("names no deadline label — an event day is a date like any other", () => {
-    expect(describeGoalRail(race, deadline("2026-11-21", 44))).toBe("13 Jul → 21 Nov · 44 days to go");
+    expect(describeGoalRail(race, deadline("2026-11-21", 44))).toBe("13 Jul – 21 Nov · 44 days");
   });
 
   it("still dates the start of a goal with no deadline", () => {
-    expect(describeGoalRail(cut, undefined)).toBe("10 Aug → no deadline");
+    expect(describeGoalRail(cut, undefined)).toBe("10 Aug – no deadline");
   });
 
   it("says nothing with no goal judged", () => {
@@ -270,7 +269,7 @@ describe("the deadline's day, whatever the viewer's zone (commit 9b)", () => {
     };
 
     expect(describeGoalDeadline(ultra.deadline, "event_prep")).toBe("event day 19 Nov · 64 days");
-    expect(describeGoalRail(ultra.goal, ultra.deadline)).toBe("9 Sep → 19 Nov · 64 days to go");
+    expect(describeGoalRail(ultra.goal, ultra.deadline)).toBe("9 Sep – 19 Nov · 64 days");
     expect(buildDeadlineCountdown(ultra)).toMatchObject({ start: "9 Sep", end: "19 Nov" });
   });
 });
