@@ -1,26 +1,19 @@
-"use client";
-
-import { AlertCircle } from "lucide-react";
-import { useUnits } from "@/contexts/units-context";
 import { formatWeight, type UnitSystem } from "@/utils/unit-conversions";
 import type { NutritionWarning } from "@/types/check-in";
-
-type NutritionWarningsProps = {
-  warnings: NutritionWarning[];
-};
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /**
- * Turns a calculator code into a sentence.
+ * A calculator warning as the sentence the plan save's toast says
+ * (docs/MEASUREMENT-LOG-PLAN.md commit 9c).
  *
  * `services/nutrition-service.ts` returns codes carrying raw kilograms rather
  * than finished strings: it is a pure module that runs in the coach's browser
- * AND on the server, so it cannot resolve a viewer preference. This component is
- * the first layer that can, which is why the two rate-cap warnings are worded
- * here instead of there.
+ * AND on the server, so it cannot resolve a viewer preference. The save is the
+ * first layer that can, which is why the two rate-cap warnings are worded here
+ * instead of there.
  */
-function describe(warning: NutritionWarning, viewer: UnitSystem): string {
+export function describeNutritionWarning(warning: NutritionWarning, viewer: UnitSystem): string {
   switch (warning.code) {
     // A deadline on the plan's first day has not passed, and leaves no days
     // all the same: the deadline is the weigh-in.
@@ -45,40 +38,9 @@ function describe(warning: NutritionWarning, viewer: UnitSystem): string {
     case "fat_increased_for_minimum":
       return `Fat intake increased to meet ${warning.gender === "female" ? "25%" : "20%"} minimum for hormonal health.`;
     default: {
-      // Adding a code without a sentence is a compile error, not a blank bullet.
+      // Adding a code without a sentence is a compile error, not a blank sentence.
       const _exhaustive: never = warning;
       return _exhaustive;
     }
   }
-}
-
-export function NutritionWarnings({ warnings }: NutritionWarningsProps) {
-  const { preference } = useUnits();
-
-  if (warnings.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="bg-warning/10 rounded-lg p-5 border border-warning/20">
-      <div className="flex items-start gap-3">
-        <div className="w-8 h-8 rounded-full bg-warning/10 flex items-center justify-center flex-shrink-0">
-          <AlertCircle className="h-4 w-4 text-warning" />
-        </div>
-        <div className="flex-1 space-y-2">
-          <p className="font-semibold text-foreground text-sm">
-            Nutrition Plan Warnings
-          </p>
-          <ul className="space-y-1.5 text-sm text-muted-foreground">
-            {warnings.map((warning, index) => (
-              <li key={index} className="flex items-start gap-2">
-                <span className="text-warning mt-0.5">•</span>
-                <span>{describe(warning, preference)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
 }

@@ -31,8 +31,9 @@ vi.mock("@/contexts/nutrition-builder-context", () => ({
     client: { id: "client-4" },
     isLoadingTrainingPlan: false,
     isLoadingNutrition: false,
-    warnings: [],
     setStartsOn,
+    // A save's calculator warnings — never shown on the pane (commit 9c).
+    warnings: [{ code: "deadline_passed" }, { code: "calories_raised_to_minimum", minimumCalories: 1420 }],
   }),
 }));
 
@@ -101,5 +102,14 @@ describe("NutritionBuilderRightPanel — the out-of-date notice", () => {
     render(<NutritionBuilderRightPanel onOpenSettings={vi.fn()} />);
     expect(screen.getByText("hero")).toBeInTheDocument();
     expect(screen.queryByText(/Goal changed/)).not.toBeInTheDocument();
+  });
+});
+
+describe("NutritionBuilderRightPanel — a save's warnings", () => {
+  it("are the save's toast, never a box on the pane (commit 9c)", () => {
+    render(<NutritionBuilderRightPanel onOpenSettings={vi.fn()} />);
+
+    expect(screen.getByText("hero")).toBeInTheDocument();
+    expect(screen.queryByText(/deadline|minimum safe level|Warnings/i)).not.toBeInTheDocument();
   });
 });

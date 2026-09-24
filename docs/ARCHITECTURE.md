@@ -111,7 +111,7 @@ coaches
 
 `computeGoalPace` (`lib/check-in/goal-pace.ts`) compares the rate **required** to hit the deadline against a safe ceiling of 1% of bodyweight per week, and returns `null` for an achieved or overshot goal. It measures the required rate, **not** the client's current pace: that is `trend`, the direction of the average change across the last ten check-ins, and the two can legitimately disagree — a client losing steadily is moving towards the target and still behind pace when the deadline asks for more than the ceiling allows.
 
-**The goal strip's state column reads direction before speed** (`resolveGoalRowState`, `lib/check-in/review-figures.ts`; docs/MEASUREMENT-LOG-PLAN.md commit 8d4): `Reached` for a met goal; `Deadline passed` for a deadline gone by short of the target; then the trend — `Moving away`, `No change`, or `Too early to tell` (neutral) with no trend yet — and only a client moving towards the target gets the pace's words, `On track`, `Behind pace` or `Deadline unrealistic` (`On track` with no pace to judge). A met goal renders no remaining distance and no pace check. Once every goal that could be judged is met, the strip's footer suggests a new target while the goal judged is still the client's live one (`goalIsCurrent`), and says nothing once it has been replaced — never the nutrition note; a `No reading yet` row neither earns the note nor blocks it. Weight and body fat resolve through the same column, so the two rows cannot reach different verdicts about one client.
+**The goal strip's weight row reads direction before speed** (`resolveGoalRowState`, `lib/check-in/review-figures.ts`; docs/MEASUREMENT-LOG-PLAN.md commit 8d4): `Reached` for a met goal; `Deadline passed` for a deadline gone by short of the target; then the trend — `Moving away`, `No change`, or `Too early to tell` (neutral) with no trend yet — and only a client moving towards the target gets the pace's words, `On track`, `Behind pace` or `Deadline unrealistic` (`On track` with no pace to judge). A met goal renders no remaining distance and no pace check. Once every goal that could be judged is met, the strip's footer suggests a new target while the goal judged is still the client's live one (`goalIsCurrent`), and says nothing once it has been replaced — never the nutrition note; a `No reading yet` row neither earns the note nor blocks it. The body fat row says only where the client stands and how far: `Reached`, the distance past the target, or the distance to go, muted.
 
 ### The goals table (Journey → Goals)
 
@@ -1708,11 +1708,12 @@ and no window keydown listener. Weight and body fat appear twice on purpose: the
 
 **The goal strip** (`check-in-goal-strip.tsx`) is one row per goal — weight, body fat — on one
 grid: name, track, start → goal and state, each column as wide as its widest entry across the rows
-and the track taking what is left, so the rows line up and no state wraps. The state column reads
-direction before speed (see "Goal progress and pace"):
+and the track taking what is left, so the rows line up and no state wraps. The weight row's state
+reads direction before speed (see "Goal progress and pace"):
 `Reached` (with the distance past target on an overshoot), `Deadline passed`, `Moving away`,
 `No change`, `Too early to tell`, `On track`, `Behind pace`, `Deadline unrealistic`, all but the
-first carrying the distance to go — or `No reading yet`, muted, when no
+first carrying the distance to go; the body fat row gives only `Reached` or the distance — or
+either row's `No reading yet`, muted, when no
 reading existed as of the check-in's day: the position is the reading as of that day — the
 check-in's own reading, else the newest reading before it (see "Goal progress and pace") — never
 today's, so a check-in submitted without a weight is judged from the reading before it, and a
@@ -1721,11 +1722,10 @@ and the days then remaining to it, its track running from the reading on the goa
 strip is the goal section the check-in saved when it was sent, so a goal changed or a reading
 corrected since never moves it (see "A sent check-in is frozen"). `paceStatus` judges whether the RATE
 REQUIRED to hit the deadline is safe and `trend` which way the client is moving, so the trend is
-read first: a safe rate says nothing about a client moving away. Body
-fat carries no pace status and falls through the same column, so the two rows cannot reach
-different verdicts about one client. The deadline is the rail's meta, named by the goal's type
-(`deadline d MMM · N days`, `· N days ago` once it has passed; an event prep goal's reads `event
-day`). A goal that sets no target has no rows: it shows
+read first: a safe rate says nothing about a client moving away. The rail's meta is the goal's
+start to its deadline and the days to it, in the countdown's words (`describeGoalRail`: `3 Aug →
+18 Oct · 27 days to go`, `· Today`, `· 3 days ago`), or `3 Aug → no deadline`. A goal that sets no
+target has no rows: it shows
 itself in their place, its name and its type where the name doesn't say it (`goalTypeBesideName`),
 over one row on the grid counting down to its deadline (`buildDeadlineCountdown`): the type's
 deadline label, a track filling from the goal's start to its deadline as of the check-in's day,
@@ -1796,8 +1796,8 @@ actions with a priority, the client message — and says what depth each carries
 (`lib/validations/check-in-review.ts`) drops and which caps no list either.
 
 **The week is given day by day, every figure the page's own.** First the client's weight and body fat
-with the change the ribbon shows (`metricComparison`) and the goal strip's rows, deadline and footer
-note through `lib/check-in/review-figures.ts`, which the strip and the ribbon
+with the change the ribbon shows (`metricComparison`), the goal strip's rows, its footer note and
+the goal's deadline, through `lib/check-in/review-figures.ts`, which the strip and the ribbon
 import too, so the model and the page cannot word one verdict two ways. Then the week's figures: the
 session count through `summariseTraining` (a partial workout counts as done, the breakdown beside it),
 the Nutrition card's sentence figure for figure, the wellness changes since the last check-in

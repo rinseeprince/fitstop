@@ -12,6 +12,8 @@ import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { useClearNutritionGoal, useNutritionGoalForDay } from "@/hooks/use-nutrition-goal";
+import { useUnits } from "@/contexts/units-context";
+import { describeNutritionWarning } from "@/lib/nutrition/nutrition-warnings";
 import {
   buildBlockStartOptions,
   selectBlockStartOption,
@@ -229,7 +231,8 @@ export function useNutritionBuilder({
 
   const [coachNotes, setCoachNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [warnings, setWarnings] = useState<NutritionWarning[]>([]);
+  // The coach's unit, for the save's warnings: a rate cap is a weight.
+  const { preference } = useUnits();
 
   // Settings change handler. Only fired by a coach picker interaction — the
   // seed effect above writes setSettings directly, so this never runs on open.
@@ -353,10 +356,17 @@ export function useNutritionBuilder({
         const data = await res.json();
 
         if (data.success && data.plan) {
-          setWarnings(data.plan.warnings || []);
-          toast.success("Nutrition plan generated", {
-            description: `${data.plan.calorieTarget} cal/day with ${data.plan.proteinTargetG}g protein`,
-          });
+          // The calendar shows what was saved, so the toast says only that it
+          // saved — and, where the calculator bent the plan, how
+          // (docs/MEASUREMENT-LOG-PLAN.md commit 9c).
+          const warnings: NutritionWarning[] = data.plan.warnings ?? [];
+          if (warnings.length > 0) {
+            toast.warning("Nutrition plan generated", {
+              description: warnings.map((warning) => describeNutritionWarning(warning, preference)).join(" "),
+            });
+          } else {
+            toast.success("Nutrition plan generated");
+          }
           setSettingsChanged(false);
           setCoachNotes("");
           // The next save defaults to today again (D27) — and to the dash,
@@ -412,6 +422,7 @@ export function useNutritionBuilder({
       clearClientOverview,
       clearAttentionFeed,
       clearNutritionGoal,
+      preference,
     ]
   );
 
@@ -470,7 +481,6 @@ export function useNutritionBuilder({
 
     // Loading states
     isGenerating,
-    warnings,
 
     // Actions
     generatePlan,

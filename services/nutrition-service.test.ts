@@ -162,7 +162,7 @@ describe('calculateBaselineCalories — the deadline is the weigh-in', () => {
 // The safety-cap warnings used to be sentences with "kg/week" baked in, which
 // put the number out of reach of the only layer that knows the viewer's unit.
 // They are structured codes carrying raw KILOGRAMS now; the wording lives in
-// components/clients/nutrition/nutrition-warnings.tsx.
+// lib/nutrition/nutrition-warnings.ts, for the plan save's toast.
 describe('calculateBaselineCalories — capped-rate warnings', () => {
   const soon = () => {
     const d = new Date()

@@ -2,7 +2,6 @@
 
 import { memo } from "react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
-import { NutritionWarnings } from "../nutrition-warnings";
 import { NutritionPlanHero } from "../nutrition-plan-hero";
 import { NutritionOutOfDateNotice } from "../nutrition-out-of-date-notice";
 import { PageLoading } from "@/components/page-loading";
@@ -35,10 +34,6 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
   // mount here — the training tab's pattern.
   return (
     <div className="flex flex-col gap-4">
-      {builder.warnings.length > 0 && (
-        <NutritionWarnings warnings={builder.warnings} />
-      )}
-
       <NutritionPlanHero onOpenSettings={onOpenSettings} />
 
       {outOfDate && clientToday && (

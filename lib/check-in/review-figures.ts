@@ -38,7 +38,22 @@ const dayMonth = (day: string): string => format(new Date(`${day}T00:00:00`), "d
 const dayCount = (days: number): string => `${days} ${days === 1 ? "day" : "days"}`;
 
 /**
- * Where the client stands, then how far — joined by a middot.
+ * Where the client stands and how far, and nothing more: Reached, the distance
+ * past the target, or the distance to go. `remaining` is signed — its magnitude
+ * is the distance BACK to the target once the goal has been passed — so
+ * `status` decides which sentence it is in.
+ */
+function positionState(goal: GoalPosition, distance: string): GoalRowState {
+  if (goal.status === "overshot") {
+    return { text: `Reached · ${distance} past target`, tone: "good" };
+  }
+  if (goal.status === "achieved") return { text: "Reached", tone: "good" };
+  return { text: `${distance} to go`, tone: "neutral" };
+}
+
+/**
+ * The weight row's verdict: where the client stands, then how far — joined by
+ * a middot.
  *
  * Direction before speed (docs/MEASUREMENT-LOG-PLAN.md commit 8d4). A met goal
  * reads Reached, and a deadline gone by short of the target reads Deadline
@@ -47,22 +62,13 @@ const dayCount = (days: number): string => `${days} ${days === 1 ? "day" : "days
  * judges whether the RATE REQUIRED to hit the deadline is safe, which says
  * nothing about which way the client is going, so read first it put "On track"
  * on a client moving away from their target.
- *
- * Weight and body fat both resolve here, so the two rows cannot reach different
- * verdicts about one client — body fat carries no `paceStatus`, so direction
- * alone decides it.
  */
 export function resolveGoalRowState(
   goal: GoalPosition,
   distance: string,
   deadlinePassed: boolean
 ): GoalRowState {
-  // `remaining` is signed: its magnitude is the distance BACK to the target
-  // once the goal has been passed, so `status` decides which sentence it is in.
-  if (goal.status === "overshot") {
-    return { text: `Reached · ${distance} past target`, tone: "good" };
-  }
-  if (goal.status === "achieved") return { text: "Reached", tone: "good" };
+  if (goal.status !== "approaching") return positionState(goal, distance);
 
   const toGo = `${distance} to go`;
   if (deadlinePassed) return { text: `Deadline passed · ${toGo}`, tone: "attention" };
@@ -87,6 +93,10 @@ export function resolveGoalRowState(
  * target, the span `percentComplete` measures; the client's baseline is the
  * ribbon's, not the strip's. `formatWeight` renders a kilogram value in the
  * viewer's unit.
+ *
+ * Body fat says where the client stands and how far, and no verdict
+ * (docs/MEASUREMENT-LOG-PLAN.md commit 9c): its readings are the noisiest the
+ * app holds, so a word judged from their trend or pace would mislead.
  */
 export function buildGoalRows(
   goalProgress: GoalProgressRows,
@@ -117,9 +127,7 @@ export function buildGoalRows(
       percentComplete: position?.percentComplete ?? 0,
       start: bodyFat.goalStartBodyFat !== undefined ? `${bodyFat.goalStartBodyFat} %` : undefined,
       goal: `${bodyFat.goal} %`,
-      state: position
-        ? resolveGoalRowState(position, `${round1(Math.abs(position.remaining))}%`, deadlinePassed)
-        : NO_READING,
+      state: position ? positionState(position, `${round1(Math.abs(position.remaining))}%`) : NO_READING,
       judged: position !== null,
     });
   }
@@ -127,10 +135,33 @@ export function buildGoalRows(
   return rows;
 }
 
+/** "26 days to go", "1 day to go", "Today" on the deadline, then "3 days ago", "1 day ago". */
+function daysToDeadline(daysRemaining: number): string {
+  if (daysRemaining === 0) return "Today";
+  const days = dayCount(Math.abs(daysRemaining));
+  return daysRemaining > 0 ? `${days} to go` : `${days} ago`;
+}
+
 /**
- * The rail's meta: the deadline, under the name the goal's type gives it (an
- * event prep goal's is its event day), and the days to it — or since it, once
- * it has passed.
+ * The rail's meta (docs/MEASUREMENT-LOG-PLAN.md commit 9c): the goal's start
+ * to its deadline, and the days to it or since it, in the countdown row's
+ * words — so a coach sees when the goal began without leaving the check-in.
+ * Undefined with no goal judged.
+ */
+export function describeGoalRail(
+  goal: GoalProgress["goal"],
+  deadline: GoalProgressRows["deadline"]
+): string | undefined {
+  if (!goal) return undefined;
+  const start = dayMonth(goal.startsOn);
+  if (!deadline) return `${start} → no deadline`;
+  return `${start} → ${dayMonth(deadline.date)} · ${daysToDeadline(deadline.daysRemaining)}`;
+}
+
+/**
+ * The AI review's deadline line: the deadline, under the name the goal's type
+ * gives it (an event prep goal's is its event day), and the days to it — or
+ * since it, once it has passed.
  */
 export function describeGoalDeadline(
   deadline: GoalProgressRows["deadline"],
@@ -153,8 +184,6 @@ type DeadlineCountdown = {
   end: string;
   /** "26 days to go", "1 day to go", "Today", then "3 days ago", "1 day ago". */
   text: string;
-  /** The deadline is the check-in's day: the text is the word "Today", not a count. */
-  onTheDay: boolean;
 };
 
 /**
@@ -173,15 +202,13 @@ export function buildDeadlineCountdown(goalProgress: GoalProgress): DeadlineCoun
   const total = dateStringToDayNumber(deadline.date) - dateStringToDayNumber(goal.startsOn);
   const remaining = deadline.daysRemaining;
   const elapsed = total <= 0 ? 100 : Number((((total - remaining) / total) * 100).toFixed(1));
-  const days = dayCount(Math.abs(remaining));
 
   return {
     label: GOAL_TYPE_SETTINGS[goal.type].deadlineLabel,
     percentComplete: Math.min(100, Math.max(0, elapsed)),
     start: dayMonth(goal.startsOn),
     end: dayMonth(deadline.date),
-    text: remaining === 0 ? "Today" : remaining > 0 ? `${days} to go` : `${days} ago`,
-    onTheDay: remaining === 0,
+    text: daysToDeadline(remaining),
   };
 }
 

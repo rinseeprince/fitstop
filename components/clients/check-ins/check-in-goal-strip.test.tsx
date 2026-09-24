@@ -100,13 +100,11 @@ describe("a goal that has been overshot", () => {
     expect(screen.queryByText(/to go/)).not.toBeInTheDocument();
   });
 
-  it("body fat reaches the SAME verdict as weight for the same situation", () => {
-    // Both rows resolve through one function. Body fat has no pace check, so
-    // when the two were resolved separately weight read "On track" beside body
-    // fat reading otherwise about one client.
+  it("body fat past its target reads Reached too", () => {
     renderStrip({ weight: weightGoal(), bodyFat: bodyFatGoal() });
 
     expect(screen.getAllByText(/Reached/)).toHaveLength(2);
+    expect(screen.getByText(/3% past target/)).toBeInTheDocument();
     expect(screen.queryByText(/Moving away/)).not.toBeInTheDocument();
   });
 
@@ -165,15 +163,29 @@ describe("the state column — direction before speed (commit 8d4)", () => {
     expect(screen.getByText("Too early to tell").parentElement).toHaveClass("text-[#93b0b4]");
   });
 
-  it("says the deadline passed when it went by short of the target", () => {
+  it("says the deadline passed when it went by short of the target — on the weight row alone", () => {
     renderStrip({
       weight: weightGoal({ ...approaching, remaining: 4.3, trend: "towards", paceStatus: "unrealistic" }),
       bodyFat: bodyFatGoal({ ...approaching, remaining: 1.4, trend: "towards" }),
       deadline: { date: "2026-08-31", daysRemaining: -9, isPastDeadline: true },
     });
 
-    expect(screen.getAllByText("Deadline passed")).toHaveLength(2);
+    expect(screen.getAllByText("Deadline passed")).toHaveLength(1);
     expect(screen.queryByText(/Deadline unrealistic/)).not.toBeInTheDocument();
+  });
+
+  it("gives body fat no verdict, whichever way it is moving: where the client stands and how far, muted (commit 9c)", () => {
+    renderStrip({
+      weight: weightGoal({ ...approaching, remaining: 3.1, trend: "towards", paceStatus: "behind_pace" }),
+      bodyFat: bodyFatGoal({ ...approaching, remaining: 5.7, trend: "away" }),
+      deadline: { date: "2026-10-18", daysRemaining: 27, isPastDeadline: false },
+    });
+
+    expect(screen.getByText("Behind pace")).toBeInTheDocument();
+    const bodyFat = screen.getByText("5.7% to go");
+    expect(bodyFat).toHaveClass(MONO);
+    expect(bodyFat.parentElement).toHaveClass("text-[#93b0b4]");
+    expect(screen.queryByText(/Moving away|On track/)).not.toBeInTheDocument();
   });
 
   it("gives a client moving towards the target the pace's words", () => {
@@ -268,7 +280,8 @@ describe("a goal with no target (commits 8d4, 9b)", () => {
 
     expect(screen.getByText("Hyrox Manchester")).toBeInTheDocument();
     expect(screen.getByText("Event prep")).toBeInTheDocument();
-    expect(screen.getByText("event day 17 Oct · 23 days")).toBeInTheDocument();
+    expect(screen.getByText("29 Aug → 17 Oct · 23 days to go")).toBeInTheDocument();
+    expect(screen.queryByText(/event day/)).not.toBeInTheDocument();
     expect(screen.getByText("Event day")).toBeInTheDocument();
     expect(screen.getByText(wholeText("29 Aug → 17 Oct"))).toBeInTheDocument();
     expect(screen.getByText("23 days to go")).toBeInTheDocument();
@@ -427,14 +440,15 @@ describe("the footer — one slot, two states", () => {
   });
 });
 
-describe("the rail", () => {
-  it("carries the deadline and the days left", () => {
+describe("the rail — the goal's start to its deadline (commit 9c)", () => {
+  it("carries the goal's start, its deadline and the days to go", () => {
     renderStrip({
       weight: weightGoal(),
       deadline: { date: "2026-10-31", daysRemaining: 61, isPastDeadline: false },
     });
 
-    expect(screen.getByText(/deadline 31 Oct · 61 days/)).toBeInTheDocument();
+    expect(screen.getByText("8 Jun → 31 Oct · 61 days to go")).toBeInTheDocument();
+    expect(screen.queryByText(/deadline/)).not.toBeInTheDocument();
   });
 
   it("says how long since a deadline that has gone", () => {
@@ -443,7 +457,13 @@ describe("the rail", () => {
       deadline: { date: "2026-06-30", daysRemaining: -12, isPastDeadline: true },
     });
 
-    expect(screen.getByText("deadline 30 Jun · 12 days ago")).toBeInTheDocument();
+    expect(screen.getByText("8 Jun → 30 Jun · 12 days ago")).toBeInTheDocument();
+  });
+
+  it("dates the goal's start when it has no deadline", () => {
+    renderStrip({ weight: weightGoal() });
+
+    expect(screen.getByText("8 Jun → no deadline")).toBeInTheDocument();
   });
 });
 

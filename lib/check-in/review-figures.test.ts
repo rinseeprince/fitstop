@@ -3,6 +3,7 @@ import {
   buildDeadlineCountdown,
   buildGoalRows,
   describeGoalDeadline,
+  describeGoalRail,
   metricComparison,
   resolveGoalFooter,
   resolveGoalRowState,
@@ -63,8 +64,8 @@ describe("resolveGoalRowState — direction before speed (commit 8d4)", () => {
     expect(resolveGoalRowState(position({ paceStatus: "unrealistic" }), "9.6 kg", false)).toEqual({ text: "Deadline unrealistic · 9.6 kg to go", tone: "attention" });
   });
 
-  it("and is on track with no pace to judge — body fat, or a goal with no deadline", () => {
-    expect(resolveGoalRowState(position({}), "1.9%", false)).toEqual({ text: "On track · 1.9% to go", tone: "good" });
+  it("and is on track with no pace to judge — a goal with no deadline", () => {
+    expect(resolveGoalRowState(position({}), "1.9 kg", false)).toEqual({ text: "On track · 1.9 kg to go", tone: "good" });
   });
 });
 
@@ -87,25 +88,44 @@ describe("buildGoalRows", () => {
     ]);
   });
 
-  it("judges body fat by direction alone, and both rows against the goal's one deadline", () => {
-    const rows = (deadline: { date: string; daysRemaining: number; isPastDeadline: boolean }) =>
+  it("gives weight its verdict against the goal's deadline", () => {
+    const weightRow = (deadline: { date: string; daysRemaining: number; isPastDeadline: boolean }) =>
       buildGoalRows(
         {
           weight: { goal: 71.3, goalStartWeight: 79.6, position: position({ current: 74.8, remaining: -3.5, percentComplete: 57.8, paceStatus: "on_track" }) },
-          bodyFat: { goal: 16.4, goalStartBodyFat: 23.9, position: position({ current: 21.1, remaining: -4.7, percentComplete: 37.3, trend: "away" }) },
           deadline,
         },
         kg
-      ).map((row) => row.state.text);
+      )[0].state.text;
 
-    expect(rows({ date: "2026-12-11", daysRemaining: 77, isPastDeadline: false })).toEqual([
-      "On track · 3.5 kg to go",
-      "Moving away · 4.7% to go",
-    ]);
-    expect(rows({ date: "2026-09-08", daysRemaining: -17, isPastDeadline: true })).toEqual([
-      "Deadline passed · 3.5 kg to go",
-      "Deadline passed · 4.7% to go",
-    ]);
+    expect(weightRow({ date: "2026-12-11", daysRemaining: 77, isPastDeadline: false })).toBe("On track · 3.5 kg to go");
+    expect(weightRow({ date: "2026-09-08", daysRemaining: -17, isPastDeadline: true })).toBe("Deadline passed · 3.5 kg to go");
+  });
+
+  it("gives body fat no verdict — only where the client stands and how far (commit 9c)", () => {
+    // Its readings are too noisy to judge a trend or a pace from: whichever
+    // way it is moving and whether or not the deadline has gone, the row says
+    // how far, muted.
+    const bodyFatState = (
+      overrides: Partial<GoalPosition>,
+      deadline?: { date: string; daysRemaining: number; isPastDeadline: boolean }
+    ) =>
+      buildGoalRows(
+        {
+          bodyFat: { goal: 16.4, goalStartBodyFat: 23.9, position: position({ current: 21.1, remaining: -4.7, percentComplete: 37.3, ...overrides }) },
+          ...(deadline && { deadline }),
+        },
+        kg
+      )[0].state;
+
+    const toGo = { text: "4.7% to go", tone: "neutral" };
+    for (const trend of ["towards", "away", "unchanged", null] as const) {
+      expect(bodyFatState({ trend })).toEqual(toGo);
+    }
+    expect(bodyFatState({ trend: "towards" }, { date: "2026-10-26", daysRemaining: 32, isPastDeadline: false })).toEqual(toGo);
+    expect(bodyFatState({ trend: "away" }, { date: "2026-09-03", daysRemaining: -22, isPastDeadline: true })).toEqual(toGo);
+    expect(bodyFatState({ status: "achieved", remaining: 0 })).toEqual({ text: "Reached", tone: "good" });
+    expect(bodyFatState({ status: "overshot", remaining: 1.3 })).toEqual({ text: "Reached · 1.3% past target", tone: "good" });
   });
 
   it("draws nothing when no goal is set", () => {
@@ -113,7 +133,36 @@ describe("buildGoalRows", () => {
   });
 });
 
-describe("describeGoalDeadline", () => {
+describe("describeGoalRail — the goal's start to its deadline (commit 9c)", () => {
+  const cut: JudgedGoal = { name: "Summer cut", type: "lose_weight", startsOn: "2026-08-10" };
+  const race: JudgedGoal = { name: "Hyrox Dublin", type: "event_prep", startsOn: "2026-07-13" };
+  const deadline = (date: string, daysRemaining: number) => ({ date, daysRemaining, isPastDeadline: daysRemaining < 0 });
+
+  it("dates the goal's start and its deadline, and counts the days to go in the countdown's words", () => {
+    expect(describeGoalRail(cut, deadline("2026-12-04", 58))).toBe("10 Aug → 4 Dec · 58 days to go");
+    expect(describeGoalRail(cut, deadline("2026-10-07", 1))).toBe("10 Aug → 7 Oct · 1 day to go");
+  });
+
+  it("says Today on the deadline, then the days since", () => {
+    expect(describeGoalRail(cut, deadline("2026-09-30", 0))).toBe("10 Aug → 30 Sep · Today");
+    expect(describeGoalRail(cut, deadline("2026-09-12", -6))).toBe("10 Aug → 12 Sep · 6 days ago");
+    expect(describeGoalRail(cut, deadline("2026-09-13", -1))).toBe("10 Aug → 13 Sep · 1 day ago");
+  });
+
+  it("names no deadline label — an event day is a date like any other", () => {
+    expect(describeGoalRail(race, deadline("2026-11-21", 44))).toBe("13 Jul → 21 Nov · 44 days to go");
+  });
+
+  it("still dates the start of a goal with no deadline", () => {
+    expect(describeGoalRail(cut, undefined)).toBe("10 Aug → no deadline");
+  });
+
+  it("says nothing with no goal judged", () => {
+    expect(describeGoalRail(null, undefined)).toBeUndefined();
+  });
+});
+
+describe("describeGoalDeadline — the AI review's deadline line", () => {
   it("names the deadline and the days to it, or since it once it has passed", () => {
     expect(describeGoalDeadline({ date: "2026-11-30", daysRemaining: 74, isPastDeadline: false }, "lose_weight")).toBe("deadline 30 Nov · 74 days");
     expect(describeGoalDeadline({ date: "2026-09-01", daysRemaining: -3, isPastDeadline: true }, "lose_weight")).toBe("deadline 1 Sep · 3 days ago");
@@ -149,7 +198,6 @@ describe("buildDeadlineCountdown — a goal with no target counts down to its de
       start: "2 Sep",
       end: "13 Nov",
       text: "29 days to go",
-      onTheDay: false,
     });
   });
 
@@ -159,7 +207,6 @@ describe("buildDeadlineCountdown — a goal with no target counts down to its de
       label: "Deadline",
       percentComplete: 98.2,
       text: "1 day to go",
-      onTheDay: false,
     });
   });
 
@@ -167,7 +214,6 @@ describe("buildDeadlineCountdown — a goal with no target counts down to its de
     expect(countdown({ name: "Half marathon", type: "event_prep", startsOn: "2026-07-06" }, { date: "2026-09-28", daysRemaining: 0 })).toMatchObject({
       percentComplete: 100,
       text: "Today",
-      onTheDay: true,
     });
   });
 
@@ -224,6 +270,7 @@ describe("the deadline's day, whatever the viewer's zone (commit 9b)", () => {
     };
 
     expect(describeGoalDeadline(ultra.deadline, "event_prep")).toBe("event day 19 Nov · 64 days");
+    expect(describeGoalRail(ultra.goal, ultra.deadline)).toBe("9 Sep → 19 Nov · 64 days to go");
     expect(buildDeadlineCountdown(ultra)).toMatchObject({ start: "9 Sep", end: "19 Nov" });
   });
 });

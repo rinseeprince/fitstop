@@ -1,12 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { toast } from "sonner";
 import { useNutritionBuilder } from "./use-nutrition-builder";
 import { generateNutritionPlan } from "@/services/nutrition-service";
 import { splitToGrams } from "@/lib/nutrition/macro-balance";
 import type { NutritionCalcInputs } from "@/services/nutrition-calc-inputs";
-import type { Client } from "@/types/check-in";
+import type { Client, NutritionWarning } from "@/types/check-in";
 
-vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
+}));
+
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars. The
+// save words its warnings in the coach's unit.
+const units = vi.hoisted(() => ({ preference: "metric" as "metric" | "imperial" }));
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: units.preference, isLoading: false, error: null }),
+}));
 vi.mock("@/hooks/use-nutrition-calendar-events", () => ({
   useInvalidateNutritionCalendar: () => vi.fn().mockResolvedValue(undefined),
 }));
@@ -99,6 +110,7 @@ const CALC_INPUTS: NutritionCalcInputs = {
 };
 
 beforeEach(() => {
+  units.preference = "metric";
   dayState.reads = [];
   dayState.pending = false;
   dayState.failed = false;
@@ -119,13 +131,13 @@ const CLIENT = {
   gender: "male",
 } as unknown as Client;
 
-function okResponse(): Response {
+function okResponse(warnings: NutritionWarning[] = []): Response {
   return {
     ok: true,
     json: () =>
       Promise.resolve({
         success: true,
-        plan: { calorieTarget: 2000, proteinTargetG: 170, warnings: [] },
+        plan: { calorieTarget: 2000, proteinTargetG: 170, warnings },
       }),
   } as unknown as Response;
 }
@@ -233,6 +245,55 @@ describe("useNutritionBuilder — the day the plan takes effect", () => {
     });
 
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
+  });
+});
+
+// The save's toast says only that the plan saved — the calendar shows what it
+// holds — and, where the calculator bent the plan, how: the warning toast,
+// one sentence per warning, in the coach's unit (docs/MEASUREMENT-LOG-PLAN.md
+// commit 9c).
+describe("useNutritionBuilder — the save's toast", () => {
+  beforeEach(() => {
+    planState.nutritionData = {
+      clientToday: CLIENT_TODAY,
+      hasPlan: false,
+      includeActivityBurn: true,
+      scheduledFor: null,
+    };
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.warning).mockClear();
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("says the plan was generated, and nothing about its calories", async () => {
+    mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
+
+    await act(async () => {
+      await result.current.generatePlan();
+    });
+
+    expect(toast.success).toHaveBeenCalledWith("Nutrition plan generated");
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it("turns into the warning toast, the warnings its description, in the coach's unit", async () => {
+    units.preference = "imperial";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      okResponse([{ code: "deficit_capped", maxWeeklyChangeKg: 0.75 }, { code: "calories_raised_to_minimum", minimumCalories: 1350 }])
+    );
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
+
+    await act(async () => {
+      await result.current.generatePlan();
+    });
+
+    expect(toast.warning).toHaveBeenCalledWith("Nutrition plan generated", {
+      description:
+        "Weekly deficit capped at 1.65 lbs/week for safety. Goal timeline may need adjustment. Calorie target raised to minimum safe level (1350 cal/day). Consider adjusting goal timeline.",
+    });
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });
 

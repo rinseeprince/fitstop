@@ -768,9 +768,9 @@ export type GenerateNutritionPlanRequest = {
  * `getViewerUnitPreference(request)` (server-only).
  *
  * That is why the rate caps used to read "0.75kg/week" for every viewer: the
- * only layer that knows the viewer's unit is the renderer, and a baked sentence
- * put the number out of its reach. These codes carry raw KILOGRAMS;
- * `components/clients/nutrition/nutrition-warnings.tsx` words them.
+ * only layer that knows the viewer's unit is the browser's, and a baked
+ * sentence put the number out of its reach. These codes carry raw KILOGRAMS;
+ * `lib/nutrition/nutrition-warnings.ts` words them for the plan save's toast.
  */
 export type NutritionWarning =
   | { code: "deadline_passed" }

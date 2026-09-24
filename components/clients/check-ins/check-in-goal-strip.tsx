@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { Target, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,7 @@ import { formatWeight } from "@/utils/unit-conversions";
 import {
   buildDeadlineCountdown,
   buildGoalRows,
-  describeGoalDeadline,
+  describeGoalRail,
   resolveGoalFooter,
   type GoalRowTone,
 } from "@/lib/check-in/review-figures";
@@ -53,16 +52,16 @@ function GoalGridRow({
   percentComplete,
   from,
   to,
+  verdict,
   tone,
-  children,
 }: {
   divided: boolean;
   name: string;
   percentComplete: number;
   from: string;
   to: string;
+  verdict: string;
   tone: GoalRowTone;
-  children: ReactNode;
 }) {
   return (
     <div
@@ -85,7 +84,15 @@ function GoalGridRow({
       </span>
 
       <span className={cn("whitespace-nowrap text-right text-[12px] font-medium", TONE_CLASS[tone])}>
-        {children}
+        {/* A verdict and a distance, or either alone. The half that carries a
+            numeral is the datum and takes mono; a word stays sans — the
+            tie-break of docs/newdesignsystem.md → Mono = numbers only. */}
+        {verdict.split(" · ").map((half, j) => (
+          <span key={j} className={/\d/.test(half) ? MONO : undefined}>
+            {j > 0 && " · "}
+            {half}
+          </span>
+        ))}
       </span>
     </div>
   );
@@ -106,12 +113,13 @@ export const CheckInGoalStrip = ({
     return `${round1(v)} ${unit}`;
   };
 
-  // The rows, the deadline and the footer are worded once, in
+  // The rows and the footer are worded once, in
   // lib/check-in/review-figures.ts, which the AI review's prompt reads too —
-  // so the strip and the model never describe one goal two ways.
+  // so the strip and the model never judge one goal two ways. The rail and
+  // the countdown are worded there too, for the page alone.
   const rows = buildGoalRows(goalProgress, kg);
   const countdown = buildDeadlineCountdown(goalProgress);
-  const deadlineMeta = describeGoalDeadline(deadline, goal?.type ?? null);
+  const railMeta = describeGoalRail(goal, deadline);
 
   // No goal was in force on the check-in's day. A goal the record cannot judge
   // yet is a row below, and a goal with no target shows itself below — never
@@ -153,7 +161,7 @@ export const CheckInGoalStrip = ({
 
   return (
     <div>
-      <SectionLabel label="Goal progress" meta={deadlineMeta} />
+      <SectionLabel label="Goal progress" meta={railMeta} />
 
 
       <div className="rounded-[6px] bg-white px-5">
@@ -188,17 +196,9 @@ export const CheckInGoalStrip = ({
                 percentComplete={row.percentComplete}
                 from={row.start ?? "—"}
                 to={row.goal}
+                verdict={row.state.text}
                 tone={row.state.tone}
-              >
-                {/* The distance is a numeral inside a phrase, so the two halves
-                    take different fonts rather than the row taking one. */}
-                {row.state.text.split(" · ").map((half, j) => (
-                  <span key={j} className={j > 0 ? MONO : undefined}>
-                    {j > 0 && " · "}
-                    {half}
-                  </span>
-                ))}
-              </GoalGridRow>
+              />
             ))}
             {countdown && (
               <GoalGridRow
@@ -207,11 +207,9 @@ export const CheckInGoalStrip = ({
                 percentComplete={countdown.percentComplete}
                 from={countdown.start}
                 to={countdown.end}
+                verdict={countdown.text}
                 tone="neutral"
-              >
-                {/* A count of days is a number; "Today" is a word. */}
-                <span className={countdown.onTheDay ? undefined : MONO}>{countdown.text}</span>
-              </GoalGridRow>
+              />
             )}
           </div>
         )}

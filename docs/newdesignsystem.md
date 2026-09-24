@@ -565,6 +565,7 @@ Reference: `components/clients/training/calendar/delete-event-dialog.tsx`. Use t
 
 - Success: `toast.success("Session saved")` — a consequence, when there is one, as `{ description }`.
 - Failure: `toast.error("Save failed", { description: reason })` — the reason as the description, in plain words.
+- A success with a caveat: `toast.warning("Nutrition plan generated", { description })` — the caveats as the description (a nutrition plan save's calculator warnings).
 - A confirmation with no verdict (`Nothing to clear`): plain `toast("Nothing to clear")` — no icon.
 - Title: a short sans fragment stating the outcome — `Session saved`, `Week cleared`, `"{name}" updated`. Quote user-named things with `"…"`.
 - Description (optional): one plain sans sentence of consequence — `Programs that already use a copy of this session are unchanged.`

@@ -44,7 +44,7 @@ Logged: 2026-08-13 (parked by owner decision during the goals/blocks workstream;
 
 `calculateBaselineCalories` (`services/nutrition-service.ts`) is **deadline-driven**: `requiredDailyChange = totalCalorieChange / daysToGoal` is the *average* deficit across the remaining span, and without a deadline it returns maintenance. A coach running a gentle four-week intro then a harder cut gets the same averaged number both times and overrides both times. The parked design made deadline and deficit **both first-class inputs, neither primary** — enter a deadline, see the implied deficit; enter a deficit, see the projected date — with the deficit **stored** so intent survives a recalculation when TDEE moves.
 
-**Why it was parked, so it is not re-derived:** the capability already exists in a rougher form (a coach who wants −500 types 1,900 into custom calories against a TDEE of 2,400), and no coach has asked for it. Most of the surrounding UI work arrived anyway from other sessions — the builder shows TDEE, the warnings component renders, and the bare-TDEE silence when no goal is set was fixed.
+**Why it was parked, so it is not re-derived:** the capability already exists in a rougher form (a coach who wants −500 types 1,900 into custom calories against a TDEE of 2,400), and no coach has asked for it. Most of the surrounding UI work arrived anyway from other sessions — the builder shows TDEE, the save's toast carries the calculator's warnings, and the bare-TDEE silence when no goal is set was fixed.
 
 **The un-park trigger, which got STRONGER not weaker.** Session 4B made TDEE recompute on every weight change, so a frozen custom-calorie number now drifts away from the coach's intended deficit more often, silently. That is soft only because plans never auto-regenerate, so the coach re-enters the number at their next regenerate. **Un-park if a coach reports that a plan's deficit "moved on its own", or asks to express a deficit as a percentage.**
 
@@ -54,7 +54,7 @@ Two design constraints that survive with it: the stored deficit is **intent, not
 
 ## A goal's two targets can contradict each other on the goal cards
 
-Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it). Narrowed 2026-09-02: the check-in review page no longer contradicts itself — its goal strip resolves weight and body fat through one state column (`resolveGoalRowState`, `lib/check-in/review-figures.ts`), so its two rows cannot reach different verdicts about one client.
+Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it). Narrowed 2026-09-02: the check-in review page no longer contradicts itself — its goal strip judges the weight row alone; the body fat row says only how far (`lib/check-in/review-figures.ts`).
 
 `goal_weight` and `goal_body_fat_percentage` are solved independently and reconciled by nobody:
 
