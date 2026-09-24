@@ -30,7 +30,20 @@ const SUB_MONO_CLASS = cn(
 const SUB_SANS_CLASS = "text-[11px] text-[rgba(255,255,255,0.35)] mt-1";
 const UNIT_SUFFIX_CLASS =
   "text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5";
-const EMPTY_VALUE_CLASS = "text-[13px] text-[rgba(255,255,255,0.3)] mt-1";
+// A cell's number line — Current's a size up. An empty cell draws its faint
+// dash INSIDE the same line, so the line under it sits level with its
+// neighbours' rather than riding up under a shorter one.
+const CURRENT_VALUE_CLASS = cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1 text-[24px]");
+const VALUE_CLASS = cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1 text-[22px]");
+const EMPTY_DASH_CLASS = "text-[13px] font-normal text-[rgba(255,255,255,0.3)]";
+
+function EmptyValue({ lineClass }: { lineClass: string }) {
+  return (
+    <p className={lineClass}>
+      <span className={EMPTY_DASH_CLASS}>—</span>
+    </p>
+  );
+}
 
 // The Metrics page hero: dark slab with the page's only metric switcher
 // (eyebrow+title+chevron trigger cluster) and a 3-cell stat band
@@ -149,7 +162,7 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
           <p className={STAT_LABEL_DARK_CLASS}>Current</p>
           {latest ? (
             <>
-              <p className={cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1 text-[24px]")}>
+              <p className={CURRENT_VALUE_CLASS}>
                 {latest.value}
                 {unit && <span className={UNIT_SUFFIX_CLASS}>{unit}</span>}
               </p>
@@ -165,7 +178,7 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
             </>
           ) : (
             <>
-              <p className={EMPTY_VALUE_CLASS}>—</p>
+              <EmptyValue lineClass={CURRENT_VALUE_CLASS} />
               <p className={SUB_SANS_CLASS}>No entries yet</p>
             </>
           )}
@@ -181,14 +194,14 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
           <p className={STAT_LABEL_DARK_CLASS}>Total change</p>
           {totalChange?.kind === "notEnoughEntries" || totalChange?.kind === "tooSoon" ? (
             <>
-              <p className={EMPTY_VALUE_CLASS}>—</p>
+              <EmptyValue lineClass={VALUE_CLASS} />
               <p className={SUB_SANS_CLASS}>
                 {totalChange.kind === "tooSoon" ? "Too soon to compare" : "Not enough entries"}
               </p>
             </>
           ) : totalChange ? (
             <>
-              <p className={cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1 text-[22px]")}>
+              <p className={VALUE_CLASS}>
                 {formatSigned(totalChange.delta)}
                 {unit && <span className={UNIT_SUFFIX_CLASS}>{unit}</span>}
               </p>
@@ -200,11 +213,11 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
             </>
           ) : startsOn ? (
             <>
-              <p className={EMPTY_VALUE_CLASS}>—</p>
+              <EmptyValue lineClass={VALUE_CLASS} />
               <p className={SUB_MONO_CLASS}>Starts {formatShortDate(startsOn)}</p>
             </>
           ) : (
-            <p className={EMPTY_VALUE_CLASS}>—</p>
+            <EmptyValue lineClass={VALUE_CLASS} />
           )}
         </div>
 
@@ -213,7 +226,7 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
           {avgRate ? (
             <>
               <p className={STAT_LABEL_DARK_CLASS}>Avg rate</p>
-              <p className={cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1 text-[22px]")}>
+              <p className={VALUE_CLASS}>
                 {formatSigned(avgRate.perWeek)}
                 <span className={UNIT_SUFFIX_CLASS}>{unit}/wk</span>
               </p>
@@ -226,7 +239,7 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
               <p className={STAT_LABEL_DARK_CLASS}>Entries</p>
               {entryCount > 0 && first ? (
                 <>
-                  <p className={cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1 text-[22px]")}>
+                  <p className={VALUE_CLASS}>
                     {entryCount}
                   </p>
                   <p className={SUB_MONO_CLASS}>
@@ -234,7 +247,7 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
                   </p>
                 </>
               ) : (
-                <p className={EMPTY_VALUE_CLASS}>—</p>
+                <EmptyValue lineClass={VALUE_CLASS} />
               )}
             </>
           )}

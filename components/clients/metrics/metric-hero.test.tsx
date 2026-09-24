@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, within } from "@testing-library/react";
 
 import { MetricHero } from "./metric-hero";
 import type { MetricSummary } from "./metrics-view-types";
@@ -108,6 +108,29 @@ describe("MetricHero — total change", () => {
 
     expect(screen.getByText("Too soon to compare")).toBeInTheDocument();
     expect(screen.queryByText("0.0")).not.toBeInTheDocument();
+  });
+
+  // An empty cell keeps the line its number would take, so the line under the
+  // dash sits level with the neighbouring cells' (smoke, 2026-09-24).
+  it("draws an empty cell's dash inside a number line, the same as its neighbour's", () => {
+    render(
+      <MetricHero
+        metric={metric({
+          id: "sleep",
+          name: "Sleep",
+          tab: "wellness",
+          unit: "/10",
+          totalChange: { kind: "tooSoon" },
+        })}
+        {...PROPS}
+      />
+    );
+
+    const totalChangeCell = screen.getByText("Total change").parentElement!;
+    const dashLine = within(totalChangeCell).getByText("—").closest("p");
+    // The Entries cell beside it holds the fixture's 2 entries
+    const entriesLine = screen.getByText("2").closest("p");
+    expect(dashLine?.className).toBe(entriesLine?.className);
   });
 
   it("draws no tag pills beside the switcher — no unit, frequency or entry-count chip", () => {
