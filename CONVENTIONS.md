@@ -85,6 +85,7 @@
   ### Naming for the audience
   - UI labels should make sense to coaches and clients, not developers.
   - No "Boolean", no "JSONB", no "isActive" in the interface. Use plain language.
+  - No em dash (—) in UI copy: notices, toasts, empty states, labels, emails. Write two sentences, or use a comma or a colon (owner, 2026-09-24). A lone "—" standing in for an empty value in a table or a card is a placeholder, not punctuation.
 
   ### Security, load & performance review — REQUIRED after any large change
   **Priority: high. This is not optional and it is not "if there's time".** Run it and report the
