@@ -929,7 +929,7 @@ line with SHIPPED, the hash and the date, and hand me a browser smokelist.
 
 ### Commit 8d4 — `fix(goals): every goal surface says what is true — a goal without a target, direction before speed, hand-typed calories, the met goal's note`
 
-**STATUS: SHIPPED `e6f0c246`, 2026-09-24 — browser smoke OWED.** Owner rulings at build: the scope widened to the files the answers need (the check-in types, the frozen copy's shape, the comparison read carrying the goal judged, `getNutritionVersionGoalsFrom` reading `custom_macros_enabled`, `GET /api/client/progress` adding the goal's type and start readings — additive — plus the 8b proof and TECHNICAL-DEBT); a client whose average change is exactly zero reads "No change · {x} to go", amber. Built as: the trend is a word (towards, away, unchanged; null with no trend), saved in version 2 of the frozen copy, version 1's yes/no reading as towards or away; Deadline passed is read before the trend; a goal with no target keeps the footer; the rail's passed deadline reads "{label} d MMM · N days ago"; the hand-typed notice dates the change with `goalChangedOn` (`lib/goals/goal-timeline.ts`) only when it falls on or after the version's first day, else "The goal has changed." — the independent review found a goal delete dated it falsely. 20 mutations, 20 caught. Follow-up, not built: the Journey → Goals table still says typed calories were "built for" a goal (`goal-lines.tsx`).
+**STATUS: SHIPPED `e6f0c246`, 2026-09-24. Browser smoke PASSED 2026-09-24; its follow-ups are commit 9b.** Owner rulings at build: the scope widened to the files the answers need (the check-in types, the frozen copy's shape, the comparison read carrying the goal judged, `getNutritionVersionGoalsFrom` reading `custom_macros_enabled`, `GET /api/client/progress` adding the goal's type and start readings — additive — plus the 8b proof and TECHNICAL-DEBT); a client whose average change is exactly zero reads "No change · {x} to go", amber. Built as: the trend is a word (towards, away, unchanged; null with no trend), saved in version 2 of the frozen copy, version 1's yes/no reading as towards or away; Deadline passed is read before the trend; a goal with no target keeps the footer; the rail's passed deadline reads "{label} d MMM · N days ago"; the hand-typed notice dates the change with `goalChangedOn` (`lib/goals/goal-timeline.ts`) only when it falls on or after the version's first day, else "The goal has changed." — the independent review found a goal delete dated it falsely. 20 mutations, 20 caught. Follow-up, not built: the Journey → Goals table still says typed calories were "built for" a goal (`goal-lines.tsx`).
 
 What is there today, by grep (2026-09-24):
 - **A goal with no target** (maintain, event prep, general fitness — `GOAL_TYPE_SETTINGS`) gives the check-in's goal section no rows. `check-in-goal-strip.tsx` then shows its empty state, "No goals have been set for {name} yet. Set goals in the client profile to track progress here.", and `utils/ai-prompt-week.ts` tells the AI "Goal: none set as of this check-in". The check-in's saved copy holds the goal all the same.
@@ -1139,6 +1139,68 @@ this entry's STATUS line with SHIPPED, the hash and the date, and hand me a brow
 smokelist: the cards and the Wellness hero for a client who logs daily, one who logs 2–3
 times a week, and one who stopped logging (Sam Kalepa); a girth; a weight with a goal
 target; the Physique hero unchanged.
+```
+
+### Commit 9b: `fix(goals): 8d4's smoke follow-ups: rows that never wrap, a countdown for a goal with no target, the typed-calories notice, the client's Journey, the deadline as the weigh-in`
+
+**STATUS: NOT STARTED. Owner decisions 2026-09-24, at 8d4's browser smoke. One commit, no migration.**
+
+- **A. The goal box's rows never wrap** (8d4 smoke steps 3–5). `check-in-goal-strip.tsx` gives the verdict a fixed `w-[190px]`, so "Too early to tell · 6.2 kg to go", "Deadline passed · 2.1 kg to go" and "Reached · 0.3 kg past target" wrap and put "go" on a line of its own. The rows share one grid: name, bar, start → goal, verdict, each column as wide as its widest entry across the rows, the bar taking what is left, the verdict never wrapping. Weight and body fat rows stay lined up. Proven on rendered pixels, not class arithmetic.
+- **B. A goal with no target counts down to its deadline** (8d4 smoke step 1). A goal that sets no target but has a deadline gets one row in the grid: the type's deadline label ("Event day", else "Deadline"), a bar filling from the goal's start to its deadline as of the check-in's day, "31 Aug → 17 Oct", and, muted, "26 days to go" ("1 day to go", "Today" on the day, then "3 days ago" / "1 day ago" with the bar full). The goal's name and its type stay above the row; "No target to track progress against" shows only when there is no deadline. The bar is (total − remaining) / total: total the days from the goal's start to its deadline, remaining the check-in's frozen `deadline.daysRemaining`; a deadline on the start day is full. The comparison read's `goalProgress.goal` gains `startsOn`, from the check-in's copy. The rail and the AI prompt are unchanged.
+- **C. The typed-calories notice** (8d4 smoke step 6). The second sentence changes, the first stays, the buttons stay (Regenerate, Set nutrition from {day}), no em dash:
+
+  | Case | Sentence |
+  |---|---|
+  | The goal changed on a day | "The goal changed on 18 Sept. The calories haven't changed since then." |
+  | The change carries no day | "The goal has changed. The calories haven't changed since then." |
+  | A planned goal changes it later | "From 19 Oct the goal changes. The calories stay as they are." |
+  | No goal now | "There's no goal now. The calories stay as they are." |
+  | No goal from a later day | "From 19 Oct there's no goal. The calories stay as they are." |
+- **D. The client app says Journey** (8d4 smoke step 8), like the coach's: the page heading (`metrics-hub.tsx`) and the bottom tab's label (`client-nav.tsx`). The address stays `/client/metrics`.
+- **E. The deadline is the weigh-in** (owner). `calculateBaselineCalories` (`services/nutrition-service.ts`) spreads the change over `(deadline − start) + 1` days, counting the deadline day: 24 Sep to 31 Oct is 38. The scale on the deadline's morning shows what was eaten up to the day before, so the window is `deadline − start` days: 37. A deadline on or before the plan's first day leaves no days: `deadline_passed`, maintenance. The drawer's targets block then reads "The goal's deadline is on or before the day this plan starts, so these targets hold at maintenance.", and the warnings box's `deadline_passed` sentence (`nutrition-warnings.tsx`) says the same in its own words, since "has passed" is false for a deadline on the start day. The preview and the save share the module. Saved versions keep their calories until regenerated. The check-in's pace and days already count this way.
+- **Not in this commit:** judging direction from the change since the last check-in. Owner: an off week can still be on track overall; the ten-check-in trend stays.
+- **Tests, each with a mutation:** B's row for each case: days to go, one day, the day itself, days ago, no deadline (mutations: the "No target" line beside a countdown; the bar measured from the check-in instead of the goal's start). C's five sentences (mutation: the old sentence). D's two labels (mutation: "Metrics"). E: 24 Sep to 31 Oct prices over 37 days, and a deadline on the first day is `deadline_passed` (mutation: the `+ 1`). A is proven on rendered pixels: the longest verdict, "Deadline unrealistic · 12.5 lbs to go", on one line, the two rows' bars the same length. Every fixture number distinct.
+- **Docs, current shape only:** ARCHITECTURE: "The coach review surface" (the grid, the countdown row), "Nutrition plan versions" (the notice's sentences, the calculator's window), "Builder flows" (the targets block's reason), and the client portal's tab list. CLIENT-APP-REFERENCE wherever it names the Metrics tab.
+- **Scope rule.** The files this commit may touch: `components/clients/check-ins/check-in-goal-strip.tsx`, `lib/check-in/review-figures.ts` (the countdown row, worded once), `types/check-in.ts` and `services/comparison-service.ts` (`startsOn` on the goal judged), `components/clients/nutrition/nutrition-out-of-date-notice.tsx`, `components/clients/nutrition/builder/nutrition-targets-block.tsx`, `components/clients/nutrition/nutrition-warnings.tsx`, `services/nutrition-service.ts`, `components/client-portal/metrics/metrics-hub.tsx`, `components/client-portal/nav/client-nav.tsx`, their tests, the three docs. A file one of these items needs that this list misses is added and named in the handover, not a reason to stop.
+
+```text
+Build commit 9b of docs/MEASUREMENT-LOG-PLAN.md §6, the follow-ups from 8d4's browser smoke.
+You have my go: don't show me a plan; build it and commit it. Everything is decided in the entry.
+
+Read these first, and only these:
+- CONVENTIONS.md, whole.
+- docs/MEASUREMENT-LOG-PLAN.md: the §6 entries for commits 8d4 and 9b.
+- docs/ARCHITECTURE.md: "Goal progress and pace"; "The coach review surface"; "Nutrition plan
+  versions + per-version daily-targets template"; "Builder flows"; the client portal's tab list.
+- docs/newdesignsystem.md: "Mono = numbers only", "Loading & async states".
+Open another section only when something you touch points to it. Read the code you change or
+call. Don't read old transcripts or superseded plans.
+
+Five things, as the entry sets them out: the goal box's rows never wrap; a goal with no target
+counts down to its deadline; the typed-calories notice's new second sentence; the client app
+says Journey; and the calorie deficit is spread over the days up to the day before the deadline.
+
+Job: what the entry lists; the tests and their mutations; the docs: current shape only, fewest
+words. The scope rule is a hard boundary, but a file an item needs that its list misses is added
+and named in the handover. Where a doc states a rule this commit contradicts, change the doc and
+list it in the handover.
+
+Working method: edit files with the Edit tool, not shell scripts. Run the full suite with the
+other gates once the build and its docs are done, and again after the review's fixes, not in
+between. Prove the rows' spacing on rendered pixels (the CDP probe recipe in memory). When the
+gates are green, start an independent review of the whole diff, docs included, and write the
+smoke seed and the smokelist while it runs; fix what it finds, then rerun the gates. Mutations
+for the new logic only. Seed only what the smoke can't set up in the app: 8d4's seed clients are
+still on DEV (memory: reference-dev-seed-8d4-goal-truth-smoke).
+
+Rules: every fixture number distinct; no em dash in UI copy; cp backups before mutating, never
+git stash or git checkout --; gates: npx tsc --noEmit, npx eslint ., npx vitest run, npm run
+check:labels, npx knip, npm run check:service-key. Commit directly to main. Then replace this
+entry's STATUS line with SHIPPED, the hash and the date, and hand me a browser smokelist: one
+action per step on an exact route, each expected result explained only by what that screen
+shows. Cover the rows on a check-in with a long verdict; the event goal's countdown; the
+typed-calories notice; the client app's Journey heading and tab; the drawer's calories for a
+goal 37 days out.
 ```
 
 ### Commit 10 — `chore(wellness): coach wellness logging retired — the entries table, its writer and its readers go`
