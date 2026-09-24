@@ -1,9 +1,9 @@
 # Data access lockdown — the server is the only gatekeeper
 
-**Status: commit 1 (this plan) SHIPPED 2026-09-24; commits 2–6 NOT STARTED.** Six commits, agreed with the owner on
-2026-09-24: this plan; the write side door closes (2); the reads outside sign-in move onto the server (3); the
+**Status: commits 1 (this plan) and 2 SHIPPED 2026-09-24; commits 3–6 NOT STARTED.** Six commits, agreed with the
+owner on 2026-09-24: this plan; the write side door closes (2); the reads outside sign-in move onto the server (3); the
 content library moves onto the server (4); sign-in reads move onto the server (5); the database is locked and the
-guard holds it (6). Commit 2 can run now. Commits 3–5 run in order, each after the owner's browser smoke of the one
+guard holds it (6). Commits 3–5 run in order, each after the owner's browser smoke of the one
 before. Commit 6 runs last and only after 3–5: dropping a read rule while its reader still uses it breaks that
 screen for everyone.
 
@@ -202,7 +202,7 @@ The browser client (`services/supabase-client.ts`) is `auth.*` only.
 
 ### Commit 2 — `fix(security): the Data API's write side door closes — 55 write rules nothing uses are dropped`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `ea186720`, 2026-09-24 — migration 200 on DEV only; browser smoke owed.**
 
 - **Probes first, read-only, on DEV and PROD:**
   - the non-SELECT policies: 56 on 23 tables, all PERMISSIVE, named as §4.1
