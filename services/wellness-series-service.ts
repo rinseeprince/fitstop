@@ -7,8 +7,12 @@ import {
   type WellnessDayValue,
   type WellnessLogDay,
 } from "@/lib/wellness/day-values";
+import {
+  WELLNESS_LOG_COLUMNS,
+  toWellnessLogDay,
+  type WellnessLogRow,
+} from "@/lib/wellness/log-rows";
 import type { WellnessSeries, WellnessSeriesPoint } from "@/types/coach-overview";
-import type { Database } from "@/types/database";
 
 /**
  * The client's wellness journey for the coach: the five wellness metrics as
@@ -19,31 +23,10 @@ import type { Database } from "@/types/database";
  * D16–D20); the client's today, as there.
  *
  * Two reads, in parallel: `wellness_logs`, complete — paged past PostgREST's
- * row cap because it feeds a series — and the client's today. A stale column
- * name in the select is a PostgREST 400 that `tsc` cannot see, so
- * `WellnessLogRow` ties the select to the key list: `Pick` fails to compile if
- * a wellness key is not a column.
+ * row cap because it feeds a series — and the client's today. The columns and
+ * the row's mapping are the ones the client's progress read uses
+ * (`lib/wellness/log-rows.ts`).
  */
-
-const WELLNESS_LOG_COLUMNS = "id, date, mood, energy, sleep, stress, soreness, updated_at";
-
-type WellnessLogRow = Pick<
-  Database["public"]["Tables"]["wellness_logs"]["Row"],
-  "id" | "date" | "updated_at" | WellnessKey
->;
-
-function toLogDay(row: WellnessLogRow): WellnessLogDay {
-  return {
-    id: row.id,
-    date: row.date,
-    updatedAt: row.updated_at,
-    mood: row.mood,
-    energy: row.energy,
-    sleep: row.sleep,
-    stress: row.stress,
-    soreness: row.soreness,
-  };
-}
 
 async function readWellnessLogDays(clientId: string): Promise<WellnessLogDay[]> {
   // Ordered by day then id: the paged reader's contract wants a unique
@@ -60,7 +43,7 @@ async function readWellnessLogDays(clientId: string): Promise<WellnessLogDay[]> 
         .range(from, to),
     { errorLabel: "wellness logs" }
   );
-  return rows.map(toLogDay);
+  return rows.map(toWellnessLogDay);
 }
 
 /** Pure assembly over the kernel's day-values — unit-tested against fixtures. */

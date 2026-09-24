@@ -1,10 +1,15 @@
 import { createPortalClient } from "./client-portal-service";
 import { CLIENT_MEASUREMENT_EMBEDS } from "./measurements-service";
 import { getGoalsOverview } from "./client-goals-service";
+import { getClientTodayString } from "./today-service";
 import { getTrend, calculatePercentChange } from "@/utils/metric-shaping";
 import { fetchAllPages } from "@/lib/paged-fetch";
+import { addDaysToDateString } from "@/lib/date-helpers";
 import { dayValues, type MeasurementReading } from "@/lib/measurements/day-values";
 import { isMeasurementKey, type MeasurementKey, type MeasurementSource } from "@/lib/measurements/keys";
+import { wellnessDayValues } from "@/lib/wellness/day-values";
+import { WELLNESS_LOG_COLUMNS, toWellnessLogDay, type WellnessLogRow } from "@/lib/wellness/log-rows";
+import type { WellnessKey } from "@/lib/wellness/keys";
 import type { ClientMeasurementEmbed } from "@/lib/database-helpers";
 import type { TrendDirection } from "@/types/check-in";
 import type { GoalType } from "@/lib/goals/goal-types";
@@ -158,48 +163,80 @@ export async function getClientProgressData(
 ): Promise<ProgressData> {
   const supabase = await createPortalClient();
 
+  // The series' window is on the client's calendar: from the day `days`
+  // before their today, one first day for the physique and the wellness
+  // series alike. The check-in count keeps its rolling `days` × 24 hours.
+  const clientToday = await getClientTodayString(clientId);
+  const fromDay = addDaysToDateString(clientToday, -days);
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
-  const fromDay = startDate.toISOString().slice(0, 10);
 
-  // Four independent reads. Three under the client's JWT: the check-ins'
-  // wellness averages, the measurement log's live rows (the D6 policy is what
-  // lets this client see their own — every reading about them, of any source)
-  // and the client row with its two reading views embedded. The log read is
-  // paged: it feeds a series and must be complete past PostgREST's row cap. The
-  // fourth is the goal in force on the client's today with their readings on
-  // its start day — the goals section reads its targets, its type and where it
-  // started; the service role reads it, scoped by this client's id, because
-  // `client_goals` has no client-facing policy.
-  const [{ data: checkIns }, readingRows, { data: clientData, error: clientError }, goals] =
-    await Promise.all([
-      supabase
-        .from("check_ins")
-        .select("created_at, mood, energy, sleep, stress, soreness")
-        .eq("client_id", clientId)
-        .gte("created_at", startDate.toISOString())
-        .order("created_at", { ascending: true }),
-      fetchAllPages<LiveMeasurementRow>(
-        (from, to) =>
-          supabase
-            .from("client_measurements_live")
-            .select("id, metric_key, value, recorded_on, recorded_at, updated_at, measured_at, source, source_id, note")
-            .eq("client_id", clientId)
-            .gte("recorded_on", fromDay)
-            .order("recorded_on", { ascending: true })
-            .order("recorded_at", { ascending: true })
-            .order("id", { ascending: true })
-            .range(from, to),
-        { errorLabel: "client measurements" }
-      ),
-      supabase
-        .from("clients")
-        .select(`current_streak, check_in_adherence_rate, ${CLIENT_MEASUREMENT_EMBEDS}`)
-        .eq("id", clientId)
-        .single(),
-      getGoalsOverview(clientId),
-    ]);
+  // Five independent reads. Four under the client's JWT — the session client
+  // on purpose (CONVENTIONS §8): a client reads their own rows through their
+  // own policies, `clients_view_own_measurements` (every reading about them,
+  // of any source — D6) and `clients_select_own_wellness_logs`. They are the
+  // number of check-ins in the window (a check-in's own figures feed no
+  // series), the measurement log's live rows, the daily wellness log and the
+  // client row with its two reading views embedded. The two log reads are
+  // paged: each feeds a series and must be complete past PostgREST's row cap.
+  // The fifth is the goal in force on the client's today with their readings
+  // on its start day — the goals section reads its targets, its type and
+  // where it started; the service role reads it, scoped by this client's id,
+  // because `client_goals` has no client-facing policy.
+  const [
+    { count: checkInCount, error: checkInCountError },
+    readingRows,
+    wellnessRows,
+    { data: clientData, error: clientError },
+    goals,
+  ] = await Promise.all([
+    supabase
+      .from("check_ins")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", clientId)
+      .gte("created_at", startDate.toISOString()),
+    fetchAllPages<LiveMeasurementRow>(
+      (from, to) =>
+        supabase
+          .from("client_measurements_live")
+          .select("id, metric_key, value, recorded_on, recorded_at, updated_at, measured_at, source, source_id, note")
+          .eq("client_id", clientId)
+          .gte("recorded_on", fromDay)
+          .order("recorded_on", { ascending: true })
+          .order("recorded_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to),
+      { errorLabel: "client measurements" }
+    ),
+    fetchAllPages<WellnessLogRow>(
+      (from, to) =>
+        supabase
+          .from("wellness_logs")
+          .select(WELLNESS_LOG_COLUMNS)
+          .eq("client_id", clientId)
+          .gte("date", fromDay)
+          .order("date", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to),
+      { errorLabel: "wellness logs" }
+    ),
+    supabase
+      .from("clients")
+      .select(`current_streak, check_in_adherence_rate, ${CLIENT_MEASUREMENT_EMBEDS}`)
+      .eq("id", clientId)
+      .single(),
+    getGoalsOverview(clientId),
+  ]);
   const goal = goals.current;
+
+  // The count feeds the Check-ins tile alone, so a failed one reads 0 rather
+  // than failing the whole screen — logged, never dropped.
+  if (checkInCountError) {
+    console.error(
+      `Failed to count the check-ins in the window for ${clientId}:`,
+      checkInCountError.message,
+    );
+  }
 
   // Surface a failed client fetch instead of swallowing it. A silent failure
   // here is exactly what made every weight/measurement default to lbs/in for
@@ -247,33 +284,19 @@ export async function getClientProgressData(
   const chestHistory = history("chest");
   const armsHistory = history("arms");
   const thighsHistory = history("thighs");
-  const moodHistory: ProgressDataPoint[] = [];
-  const energyHistory: ProgressDataPoint[] = [];
-  const sleepHistory: ProgressDataPoint[] = [];
-  const stressHistory: ProgressDataPoint[] = [];
-  const sorenessHistory: ProgressDataPoint[] = [];
 
-  if (checkIns) {
-    for (const checkIn of checkIns) {
-      const date = checkIn.created_at.split("T")[0];
+  // The five wellness histories: the client's own daily log, one value per
+  // day they logged a score — through the kernel the coach's series reads, so
+  // both apps chart the same value for the same day.
+  const wellnessByMetric = wellnessDayValues(wellnessRows.map(toWellnessLogDay));
+  const wellnessHistory = (key: WellnessKey): ProgressDataPoint[] =>
+    (wellnessByMetric.get(key) ?? []).map((value) => ({ date: value.date, [key]: value.value }));
 
-      if (checkIn.mood) {
-        moodHistory.push({ date, mood: checkIn.mood });
-      }
-      if (checkIn.energy) {
-        energyHistory.push({ date, energy: checkIn.energy });
-      }
-      if (checkIn.sleep) {
-        sleepHistory.push({ date, sleep: checkIn.sleep });
-      }
-      if (checkIn.stress) {
-        stressHistory.push({ date, stress: checkIn.stress });
-      }
-      if (checkIn.soreness) {
-        sorenessHistory.push({ date, soreness: checkIn.soreness });
-      }
-    }
-  }
+  const moodHistory = wellnessHistory("mood");
+  const energyHistory = wellnessHistory("energy");
+  const sleepHistory = wellnessHistory("sleep");
+  const stressHistory = wellnessHistory("stress");
+  const sorenessHistory = wellnessHistory("soreness");
 
   // Series values stay CANONICAL (kg/cm). The unit label and the conversion are
   // both resolved at the render boundary from the metric id — the server cannot
@@ -310,7 +333,7 @@ export async function getClientProgressData(
     },
     bodyMetrics,
     wellnessMetrics,
-    checkInCount: checkIns?.length ?? 0,
+    checkInCount: checkInCount ?? 0,
     currentStreak: client?.current_streak ?? 0,
     adherenceRate: client?.check_in_adherence_rate ?? 0,
     client: {

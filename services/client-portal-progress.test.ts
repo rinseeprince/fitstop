@@ -6,6 +6,8 @@ vi.mock("./client-portal-service", () => ({ createPortalClient: vi.fn() }));
 vi.mock("./client-goals-service", () => ({
   getGoalsOverview: vi.fn().mockResolvedValue({ current: null, planned: [], clientToday: "2026-09-24" }),
 }));
+// The series' window counts back from the client's today.
+vi.mock("./today-service", () => ({ getClientTodayString: vi.fn().mockResolvedValue("2026-09-24") }));
 // The module reads CLIENT_MEASUREMENT_EMBEDS from the real measurements
 // service, whose supabase-admin import needs env at load. Stub that client and
 // the energy helper rather than the service, so the embed string the clients
@@ -17,7 +19,10 @@ import { getClientProgressData } from "./client-portal-progress";
 import type { ClientMetricSeries } from "./client-portal-progress";
 import { createPortalClient } from "./client-portal-service";
 import { getGoalsOverview } from "./client-goals-service";
+import { getClientTodayString } from "./today-service";
+import { supabaseAdmin } from "./supabase-admin";
 import type { CurrentGoal } from "@/types/client-goals";
+import type { WellnessKey } from "@/lib/wellness/keys";
 
 /** A `client_measurements_live` row as the portal's select returns it. */
 type LiveRow = {
@@ -55,13 +60,36 @@ const reading = (
   ...overrides,
 });
 
-// Minimal fake of the three supabase chains getClientProgressData uses:
-//   check_ins:                .select().eq().gte().order()                     (awaited)
+/** A `wellness_logs` row as the portal's select returns it. */
+type LogRow = { id: string; date: string; updated_at: string } & Record<WellnessKey, number | null>;
+
+const logRow = (id: string, date: string, values: Partial<Record<WellnessKey, number>>): LogRow => ({
+  id,
+  date,
+  updated_at: `${date}T21:00:00+00:00`,
+  mood: null,
+  energy: null,
+  sleep: null,
+  stress: null,
+  soreness: null,
+  ...values,
+});
+
+// Minimal fake of the four supabase chains getClientProgressData uses:
+//   check_ins:                .select(columns, { count, head }).eq().gte()     (awaited: a count)
 //   client_measurements_live: .select().eq().gte().order()×3.range(from, to)    (awaited, paged)
+//   wellness_logs:            .select().eq().gte().order()×2.range(from, to)    (awaited, paged)
 //   clients:                  .select().eq().single()                           (awaited)
 function fakeSupabase(opts: {
+  checkInCount?: number;
+  checkInError?: { message: string } | null;
+  // What a check-in in the window carries. The read counts check-ins and
+  // takes none of their columns, so only a read that went back to their
+  // figures would ever see these rows.
   checkIns?: unknown[];
   readings?: LiveRow[];
+  wellness?: LogRow[];
+  wellnessError?: { message: string } | null;
   client?: Record<string, unknown> | null;
   clientError?: { message: string } | null;
 }) {
@@ -72,17 +100,39 @@ function fakeSupabase(opts: {
   const selects: Record<string, string[]> = {
     check_ins: [],
     client_measurements_live: [],
+    wellness_logs: [],
     clients: [],
   };
+  const checkInSelectOptions: unknown[] = [];
+  // Each log read's lower bound, as [column, value].
+  const bounds: Record<string, Array<[string, string]>> = {
+    client_measurements_live: [],
+    wellness_logs: [],
+  };
   const rangeCalls: Array<[number, number]> = [];
+  const wellnessRead = {
+    scope: [] as Array<[string, string]>,
+    orders: [] as Array<[string, unknown]>,
+    rangeCalls: [] as Array<[number, number]>,
+  };
+  // PostgREST answers a failed count with no count.
+  const checkInResult = () => ({
+    count: opts.checkInError ? null : opts.checkInCount ?? 0,
+    data: opts.checkIns ?? [],
+    error: opts.checkInError ?? null,
+  });
   const checkInChain = {
-    select: (columns: string) => {
+    select: (columns: string, options?: unknown) => {
       selects.check_ins.push(columns);
+      checkInSelectOptions.push(options);
       return checkInChain;
     },
     eq: () => checkInChain,
-    gte: () => checkInChain,
-    order: () => Promise.resolve({ data: opts.checkIns ?? [], error: null }),
+    // Awaited as the count; `.order()` is there for a read of the rows.
+    gte: () =>
+      Object.assign(Promise.resolve(checkInResult()), {
+        order: () => Promise.resolve(checkInResult()),
+      }),
   };
   const readingChain = {
     select: (columns: string) => {
@@ -90,12 +140,41 @@ function fakeSupabase(opts: {
       return readingChain;
     },
     eq: () => readingChain,
-    gte: () => readingChain,
+    gte: (column: string, value: string) => {
+      bounds.client_measurements_live.push([column, value]);
+      return readingChain;
+    },
     order: () => readingChain,
     // Fewer rows than a page come back, so fetchAllPages stops after one call.
     range: (from: number, to: number) => {
       rangeCalls.push([from, to]);
       return Promise.resolve({ data: opts.readings ?? [], error: null });
+    },
+  };
+  const wellnessChain = {
+    select: (columns: string) => {
+      selects.wellness_logs.push(columns);
+      return wellnessChain;
+    },
+    eq: (column: string, value: string) => {
+      wellnessRead.scope.push([column, value]);
+      return wellnessChain;
+    },
+    gte: (column: string, value: string) => {
+      bounds.wellness_logs.push([column, value]);
+      return wellnessChain;
+    },
+    order: (column: string, options: unknown) => {
+      wellnessRead.orders.push([column, options]);
+      return wellnessChain;
+    },
+    range: (from: number, to: number) => {
+      wellnessRead.rangeCalls.push([from, to]);
+      return Promise.resolve(
+        opts.wellnessError
+          ? { data: null, error: opts.wellnessError }
+          : { data: opts.wellness ?? [], error: null }
+      );
     },
   };
   const clientChain = {
@@ -111,11 +190,15 @@ function fakeSupabase(opts: {
     from: (table: string) => {
       if (table === "check_ins") return checkInChain;
       if (table === "client_measurements_live") return readingChain;
+      if (table === "wellness_logs") return wellnessChain;
       if (table === "clients") return clientChain;
       throw new Error(`unexpected read of ${table}`);
     },
     selects,
+    checkInSelectOptions,
+    bounds,
     rangeCalls,
+    wellnessRead,
   };
 }
 
@@ -405,22 +488,134 @@ describe("getClientProgressData — physique histories come from the measurement
       expect(select).toContain(column);
     }
   });
+});
 
-  it("a check-in's own columns never feed a physique series — only the log does; wellness still comes from check-ins", async () => {
+describe("getClientProgressData — wellness histories come from the client's daily log", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("each wellness series is the log, one point per logged day — a check-in in the window is counted, never charted", async () => {
+    const fake = fakeSupabase({
+      checkInCount: 1,
+      // The week's figures a check-in in the window carries — on no chart.
+      checkIns: [{ created_at: "2026-05-10T08:00:00+00:00", weight: 80, mood: 4, sleep: 7 }],
+      wellness: [
+        // Arrival order is not date order.
+        logRow("w-2", "2026-05-12", { mood: 5, sleep: 9 }),
+        logRow("w-1", "2026-05-11", { mood: 2 }),
+      ],
+      client: null,
+    });
+    vi.mocked(createPortalClient).mockResolvedValue(fake as never);
+
+    const result = await getClientProgressData("c1");
+
+    const mood = findSeries(result.wellnessMetrics, "mood");
+    expect(mood.chartData).toEqual([
+      { date: "2026-05-11", value: 2 },
+      { date: "2026-05-12", value: 5 },
+    ]);
+    // The card: the last logged day, against the logged day before it.
+    expect(mood.currentValue).toBe(5);
+    expect(mood.percentChange).toBe(150);
+    expect(mood.trend).toBe("up");
+    expect(findSeries(result.wellnessMetrics, "sleep").chartData).toEqual([{ date: "2026-05-12", value: 9 }]);
+    // The check-in is counted; neither its scores nor its weight are charted.
+    expect(result.checkInCount).toBe(1);
+    const charted = result.wellnessMetrics.flatMap((series) => series.chartData.map((point) => point.value));
+    expect(charted).not.toContain(4);
+    expect(charted).not.toContain(7);
+    expect(result.weightHistory).toEqual([]);
+    // The check-in read counts rows and takes none of their columns.
+    expect(fake.selects.check_ins).toEqual(["id"]);
+    expect(fake.checkInSelectOptions).toEqual([{ count: "exact", head: true }]);
+  });
+
+  it("a day without a score is no point of that score — the day's other scores stand", async () => {
     vi.mocked(createPortalClient).mockResolvedValue(
       fakeSupabase({
-        checkIns: [{ created_at: "2026-05-01T08:00:00+00:00", weight: 80, mood: 4 }],
-        readings: [],
+        wellness: [
+          logRow("w-3", "2026-05-13", { sleep: 8, stress: 3 }),
+          logRow("w-4", "2026-05-14", { mood: 1, soreness: 6 }),
+        ],
         client: null,
       }) as never,
     );
 
     const result = await getClientProgressData("c1");
 
-    expect(result.weightHistory).toEqual([]);
-    expect(findSeries(result.bodyMetrics, "weight").currentValue).toBeNull();
-    expect(findSeries(result.wellnessMetrics, "mood").currentValue).toBe(4);
-    expect(result.checkInCount).toBe(1);
+    expect(findSeries(result.wellnessMetrics, "mood").chartData).toEqual([{ date: "2026-05-14", value: 1 }]);
+    expect(findSeries(result.wellnessMetrics, "sleep").chartData).toEqual([{ date: "2026-05-13", value: 8 }]);
+    expect(findSeries(result.wellnessMetrics, "stress").chartData).toEqual([{ date: "2026-05-13", value: 3 }]);
+    expect(findSeries(result.wellnessMetrics, "soreness").chartData).toEqual([{ date: "2026-05-14", value: 6 }]);
+    const energy = findSeries(result.wellnessMetrics, "energy");
+    expect(energy.chartData).toEqual([]);
+    expect(energy.currentValue).toBeNull();
+  });
+
+  it("the window is on the client's calendar — the log and the measurements start on the same day, `days` before the client's today", async () => {
+    const fake = fakeSupabase({ client: null });
+    vi.mocked(createPortalClient).mockResolvedValue(fake as never);
+    // Late on the 24th by the server's clock; the client, east of UTC, is on
+    // the 25th already.
+    vi.mocked(getClientTodayString).mockResolvedValueOnce("2026-09-25");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-24T23:30:00Z"));
+
+    try {
+      await getClientProgressData("c1", 30);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(getClientTodayString).toHaveBeenCalledWith("c1");
+    expect(fake.bounds.wellness_logs).toEqual([["date", "2026-08-26"]]);
+    expect(fake.bounds.client_measurements_live).toEqual([["recorded_on", "2026-08-26"]]);
+  });
+
+  it("reads the log under the client's own session: every score's column, this client's rows, in date order, paged", async () => {
+    const fake = fakeSupabase({ wellness: [logRow("w-5", "2026-05-15", { energy: 10 })], client: null });
+    vi.mocked(createPortalClient).mockResolvedValue(fake as never);
+
+    const result = await getClientProgressData("c1");
+
+    // The session client, never the service role: the client reads their own
+    // rows through clients_select_own_wellness_logs.
+    expect(fake.selects.wellness_logs).toHaveLength(1);
+    expect(supabaseAdmin.from).not.toHaveBeenCalledWith("wellness_logs");
+    expect(fake.selects.wellness_logs[0].split(",").map((column) => column.trim())).toEqual(
+      expect.arrayContaining(["id", "date", "mood", "energy", "sleep", "stress", "soreness", "updated_at"])
+    );
+    expect(fake.wellnessRead.scope).toEqual([["client_id", "c1"]]);
+    expect(fake.wellnessRead.orders).toEqual([
+      ["date", { ascending: true }],
+      ["id", { ascending: true }],
+    ]);
+    // A series feeds an aggregate, so it must be complete past PostgREST's cap.
+    expect(fake.wellnessRead.rangeCalls).toEqual([[0, 999]]);
+    expect(findSeries(result.wellnessMetrics, "energy").currentValue).toBe(10);
+  });
+
+  it("a failed log read fails the request rather than drawing empty charts", async () => {
+    vi.mocked(createPortalClient).mockResolvedValue(
+      fakeSupabase({ wellnessError: { message: "connection reset" }, client: null }) as never,
+    );
+
+    await expect(getClientProgressData("c1")).rejects.toThrow(
+      "Failed to fetch wellness logs: connection reset"
+    );
+  });
+
+  it("a failed check-in count is logged, and the tile reads 0", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(createPortalClient).mockResolvedValue(
+      fakeSupabase({ checkInCount: 3, checkInError: { message: "count timed out" }, client: null }) as never,
+    );
+
+    const result = await getClientProgressData("c1");
+
+    expect(result.checkInCount).toBe(0);
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("check-ins"), "count timed out");
+    spy.mockRestore();
   });
 });
 
@@ -429,7 +624,7 @@ describe("getClientProgressData — render-ready series", () => {
 
   it("returns every series present with empty defaults when there is no history", async () => {
     vi.mocked(createPortalClient).mockResolvedValue(
-      fakeSupabase({ checkIns: [], readings: [], client: { unit_preference: "imperial" } }) as never,
+      fakeSupabase({ readings: [], wellness: [], client: { unit_preference: "imperial" } }) as never,
     );
 
     const result = await getClientProgressData("c1");
@@ -463,7 +658,7 @@ describe("getClientProgressData — render-ready series", () => {
   // service only has to name and shape the series.
   it("names every wellness series without attaching a unit", async () => {
     vi.mocked(createPortalClient).mockResolvedValue(
-      fakeSupabase({ checkIns: [], client: null }) as never,
+      fakeSupabase({ client: null }) as never,
     );
 
     const result = await getClientProgressData("c1");
@@ -471,29 +666,5 @@ describe("getClientProgressData — render-ready series", () => {
     const ids = result.wellnessMetrics.map((m) => m.id).sort();
     expect(ids).toEqual(["energy", "mood", "sleep", "soreness", "stress"]);
     expect(result.wellnessMetrics.every((m) => !("unit" in m))).toBe(true);
-  });
-
-  it("selects soreness from check_ins and builds its series from the rows", async () => {
-    const fake = fakeSupabase({
-      checkIns: [
-        { created_at: "2026-05-01T08:00:00+00:00", soreness: 7 },
-        { created_at: "2026-05-08T08:00:00+00:00", soreness: 4 },
-      ],
-      client: null,
-    });
-    vi.mocked(createPortalClient).mockResolvedValue(fake as never);
-
-    const result = await getClientProgressData("c1");
-
-    // The fake ignores select strings, so the wire query is only guarded here.
-    expect(fake.selects.check_ins.some((columns) => columns.includes("soreness"))).toBe(true);
-
-    const soreness = findSeries(result.wellnessMetrics, "soreness");
-    expect(soreness.currentValue).toBe(4);
-    expect(soreness.trend).toBe("down");
-    expect(soreness.chartData).toEqual([
-      { date: "2026-05-01", value: 7 },
-      { date: "2026-05-08", value: 4 },
-    ]);
   });
 });
