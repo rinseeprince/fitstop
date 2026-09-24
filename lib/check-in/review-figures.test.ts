@@ -64,9 +64,6 @@ describe("resolveGoalRowState — direction before speed (commit 8d4)", () => {
     expect(resolveGoalRowState(position({ paceStatus: "unrealistic" }), "9.6 kg", false)).toEqual({ text: "Deadline unrealistic · 9.6 kg to go", tone: "attention" });
   });
 
-  it("and is on track with no pace to judge — a goal with no deadline", () => {
-    expect(resolveGoalRowState(position({}), "1.9 kg", false)).toEqual({ text: "On track · 1.9 kg to go", tone: "good" });
-  });
 });
 
 describe("buildGoalRows", () => {
@@ -77,8 +74,9 @@ describe("buildGoalRows", () => {
     // runs from the goal's start.
     const rows = buildGoalRows(
       {
-        weight: { goal: 78, startingWeight: 91, goalStartWeight: 86, position: position({ current: 82.4, remaining: 4.4, percentComplete: 45 }) },
+        weight: { goal: 78, startingWeight: 91, goalStartWeight: 86, position: position({ current: 82.4, remaining: 4.4, percentComplete: 45, paceStatus: "on_track" }) },
         bodyFat: { goal: 15, startingBodyFat: 26, goalStartBodyFat: 22, position: null },
+        deadline: { date: "2026-12-29", daysRemaining: 96, isPastDeadline: false },
       },
       kg
     );
@@ -86,6 +84,20 @@ describe("buildGoalRows", () => {
       { name: "Weight", percentComplete: 45, start: "86 kg", goal: "78 kg", state: { text: "On track · 4.4 kg to go", tone: "good" }, judged: true },
       { name: "Body fat", percentComplete: 0, start: "22 %", goal: "15 %", state: { text: "No reading yet", tone: "neutral" }, judged: false },
     ]);
+  });
+
+  it("gives a weight goal with no deadline no verdict — only where the client stands and how far (commit 9c)", () => {
+    // With no deadline there is no pace to judge, so no word about it: never
+    // On track, whichever way the client is moving.
+    const weightState = (overrides: Partial<GoalPosition>) =>
+      buildGoalRows({ weight: { goal: 79, goalStartWeight: 86.2, position: position({ current: 83.9, remaining: -4.9, percentComplete: 30.4, ...overrides }) } }, kg)[0]
+        .state;
+
+    for (const trend of ["towards", "away", "unchanged", null] as const) {
+      expect(weightState({ trend })).toEqual({ text: "4.9 kg to go", tone: "neutral" });
+    }
+    expect(weightState({ status: "achieved", remaining: 0 })).toEqual({ text: "Reached", tone: "good" });
+    expect(weightState({ status: "overshot", remaining: 2.3 })).toEqual({ text: "Reached · 2.3 kg past target", tone: "good" });
   });
 
   it("gives weight its verdict against the goal's deadline", () => {

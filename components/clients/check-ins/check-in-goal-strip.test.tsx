@@ -129,6 +129,8 @@ describe("the state column — direction before speed (commit 8d4)", () => {
   // the pace only for a client moving towards the target. Recorded in
   // ARCHITECTURE; each case here is one branch of it.
   const approaching = { status: "approaching" as const, percentComplete: 40, remaining: 5 };
+  // A verdict needs a deadline to judge against (commit 9c).
+  const AHEAD = { date: "2026-12-18", daysRemaining: 85, isPastDeadline: false };
 
   it("prefers status over an otherwise-safe pace", () => {
     renderStrip({ weight: weightGoal({ paceStatus: "on_track" }) });
@@ -140,7 +142,7 @@ describe("the state column — direction before speed (commit 8d4)", () => {
   it("says a client moving away is moving away, however safe the pace", () => {
     // The rate required to reach 77 in time is safe; the client is going the
     // other way. Read pace-first, this said "On track".
-    renderStrip({ weight: weightGoal({ ...approaching, remaining: 3.6, trend: "away", paceStatus: "on_track" }) });
+    renderStrip({ weight: weightGoal({ ...approaching, remaining: 3.6, trend: "away", paceStatus: "on_track" }), deadline: AHEAD });
 
     expect(screen.getByText("Moving away")).toBeInTheDocument();
     expect(screen.getByText(/3.6 kg to go/)).toBeInTheDocument();
@@ -149,14 +151,14 @@ describe("the state column — direction before speed (commit 8d4)", () => {
   });
 
   it("says a client who has not moved has not moved", () => {
-    renderStrip({ weight: weightGoal({ ...approaching, remaining: 2.8, trend: "unchanged", paceStatus: "on_track" }) });
+    renderStrip({ weight: weightGoal({ ...approaching, remaining: 2.8, trend: "unchanged", paceStatus: "on_track" }), deadline: AHEAD });
 
     expect(screen.getByText("No change")).toBeInTheDocument();
     expect(screen.getByText("No change").parentElement).toHaveClass("text-[#d97706]");
   });
 
   it("says it is too early to tell with fewer than two check-ins — neutral, never on track", () => {
-    renderStrip({ weight: weightGoal({ ...approaching, remaining: 6.1, trend: null, paceStatus: "on_track" }) });
+    renderStrip({ weight: weightGoal({ ...approaching, remaining: 6.1, trend: null, paceStatus: "on_track" }), deadline: AHEAD });
 
     expect(screen.getByText("Too early to tell")).toBeInTheDocument();
     expect(screen.queryByText(/On track/)).not.toBeInTheDocument();
@@ -189,22 +191,34 @@ describe("the state column — direction before speed (commit 8d4)", () => {
   });
 
   it("gives a client moving towards the target the pace's words", () => {
-    renderStrip({ weight: weightGoal({ ...approaching, trend: "towards", paceStatus: "behind_pace" }) });
+    renderStrip({ weight: weightGoal({ ...approaching, trend: "towards", paceStatus: "behind_pace" }), deadline: AHEAD });
 
     expect(screen.getByText(/Behind pace/)).toBeInTheDocument();
     expect(screen.queryByText(/On track/)).not.toBeInTheDocument();
   });
 
   it("says the deadline is unrealistic when the required rate is far past safe", () => {
-    renderStrip({ weight: weightGoal({ ...approaching, trend: "towards", paceStatus: "unrealistic" }) });
+    renderStrip({ weight: weightGoal({ ...approaching, trend: "towards", paceStatus: "unrealistic" }), deadline: AHEAD });
 
     expect(screen.getByText(/Deadline unrealistic/)).toBeInTheDocument();
   });
 
-  it("says on track for a client moving towards it with no pace to judge", () => {
-    renderStrip({ weight: weightGoal({ ...approaching, trend: "towards" }) });
+  it("says on track when the required rate is safe", () => {
+    renderStrip({ weight: weightGoal({ ...approaching, trend: "towards", paceStatus: "on_track" }), deadline: AHEAD });
 
     expect(screen.getByText(/On track/)).toBeInTheDocument();
+  });
+
+  it("gives a goal with no deadline no verdict — only how far, muted (commit 9c)", () => {
+    // Nothing to judge a pace against, whichever way the client is moving.
+    for (const trend of ["towards", "away"] as const) {
+      const { unmount } = renderStrip({ weight: weightGoal({ ...approaching, remaining: 4.6, trend }) });
+
+      const distance = screen.getByText("4.6 kg to go");
+      expect(distance.parentElement).toHaveClass("text-[#93b0b4]");
+      expect(screen.queryByText(/On track|Moving away/)).not.toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("shows the distance LEFT while a goal is being approached", () => {

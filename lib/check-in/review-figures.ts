@@ -94,28 +94,31 @@ export function resolveGoalRowState(
  * ribbon's, not the strip's. `formatWeight` renders a kilogram value in the
  * viewer's unit.
  *
- * Body fat says where the client stands and how far, and no verdict
- * (docs/MEASUREMENT-LOG-PLAN.md commit 9c): its readings are the noisiest the
- * app holds, so a word judged from their trend or pace would mislead.
+ * Only a weight target with a deadline gets a verdict (docs/MEASUREMENT-LOG-PLAN.md
+ * commit 9c): with no deadline there is no pace to judge, and body-fat
+ * readings are the noisiest the app holds. Those rows say where the client
+ * stands and how far.
  */
 export function buildGoalRows(
   goalProgress: GoalProgressRows,
   formatWeight: (kg: number) => string
 ): GoalRow[] {
   const { weight, bodyFat, deadline } = goalProgress;
-  const deadlinePassed = deadline?.isPastDeadline === true;
   const rows: GoalRow[] = [];
 
   if (weight) {
     const { position } = weight;
+    const distance = position ? formatWeight(Math.abs(position.remaining)) : "";
     rows.push({
       name: "Weight",
       percentComplete: position?.percentComplete ?? 0,
       start: weight.goalStartWeight !== undefined ? formatWeight(weight.goalStartWeight) : undefined,
       goal: formatWeight(weight.goal),
-      state: position
-        ? resolveGoalRowState(position, formatWeight(Math.abs(position.remaining)), deadlinePassed)
-        : NO_READING,
+      state: !position
+        ? NO_READING
+        : deadline
+          ? resolveGoalRowState(position, distance, deadline.isPastDeadline)
+          : positionState(position, distance),
       judged: position !== null,
     });
   }

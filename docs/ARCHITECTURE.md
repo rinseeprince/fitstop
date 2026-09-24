@@ -111,7 +111,7 @@ coaches
 
 `computeGoalPace` (`lib/check-in/goal-pace.ts`) compares the rate **required** to hit the deadline against a safe ceiling of 1% of bodyweight per week, and returns `null` for an achieved or overshot goal. It measures the required rate, **not** the client's current pace: that is `trend`, the direction of the average change across the last ten check-ins, and the two can legitimately disagree — a client losing steadily is moving towards the target and still behind pace when the deadline asks for more than the ceiling allows.
 
-**The goal strip's weight row reads direction before speed** (`resolveGoalRowState`, `lib/check-in/review-figures.ts`; docs/MEASUREMENT-LOG-PLAN.md commit 8d4): `Reached` for a met goal; `Deadline passed` for a deadline gone by short of the target; then the trend — `Moving away`, `No change`, or `Too early to tell` (neutral) with no trend yet — and only a client moving towards the target gets the pace's words, `On track`, `Behind pace` or `Deadline unrealistic` (`On track` with no pace to judge). A met goal renders no remaining distance and no pace check. Once every goal that could be judged is met, the strip's footer suggests a new target while the goal judged is still the client's live one (`goalIsCurrent`), and says nothing once it has been replaced — never the nutrition note; a `No reading yet` row neither earns the note nor blocks it. The body fat row says only where the client stands and how far: `Reached`, the distance past the target, or the distance to go, muted.
+**The goal strip's weight row, when the goal has a deadline, reads direction before speed** (`resolveGoalRowState`, `lib/check-in/review-figures.ts`; docs/MEASUREMENT-LOG-PLAN.md commit 8d4): `Reached` for a met goal; `Deadline passed` for a deadline gone by short of the target; then the trend — `Moving away`, `No change`, or `Too early to tell` (neutral) with no trend yet — and only a client moving towards the target gets the pace's words, `On track`, `Behind pace` or `Deadline unrealistic`. A met goal renders no remaining distance and no pace check. Once every goal that could be judged is met, the strip's footer suggests a new target while the goal judged is still the client's live one (`goalIsCurrent`), and says nothing once it has been replaced — never the nutrition note; a `No reading yet` row neither earns the note nor blocks it. The body fat row, and the weight row of a goal with no deadline, say only where the client stands and how far: `Reached`, the distance past the target, or the distance to go, muted.
 
 ### The goals table (Journey → Goals)
 
@@ -1708,11 +1708,12 @@ and no window keydown listener. Weight and body fat appear twice on purpose: the
 
 **The goal strip** (`check-in-goal-strip.tsx`) is one row per goal — weight, body fat — on one
 grid: name, track, start → goal and state, each column as wide as its widest entry across the rows
-and the track taking what is left, so the rows line up and no state wraps. The weight row's state
-reads direction before speed (see "Goal progress and pace"):
+and the track taking what is left, so the rows line up and no state wraps. The weight row's state,
+when the goal has a deadline, reads direction before speed (see "Goal progress and pace"):
 `Reached` (with the distance past target on an overshoot), `Deadline passed`, `Moving away`,
 `No change`, `Too early to tell`, `On track`, `Behind pace`, `Deadline unrealistic`, all but the
-first carrying the distance to go; the body fat row gives only `Reached` or the distance — or
+first carrying the distance to go; the body fat row, and a weight row with no deadline, give only
+`Reached` or the distance — or
 either row's `No reading yet`, muted, when no
 reading existed as of the check-in's day: the position is the reading as of that day — the
 check-in's own reading, else the newest reading before it (see "Goal progress and pace") — never

@@ -54,7 +54,7 @@ Two design constraints that survive with it: the stored deficit is **intent, not
 
 ## A goal's two targets can contradict each other on the goal cards
 
-Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it). Narrowed 2026-09-02: the check-in review page no longer contradicts itself — its goal strip judges the weight row alone; the body fat row says only how far (`lib/check-in/review-figures.ts`).
+Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it). Narrowed 2026-09-02: the check-in review page no longer contradicts itself — its goal strip judges only a weight row with a deadline; the other rows say how far (`lib/check-in/review-figures.ts`).
 
 `goal_weight` and `goal_body_fat_percentage` are solved independently and reconciled by nobody:
 
