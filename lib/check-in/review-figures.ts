@@ -1,8 +1,9 @@
 import { format } from "date-fns";
 import { formatDeltaValue, type DeltaInfo } from "@/components/check-in/delta-format";
 import { shouldShowRegenerationBanner } from "@/utils/nutrition-helpers";
+import { dateStringToDayNumber } from "@/lib/date-helpers";
 import { GOAL_TYPE_SETTINGS, type GoalType } from "@/lib/goals/goal-types";
-import type { GoalPosition, GoalProgressRows } from "@/types/check-in";
+import type { GoalPosition, GoalProgress, GoalProgressRows } from "@/types/check-in";
 
 /**
  * The review page's figure rules, spelled once. The KPI ribbon and the goal
@@ -29,6 +30,12 @@ export type GoalRow = {
 const NO_READING: GoalRowState = { text: "No reading yet", tone: "neutral" };
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
+
+/** "17 Oct" from a calendar day, read at local midnight so no zone moves the day. */
+const dayMonth = (day: string): string => format(new Date(`${day}T00:00:00`), "d MMM");
+
+/** "1 day", "26 days". */
+const dayCount = (days: number): string => `${days} ${days === 1 ? "day" : "days"}`;
 
 /**
  * Where the client stands, then how far — joined by a middot.
@@ -131,9 +138,51 @@ export function describeGoalDeadline(
 ): string | undefined {
   if (!deadline) return undefined;
   const label = type ? GOAL_TYPE_SETTINGS[type].deadlineLabel : "Deadline";
-  const days = Math.abs(deadline.daysRemaining);
-  const distance = `${days} ${days === 1 ? "day" : "days"}${deadline.isPastDeadline ? " ago" : ""}`;
-  return `${label.toLowerCase()} ${format(new Date(deadline.date), "d MMM")} · ${distance}`;
+  const distance = `${dayCount(Math.abs(deadline.daysRemaining))}${deadline.isPastDeadline ? " ago" : ""}`;
+  return `${label.toLowerCase()} ${dayMonth(deadline.date)} · ${distance}`;
+}
+
+/** A goal with no target, counted down to its deadline: the strip's one row for it. */
+type DeadlineCountdown = {
+  /** What the goal's type calls its deadline: "Event day", else "Deadline". */
+  label: string;
+  /** How far from the goal's start to its deadline the check-in's day fell, 0–100. */
+  percentComplete: number;
+  /** The goal's start day and its deadline, "31 Aug" and "17 Oct". */
+  start: string;
+  end: string;
+  /** "26 days to go", "1 day to go", "Today", then "3 days ago", "1 day ago". */
+  text: string;
+  /** The deadline is the check-in's day: the text is the word "Today", not a count. */
+  onTheDay: boolean;
+};
+
+/**
+ * The countdown a goal with no target shows in place of rows
+ * (docs/MEASUREMENT-LOG-PLAN.md commit 9b). The bar is (total − remaining) /
+ * total: total the days from the goal's start to its deadline, remaining the
+ * days the check-in saved — so it measures the goal's time, never the
+ * check-in's — and it is full from the deadline on, a deadline on the goal's
+ * start day included. Null for a goal that sets a target, whose rows and rail
+ * carry its deadline, and for a goal with no deadline.
+ */
+export function buildDeadlineCountdown(goalProgress: GoalProgress): DeadlineCountdown | null {
+  const { goal, deadline, weight, bodyFat } = goalProgress;
+  if (!goal || !deadline || weight || bodyFat) return null;
+
+  const total = dateStringToDayNumber(deadline.date) - dateStringToDayNumber(goal.startsOn);
+  const remaining = deadline.daysRemaining;
+  const elapsed = total <= 0 ? 100 : Number((((total - remaining) / total) * 100).toFixed(1));
+  const days = dayCount(Math.abs(remaining));
+
+  return {
+    label: GOAL_TYPE_SETTINGS[goal.type].deadlineLabel,
+    percentComplete: Math.min(100, Math.max(0, elapsed)),
+    start: dayMonth(goal.startsOn),
+    end: dayMonth(deadline.date),
+    text: remaining === 0 ? "Today" : remaining > 0 ? `${days} to go` : `${days} ago`,
+    onTheDay: remaining === 0,
+  };
 }
 
 type GoalFooter = {

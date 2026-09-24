@@ -22,8 +22,10 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
  */
 function describe(warning: NutritionWarning, viewer: UnitSystem): string {
   switch (warning.code) {
+    // A deadline on the plan's first day has not passed, and leaves no days
+    // all the same: the deadline is the weigh-in.
     case "deadline_passed":
-      return "Goal deadline has passed. Using maintenance calories.";
+      return "Goal deadline is on or before the day this plan starts. Using maintenance calories.";
     case "deficit_capped": {
       const { value, unit } = formatWeight(warning.maxWeeklyChangeKg, viewer);
       return `Weekly deficit capped at ${round2(value)} ${unit}/week for safety. Goal timeline may need adjustment.`;

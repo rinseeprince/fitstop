@@ -11,14 +11,14 @@ import type { GoalPricing, NutritionOutOfDate } from "@/lib/nutrition/nutrition-
 /**
  * The one out-of-date notice (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d1),
  * shown on the Overview's nutrition card, the Nutrition tab and the drawer:
- * a saved version no longer fits the goal on its days. One sentence (the
- * owner's wording, 2026-09-23) names the goal from the day the problem starts
- * and what the calories still aim for — or, for calories the coach typed,
- * which aim for nothing, when the goal changed and to check them (commit
- * 8d4) — and a button offers the fix: Regenerate when the problem starts
- * today, "Set nutrition from <day>" when a later goal takes over. It never
- * regenerates anything itself. Prose, so all sans (the prose rule), numbers
- * included.
+ * a saved version no longer fits the goal on its days. It names the goal from
+ * the day the problem starts and what the calories still aim for, in one
+ * sentence (the owner's wording, 2026-09-23) — or, for calories the coach
+ * typed, which aim for nothing, when the goal changed and that the calories
+ * have not, in two (commits 8d4, 9b) — and a button offers the fix:
+ * Regenerate when the problem starts today, "Set nutrition from <day>" when a
+ * later goal takes over. It never regenerates anything itself. Prose, so all
+ * sans (the prose rule), numbers included.
  */
 type NutritionOutOfDateNoticeProps = {
   outOfDate: NutritionOutOfDate;
@@ -60,24 +60,22 @@ function describeGoal(name: string, pricing: GoalPricing, viewer: UnitSystem): s
 /**
  * Calories the coach typed were priced for no goal, so they are never said to
  * aim for one: the notice says when the goal changed — undated when the change
- * carries no day — and asks for a check.
+ * carries no day — and that the calories have not (commit 9b): a change that
+ * has happened left them as they were, and one still to come leaves them as
+ * they are.
  */
 function handTypedSentence(outOfDate: NutritionOutOfDate, clientToday: string): string {
   const changedOn = outOfDate.goalChangedOn;
-  let when: string;
+  const unchanged = "The calories haven't changed since then.";
+  const staying = "The calories stay as they are.";
   if (outOfDate.goalName === null) {
-    when =
-      outOfDate.fromDay === clientToday
-        ? "There's no goal now."
-        : `From ${formatDateOnlyShort(outOfDate.fromDay)} there's no goal.`;
-  } else if (changedOn === null) {
-    when = "The goal has changed.";
-  } else if (changedOn <= clientToday) {
-    when = `The goal changed on ${formatDateOnlyShort(changedOn)}.`;
-  } else {
-    when = `From ${formatDateOnlyShort(changedOn)} the goal changes.`;
+    return outOfDate.fromDay === clientToday
+      ? `There's no goal now. ${staying}`
+      : `From ${formatDateOnlyShort(outOfDate.fromDay)} there's no goal. ${staying}`;
   }
-  return `${when} These calories were set by hand — check they still fit.`;
+  if (changedOn === null) return `The goal has changed. ${unchanged}`;
+  if (changedOn <= clientToday) return `The goal changed on ${formatDateOnlyShort(changedOn)}. ${unchanged}`;
+  return `From ${formatDateOnlyShort(changedOn)} the goal changes. ${staying}`;
 }
 
 export function NutritionOutOfDateNotice({

@@ -174,9 +174,9 @@ describe("NutritionOutOfDateNotice", () => {
   });
 });
 
-describe("NutritionOutOfDateNotice — calories typed by hand (commit 8d4)", () => {
+describe("NutritionOutOfDateNotice — calories typed by hand (commits 8d4, 9b)", () => {
   // Typed calories were priced for no goal, so they never "still aim for"
-  // one: the notice says when the goal changed and asks for a check.
+  // one: the notice says when the goal changed and that the calories have not.
   it("says the day the goal changed — days ago, not today — and offers the same button", () => {
     const onRegenerate = vi.fn();
     render(
@@ -188,7 +188,7 @@ describe("NutritionOutOfDateNotice — calories typed by hand (commit 8d4)", () 
     );
 
     expect(
-      screen.getByText("The goal changed on 16 Sept. These calories were set by hand — check they still fit.")
+      screen.getByText("The goal changed on 16 Sept. The calories haven't changed since then.")
     ).toBeInTheDocument();
     expect(screen.queryByText(/still aim for/)).not.toBeInTheDocument();
     screen.getByRole("button", { name: "Regenerate" }).click();
@@ -206,7 +206,7 @@ describe("NutritionOutOfDateNotice — calories typed by hand (commit 8d4)", () 
     );
 
     expect(
-      screen.getByText("From 19 Oct the goal changes. These calories were set by hand — check they still fit.")
+      screen.getByText("From 19 Oct the goal changes. The calories stay as they are.")
     ).toBeInTheDocument();
     screen.getByRole("button", { name: "Set nutrition from 19 Oct" }).click();
     expect(onSetFrom).toHaveBeenCalledWith("2026-10-19");
@@ -226,9 +226,7 @@ describe("NutritionOutOfDateNotice — calories typed by hand (commit 8d4)", () 
       />
     );
 
-    expect(
-      screen.getByText("There's no goal now. These calories were set by hand — check they still fit.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("There's no goal now. The calories stay as they are.")).toBeInTheDocument();
   });
 
   it("says a later day has no goal", () => {
@@ -245,9 +243,7 @@ describe("NutritionOutOfDateNotice — calories typed by hand (commit 8d4)", () 
       />
     );
 
-    expect(
-      screen.getByText("From 19 Oct there's no goal. These calories were set by hand — check they still fit.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("From 19 Oct there's no goal. The calories stay as they are.")).toBeInTheDocument();
   });
 
   it("leaves a change with no day undated — a goal deleted, or edited before its start", () => {
@@ -255,8 +251,6 @@ describe("NutritionOutOfDateNotice — calories typed by hand (commit 8d4)", () 
       <NutritionOutOfDateNotice outOfDate={{ ...fromToday, setByHand: true, goalChangedOn: null }} clientToday={TODAY} />
     );
 
-    expect(
-      screen.getByText("The goal has changed. These calories were set by hand — check they still fit.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("The goal has changed. The calories haven't changed since then.")).toBeInTheDocument();
   });
 });

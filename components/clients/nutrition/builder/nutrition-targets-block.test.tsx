@@ -126,13 +126,15 @@ describe("NutritionTargetsBlock — the maintenance state is explained, not sile
     expect(screen.getByText(/matches the client's current weight/i)).toBeInTheDocument();
   });
 
-  // The calculator holds a deadline before the plan's first day at maintenance
-  // (commit 8d4): that is the reason, not the client's weight.
-  it("names a deadline before the plan starts as the reason", () => {
+  // The calculator holds a deadline on or before the plan's first day at
+  // maintenance (commits 8d4, 9b): that is the reason, not the client's weight.
+  it("names a deadline on or before the day the plan starts as the reason", () => {
     renderBlock(0, { requiredDailyDeficit: 0, hasGoalTarget: true, warnings: [{ code: "deadline_passed" }] });
 
     expect(
-      screen.getByText("The goal's deadline is before this plan starts, so these targets hold at maintenance.")
+      screen.getByText(
+        "The goal's deadline is on or before the day this plan starts, so these targets hold at maintenance."
+      )
     ).toBeInTheDocument();
     expect(screen.queryByText(/matches the client's current weight/i)).toBeNull();
   });

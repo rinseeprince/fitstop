@@ -116,6 +116,12 @@ describe("MetricsHub", () => {
     setupSWR();
   });
 
+  it("is headed Journey, as the coach's page is (commit 9b)", () => {
+    render(<MetricsHub />);
+    expect(screen.getByRole("heading", { level: 1, name: "Journey" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Metrics" })).toBeNull();
+  });
+
   it("renders the four category tabs", () => {
     render(<MetricsHub />);
     expect(screen.getByRole("tab", { name: "Physique" })).toBeInTheDocument();

@@ -112,7 +112,8 @@ const TABS: readonly TabConfig[] = [
   },
   {
     value: "metrics",
-    label: "Metrics",
+    // The coach's name for the same page; the address stays.
+    label: "Journey",
     href: "/client/metrics",
     icon: BarChart3,
     isActive: (pathname) => pathname.startsWith("/client/metrics"),

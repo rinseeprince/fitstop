@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Target, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -12,9 +13,11 @@ import {
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 import {
+  buildDeadlineCountdown,
   buildGoalRows,
   describeGoalDeadline,
   resolveGoalFooter,
+  type GoalRowTone,
 } from "@/lib/check-in/review-figures";
 import { goalTypeBesideName } from "@/lib/goals/goal-types";
 import type { CheckInComparison, GoalProgress } from "@/types/check-in";
@@ -32,6 +35,61 @@ type CheckInGoalStripProps = {
 };
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
+
+const TONE_CLASS: Record<GoalRowTone, string> = {
+  good: "text-[#0d9488]",
+  attention: "text-[#d97706]",
+  neutral: "text-[#93b0b4]",
+};
+
+/**
+ * One row of the strip's grid: a name, a bar, where it runs from and to, and
+ * the verdict. A subgrid of the strip's one grid, so every column is as wide
+ * as its widest entry across the rows and the rows line up.
+ */
+function GoalGridRow({
+  divided,
+  name,
+  percentComplete,
+  from,
+  to,
+  tone,
+  children,
+}: {
+  divided: boolean;
+  name: string;
+  percentComplete: number;
+  from: string;
+  to: string;
+  tone: GoalRowTone;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "col-span-full grid grid-cols-subgrid items-center py-4",
+        divided && "border-t border-[rgba(13,148,136,0.06)]"
+      )}
+    >
+      <span className="whitespace-nowrap text-[13px] font-semibold text-[#0c1a1e]">{name}</span>
+
+      <span className="h-1.5 overflow-hidden rounded-full bg-[rgba(13,148,136,0.06)]">
+        <span
+          className="block h-full rounded-full bg-[#0d9488]"
+          style={{ width: `${percentComplete}%` }}
+        />
+      </span>
+
+      <span className={cn("whitespace-nowrap text-[11px]", MONO_META_CLASS)}>
+        {from} <span className="px-0.5">&rarr;</span> {to}
+      </span>
+
+      <span className={cn("whitespace-nowrap text-right text-[12px] font-medium", TONE_CLASS[tone])}>
+        {children}
+      </span>
+    </div>
+  );
+}
 
 export const CheckInGoalStrip = ({
   goalProgress,
@@ -52,6 +110,7 @@ export const CheckInGoalStrip = ({
   // lib/check-in/review-figures.ts, which the AI review's prompt reads too —
   // so the strip and the model never describe one goal two ways.
   const rows = buildGoalRows(goalProgress, kg);
+  const countdown = buildDeadlineCountdown(goalProgress);
   const deadlineMeta = describeGoalDeadline(deadline, goal?.type ?? null);
 
   // No goal was in force on the check-in's day. A goal the record cannot judge
@@ -99,63 +158,63 @@ export const CheckInGoalStrip = ({
 
       <div className="rounded-[6px] bg-white px-5">
         {/* Rows come from the goal's targets, so a goal that sets none shows
-            itself in their place: its name, its type where the name doesn't
-            say it, and its deadline on the rail. */}
+            itself in their place: its name and its type where the name doesn't
+            say it, over its countdown to the deadline — or, with no deadline,
+            that there is nothing to track. */}
         {rows.length === 0 && (
-          <div className="py-4">
+          <div className={countdown ? "pt-4" : "py-4"}>
             <p className="flex min-w-0 items-baseline gap-2">
               <span className="truncate text-[13px] font-semibold text-[#0c1a1e]">{goal.name}</span>
               {typeBesideName && (
                 <span className="shrink-0 text-[12px] text-[#93b0b4]">{typeBesideName}</span>
               )}
             </p>
-            <p className="mt-1 text-[13px] text-[#93b0b4]">No target to track progress against</p>
+            {!countdown && (
+              <p className="mt-1 text-[13px] text-[#93b0b4]">No target to track progress against</p>
+            )}
           </div>
         )}
-        {rows.map((row, i) => (
-          <div
-            key={row.name}
-            className={cn(
-              "flex items-center gap-5 py-4",
-              i > 0 && "border-t border-[rgba(13,148,136,0.06)]"
+
+        {/* One grid for every row: name, bar, start → goal, verdict, each
+            column as wide as its widest entry across the rows and the bar
+            taking what is left, so the rows line up and no verdict wraps. */}
+        {(rows.length > 0 || countdown) && (
+          <div className="grid grid-cols-[max-content_minmax(0,1fr)_max-content_max-content] gap-x-5">
+            {rows.map((row, i) => (
+              <GoalGridRow
+                key={row.name}
+                divided={i > 0}
+                name={row.name}
+                percentComplete={row.percentComplete}
+                from={row.start ?? "—"}
+                to={row.goal}
+                tone={row.state.tone}
+              >
+                {/* The distance is a numeral inside a phrase, so the two halves
+                    take different fonts rather than the row taking one. */}
+                {row.state.text.split(" · ").map((half, j) => (
+                  <span key={j} className={j > 0 ? MONO : undefined}>
+                    {j > 0 && " · "}
+                    {half}
+                  </span>
+                ))}
+              </GoalGridRow>
+            ))}
+            {countdown && (
+              <GoalGridRow
+                divided={false}
+                name={countdown.label}
+                percentComplete={countdown.percentComplete}
+                from={countdown.start}
+                to={countdown.end}
+                tone="neutral"
+              >
+                {/* A count of days is a number; "Today" is a word. */}
+                <span className={countdown.onTheDay ? undefined : MONO}>{countdown.text}</span>
+              </GoalGridRow>
             )}
-          >
-            <span className="w-20 shrink-0 text-[13px] font-semibold text-[#0c1a1e]">
-              {row.name}
-            </span>
-
-            <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[rgba(13,148,136,0.06)]">
-              <span
-                className="block h-full rounded-full bg-[#0d9488]"
-                style={{ width: `${row.percentComplete}%` }}
-              />
-            </span>
-
-            <span className={cn("shrink-0 text-[11px]", MONO_META_CLASS)}>
-              {row.start ?? "—"} <span className="px-0.5">&rarr;</span> {row.goal}
-            </span>
-
-            <span
-              className={cn(
-                "w-[190px] shrink-0 text-right text-[12px] font-medium",
-                row.state.tone === "good"
-                  ? "text-[#0d9488]"
-                  : row.state.tone === "attention"
-                    ? "text-[#d97706]"
-                    : "text-[#93b0b4]"
-              )}
-            >
-              {/* The distance is a numeral inside a phrase, so the two halves
-                  take different fonts rather than the row taking one. */}
-              {row.state.text.split(" · ").map((half, j) => (
-                <span key={j} className={j > 0 ? MONO : undefined}>
-                  {j > 0 && " · "}
-                  {half}
-                </span>
-              ))}
-            </span>
           </div>
-        ))}
+        )}
 
         {footer && (
           <div className="flex items-center gap-3 border-t border-[rgba(13,148,136,0.06)] py-3.5">

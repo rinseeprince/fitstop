@@ -75,7 +75,7 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 - Integration with Daily Pulse for logging
 
 ### 4. Progress Tracking
-**Location**: `/client/metrics` (the Metrics hub; `/client/progress` is a redirect stub kept so old links resolve)
+**Location**: `/client/metrics` (the Journey tab; `/client/progress` is a redirect stub kept so old links resolve)
 
 - Upload progress photos (front, side, back views)
 - Log body measurements (weight, body fat %, circumferences)
@@ -941,15 +941,8 @@ habits.filter(h => new Date(h.createdAt) <= selectedDate)
 
 ### Navigation Structure
 
-**Mobile (< 640px)**:
-- Bottom tab navigation
-- 5 main sections: Home, Training, Nutrition, Progress, Resources
-- Fixed position at bottom
-
-**Desktop**:
-- Left sidebar navigation
-- Same 5 sections
-- User profile and logout in header
+- A bottom tab bar at every width, fixed at the bottom: Home, Journey, Program, Content
+- The top bar holds notifications and the account menu (Settings, Sign out)
 
 ### Color Schemes
 
@@ -1101,7 +1094,7 @@ Coaches receive alerts when:
     ├── dashboard/page.tsx     # Main dashboard with Daily Pulse
     ├── training/page.tsx      # Training plans view
     ├── nutrition/page.tsx     # Nutrition targets
-    ├── metrics/page.tsx       # Metrics hub (progress tracking)
+    ├── metrics/page.tsx       # Journey tab (progress tracking)
     ├── progress/page.tsx      # redirect → /client/metrics (kept so old links resolve)
     ├── check-in/page.tsx      # Weekly check-in form
     ├── resources/page.tsx     # Educational content

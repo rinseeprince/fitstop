@@ -888,8 +888,9 @@ export type GoalProgressRows = {
   };
 };
 
-/** The goal a check-in judged: the goal in force on its day, as it stood then. */
-export type JudgedGoal = { name: string; type: GoalType };
+/** The goal a check-in judged: the goal in force on its day, as it stood then —
+ *  its start day is where a goal with no target counts down to its deadline from. */
+export type JudgedGoal = { name: string; type: GoalType; startsOn: string };
 
 /**
  * The check-in review's goal progress: the goal in force on the check-in's day

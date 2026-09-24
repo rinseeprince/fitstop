@@ -32,7 +32,7 @@ export const WALKTHROUGH_STEPS: readonly WalkthroughStepConfig[] = [
         <p className="text-muted-foreground">
           Use the tabs at the bottom to move around:{" "}
           <span className="font-semibold text-foreground">Home</span> for today,{" "}
-          <span className="font-semibold text-foreground">Metrics</span> for your
+          <span className="font-semibold text-foreground">Journey</span> for your
           numbers,{" "}
           <span className="font-semibold text-foreground">Program</span> for your
           plan, and{" "}

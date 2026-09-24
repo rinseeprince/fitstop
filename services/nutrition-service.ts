@@ -79,9 +79,12 @@ export function calculateBaselineCalories(
 
   // Calculate time to goal: the window runs from the later of the plan's
   // effective date (`calcStartDate`, the day the plan takes effect) and today,
-  // to the deadline. Today is the CLIENT-local today when the caller provides
-  // it (the deadline lives on the client's calendar); server-local midnight
-  // only as fallback.
+  // to the day before the deadline. The deadline is the weigh-in: the scale on
+  // its morning shows what was eaten up to the day before (owner, 2026-09-24),
+  // so 24 Sep to a 31 Oct deadline is 37 days, and a deadline on or before the
+  // first day leaves none. Today is the CLIENT-local today when the caller
+  // provides it (the deadline lives on the client's calendar); server-local
+  // midnight only as fallback.
   //
   // All three dates are reduced to a calendar day and parsed as LOCAL midnight,
   // deliberately. `new Date("YYYY-MM-DD")` is UTC midnight while
@@ -114,7 +117,7 @@ export function calculateBaselineCalories(
   const deadline = localMidnight(goalDeadline);
   const daysToGoal = Math.round(
     (deadline.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-  ) + 1;
+  );
 
   if (daysToGoal <= 0) {
     warnings.push({ code: "deadline_passed" });

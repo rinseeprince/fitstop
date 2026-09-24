@@ -18,7 +18,7 @@ describe('calculateBaselineCalories', () => {
 
     const result = calculateBaselineCalories(tdee, currentWeightKg, goalWeightKg, goalDeadline, gender)
 
-    // 10kg loss = 77,000 kcal total, over 91 days (inclusive) = ~846 kcal/day deficit
+    // 10kg loss = 77,000 kcal total, over the 90 days before the deadline = ~856 kcal/day deficit
     expect(result.requiredDailyDeficit).toBeGreaterThan(0)
     expect(result.baselineCalories).toBeLessThan(tdee)
     expect(result.warnings).toEqual([])
@@ -42,7 +42,7 @@ describe('calculateBaselineCalories', () => {
       tdee, currentWeightKg, goalWeightKg, deadline.toISOString(), gender
     )
 
-    // Future start → 91 days inclusive (120 - 30 + 1), so deficit should be LARGER (more aggressive)
+    // Future start → 90 days (120 - 30), so deficit should be LARGER (more aggressive)
     expect(resultWithFutureStart.requiredDailyDeficit).toBeGreaterThan(
       resultWithoutStart.requiredDailyDeficit
     )
@@ -133,6 +133,29 @@ describe('calculateBaselineCalories', () => {
       expect(isoForm.baselineCalories).toBe(dateOnly.baselineCalories)
       expect(Number.isNaN(isoForm.baselineCalories)).toBe(false)
     })
+  })
+})
+
+// The deadline is the weigh-in: the scale on its morning shows what was eaten
+// up to the day before, so the change is spread over the days from the plan's
+// first day to the day before the deadline (commit 9b, owner 2026-09-24).
+describe('calculateBaselineCalories — the deadline is the weigh-in', () => {
+  it('spreads 24 Sep to a 31 Oct deadline over 37 days', () => {
+    // 2.4 kg is 18,480 kcal: 499.46 a day over 37 days, from a TDEE of 2,710.
+    const result = calculateBaselineCalories(2710, 83.6, 81.2, '2026-10-31', 'male', '2026-09-24', '2026-09-24')
+
+    expect(result.requiredDailyDeficit).toBeCloseTo((2.4 * 7700) / 37, 6)
+    expect(result.baselineCalories).toBe(2211)
+    expect(result.weeklyRate).toBeCloseTo(-2.4 / (37 / 7), 6)
+    expect(result.warnings).toEqual([])
+  })
+
+  it('holds a deadline on the first day at maintenance: it leaves no days', () => {
+    const result = calculateBaselineCalories(2710, 83.6, 81.2, '2026-09-24', 'male', '2026-09-24', '2026-09-24')
+
+    expect(result.warnings).toEqual([{ code: 'deadline_passed' }])
+    expect(result.baselineCalories).toBe(2710)
+    expect(result.requiredDailyDeficit).toBe(0)
   })
 })
 

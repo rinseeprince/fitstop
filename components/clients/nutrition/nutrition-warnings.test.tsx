@@ -66,6 +66,17 @@ describe("NutritionWarnings", () => {
     expect(metricText).toContain("25%");
   });
 
+  it("says a deadline on or before the plan's first day holds it at maintenance — never that it has passed", () => {
+    // A deadline on the first day has not passed; it leaves no days all the
+    // same, because the deadline is the weigh-in (commit 9b).
+    render(<NutritionWarnings warnings={[{ code: "deadline_passed" }]} />);
+
+    expect(
+      screen.getByText("Goal deadline is on or before the day this plan starts. Using maintenance calories.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/has passed/)).toBeNull();
+  });
+
   it("renders nothing when there are no warnings", () => {
     const { container } = render(<NutritionWarnings warnings={[]} />);
     expect(container).toBeEmptyDOMElement();

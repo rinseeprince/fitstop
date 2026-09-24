@@ -141,7 +141,7 @@ const fixture: CheckInReviewInput = {
         position: { current: 82.4, remaining: 4.4, percentComplete: 45, status: "approaching", trend: "towards", paceStatus: "on_track" },
       },
       deadline: { date: "2026-11-30", daysRemaining: 74, isPastDeadline: false },
-      goal: { name: "Lose weight", type: "lose_weight" },
+      goal: { name: "Lose weight", type: "lose_weight", startsOn: "2026-07-13" },
       goalIsCurrent: true,
     },
   },
@@ -294,7 +294,7 @@ describe("buildCheckInReviewPrompt — the fixture week, pinned", () => {
         ...fixture.comparison!,
         goalProgress: {
           deadline: { date: "2026-10-24", daysRemaining: 37, isPastDeadline: false },
-          goal: { name: "Hyrox Manchester", type: "event_prep" },
+          goal: { name: "Hyrox Manchester", type: "event_prep", startsOn: "2026-08-31" },
           goalIsCurrent: true,
         },
       },

@@ -95,7 +95,7 @@ describe("WALKTHROUGH_STEPS copy module", () => {
 
   it("nav step names all four tabs and points to Settings behind the photo", () => {
     renderStep("nav");
-    for (const tab of ["Home", "Metrics", "Program", "Content"]) {
+    for (const tab of ["Home", "Journey", "Program", "Content"]) {
       expect(screen.getByText(tab)).toBeInTheDocument();
     }
     expect(

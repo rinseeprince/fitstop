@@ -203,10 +203,11 @@ describe("a sent check-in's goal section is the one it saved", () => {
     const { comparison, goalProgress } = await buildCheckInComparison(sentCheckIn(), client)
 
     const saved = sentCopy()
-    // The goal judged, by name and type — what a goal with no target shows.
+    // The goal judged, by name, type and start day — what a goal with no
+    // target shows, and where its countdown to the deadline runs from.
     expect(goalProgress).toEqual({
       ...saved.goalProgress,
-      goal: { name: 'Lose weight', type: 'lose_weight' },
+      goal: { name: 'Lose weight', type: 'lose_weight', startsOn: '2026-04-11' },
       goalIsCurrent: false,
     })
     // The client carries no goal of its own: the goal section is the copy's.

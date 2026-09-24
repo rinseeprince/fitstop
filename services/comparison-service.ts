@@ -68,8 +68,11 @@ export const buildCheckInComparison = async (
     snapshot.goal != null && snapshot.goal.id === goalOnDay(goals, today)?.id;
   const goalProgress: GoalProgress = {
     ...snapshot.goalProgress,
-    // The goal judged, by name and type: all a goal with no target has to show.
-    goal: snapshot.goal ? { name: snapshot.goal.name, type: snapshot.goal.type } : null,
+    // The goal judged, by name, type and start day: all a goal with no target
+    // has to show, and where its countdown to the deadline runs from.
+    goal: snapshot.goal
+      ? { name: snapshot.goal.name, type: snapshot.goal.type, startsOn: snapshot.goal.startsOn }
+      : null,
     goalIsCurrent,
   };
 

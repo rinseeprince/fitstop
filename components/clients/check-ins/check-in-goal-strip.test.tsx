@@ -8,6 +8,7 @@ vi.mock("@/contexts/units-context", () => ({
 }));
 
 import { CheckInGoalStrip } from "./check-in-goal-strip";
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import type {
   CheckInComparison,
   GoalPosition,
@@ -54,9 +55,12 @@ const UNREAD_WEIGHT: WeightRow = { goal: 66, startingWeight: 91, goalStartWeight
 const UNREAD_BODY_FAT: BodyFatRow = { goal: 14, startingBodyFat: 23, position: null };
 
 /** The goal the check-in judged, unless a case says otherwise. */
-const CUT: JudgedGoal = { name: "Cut to 77", type: "lose_weight" };
+const CUT: JudgedGoal = { name: "Cut to 77", type: "lose_weight", startsOn: "2026-06-08" };
 
 const NO_CLIENT = {} as CheckInComparison["client"];
+
+/** Matches the element whose whole text is `text` — the arrow is a span of its own. */
+const wholeText = (text: string) => (_: string, element: Element | null) => element?.textContent === text;
 
 /** 79 kg then against targets built at 75 — four kilos of drift, past the 3 kg threshold. */
 const DRIFTED = {
@@ -252,28 +256,63 @@ describe("a goal that could not be judged as of the check-in's day", () => {
   });
 });
 
-describe("a goal with no target (commit 8d4)", () => {
+describe("a goal with no target (commits 8d4, 9b)", () => {
   // Maintain, event prep and general fitness ask for no target, so the goal
-  // has no rows. It is still the goal the check-in judged: it shows itself.
-  const HYROX: JudgedGoal = { name: "Hyrox Manchester", type: "event_prep" };
+  // has no rows. It is still the goal the check-in judged: it shows itself,
+  // and counts down to its deadline when it has one.
+  const HYROX: JudgedGoal = { name: "Hyrox Manchester", type: "event_prep", startsOn: "2026-08-29" };
   const EVENT_DAY = { date: "2026-10-17", daysRemaining: 23, isPastDeadline: false };
 
-  it("shows the goal's name, its type and its event day, and says there is no target", () => {
-    renderStrip({ deadline: EVENT_DAY }, NO_CLIENT, true, HYROX);
+  it("shows the goal's name and its type over a countdown to its event day — not 'No target'", () => {
+    const { container } = renderStrip({ deadline: EVENT_DAY }, NO_CLIENT, true, HYROX);
 
     expect(screen.getByText("Hyrox Manchester")).toBeInTheDocument();
     expect(screen.getByText("Event prep")).toBeInTheDocument();
     expect(screen.getByText("event day 17 Oct · 23 days")).toBeInTheDocument();
-    expect(screen.getByText("No target to track progress against")).toBeInTheDocument();
+    expect(screen.getByText("Event day")).toBeInTheDocument();
+    expect(screen.getByText(wholeText("29 Aug → 17 Oct"))).toBeInTheDocument();
+    expect(screen.getByText("23 days to go")).toBeInTheDocument();
+    // 29 Aug to 17 Oct is 49 days; 23 left, so 26 gone — from the goal's
+    // start, never from the check-in's day.
+    expect(container.querySelector('[style*="width: 53.1%"]')).not.toBeNull();
+    expect(screen.queryByText("No target to track progress against")).not.toBeInTheDocument();
     expect(screen.queryByText(/No goals have been set/)).not.toBeInTheDocument();
   });
 
-  it("says the type only where the name doesn't", () => {
-    renderStrip({}, NO_CLIENT, true, { name: "Maintain", type: "maintain" });
+  it("says the days to go muted, as a number", () => {
+    renderStrip({ deadline: EVENT_DAY }, NO_CLIENT, true, HYROX);
+
+    const days = screen.getByText("23 days to go");
+    expect(days).toHaveClass(MONO);
+    expect(days.parentElement).toHaveClass("text-[#93b0b4]");
+  });
+
+  it("says Today on the day, as a word, with the bar full", () => {
+    const race = { name: "Race day", type: "event_prep" as const, startsOn: "2026-08-10" };
+    const { container } = renderStrip({ deadline: { date: "2026-09-24", daysRemaining: 0, isPastDeadline: false } }, NO_CLIENT, true, race);
+
+    expect(screen.getByText("Today")).not.toHaveClass(MONO);
+    expect(container.querySelector('[style*="width: 100%"]')).not.toBeNull();
+  });
+
+  it("calls a goal's deadline Deadline unless the type names it", () => {
+    const hold = { name: "Hold at 68", type: "maintain" as const, startsOn: "2026-09-07" };
+    const { container } = renderStrip({ deadline: { date: "2026-12-04", daysRemaining: 41, isPastDeadline: false } }, NO_CLIENT, true, hold);
+
+    expect(screen.getByText("Deadline")).toBeInTheDocument();
+    expect(screen.getByText(wholeText("7 Sep → 4 Dec"))).toBeInTheDocument();
+    expect(screen.getByText("41 days to go")).toBeInTheDocument();
+    // 7 Sep to 4 Dec is 88 days; 47 gone.
+    expect(container.querySelector('[style*="width: 53.4%"]')).not.toBeNull();
+  });
+
+  it("says there is no target only when there is no deadline to count down to", () => {
+    renderStrip({}, NO_CLIENT, true, { name: "Maintain", type: "maintain", startsOn: "2026-07-20" });
 
     expect(screen.getByText("Maintain")).toBeInTheDocument();
     expect(screen.getAllByText(/Maintain/)).toHaveLength(1);
     expect(screen.getByText("No target to track progress against")).toBeInTheDocument();
+    expect(screen.queryByText(/to go|Deadline/)).not.toBeInTheDocument();
   });
 
   it("still carries the drift note, which is about the targets, not the goal's target", () => {

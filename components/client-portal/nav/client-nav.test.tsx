@@ -87,10 +87,12 @@ describe("ClientBottomTabBar", () => {
     cleanup();
   });
 
-  it("renders all four tabs with correct hrefs (Metrics replaces Check-in)", () => {
+  it("renders all four tabs with correct hrefs (Journey replaces Check-in)", () => {
     render(<ClientBottomTabBar />);
     expect(screen.getByRole("link", { name: /home/i })).toHaveAttribute("href", "/client");
-    expect(screen.getByRole("link", { name: /metrics/i })).toHaveAttribute("href", "/client/metrics");
+    // Named as the coach's page is; the address stays (commit 9b).
+    expect(screen.getByRole("link", { name: "Journey" })).toHaveAttribute("href", "/client/metrics");
+    expect(screen.queryByRole("link", { name: /metrics/i })).toBeNull();
     expect(screen.getByRole("link", { name: /program/i })).toHaveAttribute("href", "/client/program");
     expect(screen.getByRole("link", { name: /content/i })).toHaveAttribute("href", "/client/resources");
     expect(screen.queryByRole("link", { name: /check-in/i })).toBeNull();
@@ -108,14 +110,14 @@ describe("ClientBottomTabBar", () => {
     expect(screen.getByRole("link", { name: /home/i })).toHaveAttribute("data-active", "false");
   });
 
-  it("marks Metrics tab active on /client/metrics and nested routes", () => {
+  it("marks Journey tab active on /client/metrics and nested routes", () => {
     mockPathname = "/client/metrics";
     const { rerender } = render(<ClientBottomTabBar />);
-    expect(screen.getByRole("link", { name: /metrics/i })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("link", { name: /journey/i })).toHaveAttribute("data-active", "true");
 
     mockPathname = "/client/metrics/abc";
     rerender(<ClientBottomTabBar />);
-    expect(screen.getByRole("link", { name: /metrics/i })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("link", { name: /journey/i })).toHaveAttribute("data-active", "true");
   });
 
   it("marks Program tab active on /client/program and nested routes", () => {

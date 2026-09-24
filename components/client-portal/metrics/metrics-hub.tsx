@@ -150,7 +150,7 @@ export function MetricsHub({ initialTab = "physique" }: MetricsHubProps) {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-[18px] font-semibold text-[#0c1a1e]">Metrics</h1>
+      <h1 className="text-[18px] font-semibold text-[#0c1a1e]">Journey</h1>
 
       <div role="tablist" aria-label="Metrics categories" className="flex border-b border-[rgba(13,148,136,0.12)]">
         {TABS.map((tab, i) => (

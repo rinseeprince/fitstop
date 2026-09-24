@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
+  buildDeadlineCountdown,
   buildGoalRows,
   describeGoalDeadline,
   metricComparison,
@@ -7,7 +8,7 @@ import {
   resolveGoalRowState,
   type GoalRow,
 } from "./review-figures";
-import type { GoalPosition } from "@/types/check-in";
+import type { GoalPosition, GoalProgress, JudgedGoal } from "@/types/check-in";
 
 const position = (overrides: Partial<GoalPosition>): GoalPosition => ({
   current: 82,
@@ -129,6 +130,101 @@ describe("describeGoalDeadline", () => {
   it("says one day, not one days", () => {
     expect(describeGoalDeadline({ date: "2026-09-25", daysRemaining: 1, isPastDeadline: false }, "lose_weight")).toBe("deadline 25 Sep · 1 day");
     expect(describeGoalDeadline({ date: "2026-09-22", daysRemaining: -1, isPastDeadline: true }, "lose_weight")).toBe("deadline 22 Sep · 1 day ago");
+  });
+});
+
+describe("buildDeadlineCountdown — a goal with no target counts down to its deadline (commit 9b)", () => {
+  const countdown = (goal: JudgedGoal | null, deadline?: { date: string; daysRemaining: number }) =>
+    buildDeadlineCountdown({
+      goal,
+      goalIsCurrent: true,
+      ...(deadline && { deadline: { ...deadline, isPastDeadline: deadline.daysRemaining < 0 } }),
+    });
+
+  it("fills from the goal's start to its deadline as of the check-in's day, and counts the days to go", () => {
+    // 2 Sep to 13 Nov is 72 days; 29 left means 43 gone.
+    expect(countdown({ name: "Tough Mudder", type: "event_prep", startsOn: "2026-09-02" }, { date: "2026-11-13", daysRemaining: 29 })).toEqual({
+      label: "Event day",
+      percentComplete: 59.7,
+      start: "2 Sep",
+      end: "13 Nov",
+      text: "29 days to go",
+      onTheDay: false,
+    });
+  });
+
+  it("calls the deadline what the goal's type calls it, and says one day, not one days", () => {
+    // 14 Aug to 9 Oct is 56 days; one left.
+    expect(countdown({ name: "Hold steady", type: "maintain", startsOn: "2026-08-14" }, { date: "2026-10-09", daysRemaining: 1 })).toMatchObject({
+      label: "Deadline",
+      percentComplete: 98.2,
+      text: "1 day to go",
+      onTheDay: false,
+    });
+  });
+
+  it("says Today on the day, with the bar full", () => {
+    expect(countdown({ name: "Half marathon", type: "event_prep", startsOn: "2026-07-06" }, { date: "2026-09-28", daysRemaining: 0 })).toMatchObject({
+      percentComplete: 100,
+      text: "Today",
+      onTheDay: true,
+    });
+  });
+
+  it("counts the days since, with the bar full", () => {
+    const passed = { name: "Stay fit", type: "general_fitness" as const, startsOn: "2026-06-15" };
+    expect(countdown(passed, { date: "2026-08-21", daysRemaining: -4 })).toMatchObject({ percentComplete: 100, text: "4 days ago" });
+    expect(countdown(passed, { date: "2026-08-21", daysRemaining: -1 })).toMatchObject({ percentComplete: 100, text: "1 day ago" });
+  });
+
+  it("is full for a deadline on the goal's start day", () => {
+    expect(countdown({ name: "Weigh-in day", type: "event_prep", startsOn: "2026-10-05" }, { date: "2026-10-05", daysRemaining: 0 })).toMatchObject({
+      percentComplete: 100,
+      start: "5 Oct",
+      end: "5 Oct",
+    });
+  });
+
+  it("is not there without a deadline, without a goal, or for a goal with a target", () => {
+    expect(countdown({ name: "Maintain", type: "maintain", startsOn: "2026-05-18" })).toBeNull();
+    expect(countdown(null, { date: "2026-12-02", daysRemaining: 69 })).toBeNull();
+    const withTarget: GoalProgress = {
+      goal: { name: "Cut to 73", type: "lose_weight", startsOn: "2026-08-03" },
+      goalIsCurrent: true,
+      weight: { goal: 73, goalStartWeight: 81.7, position: null },
+      deadline: { date: "2026-12-16", daysRemaining: 83, isPastDeadline: false },
+    };
+    expect(buildDeadlineCountdown(withTarget)).toBeNull();
+    // A recomp's one target is its body fat.
+    const bodyFatOnly: GoalProgress = {
+      goal: { name: "Recomp", type: "recomposition", startsOn: "2026-07-27" },
+      goalIsCurrent: true,
+      bodyFat: { goal: 14.2, goalStartBodyFat: 19.4, position: null },
+      deadline: { date: "2026-12-09", daysRemaining: 76, isPastDeadline: false },
+    };
+    expect(buildDeadlineCountdown(bodyFatOnly)).toBeNull();
+  });
+});
+
+describe("the deadline's day, whatever the viewer's zone (commit 9b)", () => {
+  // The suite runs in UTC, where a day parsed at UTC midnight reads right. West
+  // of UTC it reads the day before, and the rail would disagree with the
+  // countdown under it.
+  const originalTZ = process.env.TZ;
+  afterEach(() => {
+    process.env.TZ = originalTZ;
+  });
+
+  it("names the same days on the rail and the countdown west of UTC", () => {
+    process.env.TZ = "America/New_York";
+    const ultra: GoalProgress = {
+      goal: { name: "Ultra", type: "event_prep", startsOn: "2026-09-09" },
+      goalIsCurrent: true,
+      deadline: { date: "2026-11-19", daysRemaining: 64, isPastDeadline: false },
+    };
+
+    expect(describeGoalDeadline(ultra.deadline, "event_prep")).toBe("event day 19 Nov · 64 days");
+    expect(buildDeadlineCountdown(ultra)).toMatchObject({ start: "9 Sep", end: "19 Nov" });
   });
 });
 
