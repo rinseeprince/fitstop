@@ -12,7 +12,8 @@ import { createClient } from "@supabase/supabase-js";
 
 export const PROOF_BASE = process.env.WIRE_PROOF_BASE ?? "http://localhost:3000";
 
-export type ProofSession = { label: string; cookie: string };
+/** `cookie` drives the app; `accessToken` goes straight to the Data API, as a browser holding the login could. */
+export type ProofSession = { label: string; cookie: string; accessToken: string };
 
 function need(name: string): string {
   const value = process.env[name];
@@ -62,7 +63,11 @@ export async function mintSession(email: string, label: string): Promise<ProofSe
   if (setError) throw new Error(`setSession failed for ${email}: ${setError.message}`);
   if (jar.size === 0) throw new Error(`No auth cookie minted for ${email}`);
 
-  return { label, cookie: [...jar].map(([name, value]) => `${name}=${value}`).join("; ") };
+  return {
+    label,
+    cookie: [...jar].map(([name, value]) => `${name}=${value}`).join("; "),
+    accessToken: verified.session.access_token,
+  };
 }
 
 export type ProofResponse = { status: number; text: string; json: unknown };
