@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   try {
-    const client = await getClientForCurrentUser();
+    const client = await getClientForCurrentUser(auth.clientId);
 
     if (!client) {
       return NextResponse.json(

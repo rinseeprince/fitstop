@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("./client-portal-service", () => ({ createPortalClient: vi.fn() }));
 // The goal is not on the client row: it is the goal in force on the client's
 // today, with the readings on its start day, read through the goals service.
 vi.mock("./client-goals-service", () => ({
@@ -8,16 +7,16 @@ vi.mock("./client-goals-service", () => ({
 }));
 // The series' window counts back from the client's today.
 vi.mock("./today-service", () => ({ getClientTodayString: vi.fn().mockResolvedValue("2026-09-24") }));
-// The module reads CLIENT_MEASUREMENT_EMBEDS from the real measurements
-// service, whose supabase-admin import needs env at load. Stub that client and
-// the energy helper rather than the service, so the embed string the clients
-// select is asserted against below is the real one, not a copy that could drift.
+// Every read is the service role's: each test serves its fake as
+// `supabaseAdmin`. The module reads CLIENT_MEASUREMENT_EMBEDS from the real
+// measurements service, whose energy helper is stubbed rather than the
+// service, so the embed string the clients select is asserted against below is
+// the real one, not a copy that could drift.
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./client-energy-service", () => ({ recalculateClientEnergy: vi.fn() }));
 
 import { getClientProgressData } from "./client-portal-progress";
 import type { ClientMetricSeries } from "./client-portal-progress";
-import { createPortalClient } from "./client-portal-service";
 import { getGoalsOverview } from "./client-goals-service";
 import { getClientTodayString } from "./today-service";
 import { supabaseAdmin } from "./supabase-admin";
@@ -80,6 +79,8 @@ const logRow = (id: string, date: string, values: Partial<Record<WellnessKey, nu
 //   client_measurements_live: .select().eq().gte().order()×3.range(from, to)    (awaited, paged)
 //   wellness_logs:            .select().eq().gte().order()×2.range(from, to)    (awaited, paged)
 //   clients:                  .select().eq().single()                           (awaited)
+// Each chain records its `.eq()` filters: the service role reads past every
+// rule in the database, so a filter is the whole scope of a read.
 function fakeSupabase(opts: {
   checkInCount?: number;
   checkInError?: { message: string } | null;
@@ -110,8 +111,15 @@ function fakeSupabase(opts: {
     wellness_logs: [],
   };
   const rangeCalls: Array<[number, number]> = [];
+  // Each read's `.eq()` filters, as [column, value].
+  const scopes: Record<string, Array<[string, string]>> = {
+    check_ins: [],
+    client_measurements_live: [],
+    wellness_logs: [],
+    clients: [],
+  };
   const wellnessRead = {
-    scope: [] as Array<[string, string]>,
+    scope: scopes.wellness_logs,
     orders: [] as Array<[string, unknown]>,
     rangeCalls: [] as Array<[number, number]>,
   };
@@ -127,7 +135,10 @@ function fakeSupabase(opts: {
       checkInSelectOptions.push(options);
       return checkInChain;
     },
-    eq: () => checkInChain,
+    eq: (column: string, value: string) => {
+      scopes.check_ins.push([column, value]);
+      return checkInChain;
+    },
     // Awaited as the count; `.order()` is there for a read of the rows.
     gte: () =>
       Object.assign(Promise.resolve(checkInResult()), {
@@ -139,7 +150,10 @@ function fakeSupabase(opts: {
       selects.client_measurements_live.push(columns);
       return readingChain;
     },
-    eq: () => readingChain,
+    eq: (column: string, value: string) => {
+      scopes.client_measurements_live.push([column, value]);
+      return readingChain;
+    },
     gte: (column: string, value: string) => {
       bounds.client_measurements_live.push([column, value]);
       return readingChain;
@@ -157,7 +171,7 @@ function fakeSupabase(opts: {
       return wellnessChain;
     },
     eq: (column: string, value: string) => {
-      wellnessRead.scope.push([column, value]);
+      scopes.wellness_logs.push([column, value]);
       return wellnessChain;
     },
     gte: (column: string, value: string) => {
@@ -182,7 +196,10 @@ function fakeSupabase(opts: {
       selects.clients.push(columns);
       return clientChain;
     },
-    eq: () => clientChain,
+    eq: (column: string, value: string) => {
+      scopes.clients.push([column, value]);
+      return clientChain;
+    },
     single: () =>
       Promise.resolve({ data: opts.client ?? null, error: opts.clientError ?? null }),
   };
@@ -198,8 +215,15 @@ function fakeSupabase(opts: {
     checkInSelectOptions,
     bounds,
     rangeCalls,
+    scopes,
     wellnessRead,
   };
+}
+
+/** Serves the fake as the service role for the next read. */
+function serve<T extends ReturnType<typeof fakeSupabase>>(fake: T): T {
+  vi.mocked(supabaseAdmin.from).mockImplementation(fake.from as never);
+  return fake;
 }
 
 /** The goal in force on the client's today, as the goals service returns it. */
@@ -232,6 +256,33 @@ function findSeries(series: ClientMetricSeries[], id: string): ClientMetricSerie
   return found;
 }
 
+describe("getClientProgressData — every read is the server's", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // No rule in the database stands behind the service role: a read that lost
+  // its filter would hand this client every client's rows.
+  it("reads through the service role alone, each read scoped to the client id the route verified", async () => {
+    const fake = serve(fakeSupabase({ client: null }));
+
+    await getClientProgressData("c7");
+
+    expect(vi.mocked(supabaseAdmin.from).mock.calls.map(([table]) => table)).toEqual([
+      "check_ins",
+      "client_measurements_live",
+      "wellness_logs",
+      "clients",
+    ]);
+    expect(fake.scopes).toEqual({
+      check_ins: [["client_id", "c7"]],
+      client_measurements_live: [["client_id", "c7"]],
+      wellness_logs: [["client_id", "c7"]],
+      clients: [["id", "c7"]],
+    });
+    expect(getGoalsOverview).toHaveBeenCalledWith("c7");
+    expect(getClientTodayString).toHaveBeenCalledWith("c7");
+  });
+});
+
 describe("getClientProgressData — the client row", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -239,13 +290,13 @@ describe("getClientProgressData — the client row", () => {
   });
 
   it("returns canonical kg + cm and surfaces goals/streak", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(
+    serve(
       fakeSupabase({
         client: {
           current_streak: 6,
           check_in_adherence_rate: 92,
         },
-      }) as never,
+      }),
     );
     vi.mocked(getGoalsOverview).mockResolvedValue(goalNow({ targetWeight: 78 }));
 
@@ -265,7 +316,7 @@ describe("getClientProgressData — the client row", () => {
   // units, and now come from the goal in force on the client's today; the
   // goal's type and its start readings are added after them (commit 8d4).
   it("takes the goal's targets from the goal in force on the client's today, in their places", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(fakeSupabase({ client: {} }) as never);
+    serve(fakeSupabase({ client: {} }));
     vi.mocked(getGoalsOverview).mockResolvedValue(
       goalNow({ targetWeight: 71.6, targetBodyFatPercentage: 14.5 })
     );
@@ -289,7 +340,7 @@ describe("getClientProgressData — the client row", () => {
   });
 
   it("carries the goal's type and the client's readings on its start day — which way it points", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(fakeSupabase({ client: {} }) as never);
+    serve(fakeSupabase({ client: {} }));
     vi.mocked(getGoalsOverview).mockResolvedValue(
       goalNow({ type: "build_muscle", targetWeight: 83.7, startReadings: { weight: 76.9, bodyFat: 18.2 } })
     );
@@ -302,7 +353,7 @@ describe("getClientProgressData — the client row", () => {
   });
 
   it("omits a target the goal does not set, and everything when no goal is in force", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(fakeSupabase({ client: {} }) as never);
+    serve(fakeSupabase({ client: {} }));
     vi.mocked(getGoalsOverview).mockResolvedValue(
       goalNow({ type: "recomposition", targetBodyFatPercentage: 13.5 })
     );
@@ -325,8 +376,8 @@ describe("getClientProgressData — the client row", () => {
   // imperial client must still get kg/cm here — Phase 3 converts at render. If a
   // preference ever leaks back into the stored-unit label, this fails.
   it("returns kg + cm even for an imperial client (preference never leaks)", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(
-      fakeSupabase({ client: { unit_preference: "imperial" } }) as never,
+    serve(
+      fakeSupabase({ client: { unit_preference: "imperial" } }),
     );
 
     const result = await getClientProgressData("c1");
@@ -347,7 +398,7 @@ describe("getClientProgressData — the client row", () => {
         ],
       },
     });
-    vi.mocked(createPortalClient).mockResolvedValue(fake as never);
+    serve(fake);
 
     const result = await getClientProgressData("c1");
 
@@ -372,8 +423,8 @@ describe("getClientProgressData — the client row", () => {
   // silently fell back to lbs/in. The request must still surface the error.
   it("logs and does not throw when the client query errors (no silent fallback bug)", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.mocked(createPortalClient).mockResolvedValue(
-      fakeSupabase({ client: null, clientError: { message: "boom" } }) as never,
+    serve(
+      fakeSupabase({ client: null, clientError: { message: "boom" } }),
     );
 
     await getClientProgressData("c1");
@@ -386,14 +437,14 @@ describe("getClientProgressData — physique histories come from the measurement
   beforeEach(() => vi.clearAllMocks());
 
   it("a weight row on a day reaches weightHistory dated that day; the series' current value is the last day-value", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(
+    serve(
       fakeSupabase({
         readings: [
           reading("m-1", "weight", 80, "2026-05-01"),
           reading("m-2", "weight", 79, "2026-05-08"),
         ],
         client: null,
-      }) as never,
+      }),
     );
 
     const result = await getClientProgressData("c1");
@@ -421,7 +472,7 @@ describe("getClientProgressData — physique histories come from the measurement
     // written first and edited last; its id sorts higher and the arrival order
     // puts it last — a fallback to updated_at, to id order or to arrival order
     // would each pick 80.6.
-    vi.mocked(createPortalClient).mockResolvedValue(
+    serve(
       fakeSupabase({
         readings: [
           reading("m-1", "weight", 80.2, "2026-05-01", "2026-05-01T18:00:00+00:00", {
@@ -432,7 +483,7 @@ describe("getClientProgressData — physique histories come from the measurement
           }),
         ],
         client: null,
-      }) as never,
+      }),
     );
 
     const result = await getClientProgressData("c1");
@@ -443,7 +494,7 @@ describe("getClientProgressData — physique histories come from the measurement
   });
 
   it("routes each physique key to its own history under the wire's field name", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(
+    serve(
       fakeSupabase({
         readings: [
           reading("m-1", "bodyFat", 18, "2026-05-01"),
@@ -454,7 +505,7 @@ describe("getClientProgressData — physique histories come from the measurement
           reading("m-6", "thighs", 58, "2026-05-01"),
         ],
         client: null,
-      }) as never,
+      }),
     );
 
     const result = await getClientProgressData("c1");
@@ -477,7 +528,7 @@ describe("getClientProgressData — physique histories come from the measurement
 
   it("reads the log paged, with every column the day rule needs", async () => {
     const fake = fakeSupabase({ readings: [reading("m-1", "weight", 80, "2026-05-01")], client: null });
-    vi.mocked(createPortalClient).mockResolvedValue(fake as never);
+    serve(fake);
 
     await getClientProgressData("c1");
 
@@ -505,7 +556,7 @@ describe("getClientProgressData — wellness histories come from the client's da
       ],
       client: null,
     });
-    vi.mocked(createPortalClient).mockResolvedValue(fake as never);
+    serve(fake);
 
     const result = await getClientProgressData("c1");
 
@@ -531,14 +582,14 @@ describe("getClientProgressData — wellness histories come from the client's da
   });
 
   it("a day without a score is no point of that score — the day's other scores stand", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(
+    serve(
       fakeSupabase({
         wellness: [
           logRow("w-3", "2026-05-13", { sleep: 8, stress: 3 }),
           logRow("w-4", "2026-05-14", { mood: 1, soreness: 6 }),
         ],
         client: null,
-      }) as never,
+      }),
     );
 
     const result = await getClientProgressData("c1");
@@ -554,7 +605,7 @@ describe("getClientProgressData — wellness histories come from the client's da
 
   it("the window is on the client's calendar — the log and the measurements start on the same day, `days` before the client's today", async () => {
     const fake = fakeSupabase({ client: null });
-    vi.mocked(createPortalClient).mockResolvedValue(fake as never);
+    serve(fake);
     // Late on the 24th by the server's clock; the client, east of UTC, is on
     // the 25th already.
     vi.mocked(getClientTodayString).mockResolvedValueOnce("2026-09-25");
@@ -572,16 +623,16 @@ describe("getClientProgressData — wellness histories come from the client's da
     expect(fake.bounds.client_measurements_live).toEqual([["recorded_on", "2026-08-26"]]);
   });
 
-  it("reads the log under the client's own session: every score's column, this client's rows, in date order, paged", async () => {
+  it("reads the log through the server: every score's column, this client's rows, in date order, paged", async () => {
     const fake = fakeSupabase({ wellness: [logRow("w-5", "2026-05-15", { energy: 10 })], client: null });
-    vi.mocked(createPortalClient).mockResolvedValue(fake as never);
+    serve(fake);
 
     const result = await getClientProgressData("c1");
 
-    // The session client, never the service role: the client reads their own
-    // rows through clients_select_own_wellness_logs.
+    // The service role, never a session: the client's id below is the read's
+    // whole scope.
     expect(fake.selects.wellness_logs).toHaveLength(1);
-    expect(supabaseAdmin.from).not.toHaveBeenCalledWith("wellness_logs");
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("wellness_logs");
     expect(fake.selects.wellness_logs[0].split(",").map((column) => column.trim())).toEqual(
       expect.arrayContaining(["id", "date", "mood", "energy", "sleep", "stress", "soreness", "updated_at"])
     );
@@ -596,8 +647,8 @@ describe("getClientProgressData — wellness histories come from the client's da
   });
 
   it("a failed log read fails the request rather than drawing empty charts", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(
-      fakeSupabase({ wellnessError: { message: "connection reset" }, client: null }) as never,
+    serve(
+      fakeSupabase({ wellnessError: { message: "connection reset" }, client: null }),
     );
 
     await expect(getClientProgressData("c1")).rejects.toThrow(
@@ -607,8 +658,8 @@ describe("getClientProgressData — wellness histories come from the client's da
 
   it("a failed check-in count is logged, and the tile reads 0", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.mocked(createPortalClient).mockResolvedValue(
-      fakeSupabase({ checkInCount: 3, checkInError: { message: "count timed out" }, client: null }) as never,
+    serve(
+      fakeSupabase({ checkInCount: 3, checkInError: { message: "count timed out" }, client: null }),
     );
 
     const result = await getClientProgressData("c1");
@@ -623,8 +674,8 @@ describe("getClientProgressData — render-ready series", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns every series present with empty defaults when there is no history", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(
-      fakeSupabase({ readings: [], wellness: [], client: { unit_preference: "imperial" } }) as never,
+    serve(
+      fakeSupabase({ readings: [], wellness: [], client: { unit_preference: "imperial" } }),
     );
 
     const result = await getClientProgressData("c1");
@@ -657,8 +708,8 @@ describe("getClientProgressData — render-ready series", () => {
   // boundary with everything else — metrics-hub.tsx owns them now, so the
   // service only has to name and shape the series.
   it("names every wellness series without attaching a unit", async () => {
-    vi.mocked(createPortalClient).mockResolvedValue(
-      fakeSupabase({ client: null }) as never,
+    serve(
+      fakeSupabase({ client: null }),
     );
 
     const result = await getClientProgressData("c1");

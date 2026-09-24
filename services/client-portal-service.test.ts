@@ -1,9 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/supabase-server", () => ({
-  createServerSupabaseClient: vi.fn(),
-}));
-
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: { from: vi.fn() },
 }));
@@ -41,7 +37,6 @@ import { getClientTodayString } from "./today-service";
 import { getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { getCurrentGoal } from "./client-goals-service";
 import { getLastSubmittedPeriodEnd } from "./daily-log-permissions-service";
 import { getSurplusSettingsForClientToday } from "./nutrition-plan-service";
@@ -270,6 +265,34 @@ describe("getClientForCurrentUser", () => {
     vi.clearAllMocks();
   });
 
+  // The service role reads past every rule in the database, so the filters are
+  // the read's whole scope: the id the route's auth verified, while active.
+  it("reads the row through the server, scoped to the client id the route verified and to an active client", async () => {
+    const scope: Array<[string, unknown]> = [];
+    const clientChain = {
+      select: () => clientChain,
+      eq: (column: string, value: unknown) => {
+        scope.push([column, value]);
+        return clientChain;
+      },
+      single: () =>
+        Promise.resolve({ data: null, error: { message: "JSON object requested, multiple (or no) rows returned" } }),
+    };
+    vi.mocked(supabaseAdmin.from).mockReturnValue(clientChain as never);
+
+    const profile = await getClientForCurrentUser("client-4");
+
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("clients");
+    expect(scope).toEqual([
+      ["id", "client-4"],
+      ["active", true],
+    ]);
+    // No active row for that id: no profile, and nothing keyed on it is read.
+    expect(profile).toBeNull();
+    expect(getCurrentGoal).not.toHaveBeenCalled();
+    expect(getLastSubmittedPeriodEnd).not.toHaveBeenCalled();
+  });
+
   it("carries the targets of the goal in force on the client's today, after dateOfBirth, with logsOpenFrom last", async () => {
     const selects: string[] = [];
     const clientChain = {
@@ -300,10 +323,7 @@ describe("getClientForCurrentUser", () => {
           error: null,
         }),
     };
-    vi.mocked(createServerSupabaseClient).mockResolvedValue({
-      auth: { getUser: () => Promise.resolve({ data: { user: { id: "user-1" } } }) },
-      from: () => clientChain,
-    } as never);
+    vi.mocked(supabaseAdmin.from).mockReturnValue(clientChain as never);
     vi.mocked(getCurrentGoal).mockResolvedValue({
       id: "goal-now",
       clientId: "client-1",
@@ -325,7 +345,7 @@ describe("getClientForCurrentUser", () => {
       surplusAsCarbs: true,
     });
 
-    const profile = await getClientForCurrentUser();
+    const profile = await getClientForCurrentUser("client-1");
 
     expect(getCurrentGoal).toHaveBeenCalledWith("client-1");
     expect(profile?.goalWeight).toBe(72.2);
@@ -371,10 +391,7 @@ describe("getClientForCurrentUser", () => {
           error: null,
         }),
     };
-    vi.mocked(createServerSupabaseClient).mockResolvedValue({
-      auth: { getUser: () => Promise.resolve({ data: { user: { id: "user-1" } } }) },
-      from: () => clientChain,
-    } as never);
+    vi.mocked(supabaseAdmin.from).mockReturnValue(clientChain as never);
     vi.mocked(getCurrentGoal).mockResolvedValue(null);
     vi.mocked(getLastSubmittedPeriodEnd).mockResolvedValue(null);
     vi.mocked(getSurplusSettingsForClientToday).mockResolvedValue({
@@ -382,7 +399,7 @@ describe("getClientForCurrentUser", () => {
       surplusAsCarbs: true,
     });
 
-    const profile = await getClientForCurrentUser();
+    const profile = await getClientForCurrentUser("client-1");
 
     expect(getSurplusSettingsForClientToday).toHaveBeenCalledWith("client-1");
     expect(profile?.includeActivityBurn).toBe(false);

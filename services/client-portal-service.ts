@@ -1,4 +1,3 @@
-import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "./supabase-admin";
 import { coversDate } from "./training-plan-window";
 import type { DietType, UnitPreference } from "@/types/check-in";
@@ -16,13 +15,6 @@ import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { getClientWeekAnchor } from "./check-in-week-service";
 import { getClientTodayString } from "./today-service";
-
-// Session-scoped Supabase client, for the one read that genuinely needs the
-// session: getClientForCurrentUser resolves the caller's own row from
-// `auth.getUser()` with no clientId to scope by. Re-exported under the old name
-// so existing callers don't churn; the body lives in lib/supabase-server.ts
-// (canonical factory).
-export const createPortalClient = createServerSupabaseClient;
 
 // Nutrition targets type
 export type NutritionTargets = {
@@ -54,10 +46,10 @@ export type NutritionTargets = {
 // its deadline reaches the client through GET /api/client/journey.
 //
 // The client's readings — current and at the start — are not columns: they
-// ride in from the two measurement views (CLIENT_MEASUREMENT_EMBEDS), which
-// read under this client's own JWT through the D6 policy. A stale column name
-// here is a PostgREST 400 that the `return null` below turns into an empty
-// profile, so check every name against the live schema.
+// ride in from the two measurement views (CLIENT_MEASUREMENT_EMBEDS), embedded
+// in the same read. A stale column name here is a PostgREST 400 that the
+// `return null` below turns into an empty profile, so check every name against
+// the live schema.
 const CLIENT_SELF_COLUMNS =
   "id, coach_id, name, email, avatar_url, active, created_at, updated_at, " +
   "height, gender, date_of_birth, bmr, tdee, " +
@@ -70,19 +62,15 @@ const CLIENT_SELF_COLUMNS =
   CLIENT_MEASUREMENT_EMBEDS;
 
 // The authenticated client's own profile (GET /api/client/me), allowlisted.
-export async function getClientForCurrentUser(): Promise<ClientSelfView | null> {
-  const supabase = await createPortalClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return null;
-
-  const { data, error } = await supabase
+// `clientId` is the id the route's auth verified (`requireClientAuth`): the
+// service role reads the row by it, and only while the client is active.
+export async function getClientForCurrentUser(
+  clientId: string
+): Promise<ClientSelfView | null> {
+  const { data, error } = await supabaseAdmin
     .from("clients")
     .select(CLIENT_SELF_COLUMNS)
-    .eq("user_id", user.id)
+    .eq("id", clientId)
     .eq("active", true)
     .single();
 
@@ -91,20 +79,17 @@ export async function getClientForCurrentUser(): Promise<ClientSelfView | null> 
   // `notes` is not selected, so mapClientRow resolves it to undefined.
   const client = mapClientRow(data as unknown as ClientRowWithMeasurements);
 
-  // Two reads keyed on the row just resolved, run together. The goal in force
-  // on the client's today supplies the profile's two goal targets; the service
-  // role reads it, scoped by this session's own client id, because
-  // `client_goals` has no client-facing policy. The day-rule boundary rides on
-  // this read because it is the one client-level fetch every screen in the app
-  // already holds, and the pages that lock a day read it from here. It is
-  // derived, not a column, so it is attached after the mapper rather than added
-  // to the column list above; the schedule facts it needs (timezone,
-  // next_check_in_due, start_date) are already selected, so only the last
-  // submitted period costs a query.
+  // Three reads keyed on the row just resolved, run together. The goal in
+  // force on the client's today supplies the profile's two goal targets. The
+  // day-rule boundary rides on this read because it is the one client-level
+  // fetch every screen in the app already holds, and the pages that lock a day
+  // read it from here. It is derived, not a column, so it is attached after
+  // the mapper rather than added to the column list above; the schedule facts
+  // it needs (timezone, next_check_in_due, start_date) are already selected,
+  // so only the last submitted period costs a query.
   //
   // The two surplus settings are the nutrition version's (migration 196), not
-  // columns: the ones covering the client's today, read by the service role
-  // for the same reason as the goal.
+  // columns: the ones covering the client's today.
   const [goal, lastSubmittedPeriodEnd, surplusSettings] = await Promise.all([
     getCurrentGoal(client.id),
     getLastSubmittedPeriodEnd(client.id),

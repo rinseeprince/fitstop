@@ -5,10 +5,14 @@ import { join, relative } from "node:path";
 /**
  * A write goes through a route and `supabaseAdmin`, never through a session
  * client — a client built from the public key and the caller's own login.
- * The database holds one write rule for a session client (migration 200), so
- * any other session write fails for every user; this scan fails it here
- * first. The one allowance is activation's update of the client row, which
- * the kept rule "Coaches can update their own clients" admits.
+ * The database holds one write rule for a session client, "Coaches can update
+ * their own clients" (migration 200), and nothing uses it: activation writes
+ * through the server. So a session write fails for every user, or lands
+ * through a rule nothing may lean on; this scan fails every one here first.
+ *
+ * The readers that moved off the session client (docs/DATA-ACCESS-LOCKDOWN-PLAN.md
+ * commit 3) read through the server alone: in each of their files, every query
+ * and every database function call has `supabaseAdmin` as its receiver.
  *
  * In the shape of `lib/measurements/baseline-ownership.test.ts`: every file
  * that builds a session client, or holds the browser's, is read for a table
@@ -18,21 +22,28 @@ import { join, relative } from "node:path";
 const ROOT = join(__dirname, "..");
 const SCAN: string[] = ["app", "components", "contexts", "hooks", "lib", "services", "utils", "middleware.ts"];
 
-// Builds a session client (the three server factories, the browser's), or
+// Builds a session client (the two server factories, the browser's), or
 // imports the browser's.
 const SESSION_CLIENT =
-  /\b(createServerClient|createServerSupabaseClient|createPortalClient|createBrowserClient)\s*(<[^>]*>)?\s*\(|from\s+["']@\/services\/supabase-client["']/;
+  /\b(createServerClient|createServerSupabaseClient|createBrowserClient)\s*(<[^>]*>)?\s*\(|from\s+["']@\/services\/supabase-client["']/;
+
+// The client's own profile and progress, activation, the coach's attention feed.
+const SERVER_ONLY = [
+  "services/client-portal-progress.ts",
+  "services/client-portal-service.ts",
+  "app/api/clients/[id]/activate/route.ts",
+  "app/api/dashboard/attention-feed/route.ts",
+];
 
 // The receiver (a dotted name, or a closing paren for anything computed), the
-// table and the verb of a table write. `supabaseAdmin.storage.from(…)` reads as
-// `supabaseAdmin`.
-const TABLE_WRITE =
-  /((?:[A-Za-z_$][\w$]*\s*\.\s*)*[A-Za-z_$][\w$]*|\))\s*\.\s*from\s*\(([^()]*)\)\s*\.\s*(insert|update|upsert|delete)\s*\(/g;
+// table and the verb of a query — `.from(…)` then a read or a write.
+// `supabaseAdmin.storage.from(…)` reads as `supabaseAdmin`.
+const TABLE_QUERY =
+  /((?:[A-Za-z_$][\w$]*\s*\.\s*)*[A-Za-z_$][\w$]*|\))\s*\.\s*from\s*\(([^()]*)\)\s*\.\s*(select|insert|update|upsert|delete)\s*\(/g;
+const WRITE_VERBS = new Set(["insert", "update", "upsert", "delete"]);
 
-// File → the session writes it may make. Activation's alone.
-const ALLOWED: Record<string, string[]> = {
-  "app/api/clients/[id]/activate/route.ts": ["clients.update"],
-};
+// The receiver and the function of a database function call.
+const RPC_CALL = /((?:[A-Za-z_$][\w$]*\s*\.\s*)*[A-Za-z_$][\w$]*|\))\s*\.\s*rpc\s*\(\s*([^,()]*)/g;
 
 function filesUnder(target: string): string[] {
   const abs = join(ROOT, target);
@@ -58,15 +69,35 @@ const stripComments = (src: string) =>
     .map((line) => line.replace(/\s\/\/\s.*$/, ""))
     .join("\n");
 
+type Access = { root: string; name: string; verb: string };
+
+const unquote = (arg: string) => arg.trim().replace(/^["'`]|["'`]$/g, "");
+
+/** Every query and database function call in the source, with its receiver's root. */
+function accesses(src: string): Access[] {
+  const code = stripComments(src);
+  const found: Access[] = [];
+  for (const [, receiver, tableArg, verb] of code.matchAll(TABLE_QUERY)) {
+    found.push({ root: receiver.split(".")[0].trim(), name: unquote(tableArg), verb });
+  }
+  for (const [, receiver, fnArg] of code.matchAll(RPC_CALL)) {
+    found.push({ root: receiver.split(".")[0].trim(), name: unquote(fnArg), verb: "rpc" });
+  }
+  return found;
+}
+
 /** Each table write in the source that is not `supabaseAdmin`'s, as `table.verb`. */
 function sessionWrites(src: string): string[] {
-  const writes: string[] = [];
-  for (const [, receiver, tableArg, verb] of stripComments(src).matchAll(TABLE_WRITE)) {
-    const root = receiver.split(".")[0].trim();
-    if (root === "supabaseAdmin") continue;
-    writes.push(`${tableArg.trim().replace(/^["'`]|["'`]$/g, "")}.${verb}`);
-  }
-  return writes;
+  return accesses(src)
+    .filter((access) => access.root !== "supabaseAdmin" && WRITE_VERBS.has(access.verb))
+    .map((access) => `${access.name}.${access.verb}`);
+}
+
+/** Each query or function call in the source that is not `supabaseAdmin`'s, as `name.verb`. */
+function notThroughTheServer(src: string): string[] {
+  return accesses(src)
+    .filter((access) => access.root !== "supabaseAdmin")
+    .map((access) => `${access.name}.${access.verb}`);
 }
 
 function sessionClientFiles(): Map<string, string> {
@@ -80,25 +111,13 @@ function sessionClientFiles(): Map<string, string> {
   return files;
 }
 
-describe("a session client writes nothing, activation's update aside", () => {
+describe("a session client writes nothing", () => {
   it("no file writes to a table through a session client", () => {
     const offenders: string[] = [];
     for (const [rel, src] of sessionClientFiles()) {
-      const allowed = [...(ALLOWED[rel] ?? [])];
-      for (const write of sessionWrites(src)) {
-        const at = allowed.indexOf(write);
-        if (at === -1) offenders.push(`${rel} — ${write}`);
-        else allowed.splice(at, 1);
-      }
+      for (const write of sessionWrites(src)) offenders.push(`${rel} — ${write}`);
     }
     expect(offenders).toEqual([]);
-  });
-
-  it("each allowance names a write its file really makes, and nothing else", () => {
-    const files = sessionClientFiles();
-    for (const [rel, writes] of Object.entries(ALLOWED)) {
-      expect({ rel, writes: sessionWrites(files.get(rel) ?? "") }).toEqual({ rel, writes });
-    }
   });
 
   it("reads a write's receiver across a chain, and only a table write", () => {
@@ -111,6 +130,7 @@ describe("a session client writes nothing, activation's update aside", () => {
       "coaches.upsert",
     ]);
     expect(sessionWrites('createHash("sha256").update(ip).digest("hex")')).toEqual([]);
+    expect(sessionWrites('await supabase.from("coaches").select("id")')).toEqual([]);
   });
 
   it("scans a real tree — the guard is worthless if the glob is empty", () => {
@@ -123,8 +143,34 @@ describe("a session client writes nothing, activation's update aside", () => {
         "lib/auth-helpers.ts",
         "services/supabase-client.ts",
         "contexts/auth-context.tsx",
-        "app/api/clients/[id]/activate/route.ts",
       ])
     );
+  });
+});
+
+describe("the readers moved to the server read through it alone", () => {
+  it("every query and function call in their files is supabaseAdmin's", () => {
+    const offenders: string[] = [];
+    for (const rel of SERVER_ONLY) {
+      for (const access of notThroughTheServer(readFileSync(join(ROOT, rel), "utf8"))) {
+        offenders.push(`${rel} — ${access}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("reads a query's receiver, however the session client came back", () => {
+    expect(notThroughTheServer('await supabaseAdmin\n  .from("clients")\n  .select("id")\n  .eq("id", id)')).toEqual([]);
+    expect(
+      notThroughTheServer('const supabase = await createServerSupabaseClient();\nawait supabase\n  .from("wellness_logs") // the log\n  .select(COLUMNS)')
+    ).toEqual(["wellness_logs.select"]);
+    expect(notThroughTheServer('(await createServerSupabaseClient()).from("coaches").select("id")')).toEqual([
+      "coaches.select",
+    ]);
+    expect(notThroughTheServer('await supabase.rpc("get_client_streak", { p_client_id: id })')).toEqual([
+      "get_client_streak.rpc",
+    ]);
+    expect(notThroughTheServer('supabaseAdmin.rpc("get_client_streak", args)')).toEqual([]);
+    expect(notThroughTheServer("Array.from(ids).map((id) => id)")).toEqual([]);
   });
 });

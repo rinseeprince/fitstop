@@ -7,11 +7,6 @@
  * runs each of the 6 service functions with 1 cold + 5 warm invocations,
  * and writes `docs/perf-baseline.md`. Re-run after each scale session to
  * refresh numbers; the file is a moving snapshot, not a frozen baseline.
- *
- * `getClientProgressData` is the one exception: its production implementation
- * uses `createPortalClient()` (cookie-bound, Next.js-request-only), so we
- * instead measure two direct supabaseAdmin queries with the same SQL shape.
- * Footnoted in the markdown; logged as a backlog item.
  */
 import "./env-bootstrap";
 
@@ -36,9 +31,9 @@ import {
 } from "@/services/exercise-analytics-service";
 import { calculateStreaks } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
+import { getClientProgressData } from "@/services/client-portal-progress";
 
-import { addDaysToDateString, getDateDaysAgo, getTodayDateString } from "@/lib/date-helpers";
-import { WELLNESS_LOG_COLUMNS } from "@/lib/wellness/log-rows";
+import { getDateDaysAgo, getTodayDateString } from "@/lib/date-helpers";
 
 // ---------------------------------------------------------------------------
 
@@ -109,11 +104,10 @@ async function main() {
   ));
 
   baselines.push(await measure(
-    "getClientProgressData (admin-equivalent SQL)",
-    "services/client-portal-progress.ts:51",
+    "getClientProgressData",
+    "services/client-portal-progress.ts:160",
     `getClientProgressData(PERF_CLIENT_ID, 90)`,
-    () => simulateGetClientProgressDataViaAdmin(PERF_CLIENT_ID, 90),
-    "Measured via direct supabaseAdmin queries that match the production read path (the client's today, then the check-in count + the measurement log + the wellness log + clients with its two reading views). The function itself uses createPortalClient() (cookie-bound, Next.js-request-only) and can't run from a script — see Followups.",
+    () => getClientProgressData(PERF_CLIENT_ID, 90),
   ));
 
   baselines.push(await measure(
@@ -194,61 +188,6 @@ async function measure(
 async function runOnce(label: string, invoke: () => Promise<unknown>): Promise<RunResult> {
   const { queries, totalMs, payloadBytes } = await withTelemetry(invoke);
   return { label, totalMs, queries, payloadBytes };
-}
-
-// ---------------------------------------------------------------------------
-// admin-equivalent of getClientProgressData (mirrors its four reads under the
-// client's JWT in services/client-portal-progress.ts: the number of check-ins
-// in the window, the measurement log's live rows, the daily wellness log, and
-// the client row with its two reading views — after the client's today, which
-// the window counts back from; its fifth, the goal in force today, is not
-// simulated)
-// ---------------------------------------------------------------------------
-
-async function simulateGetClientProgressDataViaAdmin(clientId: string, days: number) {
-  const clientToday = await getClientTodayString(clientId);
-  const fromDay = addDaysToDateString(clientToday, -days);
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
-
-  const [checkIns, readings, wellness, clientData] = await Promise.all([
-    supabaseAdmin
-      .from("check_ins")
-      .select("id", { count: "exact", head: true })
-      .eq("client_id", String(clientId))
-      .gte("created_at", startDate.toISOString()),
-    supabaseAdmin
-      .from("client_measurements_live")
-      .select("id, metric_key, value, recorded_on, recorded_at, updated_at, measured_at, source, source_id, note")
-      .eq("client_id", clientId)
-      .gte("recorded_on", fromDay)
-      .order("recorded_on", { ascending: true })
-      .order("recorded_at", { ascending: true })
-      .order("id", { ascending: true }),
-    supabaseAdmin
-      .from("wellness_logs")
-      .select(WELLNESS_LOG_COLUMNS)
-      .eq("client_id", clientId)
-      .gte("date", fromDay)
-      .order("date", { ascending: true })
-      .order("id", { ascending: true }),
-    supabaseAdmin
-      .from("clients")
-      .select(
-        "current_streak, check_in_adherence_rate, " +
-          "client_current_measurements(metric_key, value, recorded_on, source, measurement_id), " +
-          "client_baseline_measurements(metric_key, value, recorded_on, source, measurement_id)"
-      )
-      .eq("id", clientId)
-      .single(),
-  ]);
-
-  return {
-    checkInCount: checkIns.count ?? 0,
-    readingRows: readings.data?.length ?? 0,
-    wellnessRows: wellness.data?.length ?? 0,
-    clientLoaded: !!clientData.data,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -368,8 +307,6 @@ function buildMarkdown(baselines: FunctionBaseline[], fixtures: FixtureCounts): 
   lines.push("");
   lines.push(`## Followups (out of 3.5 scope)`);
   lines.push("");
-  lines.push(`- **\`createPortalClient()\` consolidation candidate (CONVENTIONS §8).** \`services/client-portal-progress.ts\` uses a session-scoped Supabase client when most service functions default to \`supabaseAdmin\` with explicit scoping. Phase 9 tech-debt sweep should reconcile — services should default to \`supabaseAdmin\`; session-scoped is the rare case.`);
-  lines.push(`- **\`getClientProgressData\` reads the client's logs** — the measurement log's live rows and its two reading views (\`client_current_measurements\`, \`client_baseline_measurements\`), and the daily wellness log, under the client's own JWT through their own policies (\`clients_view_own_measurements\`, \`clients_select_own_wellness_logs\`). Only the \`createPortalClient()\` consolidation above remains open.`);
   lines.push(`- **\`check_ins.client_id\` is TEXT, not UUID.** Migration 023 artifact; everywhere else UUID. Worth a typed-FK migration eventually.`);
   lines.push(`- **3.6 resolved:** \`getClientExerciseList\` / \`getExerciseProgressionSeries\` / \`getExercisePRs\` now go through SQL aggregation RPCs (migration 094) — reads are result-bounded, not history-bounded. The prior \`PostgREST 1000-row cap\` followup is gone with the multi-call fetch pattern.`);
   lines.push(`- **3.7 resolved:** \`calculateStreaks\` no longer reads the \`daily_logs_full\` view + runs an O(D²) Node loop; it now calls the \`get_client_streak\` gaps-and-islands RPC (migration 095) over the \`daily_logs\` spine via the \`(client_id, date DESC)\` index, returning two integers (result-bounded, not history-bounded).`);

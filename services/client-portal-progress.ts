@@ -1,4 +1,4 @@
-import { createPortalClient } from "./client-portal-service";
+import { supabaseAdmin } from "./supabase-admin";
 import { CLIENT_MEASUREMENT_EMBEDS } from "./measurements-service";
 import { getGoalsOverview } from "./client-goals-service";
 import { getClientTodayString } from "./today-service";
@@ -116,7 +116,7 @@ function buildMetricSeries(
   };
 }
 
-// The measurement-log row shape this read selects, under the client's own JWT.
+// The measurement-log row shape this read selects.
 type LiveMeasurementRow = {
   id: string | null;
   metric_key: string | null;
@@ -161,8 +161,6 @@ export async function getClientProgressData(
   clientId: string,
   days: number = 90
 ): Promise<ProgressData> {
-  const supabase = await createPortalClient();
-
   // The series' window is on the client's calendar: from the day `days`
   // before their today, one first day for the physique and the wellness
   // series alike. The check-in count keeps its rolling `days` × 24 hours.
@@ -171,18 +169,16 @@ export async function getClientProgressData(
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
 
-  // Five independent reads. Four under the client's JWT — the session client
-  // on purpose (CONVENTIONS §8): a client reads their own rows through their
-  // own policies, `clients_view_own_measurements` (every reading about them,
-  // of any source — D6) and `clients_select_own_wellness_logs`. They are the
-  // number of check-ins in the window (a check-in's own figures feed no
-  // series), the measurement log's live rows, the daily wellness log and the
-  // client row with its two reading views embedded. The two log reads are
-  // paged: each feeds a series and must be complete past PostgREST's row cap.
-  // The fifth is the goal in force on the client's today with their readings
-  // on its start day — the goals section reads its targets, its type and
-  // where it started; the service role reads it, scoped by this client's id,
-  // because `client_goals` has no client-facing policy.
+  // Five independent reads, all the service role's, each scoped by the client
+  // id the route's auth verified (`requireClientAuth`) — no rule in the
+  // database stands behind them, so that filter is the whole scope. They are
+  // the number of check-ins in the window (a check-in's own figures feed no
+  // series), the measurement log's live rows — every reading about the
+  // client, of any source (D6) — the daily wellness log, the client row with
+  // its two reading views embedded, and the goal in force on the client's
+  // today with their readings on its start day (the goals section reads its
+  // targets, its type and where it started). The two log reads are paged:
+  // each feeds a series and must be complete past PostgREST's row cap.
   const [
     { count: checkInCount, error: checkInCountError },
     readingRows,
@@ -190,14 +186,14 @@ export async function getClientProgressData(
     { data: clientData, error: clientError },
     goals,
   ] = await Promise.all([
-    supabase
+    supabaseAdmin
       .from("check_ins")
       .select("id", { count: "exact", head: true })
       .eq("client_id", clientId)
       .gte("created_at", startDate.toISOString()),
     fetchAllPages<LiveMeasurementRow>(
       (from, to) =>
-        supabase
+        supabaseAdmin
           .from("client_measurements_live")
           .select("id, metric_key, value, recorded_on, recorded_at, updated_at, measured_at, source, source_id, note")
           .eq("client_id", clientId)
@@ -210,7 +206,7 @@ export async function getClientProgressData(
     ),
     fetchAllPages<WellnessLogRow>(
       (from, to) =>
-        supabase
+        supabaseAdmin
           .from("wellness_logs")
           .select(WELLNESS_LOG_COLUMNS)
           .eq("client_id", clientId)
@@ -220,7 +216,7 @@ export async function getClientProgressData(
           .range(from, to),
       { errorLabel: "wellness logs" }
     ),
-    supabase
+    supabaseAdmin
       .from("clients")
       .select(`current_streak, check_in_adherence_rate, ${CLIENT_MEASUREMENT_EMBEDS}`)
       .eq("id", clientId)
