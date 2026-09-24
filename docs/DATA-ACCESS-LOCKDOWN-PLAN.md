@@ -1,7 +1,7 @@
 # Data access lockdown — the server is the only gatekeeper
 
-**Status: commits 1 (this plan) and 2 SHIPPED 2026-09-24; commits 3–6 NOT STARTED.** Six commits, agreed with the
-owner on 2026-09-24: this plan; the write side door closes (2); the reads outside sign-in move onto the server (3); the
+**Status: commits 1 (this plan) and 2 SHIPPED 2026-09-24, commit 3 SHIPPED 2026-09-25; commits 4–6 NOT STARTED.** Six
+commits, agreed with the owner on 2026-09-24: this plan; the write side door closes (2); the reads outside sign-in move onto the server (3); the
 content library moves onto the server (4); sign-in reads move onto the server (5); the database is locked and the
 guard holds it (6). Commits 3–5 run in order, each after the owner's browser smoke of the one
 before. Commit 6 runs last and only after 3–5: dropping a read rule while its reader still uses it breaks that
@@ -277,7 +277,7 @@ what the section lists: one action per step, on data you seeded on DEV.
 
 ### Commit 3 — `refactor(security): the client's reads, activation and the attention feed read through the server`
 
-**STATUS: NOT STARTED. After commit 2's smoke.**
+**STATUS: SHIPPED `a36a095a`, 2026-09-25 — no migration; browser smoke owed.**
 
 - **`/api/client/progress`** (`services/client-portal-progress.ts`): its four reads move to `supabaseAdmin`, each
   keeping its `.eq("client_id", clientId)` on the id `requireClientAuth` verified. The four are the check-in count,
