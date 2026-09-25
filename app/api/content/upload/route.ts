@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { uploadContentFile } from "@/services/content-storage-service";
 import { createContentItem } from "@/services/content-item-service";
@@ -32,37 +32,12 @@ export async function POST(request: NextRequest) {
     const csrfError = await requireCSRFProtection(request);
     if (csrfError) return csrfError;
 
-    const supabase = await createServerSupabaseClient();
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.warn("Upload attempt without authentication", {
-        timestamp: new Date().toISOString(),
-        error: authError?.message
-      });
+    // The auth seam logs why a request has no coach (auth_failure).
+    const coachId = await getAuthenticatedCoachId(request);
+    if (!coachId) {
       return NextResponse.json(
         { success: false, error: "Authentication required" },
         { status: 401 }
-      );
-    }
-
-    // Get coach profile
-    const { data: coach, error: coachError } = await supabase
-      .from("coaches")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (coachError || !coach) {
-      console.warn("Upload attempt by user without coach profile", {
-        timestamp: new Date().toISOString(),
-        userId: user.id,
-        error: coachError?.message
-      });
-      return NextResponse.json(
-        { success: false, error: "Coach profile required for uploads" },
-        { status: 403 }
       );
     }
 
@@ -79,8 +54,7 @@ export async function POST(request: NextRequest) {
     if (!file || !title || !type) {
       console.warn("Upload validation failed - missing required fields", {
         timestamp: new Date().toISOString(),
-        userId: user.id,
-        coachId: coach.id,
+        coachId,
         hasFile: !!file,
         hasTitle: !!title,
         hasType: !!type
@@ -95,8 +69,7 @@ export async function POST(request: NextRequest) {
     if (file.size > MAX_FILE_SIZE) {
       console.warn("Upload validation failed - file too large", {
         timestamp: new Date().toISOString(),
-        userId: user.id,
-        coachId: coach.id,
+        coachId,
         fileName: file.name,
         fileSize: file.size,
         maxSize: MAX_FILE_SIZE
@@ -111,8 +84,7 @@ export async function POST(request: NextRequest) {
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
       console.warn("Upload validation failed - invalid file type", {
         timestamp: new Date().toISOString(),
-        userId: user.id,
-        coachId: coach.id,
+        coachId,
         fileName: file.name,
         fileType: file.type,
         allowedTypes: ALLOWED_MIME_TYPES
@@ -129,8 +101,7 @@ export async function POST(request: NextRequest) {
     if (!fileSignatureMatches(header, file.type)) {
       console.warn("Upload validation failed - content does not match declared type", {
         timestamp: new Date().toISOString(),
-        userId: user.id,
-        coachId: coach.id,
+        coachId,
         fileName: file.name,
         fileType: file.type,
       });
@@ -145,13 +116,13 @@ export async function POST(request: NextRequest) {
       console.info("Starting file upload process", {
         fileName: file.name,
         fileSize: file.size,
-        coachId: coach.id,
+        coachId,
         timestamp: new Date().toISOString()
       });
 
       // Create a temporary content ID for the upload
       const tempContentId = crypto.randomUUID();
-      const storagePath = await uploadContentFile(file, coach.id, tempContentId);
+      const storagePath = await uploadContentFile(file, coachId, tempContentId);
 
       console.info("File uploaded to storage successfully", {
         storagePath,
@@ -161,7 +132,7 @@ export async function POST(request: NextRequest) {
 
       // Step 2: Create content item with storage path
       const contentItem = await createContentItem({
-        coachId: coach.id,
+        coachId,
         title: title.trim(),
         description: description?.trim() || undefined,
         type: type as ContentType,
@@ -189,7 +160,7 @@ export async function POST(request: NextRequest) {
       console.error("Upload process failed", {
         error: uploadError instanceof Error ? uploadError.message : "Unknown upload error",
         fileName: file.name,
-        coachId: coach.id,
+        coachId,
         timestamp: new Date().toISOString()
       });
 

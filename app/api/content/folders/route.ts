@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { createContentFolder, getCoachFolders } from "@/services/content-folder-service";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -10,33 +10,16 @@ export async function GET(request: NextRequest) {
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const supabase = await createServerSupabaseClient();
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const coachId = await getAuthenticatedCoachId(request);
+    if (!coachId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    // Get coach profile
-    const { data: coach, error: coachError } = await supabase
-      .from("coaches")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (coachError || !coach) {
-      return NextResponse.json(
-        { success: false, error: "Coach profile not found" },
-        { status: 404 }
-      );
-    }
-
     // Fetch folders
-    const folders = await getCoachFolders(coach.id);
+    const folders = await getCoachFolders(coachId);
 
     return NextResponse.json({
       success: true,
@@ -60,28 +43,11 @@ export async function POST(request: NextRequest) {
     const csrfError = await requireCSRFProtection(request);
     if (csrfError) return csrfError;
 
-    const supabase = await createServerSupabaseClient();
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const coachId = await getAuthenticatedCoachId(request);
+    if (!coachId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
-      );
-    }
-
-    // Get coach profile
-    const { data: coach, error: coachError } = await supabase
-      .from("coaches")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (coachError || !coach) {
-      return NextResponse.json(
-        { success: false, error: "Coach profile not found" },
-        { status: 404 }
       );
     }
 
@@ -98,7 +64,7 @@ export async function POST(request: NextRequest) {
     const { name, parentFolderId } = parsed.data;
 
     // Check for duplicate folder names at the same level
-    const existingFolders = await getCoachFolders(coach.id);
+    const existingFolders = await getCoachFolders(coachId);
     const duplicateExists = existingFolders.some(
       folder => 
         folder.name.toLowerCase() === name.toLowerCase() &&
@@ -114,7 +80,7 @@ export async function POST(request: NextRequest) {
 
     // Create folder
     const folder = await createContentFolder({
-      coachId: coach.id,
+      coachId,
       name,
       parentFolderId: parentFolderId || undefined,
     });

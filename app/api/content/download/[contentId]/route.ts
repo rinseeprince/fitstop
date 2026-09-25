@@ -1,8 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getAuthenticatedClientId, getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getContentById } from "@/services/content-item-service";
 import { getContentFileSignedUrl } from "@/services/content-storage-service";
+import { supabaseAdmin } from "@/services/supabase-admin";
 import { apiRateLimit } from "@/lib/rate-limit";
+import type { ContentItem } from "@/types/content";
+
+/**
+ * Whether an item is open to a client: they are an active client of its coach,
+ * and it is in the coach's library or assigned to them. Both reads are the
+ * service role's, scoped to the client the auth seam verified, so these
+ * filters are the whole check. A read that fails opens nothing.
+ */
+async function openToClient(content: ContentItem, clientId: string): Promise<boolean> {
+  const { data: client, error: clientError } = await supabaseAdmin
+    .from("clients")
+    .select("id")
+    .eq("id", clientId)
+    .eq("coach_id", content.coachId)
+    .eq("active", true)
+    .maybeSingle();
+  if (clientError) {
+    console.error("Error reading the client for a content download:", clientError.message);
+    return false;
+  }
+  if (!client) return false;
+  if (content.isLibrary) return true;
+
+  const { data: assignment, error: assignmentError } = await supabaseAdmin
+    .from("content_assignments")
+    .select("id")
+    .eq("content_id", content.id)
+    .eq("client_id", clientId)
+    .maybeSingle();
+  if (assignmentError) {
+    console.error("Error reading the assignment for a content download:", assignmentError.message);
+    return false;
+  }
+  return assignment !== null;
+}
 
 export async function GET(
   request: NextRequest,
@@ -13,11 +49,14 @@ export async function GET(
 
   const { contentId } = await params;
   try {
-    const supabase = await createServerSupabaseClient();
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // Both roles call this route: an active client of the item's coach, from
+    // their Resources page (the one screen that does), and the coach. The
+    // client is resolved first, so a client's download checks the session
+    // once; the coach only when the session has no active client, or when the
+    // item is not open to the client.
+    const clientId = await getAuthenticatedClientId(request);
+    const coachId = clientId ? null : await getAuthenticatedCoachId(request);
+    if (!clientId && !coachId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
@@ -27,48 +66,12 @@ export async function GET(
     // Get content item
     const content = await getContentById(contentId);
 
-    // Check if user has access to this content
-    let hasAccess = false;
-
-    // Check if user is the coach who owns the content
-    const { data: coach, error: coachError } = await supabase
-      .from("coaches")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (!coachError && coach && coach.id === content.coachId) {
-      hasAccess = true;
-    } else {
-      // Check if user is a client with access to this content. active=true so a
-      // deactivated client (H6) can no longer resolve here — this route reads
-      // clients directly, bypassing the auth helpers' active filter.
-      const { data: client, error: clientError } = await supabase
-        .from("clients")
-        .select("id, coach_id")
-        .eq("user_id", user.id)
-        .eq("active", true)
-        .single();
-
-      if (!clientError && client && client.coach_id === content.coachId) {
-        // Check if content is in library or specifically assigned
-        if (content.isLibrary) {
-          hasAccess = true;
-        } else {
-          // Check if specifically assigned
-          const { data: assignment, error: assignmentError } = await supabase
-            .from("content_assignments")
-            .select("id")
-            .eq("content_id", contentId)
-            .eq("client_id", client.id)
-            .single();
-
-          if (!assignmentError && assignment) {
-            hasAccess = true;
-          }
-        }
-      }
-    }
+    // The item's coach may open it, and so may a client it is open to; nobody
+    // else. A client it is not open to may still be the coach who owns it.
+    const hasAccess = clientId
+      ? (await openToClient(content, clientId)) ||
+        (await getAuthenticatedCoachId(request)) === content.coachId
+      : coachId === content.coachId;
 
     if (!hasAccess) {
       return NextResponse.json(
@@ -80,7 +83,7 @@ export async function GET(
     // For files, return signed URL
     if (content.storagePath) {
       const signedUrl = await getContentFileSignedUrl(content.storagePath, 3600); // 1 hour
-      
+
       return NextResponse.json({
         success: true,
         data: {

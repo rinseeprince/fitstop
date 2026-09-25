@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getContentById, deleteContentItem } from "@/services/content-item-service";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -16,34 +16,17 @@ export async function DELETE(
     // CSRF Protection
     const csrfError = await requireCSRFProtection(request);
     if (csrfError) return csrfError;
-    const supabase = await createServerSupabaseClient();
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const coachId = await getAuthenticatedCoachId(request);
+    if (!coachId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    // Get coach profile
-    const { data: coach, error: coachError } = await supabase
-      .from("coaches")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (coachError || !coach) {
-      return NextResponse.json(
-        { success: false, error: "Coach profile not found" },
-        { status: 404 }
-      );
-    }
-
     // Verify ownership first
     const existingItem = await getContentById(id);
-    if (existingItem.coachId !== coach.id) {
+    if (existingItem.coachId !== coachId) {
       return NextResponse.json(
         { success: false, error: "Content not found" },
         { status: 404 }

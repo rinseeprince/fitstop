@@ -11,8 +11,10 @@ import { join, relative } from "node:path";
  * through a rule nothing may lean on; this scan fails every one here first.
  *
  * The readers that moved off the session client (docs/DATA-ACCESS-LOCKDOWN-PLAN.md
- * commit 3) read through the server alone: in each of their files, every query
- * and every database function call has `supabaseAdmin` as its receiver.
+ * commits 3 and 4) read through the server alone: in each of their files, every
+ * query and every database function call has `supabaseAdmin` as its receiver.
+ * The content library's routes take their caller from the auth seam
+ * (`lib/auth-helpers.ts`), so none of them builds a session client at all.
  *
  * In the shape of `lib/measurements/baseline-ownership.test.ts`: every file
  * that builds a session client, or holds the browser's, is read for a table
@@ -27,12 +29,15 @@ const SCAN: string[] = ["app", "components", "contexts", "hooks", "lib", "servic
 const SESSION_CLIENT =
   /\b(createServerClient|createServerSupabaseClient|createBrowserClient)\s*(<[^>]*>)?\s*\(|from\s+["']@\/services\/supabase-client["']/;
 
-// The client's own profile and progress, activation, the coach's attention feed.
+// The client's own profile and progress, activation, the coach's attention feed
+// (commit 3); the content library's routes, a folder (commit 4).
+const CONTENT_ROUTES = "app/api/content";
 const SERVER_ONLY = [
   "services/client-portal-progress.ts",
   "services/client-portal-service.ts",
   "app/api/clients/[id]/activate/route.ts",
   "app/api/dashboard/attention-feed/route.ts",
+  CONTENT_ROUTES,
 ];
 
 // The receiver (a dotted name, or a closing paren for anything computed), the
@@ -100,6 +105,11 @@ function notThroughTheServer(src: string): string[] {
     .map((access) => `${access.name}.${access.verb}`);
 }
 
+/** The files SERVER_ONLY names, a folder read as every file under it. */
+function serverOnlyFiles(): string[] {
+  return SERVER_ONLY.flatMap((target) => filesUnder(target)).map((file) => relative(ROOT, file));
+}
+
 function sessionClientFiles(): Map<string, string> {
   const files = new Map<string, string>();
   for (const target of SCAN) {
@@ -151,12 +161,37 @@ describe("a session client writes nothing", () => {
 describe("the readers moved to the server read through it alone", () => {
   it("every query and function call in their files is supabaseAdmin's", () => {
     const offenders: string[] = [];
-    for (const rel of SERVER_ONLY) {
+    for (const rel of serverOnlyFiles()) {
       for (const access of notThroughTheServer(readFileSync(join(ROOT, rel), "utf8"))) {
         offenders.push(`${rel} — ${access}`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("reads every content route — the guard is worthless if the folder reads empty", () => {
+    expect(serverOnlyFiles()).toEqual(
+      expect.arrayContaining([
+        "app/api/content/assignments/route.ts",
+        "app/api/content/assignments/[contentId]/route.ts",
+        "app/api/content/assignments/[contentId]/[clientId]/route.ts",
+        "app/api/content/download/[contentId]/route.ts",
+        "app/api/content/folders/route.ts",
+        "app/api/content/folders/[id]/route.ts",
+        "app/api/content/items/route.ts",
+        "app/api/content/items/[id]/route.ts",
+        "app/api/content/library/route.ts",
+        "app/api/content/metadata/route.ts",
+        "app/api/content/upload/route.ts",
+      ])
+    );
+  });
+
+  it("no content route builds a session client: the caller comes from the auth seam", () => {
+    const builders = filesUnder(CONTENT_ROUTES)
+      .filter((file) => SESSION_CLIENT.test(stripComments(readFileSync(file, "utf8"))))
+      .map((file) => relative(ROOT, file));
+    expect(builders).toEqual([]);
   });
 
   it("reads a query's receiver, however the session client came back", () => {

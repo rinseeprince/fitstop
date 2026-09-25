@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { createContentItem, getCoachContent } from "@/services/content-item-service";
 import { getCoachFolders } from "@/services/content-folder-service";
@@ -11,33 +11,16 @@ export async function GET(request: NextRequest) {
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const supabase = await createServerSupabaseClient();
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const coachId = await getAuthenticatedCoachId(request);
+    if (!coachId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    // Get coach profile
-    const { data: coach, error: coachError } = await supabase
-      .from("coaches")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (coachError || !coach) {
-      return NextResponse.json(
-        { success: false, error: "Coach profile not found" },
-        { status: 404 }
-      );
-    }
-
     // Fetch content items
-    const items = await getCoachContent(coach.id);
+    const items = await getCoachContent(coachId);
 
     return NextResponse.json({
       success: true,
@@ -61,28 +44,11 @@ export async function POST(request: NextRequest) {
     const csrfError = await requireCSRFProtection(request);
     if (csrfError) return csrfError;
 
-    const supabase = await createServerSupabaseClient();
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const coachId = await getAuthenticatedCoachId(request);
+    if (!coachId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
-      );
-    }
-
-    // Get coach profile
-    const { data: coach, error: coachError } = await supabase
-      .from("coaches")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (coachError || !coach) {
-      return NextResponse.json(
-        { success: false, error: "Coach profile not found" },
-        { status: 404 }
       );
     }
 
@@ -102,7 +68,7 @@ export async function POST(request: NextRequest) {
     // Verify the target folder (if any) belongs to this coach — a body-supplied
     // folderId must not attach the item to another coach's folder.
     if (folderId) {
-      const folders = await getCoachFolders(coach.id);
+      const folders = await getCoachFolders(coachId);
       if (!folders.some((f) => f.id === folderId)) {
         return NextResponse.json(
           { success: false, error: "Folder not found" },
@@ -113,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     // Create content item
     const item = await createContentItem({
-      coachId: coach.id,
+      coachId,
       title,
       description,
       type,

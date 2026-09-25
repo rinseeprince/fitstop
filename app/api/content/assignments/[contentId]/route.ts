@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
+import { supabaseAdmin } from "@/services/supabase-admin";
 import { getContentAssignments } from "@/services/content-assignment-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 
@@ -12,39 +13,24 @@ export async function GET(
 
   const { contentId } = await params;
   try {
-    const supabase = await createServerSupabaseClient();
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const coachId = await getAuthenticatedCoachId(request);
+    if (!coachId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    // Get coach profile
-    const { data: coach, error: coachError } = await supabase
-      .from("coaches")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (coachError || !coach) {
-      return NextResponse.json(
-        { success: false, error: "Coach profile not found" },
-        { status: 404 }
-      );
-    }
-
-    // Verify the content belongs to this coach
-    const { data: content, error: contentError } = await supabase
+    // Verify the content belongs to this coach. The read is scoped to them, so
+    // another coach's item matches nothing.
+    const { data: content, error: contentError } = await supabaseAdmin
       .from("content_items")
-      .select("coach_id")
+      .select("id")
       .eq("id", contentId)
+      .eq("coach_id", coachId)
       .single();
 
-    if (contentError || !content || content.coach_id !== coach.id) {
+    if (contentError || !content) {
       return NextResponse.json(
         { success: false, error: "Content not found" },
         { status: 404 }

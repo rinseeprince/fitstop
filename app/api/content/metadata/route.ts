@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { fetchVideoMetadata, fetchLinkMetadata } from "@/services/content-metadata-service";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -14,28 +14,11 @@ export async function POST(request: NextRequest) {
     // CSRF Protection
     const csrfError = await requireCSRFProtection(request);
     if (csrfError) return csrfError;
-    const supabase = await createServerSupabaseClient();
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const coachId = await getAuthenticatedCoachId(request);
+    if (!coachId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
-      );
-    }
-
-    // Get coach profile to ensure user is a coach
-    const { data: coach, error: coachError } = await supabase
-      .from("coaches")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (coachError || !coach) {
-      return NextResponse.json(
-        { success: false, error: "Coach profile not found" },
-        { status: 404 }
       );
     }
 
