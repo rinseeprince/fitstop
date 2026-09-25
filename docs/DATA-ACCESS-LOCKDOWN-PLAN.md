@@ -277,7 +277,7 @@ what the section lists: one action per step, on data you seeded on DEV.
 
 ### Commit 3 — `refactor(security): the client's reads, activation and the attention feed read through the server`
 
-**STATUS: SHIPPED `a36a095a`, 2026-09-25 — no migration; browser smoke owed.**
+**STATUS: SHIPPED `a36a095a`, 2026-09-25 — no migration; browser smoke PASSED 2026-09-25.**
 
 - **`/api/client/progress`** (`services/client-portal-progress.ts`): its four reads move to `supabaseAdmin`, each
   keeping its `.eq("client_id", clientId)` on the id `requireClientAuth` verified. The four are the check-in count,
