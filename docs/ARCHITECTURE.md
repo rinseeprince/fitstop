@@ -2,12 +2,7 @@
 
 This file documents the platform architecture, database schema, and data flow patterns. Unlike CONVENTIONS.md (which contains stable coding rules), this file evolves with the schema. **Update it when shipping migrations.**
 
-> ⚠️ **Legacy-section map — read before trusting any section below.** A client-portal redesign is in flight (`docs/CLIENT-PORTAL-REDESIGN.md` + `docs/CLIENT-PORTAL-EXECUTION-PLAN.md`). Several sections here describe patterns that are already retired or scheduled to change. **Precedence rules:** where this file and the redesign docs disagree about a client-portal write path or data flow, **the redesign docs win**; where this file and **CONVENTIONS.md** disagree about a coding/auth rule, **CONVENTIONS.md wins** (it is the stable rule-of-record; this file lags it).
->
-> | Section | Status | Authoritative source |
-> |---------|--------|----------------------|
-> | "JSONB Conventions" (`training_data`/`activityStatuses`) | **Orphaned cache** — legacy `training_logs` rows only; no active read/write path. | redesign docs |
-> | "Activation Flow" · "Training Completion Hierarchy" (`session_logs` identity) | **Accurate / landed** — `session_logs` event-keyed identity shipped (migration 097, Session 5.2); the onboarding walkthrough was reworked for the day-centric portal (Session 6.1). | this file |
+> Where this file and `CONVENTIONS.md` disagree about a coding or auth rule, `CONVENTIONS.md` wins: it is the rule of record, and this file describes the shape built under it. Where this file and the client-portal docs (`docs/CLIENT-PORTAL-REDESIGN.md`, `docs/CLIENT-PORTAL-EXECUTION-PLAN.md`) disagree about a client-portal write path or data flow, those docs win.
 
 ---
 
