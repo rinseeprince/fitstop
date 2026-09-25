@@ -404,7 +404,7 @@ the section lists: one action per step, on data you seeded on DEV.
 
 ### Commit 5 — `refactor(security): sign-in reads through the server — the middleware, the auth callback and the auth seam`
 
-**STATUS: SHIPPED `534d852b`, 2026-09-25 — no migration; browser smoke owed. The auth callback needed no change: its `profiles` read was already `supabaseAdmin`'s (7a0c46c0, 2026-02-02).**
+**STATUS: SHIPPED `534d852b`, 2026-09-25 — no migration; browser smoke PASSED 2026-09-25. The auth callback needed no change: its `profiles` read was already `supabaseAdmin`'s (7a0c46c0, 2026-02-02). Follow-up `6aab72c1` (owner's decision, outside the plan): a signed-in visitor whose role cannot be read is shown the login page, not bounced; smoke PASSED 2026-09-25.**
 
 - **What moves:** `middleware.ts` (its two `profiles` reads), `app/auth/callback/route.ts` (its `profiles` read) and
   `lib/auth-helpers.ts` (the `coaches` and `clients` lookups behind `getAuthenticatedCoachId` and
