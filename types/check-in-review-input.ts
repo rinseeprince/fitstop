@@ -39,7 +39,7 @@ export type CheckInReviewInput = {
   nutrition: { days: NutritionDay[]; summary: NutritionPeriodSummary };
   /** The habit figures as the page shows them: built from the habit list, one rail per habit over `dates`. */
   habits: HabitBreakdown[];
-  /** The day-form rows: each day's wellness scores and the client's day note. */
+  /** The day-form rows: each day's wellness scores. */
   dailyLogs: DailyLog[];
   /** The comparison and goal strip as the page shows them; null when that read failed. */
   comparison: GetCheckInComparisonResponse | null;

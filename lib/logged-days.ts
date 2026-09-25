@@ -64,10 +64,10 @@ type WellnessValues = {
 };
 
 /**
- * A wellness row counts when it carries at least one reading. The attention
- * feed holds `daily_logs_full` rows, which cannot tell an absent child from an
- * empty one, so "carries a reading" is the one predicate every reader can
- * apply to what it holds.
+ * A wellness row counts when it carries at least one reading. Every reader
+ * holds assembled days (`DailyLog`), where a day with a food row and no
+ * wellness row carries no score, so "carries a reading" is the one predicate
+ * every reader can apply to what it holds.
  */
 export function hasWellnessReading(row: WellnessValues): boolean {
   return (

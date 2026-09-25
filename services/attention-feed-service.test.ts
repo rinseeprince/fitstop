@@ -23,6 +23,12 @@ import {
 } from "@/lib/attention-feed-helpers"
 import type { ClientWithAlerts } from "@/types/attention-feed"
 import type { DailyLog } from "@/types/daily-log"
+import {
+  NUTRITION_LOG_COLUMNS,
+  WELLNESS_LOG_COLUMNS,
+  type NutritionLogRow,
+  type WellnessLogRow,
+} from "@/services/daily-logs-service"
 
 describe("attention-feed-service", () => {
   const baseClient = {
@@ -515,11 +521,12 @@ describe("attention-feed-service", () => {
       // Promise.allSettled, so their chunks interleave — assert on the union,
       // not on a positional slice.)
       expect(new Set(inCalls.flat()).size).toBe(250)
-      // Each read covers all 250 ids across 3 chunks (100/100/50), 9 reads: the
-      // five window reads, the two plan-window reads, the blocks read and the
-      // day reader's versions read (its per-day sources are read for the
-      // clients a version covers, none here).
-      expect(inCalls.length).toBe(27)
+      // Each read covers all 250 ids across 3 chunks (100/100/50), 10 reads: the
+      // six window reads (the day-form's two tables, habits, habit logs, events,
+      // measurements), the two plan-window reads, the blocks read and the day
+      // reader's versions read (its per-day sources are read for the clients a
+      // version covers, none here).
+      expect(inCalls.length).toBe(30)
     })
 
     it("reads only the measurements the client logged themselves, from the live view", async () => {
@@ -556,6 +563,49 @@ describe("attention-feed-service", () => {
 
       expect(eqCalls["client_measurements_live"]).toEqual([["source", "client_log"]])
       expect(eqCalls["daily_logs"]).toBeUndefined()
+    })
+
+    it("reads the day-form from its two tables, chunked, windowed and ordered (date DESC, id) alike", async () => {
+      // The two reads replace one read of the day view: same chunking by client
+      // id, same window, same order, so the per-client newest-first walk the
+      // triggers depend on is preserved and truncation can only lose old days.
+      const calls: Record<string, Record<string, unknown[][]>> = {}
+      const record = (table: string, method: string, args: unknown[]) => {
+        ;((calls[table] ??= {})[method] ??= []).push(args)
+      }
+      let rosterServed = false
+      const makeQuery = (table: string) => {
+        const q: Record<string, unknown> = {}
+        for (const method of ["select", "eq", "is", "neq", "in", "gte", "lte", "order", "range"]) {
+          q[method] = vi.fn((...args: unknown[]) => { record(table, method, args); return q })
+        }
+        Object.defineProperty(q, "then", {
+          value: (resolve: (v: { data: unknown[]; error: null }) => void) => {
+            if (table === "clients" && !rosterServed) {
+              rosterServed = true
+              return Promise.resolve({ data: [baseClient], error: null }).then(resolve)
+            }
+            return Promise.resolve({ data: [], error: null }).then(resolve)
+          },
+        })
+        return q
+      }
+      vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) => makeQuery(t)) as never)
+
+      await evaluateAllClientTriggers("coach-1")
+
+      // The window is the coach-local today (2024-03-27) less 28 days.
+      for (const table of ["wellness_logs", "nutrition_logs"] as const) {
+        const columns = table === "wellness_logs" ? WELLNESS_LOG_COLUMNS : NUTRITION_LOG_COLUMNS
+        expect(calls[table].select, table).toEqual([[columns]])
+        expect(calls[table].in, table).toEqual([["client_id", ["c1"]]])
+        expect(calls[table].gte, table).toEqual([["date", "2024-02-28"]])
+        expect(calls[table].lte, table).toEqual([["date", "2024-03-27"]])
+        expect(calls[table].order, table).toEqual([["date", { ascending: false }], ["id", { ascending: true }]])
+        expect(calls[table].range, table).toEqual([[0, 999]])
+      }
+      expect(calls["daily_logs_full"]).toBeUndefined()
+      expect(calls["daily_logs"]).toBeUndefined()
     })
 
     it("reads each track's plan windows with the live predicates, through one shape per track", async () => {
@@ -729,25 +779,16 @@ describe("groupClientData — a logged day's target and verdict come from the co
     next_check_in_due: null,
     start_date: null,
   }
-  // A row still carrying stale stored values (until migration 173 drops the
-  // columns): none of them may be read.
-  const logRow = (client_id: string, date: string, calories_consumed: number) =>
-    ({
-      id: `dl-${client_id}-${date}`,
-      client_id,
-      date,
-      notes: null,
-      created_at: "",
-      updated_at: "",
-      mood: null, energy: null, sleep: null, stress: null, soreness: null,
-      calories_consumed,
-      protein_g: null, carbs_g: null, fat_g: null,
-      target_calories: 9999,
-      target_protein_g: 1,
-      nutrition_adherence: "hit",
-      calorie_surplus_deficit: 0,
-      trained: null, training_session_id: null, training_data: null,
-    }) as never
+  // A food row holds what the client ate and nothing else: no target, no verdict.
+  const foodRow = (client_id: string, date: string, calories_consumed: number): NutritionLogRow => ({
+    client_id, date, calories_consumed, protein_g: null, carbs_g: null, fat_g: null,
+    created_at: `${date}T12:00:00+00:00`, updated_at: `${date}T12:00:00+00:00`,
+  })
+  const scoreRow = (client_id: string, date: string, mood: number): WellnessLogRow => ({
+    client_id, date, mood, energy: null, sleep: null, stress: null, soreness: null,
+    created_at: `${date}T08:00:00+00:00`, updated_at: `${date}T08:00:00+00:00`,
+  })
+  const days = (nutrition: NutritionLogRow[], wellness: WellnessLogRow[] = []) => ({ wellness, nutrition })
   const dayTarget = (clientId: string, date: string, calories: number) => ({
     clientId, date, calories, proteinG: 160, carbsG: 210, fatG: 65, isTrainingDay: false, note: null,
   })
@@ -755,23 +796,24 @@ describe("groupClientData — a logged day's target and verdict come from the co
   it("derives each log's target and verdict from its client's computed day, never from the row", () => {
     const map = groupClientData(
       [baseClient, { ...baseClient, id: "c2", name: "Client 2" }],
-      [logRow("c1", "2026-04-01", 2000), logRow("c1", "2026-04-02", 2000), logRow("c2", "2026-04-01", 2000)],
+      days([foodRow("c1", "2026-04-01", 2000), foodRow("c1", "2026-04-02", 2000), foodRow("c2", "2026-04-01", 2000)]),
       null, null, null, null, null, null, null,
       [dayTarget("c1", "2026-04-01", 2000), dayTarget("c1", "2026-04-02", 2400), dayTarget("c2", "2026-04-01", 2100)],
     )
     const c1 = map.get("c1")!.logs
+    // Newest first: the order the triggers walk.
     expect(c1.map((log) => [log.date, log.targetCalories, log.nutritionAdherence, log.calorieSurplusDeficit])).toEqual([
-      ["2026-04-01", 2000, "hit", 0],
       ["2026-04-02", 2400, "missed", -400],
+      ["2026-04-01", 2000, "hit", 0],
     ])
-    expect(c1[0].targetProteinG).toBe(160)
+    expect(c1[1].targetProteinG).toBe(160)
     const c2 = map.get("c2")!.logs
     expect(c2[0]).toMatchObject({ targetCalories: 2100, nutritionAdherence: "partial", calorieSurplusDeficit: -100 })
   })
 
   it("a day with no computed target — or a degraded target read — carries no target and no verdict", () => {
     const withGap = groupClientData(
-      [baseClient], [logRow("c1", "2026-04-01", 2000)],
+      [baseClient], days([foodRow("c1", "2026-04-01", 2000)]),
       null, null, null, null, null, null, null,
       [dayTarget("c1", "2026-04-03", 2000)],
     )
@@ -780,7 +822,7 @@ describe("groupClientData — a logged day's target and verdict come from the co
     })
 
     const degraded = groupClientData(
-      [baseClient], [logRow("c1", "2026-04-01", 2000)],
+      [baseClient], days([foodRow("c1", "2026-04-01", 2000)]),
       null, null, null, null, null, null, null, null,
     )
     expect(degraded.get("c1")!.logs[0].nutritionAdherence).toBeUndefined()
@@ -790,12 +832,45 @@ describe("groupClientData — a logged day's target and verdict come from the co
     const dates = ["2026-04-01", "2026-04-02", "2026-04-03", "2026-04-04"]
     const map = groupClientData(
       [baseClient],
-      dates.map((date) => logRow("c1", date, 1500)),
+      days(dates.map((date) => foodRow("c1", date, 1500))),
       null, null, null, null, null, null, null,
       dates.map((date) => dayTarget("c1", date, 2200)),
     )
     const alerts = evaluateAndSortTriggers(map, { start: "2026-04-01", end: "2026-04-04" })
       .find((c) => c.clientId === "c1")?.alerts.map((a) => a.type) ?? []
     expect(alerts).toContain("nutrition_missed")
+  })
+
+  it("assembles each client's days from the two tables, newest first, a day with both rows folded into one", () => {
+    const map = groupClientData(
+      [baseClient, { ...baseClient, id: "c2", name: "Client 2" }],
+      days(
+        [foodRow("c1", "2026-04-02", 2100), foodRow("c1", "2026-04-03", 1900)],
+        [scoreRow("c1", "2026-04-01", 4), scoreRow("c1", "2026-04-03", 2), scoreRow("c2", "2026-04-01", 5)],
+      ),
+      null, null, null, null,
+    )
+    const c1 = map.get("c1")!.logs
+    expect(c1.map((log) => [log.id, log.date, log.mood, log.caloriesConsumed])).toEqual([
+      ["2026-04-03", "2026-04-03", 2, 1900],
+      ["2026-04-02", "2026-04-02", undefined, 2100],
+      ["2026-04-01", "2026-04-01", 4, undefined],
+    ])
+    // D3: the day's stamps are its rows' earliest and latest.
+    expect(c1[0].createdAt).toBe("2026-04-03T08:00:00+00:00")
+    expect(c1[0].updatedAt).toBe("2026-04-03T12:00:00+00:00")
+    expect(map.get("c2")!.logs.map((log) => log.date)).toEqual(["2026-04-01"])
+  })
+
+  it("a wellness-only day and a food-only day are each logged days, from their own tables", () => {
+    const map = groupClientData(
+      [baseClient],
+      days([foodRow("c1", "2026-04-02", 2100)], [scoreRow("c1", "2026-04-01", 4)]),
+      null, null, null, null,
+    )
+    expect(loggedDaysFor(map.get("c1")!, { start: "2026-04-01", end: "2026-04-10" })).toEqual([
+      "2026-04-01",
+      "2026-04-02",
+    ])
   })
 })

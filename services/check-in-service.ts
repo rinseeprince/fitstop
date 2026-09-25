@@ -99,12 +99,12 @@ export const submitCheckIn = async (
     client.startDate
   );
 
-  // Derive the stored columns AND the frozen snapshot from the spine for the
-  // period. Pin 1: the nutrition figures and the nutrition rows are one kernel
-  // run (`getNutritionPeriod`), so the stored count, the frozen rows the
-  // review and the AI read back, and the client's card cannot disagree. Pin 2:
-  // read wellness rows from the consolidated daily_logs_full (mood/energy/sleep/
-  // stress live in wellness_logs, not the bare daily_logs spine).
+  // Derive the stored columns AND the frozen snapshot for the period. Pin 1:
+  // the nutrition figures and the nutrition rows are one kernel run
+  // (`getNutritionPeriod`), so the stored count, the frozen rows the review
+  // and the AI read back, and the client's card cannot disagree. Pin 2: the
+  // five wellness averages come from the days the day reader assembles
+  // (`getDailyLogs`), whose scores are the wellness rows' own.
   let workoutsCompleted: number | undefined;
   let nutritionDaysOnTarget: number | undefined;
   let adherencePercentage: number | undefined;

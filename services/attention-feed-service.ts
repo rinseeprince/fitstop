@@ -3,7 +3,8 @@
  *
  * Tables queried:
  * - clients: to get the list of clients for a coach
- * - daily_logs: 28-day rolling window of logs for all clients
+ * - wellness_logs + nutrition_logs: the 28-day window's day-form rows for all
+ *   clients, assembled per client and date into the days the triggers read
  * - daily_habits: habit definitions for all clients
  * - daily_habit_logs: 28-day rolling window of habit logs for all clients
  * - training_events: the window's events, for the training triggers and the workout logs
@@ -31,7 +32,13 @@ import { getNutritionWindowsForClients } from "./nutrition-plan-service"
 import { getNutritionTargetsForClients } from "./nutrition-days-service"
 import { getLiveProgramWindowsForClients } from "./training-service"
 import { getBlockWindowsForClients } from "./client-blocks-service"
-import type { ClientLogRow, DailyLogRow } from "@/lib/attention-feed-helpers"
+import {
+  NUTRITION_LOG_COLUMNS,
+  WELLNESS_LOG_COLUMNS,
+  type NutritionLogRow,
+  type WellnessLogRow,
+} from "./daily-logs-service"
+import type { ClientLogRow } from "@/lib/attention-feed-helpers"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
 type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
@@ -91,20 +98,22 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   //  - URL cap: inlining every client id into `.in()` costs ~38 B/uuid, so the
   //    request line passes a typical 8 KB proxy limit at ~205 clients and 16 KB
   //    at ~425. Paging does NOT help — the loop re-sends the whole id list on
-  //    every page. The daily-logs read is the REQUIRED one (a rejection throws),
-  //    so a 414 there fails the entire feed for that coach rather than degrading.
+  //    every page. The two day-form reads are the REQUIRED ones (a rejection
+  //    throws), so a 414 there fails the entire feed for that coach rather than
+  //    degrading.
   //
   // Chunking by client_id is safe for these consumers: every row for a given
   // client falls inside exactly one chunk and that chunk is paged to completion,
   // so the per-client date-DESC ordering the triggers depend on is preserved.
   // groupClientData re-buckets by client, so cross-chunk global order is moot.
   //
-  // daily_logs_full is ordered date DESC (it was ASC): under truncation ASC kept
-  // the OLDEST dates and discarded exactly the recent end that every trigger
-  // reads (dropoff = last 7 days, no_engagement = last 3, cal-mismatch = 28).
-  // The `id` tiebreak keeps offset paging stable across pages.
+  // The day-form reads are ordered date DESC (they were ASC): under truncation
+  // ASC kept the OLDEST dates and discarded exactly the recent end that every
+  // trigger reads (dropoff = last 7 days, no_engagement = last 3, cal-mismatch
+  // = 28). The `id` tiebreak keeps offset paging stable across pages.
   const [
-    logsResult,
+    wellnessResult,
+    nutritionResult,
     habitsResult,
     habitLogsResult,
     eventsResult,
@@ -115,18 +124,32 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     blocksResult,
     dayTargetsResult,
   ] = await Promise.allSettled([
-    // 2. Daily logs (cross-domain view, required for core triggers)
-    fetchAllByChunkedIds<DailyLogRow, string>(clientIds, (chunk, from, to) =>
+    // 2. The day-form's two tables (required for the core triggers): the
+    //    wellness rows and the food rows of the window, each by client and
+    //    date, assembled per day in groupClientData.
+    fetchAllByChunkedIds<WellnessLogRow, string>(clientIds, (chunk, from, to) =>
       supabaseAdmin
-        .from("daily_logs_full")
-        .select("*")
+        .from("wellness_logs")
+        .select(WELLNESS_LOG_COLUMNS)
         .in("client_id", chunk)
         .gte("date", startDate)
         .lte("date", endDate)
         .order("date", { ascending: false })
         .order("id", { ascending: true })
-        .range(from, to) as unknown as PromiseLike<{ data: DailyLogRow[] | null; error: { message: string } | null }>,
-      { errorLabel: "daily logs" },
+        .range(from, to),
+      { errorLabel: "wellness logs" },
+    ),
+    fetchAllByChunkedIds<NutritionLogRow, string>(clientIds, (chunk, from, to) =>
+      supabaseAdmin
+        .from("nutrition_logs")
+        .select(NUTRITION_LOG_COLUMNS)
+        .in("client_id", chunk)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+      { errorLabel: "nutrition logs" },
     ),
     // 3. Habit definitions (graceful degradation)
     fetchAllByChunkedIds(clientIds, (chunk, from, to) =>
@@ -209,14 +232,14 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     getNutritionTargetsForClients(clientIds, startDate, endDate),
   ])
 
-  // Extract results, preserving original error semantics: logs are required
-  // (throw), others degrade gracefully (log and continue). fetchAllPages throws
-  // on a page error rather than returning { error }, so a failure now surfaces
-  // as a rejected settlement -- the two old branches collapse into one.
-  if (logsResult.status === "rejected") {
+  // Extract results, preserving original error semantics: the day-form rows
+  // are required (throw), others degrade gracefully (log and continue).
+  // fetchAllPages throws on a page error rather than returning { error }, so a
+  // failure surfaces as a rejected settlement.
+  if (wellnessResult.status === "rejected" || nutritionResult.status === "rejected") {
     throw new Error("Failed to fetch daily logs for attention feed")
   }
-  const allLogs = logsResult.value
+  const dayRows = { wellness: wellnessResult.value, nutrition: nutritionResult.value }
 
   let allHabits = null
   if (habitsResult.status === "fulfilled") {
@@ -277,7 +300,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // Group all query results by client
   const clientDataMap = groupClientData(
     clients,
-    allLogs,
+    dayRows,
     allHabits,
     allHabitLogs,
     eventRows,
@@ -329,7 +352,8 @@ export async function evaluateSingleClientAlerts(
   if (clientError || !client) return []
 
   const [
-    logsResult,
+    wellnessResult,
+    nutritionResult,
     habitsResult,
     habitLogsResult,
     eventsResult,
@@ -340,16 +364,25 @@ export async function evaluateSingleClientAlerts(
     blocksResult,
     dayTargetsResult,
   ] = await Promise.allSettled([
+      // The day-form's two tables, ordered like the cross-client path so the
+      // two entry points hand the trigger functions the same days in the same
+      // order. Single-client and 29 days, so neither read can truncate.
       supabaseAdmin
-        .from("daily_logs_full")
-        .select("*")
+        .from("wellness_logs")
+        .select(WELLNESS_LOG_COLUMNS)
         .eq("client_id", clientId)
         .gte("date", startDate)
         .lte("date", endDate)
-        // date DESC to match evaluateAllClientTriggers, so the two entry points
-        // hand the same trigger functions rows in the same order. Single-client
-        // and 29 days, so unlike the cross-client path this one cannot truncate.
-        .order("date", { ascending: false }) as unknown as Promise<{ data: DailyLogRow[] | null; error: { message: string } | null }>,
+        .order("date", { ascending: false })
+        .order("id", { ascending: true }),
+      supabaseAdmin
+        .from("nutrition_logs")
+        .select(NUTRITION_LOG_COLUMNS)
+        .eq("client_id", clientId)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: false })
+        .order("id", { ascending: true }),
       supabaseAdmin.from("daily_habits").select("*").eq("client_id", clientId).eq("is_active", true),
       supabaseAdmin
         .from("daily_habit_logs")
@@ -387,9 +420,14 @@ export async function evaluateSingleClientAlerts(
       getNutritionTargetsForClients([clientId], startDate, endDate),
     ])
 
-  // Logs are required for the core triggers; without them there are no alerts.
-  if (logsResult.status !== "fulfilled" || logsResult.value.error) return []
-  const allLogs = logsResult.value.data
+  // The day-form rows are required for the core triggers; without them there
+  // are no alerts.
+  if (wellnessResult.status !== "fulfilled" || wellnessResult.value.error) return []
+  if (nutritionResult.status !== "fulfilled" || nutritionResult.value.error) return []
+  const dayRows = {
+    wellness: wellnessResult.value.data ?? [],
+    nutrition: nutritionResult.value.data ?? [],
+  }
 
   const allHabits =
     habitsResult.status === "fulfilled" && !habitsResult.value.error ? habitsResult.value.data : null
@@ -414,7 +452,7 @@ export async function evaluateSingleClientAlerts(
 
   const clientDataMap = groupClientData(
     [client] as ClientInfoWithCheckIn[],
-    allLogs,
+    dayRows,
     allHabits,
     allHabitLogs,
     eventRows,

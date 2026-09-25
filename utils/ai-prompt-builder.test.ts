@@ -12,7 +12,7 @@ import type { HabitBreakdown } from "@/types/coach-overview";
 // A fixture week, Fri 11 to Thu 17 September 2026, built to hold one of
 // everything the AI is given: a full workout with its exercise lines, a
 // partial one with a note, two missed ones, food hit / under / over / logged
-// with no target / not logged, wellness on four days with two day notes, a
+// with no target / not logged, wellness on four days, a
 // habit the client had all week and one added midweek, a weight with its
 // change since the last check-in, a goal on track with a deadline and the
 // drift note, the client's words and an answer to the coach's question.
@@ -100,8 +100,8 @@ const dailyLog = (date: string, fields: Partial<DailyLog>): DailyLog =>
 
 const dailyLogs: DailyLog[] = [
   dailyLog("2026-09-11", { mood: 4, energy: 7, sleep: 6, stress: 5, soreness: 3 }),
-  dailyLog("2026-09-12", { mood: 3, sleep: 5, notes: "Long day" }),
-  dailyLog("2026-09-14", { energy: 4, sleep: 4, stress: 8, notes: "Barely slept, shoulder sore" }),
+  dailyLog("2026-09-12", { mood: 3, sleep: 5 }),
+  dailyLog("2026-09-14", { energy: 4, sleep: 4, stress: 8 }),
   dailyLog("2026-09-16", { mood: 4, energy: 6, sleep: 7, stress: 4, soreness: 2 }),
 ];
 
@@ -179,7 +179,6 @@ Training: rest day, nothing scheduled
 Food: 1,800 kcal eaten (protein 120 g, carbs 200 g, fat 55 g), target 2,400 kcal (protein 180 g, carbs 250 g, fat 80 g): missed, under target
 Wellness: mood 3/5, sleep 5/10
 Habits: Walk 10k steps, not ticked
-Note: "Long day"
 
 Sunday 13 September
 Nothing logged.
@@ -195,7 +194,6 @@ Training: Upper A: logged, partial
 Food: 2,600 kcal eaten (protein 190 g, carbs 280 g, fat 85 g), target 2,400 kcal (protein 180 g, carbs 250 g, fat 80 g): partial, over target
 Wellness: energy 4/10, sleep 4/10, stress 8/10
 Habits: Walk 10k steps, ticked; Water 3 L, ticked
-Note: "Barely slept, shoulder sore"
 
 Tuesday 15 September
 Nothing logged.
@@ -269,6 +267,15 @@ describe("buildCheckInReviewPrompt — the fixture week, pinned", () => {
     const prompt = buildCheckInReviewPrompt({ ...fixture, exerciseLines: new Map() });
     expect(prompt).toContain("Training: Lower A: logged, full (no sets recorded)");
     expect(prompt).toContain("Training: Upper A: logged, partial (no sets recorded)\n  Note: \"Cut it short, shoulder niggle\"");
+  });
+
+  it("writes no day note, even when a day-form row still carries one (D1)", () => {
+    // The day note left the type (D1); a row that somehow carries the key must
+    // not reach the model.
+    const withNote = { ...dailyLog("2026-09-12", { mood: 3, sleep: 5 }), notes: "Long day" } as DailyLog;
+    const prompt = buildCheckInReviewPrompt({ ...fixture, dailyLogs: [withNote] });
+    expect(prompt).toContain("Wellness: mood 3/5, sleep 5/10");
+    expect(prompt).not.toContain('Note: "Long day"');
   });
 
   it("never counts the days logged", () => {

@@ -441,7 +441,7 @@ describe('attention-triggers', () => {
     it('returns the most recent metricData regardless of the order rows arrive in', () => {
       // Regression (2026-07-21): metricData/affectedDays were built by iterating
       // the logs array, so they inherited the query's ORDER BY. When the
-      // attention feed flipped daily_logs_full to date DESC, `slice(-7)`
+      // attention feed flipped its day-form reads to date DESC, `slice(-7)`
       // silently began returning the OLDEST 7 points. Feeding the same logs in
       // both orders must produce identical output.
       const today = new Date()

@@ -15,7 +15,7 @@ import { MEASUREMENT_KEYS, type MeasurementValues } from "@/lib/measurements/key
  * question — moves a sent check-in. A correction changes the client's log.
  *
  * What it does not copy is the client's own logging of that week — their
- * workouts and sets, their wellness and their day notes: sending the check-in
+ * workouts and sets, their food and their wellness: sending the check-in
  * closes the week (`resolveLogsOpenFrom`) and no coach screen edits it, so the
  * surfaces read those as they are.
  *

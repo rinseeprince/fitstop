@@ -28,7 +28,7 @@ export type ReviewDay = {
   exerciseLines: Map<string, string[]>;
   /** The day's food row: what was eaten beside the target. Null when the week has no row for it. */
   nutrition: NutritionDay | null;
-  /** The day-form row: wellness scores and the client's note. */
+  /** The day-form row: the day's wellness scores. */
   dailyLog: DailyLog | null;
   /** The habits the client had that day, ticked or not. */
   habits: { name: string; ticked: boolean }[];
@@ -121,6 +121,5 @@ export function describeDay(day: ReviewDay): string {
       `Habits: ${day.habits.map((habit) => `${text(habit.name)}, ${habit.ticked ? "ticked" : "not ticked"}`).join("; ")}`
     );
   }
-  if (day.dailyLog?.notes) lines.push(`Note: "${text(day.dailyLog.notes)}"`);
   return lines.join("\n");
 }

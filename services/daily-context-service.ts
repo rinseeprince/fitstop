@@ -83,8 +83,8 @@ type NutritionForDate = {
 /**
  * Resolve the nutrition card for a date. What the client ATE is the
  * `nutrition_logs` row, when one exists — a row existing = "logged" regardless
- * of values (distinguishes absent vs empty, which the daily_logs_full view
- * cannot) — and the TARGET for EVERY day, logged or not, is the computed day
+ * of values (an absent row and an empty one are different things) — and the
+ * TARGET for EVERY day, logged or not, is the computed day
  * (`getPlanTargetForDate`): the log stores no target, so a coach's change to
  * today and a session landing on a logged day reach this read at once.
  *   `source: "log"`   — a row exists; the target is the computed day or null

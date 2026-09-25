@@ -12,7 +12,7 @@ The daily logs are not the product. They are the feedstock for the two systems t
 2. **Auto-populated weekly check-in** (`services/check-in-context-service.ts`): pre-fills the Sunday check-in form from the week's daily logs, so the client reviews and annotates rather than refilling.
 
 Every design decision in this redesign must preserve or strengthen these two feeds. Concretely:
-- Wellness, nutrition, and habits continue to write to the `daily_logs` spine children so `daily_logs_full` (the view both systems read) stays intact.
+- Wellness and nutrition each write the `daily_logs` spine and their own child table by client and date, habits write `daily_habit_logs` by client and date; the attention feed and the check-in context read `wellness_logs` and `nutrition_logs` by client and date.
 - Training moves to event-keyed writes, which fixes the edited-clone bleed that currently gives the check-in an ambiguous "sessions completed" count.
 - The attention feed's training signals rewire to `training_events.status` directly (no denormalized flag).
 - The check-in's AI summary gets enriched with `exercise_logs` data for richer progression insights.
@@ -386,7 +386,7 @@ API `/api/clients/[id]/check-ins` already supports status filtering. This is pri
 
 Two systems are partially coupled to the old model and get addressed in Phase 6.
 
-**Weekly check-in system**: the context API already reads events for targets but uses session-keyed `session_logs` for completion counts and `daily_logs_full` for 7-day wellness/nutrition history. Since wellness plus nutrition keep writing to the `daily_logs` spine (per-card, not monolithic), `daily_logs_full` keeps working. Training writes move to event-keyed, which fixes the ambiguous "X of Y completed" count for cloned sessions. Phase 6 scope: switch the completion count query from `session_logs` to `training_events.status`, optionally enrich the AI summary with `exercise_logs` data, UX refresh if desired.
+**Weekly check-in system**: the context API already reads events for targets but uses session-keyed `session_logs` for completion counts and the day reader (`getDailyLogs`, over `wellness_logs` and `nutrition_logs` by client and date) for 7-day wellness/nutrition history. Wellness plus nutrition keep writing to the `daily_logs` spine (per-card, not monolithic). Training writes move to event-keyed, which fixes the ambiguous "X of Y completed" count for cloned sessions. Phase 6 scope: switch the completion count query from `session_logs` to `training_events.status`, optionally enrich the AI summary with `exercise_logs` data, UX refresh if desired.
 
 **Needs-attention feed**: 7 of 8 signals derive from the `daily_logs` spine (wellness, nutrition adherence, logging gap, habit dropoff, logging metadata). These survive unchanged. The "training missed" signal already reads `training_events`. The "activity-calorie mismatch" signal currently reads `training_logs.trained`. The rewire happens as part of Phase 1 (no denormalized flag ever; Phase 7 removed).
 

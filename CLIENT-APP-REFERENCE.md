@@ -45,7 +45,7 @@ The client app is a fitness coaching platform where clients can:
 **Primary Feature** — home route `/client` (there is no `/client/dashboard`)
 
 The Daily Pulse is the centerpiece of the client experience, allowing daily logging of:
-- **Wellness Metrics**: Mood (1-5 emoji scale), Energy (1-10), Sleep (1-10), Stress (1-10), Soreness (1-10, higher = more sore), Notes
+- **Wellness Metrics**: Mood (1-5 emoji scale), Energy (1-10), Sleep (1-10), Stress (1-10), Soreness (1-10, higher = more sore)
 - **Training Completion**: Mark planned sessions complete; on a rest day pick a session from this week (it moves to that day); on a prescribed day swap with another day's session; add unplanned exercises
 - **Nutrition Tracking**: Log calories and macros (protein, carbs, fat) with dynamic targets
 - **Habit Tracking**: Toggle daily habits on/off with auto-save
@@ -296,7 +296,7 @@ stale draft is safe. `GET /api/client/check-ins/{id}` returns
 ### DailyLog
 ```typescript
 type DailyLog = {
-  id: string
+  id: string // the date, YYYY-MM-DD
   clientId: string
   date: string // YYYY-MM-DD
   
@@ -306,27 +306,6 @@ type DailyLog = {
   sleep?: number // 1-10
   stress?: number // 1-10
   soreness?: number // 1-10 (higher = more sore)
-  notes?: string
-  
-  // Training
-  trained?: boolean
-  trainingSessionId?: string
-  trainingData?: {
-    sessionCompleted: boolean
-    trainingSessionId: string | null
-    trainingSessionName: string | null
-    isAlternativeSession: boolean
-    activityStatuses: Record<string, {
-      completed: boolean
-      activityName: string
-      estimatedCalories: number
-    }>
-    unplannedActivities: Array<{
-      activityName: string
-      intensityLevel: "low" | "moderate" | "vigorous"
-      durationMinutes: number
-    }>
-  }
   
   // Nutrition
   caloriesConsumed?: number
@@ -337,8 +316,16 @@ type DailyLog = {
   targetProteinG?: number
   targetCarbsG?: number
   targetFatG?: number
+  nutritionAdherence?: "hit" | "partial" | "missed" // derived: caloriesConsumed against targetCalories
+  calorieSurplusDeficit?: number // derived: caloriesConsumed minus targetCalories
+
+  // The earliest created_at and the latest updated_at of the day's wellness and food rows
+  createdAt: string
+  updatedAt: string
 }
 ```
+
+A day has no row of its own: `id` is its date, stable and unique per client and the same before and after every save of the day. A key with no value is absent, never null.
 
 ### TrainingPlan
 Source of truth: `types/client-training-plan.ts`. This is the **client read shape** returned by `GET /api/client/training-plan` — it is not the coach-side `types/training.ts` `TrainingPlan`.

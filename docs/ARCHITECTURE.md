@@ -209,7 +209,7 @@ daily_logs (spine)         -- id, client_id, date, notes
 ```
 - **Writes**: per-card independent writes. Each per-card endpoint (`PATCH /api/client/daily-logs/[date]/nutrition`, `/wellness`, and similar) ensures the day's `daily_logs` spine row exists and upserts only its own child table. (The `upsert_daily_log_atomic()` RPC remains in the DB as an unused function — its removal is separate schema work — and must not be used for new writes; since migration 173 its body names food-log columns that no longer exist, so it cannot run at all.)
 - **Domain-specific reads** query child tables directly (e.g. the Wellness tab's history, and the Journey's Wellness pane — `GET /api/clients/[id]/wellness-series`, one value per score per day through `wellnessDayValues`, `lib/wellness/day-values.ts` — query `wellness_logs`, not the view)
-- **Cross-domain reads** use the `daily_logs_full` view (e.g. attention feed, AI summary generation)
+- **Cross-domain reads** assemble a day from `wellness_logs` and `nutrition_logs` by client and date — `getDailyLogs` / `getTodayLog` (`services/daily-logs-service.ts`) for the check-in context, the check-in submit, the review input and the coach's day-logs read, and the attention feed's two cross-client reads merged per client and date; nothing reads the view
 - Each child table has `client_id` and `date` columns for direct querying without joining the spine
 - The `DailyLog` TypeScript type remains flat. The split is DB + service layer only. Hooks, components, and utils are unaffected
 
@@ -953,7 +953,7 @@ The client portal at `/client` is a day-centric, event-driven interface: the cli
 1. **Day-centric, URL-driven.** Home is `/client?date=YYYY-MM-DD` (today by default). Date lives in the URL so back/forward and deep links work. Prev/next via arrows + horizontal swipe on touch.
 2. **Event-keyed, not session-keyed.** Training reads/writes key on `training_events.id`, not `training_session_id`. This fixes the edited-clone bleed that gave the check-in an ambiguous "sessions completed" count.
 3. **Per-card independent saves.** No monolithic "Log Day" button. Each detail page saves only its own domain. The old Daily Pulse "lifted state / no auto-save / single atomic write" rule is retired.
-4. **Spine writes preserved.** Wellness, nutrition, and habits still write to the `daily_logs` spine children so `daily_logs_full` (read by the attention feed and check-in context) stays intact.
+4. **Per-table writes.** Wellness and nutrition each write the `daily_logs` spine and their own child table by client and date, habits write `daily_habit_logs` by client and date; the attention feed and the check-in context read `wellness_logs` and `nutrition_logs` by client and date.
 5. **Render-ready payloads.** The API emits display-ready, locale-neutral data (ISO dates on the wire, server-side aggregation/summaries) and speaks **canonical kg/cm** — there is no per-record unit on the wire and no conversion at the API boundary. The client renders in the viewer's own unit at the presentation layer, through `utils/unit-conversions.ts` with the preference from `useUnits()`: `formatWeight` for body weight, `formatLoad` for a barbell load (it snaps to a loadable increment), `formatLength` for girths, `formatHeight` for height. See `CONVENTIONS.md §20 Units`. (The old `formatWeight(weightKg, unitPreference)` in `utils/nutrition-helpers.ts` is deleted, along with that module's other conversion helpers.)
 
 ### Page / navigation structure
@@ -1495,7 +1495,7 @@ is no reopen and no same-day warning; after the close only the COACH changes any
 week, and only readings, from the Journey's measurement log.
 
 That is what keeps the client's own logging of the week — their workouts and sets, their food
-entries, wellness, habit ticks and day notes — as it was when they sent it: the review reads those
+entries, wellness and habit ticks — as it was when they sent it: the review reads those
 from the logs, and nothing can write them any more. Before the close a client who backfilled a day
 after submitting moved the review while their own copy stood still. The same index that enforces
 one check-in per period serves the boundary read (`getLastSubmittedPeriodEnd`), so the close costs
@@ -1788,8 +1788,8 @@ and a timed group as a line of its own above its exercises' — its heading and 
 none of whose exercises were ticked still reaches the review; an exercise in an AMRAP or For time reads
 "per round" rather than as a count of sets done;
 a workout never logged as its name, missed — then the food row the check-in froze (what was eaten beside
-the target, with the kernel's standing), the day's wellness scores, each habit ticked or not (by the
-habit list's rail, so a habit the client ignored all week still appears), and the client's day note.
+the target, with the kernel's standing), the day's wellness scores, and each habit ticked or not (by
+the habit list's rail, so a habit the client ignored all week still appears).
 "Nothing logged" is written wherever nothing was, source by source, and a day with no log by the one
 definition (`loggedDates`, see "Daily Logs") opens with it. Last come the client's own words —
 Reflection, Wins, Challenges, exercise highlights, and the coach's questions with their answers — passed

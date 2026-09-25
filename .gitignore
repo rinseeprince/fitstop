@@ -45,3 +45,6 @@ next-env.d.ts
 .claude/plans/
 .claude/projects/
 scratchpad/
+
+# Wire-proof recordings (health data): scripts/wire-proof-*.ts write here by default
+.wire-proofs/

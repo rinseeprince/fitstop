@@ -138,8 +138,8 @@ export function evaluateActivityCalMismatch(
     if (hasRecentMismatch) {
       // Sort explicitly rather than trusting the order rows arrived in. These
       // two lines are built by iterating `recentLogs`, so they inherited the
-      // query's ORDER BY — and when the attention feed's daily_logs_full read
-      // was flipped to date DESC (to stop truncation discarding the recent end),
+      // query's ORDER BY — and when the attention feed's day-form reads
+      // were flipped to date DESC (to stop truncation discarding the recent end),
       // `slice(-7)` silently started returning the OLDEST 7 points instead of
       // the newest. Sorting here makes both correct regardless of caller.
       const byDateAsc = <T extends { date: string }>(rows: T[]) =>

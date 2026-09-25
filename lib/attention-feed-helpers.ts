@@ -36,8 +36,9 @@ import {
   loggedDays,
 } from "@/lib/logged-days"
 import {
-  calculateCalorieSurplusDeficit,
-  calculateNutritionAdherence,
+  assembleDayLog,
+  type NutritionLogRow,
+  type WellnessLogRow,
 } from "@/services/daily-logs-service"
 import type { ClientNutritionDayTarget } from "@/services/nutrition-days-service"
 import type { DayOfWeek } from "@/types/check-in"
@@ -46,16 +47,15 @@ type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
 type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
 type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'next_check_in_due' | 'start_date'>
 
-// View row shape - daily_logs_full joins spine + wellness + nutrition + training.
-// The nutrition columns are what the client ATE; a day's target and its
-// verdict come from the computed day (`dayTargets` below), never off the row.
-export type DailyLogRow = {
-  id: string; client_id: string; date: string; notes: string | null;
-  created_at: string; updated_at: string;
-  mood: number | null; energy: number | null; sleep: number | null; stress: number | null;
-  soreness: number | null;
-  calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null;
-  trained: boolean | null; training_session_id: string | null; training_data: unknown;
+/**
+ * The feed's two day-form reads over the window: the roster's wellness rows
+ * and its food rows, each table by client and date. The nutrition columns are
+ * what the client ATE; a day's target and its verdict come from the computed
+ * day (`dayTargets` below), never off a row.
+ */
+type DayFormRows = {
+  wellness: WellnessLogRow[]
+  nutrition: NutritionLogRow[]
 }
 
 export type TrainingEventRow = {
@@ -100,16 +100,20 @@ type ClientData = {
 /**
  * Groups raw query results into a per-client map of domain objects.
  *
+ * `dayRows` are the roster's wellness rows and food rows over the window; each
+ * client's days are assembled from them, a day listed when either table holds
+ * a row on it, newest first — the order the triggers walk — through the same
+ * fold the day reader uses, so the feed and the check-in read a day one way.
  * `dayTargets` is every client's computed target per date over the window
- * (`getNutritionTargetsForClients`, one pass for the roster): each log row
- * takes its day's target from it and its verdict is derived from what was
+ * (`getNutritionTargetsForClients`, one pass for the roster): each day
+ * takes its target from it and its verdict is derived from what was
  * eaten against that target — the food log stores neither. A degraded read
- * (null) leaves every log target-less, which silences the nutrition
+ * (null) leaves every day target-less, which silences the nutrition
  * triggers for the request rather than judging a day against nothing.
  */
 export function groupClientData(
   clients: ClientInfoWithCheckIn[],
-  allLogs: DailyLogRow[] | null,
+  dayRows: DayFormRows | null,
   allHabits: DailyHabitRow[] | null,
   allHabitLogs: DailyHabitLogRow[] | null,
   eventRows: TrainingEventRow[] | null,
@@ -144,42 +148,36 @@ export function groupClientData(
     })
   })
 
-  // Group logs by client
-  if (allLogs) {
-    allLogs.forEach((logRow: DailyLogRow) => {
-      const clientData = clientDataMap.get(logRow.client_id)
-      if (clientData) {
-        const target = targetByClientDate.get(`${logRow.client_id}:${logRow.date}`)
-        const consumed = logRow.calories_consumed ?? undefined
-        const log: DailyLog = {
-          id: logRow.id,
-          clientId: logRow.client_id,
-          date: logRow.date,
-          mood: logRow.mood ?? undefined,
-          energy: logRow.energy ?? undefined,
-          sleep: logRow.sleep ?? undefined,
-          stress: logRow.stress ?? undefined,
-          soreness: logRow.soreness ?? undefined,
-          notes: logRow.notes ?? undefined,
-          trained: logRow.trained ?? undefined,
-          trainingSessionId: logRow.training_session_id ?? undefined,
-          trainingData: logRow.training_data as DailyLog['trainingData'],
-          caloriesConsumed: consumed,
-          proteinG: logRow.protein_g ?? undefined,
-          carbsG: logRow.carbs_g ?? undefined,
-          fatG: logRow.fat_g ?? undefined,
-          targetCalories: target?.calories,
-          targetProteinG: target?.proteinG,
-          targetCarbsG: target?.carbsG,
-          targetFatG: target?.fatG,
-          nutritionAdherence: calculateNutritionAdherence(consumed, target?.calories) ?? undefined,
-          calorieSurplusDeficit: calculateCalorieSurplusDeficit(consumed, target?.calories) ?? undefined,
-          createdAt: logRow.created_at,
-          updatedAt: logRow.updated_at,
-        }
-        clientData.logs.push(log)
+  // Assemble each client's days from the two tables: the rows merged per
+  // (client, date), then folded newest first.
+  if (dayRows) {
+    type DayRows = { wellness: WellnessLogRow | null; nutrition: NutritionLogRow | null }
+    const daysByClient = new Map<string, Map<string, DayRows>>()
+    const dayFor = (clientId: string, date: string): DayRows => {
+      let days = daysByClient.get(clientId)
+      if (!days) {
+        days = new Map()
+        daysByClient.set(clientId, days)
       }
-    })
+      let day = days.get(date)
+      if (!day) {
+        day = { wellness: null, nutrition: null }
+        days.set(date, day)
+      }
+      return day
+    }
+    for (const row of dayRows.wellness) dayFor(row.client_id, row.date).wellness = row
+    for (const row of dayRows.nutrition) dayFor(row.client_id, row.date).nutrition = row
+
+    for (const [clientId, days] of daysByClient) {
+      const clientData = clientDataMap.get(clientId)
+      if (!clientData) continue
+      const newestFirst = [...days.entries()].sort(([a], [b]) => b.localeCompare(a))
+      for (const [date, { wellness, nutrition }] of newestFirst) {
+        const target = targetByClientDate.get(`${clientId}:${date}`) ?? null
+        clientData.logs.push(assembleDayLog(clientId, date, wellness, nutrition, target))
+      }
+    }
   }
 
   // Group habits by client
@@ -266,10 +264,10 @@ export function groupClientData(
 /**
  * The client's logged days over the feed's window, assembled from the rows the
  * feed already holds and answered by the one definition (`lib/logged-days.ts`)
- * — never a private union. A `daily_logs_full` row carries the wellness and
- * nutrition values of its day-form, so it counts for each source whose values
- * it carries; a workout counts by its event's status; a habit log counts
- * whether ticked or not, because either is the client acting.
+ * — never a private union. An assembled day carries the wellness scores of its
+ * wellness row and the consumed values of its food row, so it counts for each
+ * source whose values it carries; a workout counts by its event's status; a
+ * habit log counts whether ticked or not, because either is the client acting.
  */
 export function loggedDaysFor(
   data: ClientData,

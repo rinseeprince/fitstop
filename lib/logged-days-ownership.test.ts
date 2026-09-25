@@ -49,8 +49,9 @@ const EXCLUDE: string[] = [
 // The two places the five sources are assembled from rows already in hand.
 const ASSEMBLERS = ["services/client-adherence-service.ts", "lib/attention-feed-helpers.ts"];
 
-// The bare spine. `daily_logs_full` is a different string and stays readable:
-// the wellness and nutrition pattern triggers need its values.
+// The bare spine. `wellness_logs` and `nutrition_logs` are different strings
+// and stay readable: the feed assembles its days from them for the wellness
+// and nutrition pattern triggers' values.
 const SPINE_READ = /\.from\(\s*["']daily_logs["']\s*\)/g;
 // `logs.some((log) => log.date >= cutoff)` — an activity test over raw rows,
 // the shape the old union was written in.
