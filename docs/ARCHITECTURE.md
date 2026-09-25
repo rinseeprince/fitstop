@@ -982,7 +982,7 @@ Reads/writes the existing day-keyed tables — no portal-specific schema:
 
 ### Database access (which client, and why)
 
-Portal services follow the Shape B default (CONVENTIONS §8): **`supabaseAdmin` with a caller-verified scope.** The `/api/client/**` routes resolve `clientId` through `requireClientAuth(request)` (`lib/require-client-auth.ts`, which keys on `clients.user_id = auth.uid()`) and pass only that authenticated id down; services filter on it with `.eq("client_id", clientId)`. The client's own profile is read the same way: `getClientForCurrentUser` (`services/client-portal-service.ts`, `GET /api/client/me`) reads the row by that id, while the client is active. No rule in the database stands behind these reads, so the filter is each one's whole scope; `lib/session-client-ownership.test.ts` holds the profile and progress readers to the service role.
+Portal services follow the Shape B default (CONVENTIONS §8): **`supabaseAdmin` with a caller-verified scope.** The `/api/client/**` routes resolve `clientId` through `requireClientAuth(request)` (`lib/require-client-auth.ts`: the `clients` row whose `user_id` is the one the session validated, active only, read through `supabaseAdmin`) and pass only that authenticated id down; services filter on it with `.eq("client_id", clientId)`. The client's own profile is read the same way: `getClientForCurrentUser` (`services/client-portal-service.ts`, `GET /api/client/me`) reads the row by that id, while the client is active. No rule in the database stands behind these reads, so the filter is each one's whole scope; `lib/session-client-ownership.test.ts` holds the profile and progress readers to the service role.
 
 ### API surface
 
@@ -1213,6 +1213,7 @@ The nine wellness/tracking/activity triggers are pattern detectors over existing
 - Trainers: restricted to `trainerRoutes` (exported from `middleware.ts`) — `/dashboard`, `/clients`, `/crm`, `/automation`, `/settings`, the five folders of `app/(coach)/` (see "Coach route group"). Any other path is left to Next, which 404s it for either role
 - Clients: restricted to `/client/*` routes
 - Role mismatch: redirects to appropriate dashboard
+- The role comes from `profiles`, read through `supabaseAdmin` keyed on the user id `auth.getUser()` validated on the session client; a session with no profile row is sent to `/login?error=profile_unavailable` before any route runs. The middleware runs on the Edge runtime, where the service key is an env var, never inlined: `npm run check:service-key` scans the browser bundle for it, and `npm run build` compiles the middleware
 
 ### Coach route group (`app/(coach)/`)
 
@@ -1224,8 +1225,8 @@ The nine wellness/tracking/activity triggers are pattern detectors over existing
 
 ### Auth helpers (`lib/auth-helpers.ts`)
 
-- `getAuthenticatedCoachId()`: validates JWT via `supabase.auth.getUser()`, queries `coaches` table, returns coach ID or null
-- `getAuthenticatedClientId()`: same pattern against `clients` table
+- `getAuthenticatedCoachId(request)`: validates the session via `supabase.auth.getUser()`, reads the `coaches` row for that user id through `supabaseAdmin` (cached 60 s, `lib/auth-cache.ts`), returns the coach id or null
+- `getAuthenticatedClientId(request)`: the same against `clients`, active clients only
 
 ### Session bootstrap (`GET /api/auth/me`)
 
@@ -1235,16 +1236,11 @@ The browser `AuthProvider` (`contexts/auth-context.tsx`) is session-lifecycle-on
 
 > The authoritative rule is **CONVENTIONS §8 ("Auth & data-access architecture (Shape B)")** — read it first; this is a summary, and §8 wins on any disagreement.
 
-- `supabaseAdmin` (`services/supabase-admin.ts`): bypasses RLS. **This is the service-layer default**, used with an explicit caller-verified scope (`clientId` / `coachId`). Most DB traffic goes through it — authenticated client/coach reads, cross-client coach aggregation, token-based contexts, and system writes alike.
-- `createServerSupabaseClient()` (`lib/supabase-server.ts`): session-scoped, respects RLS. Used to **validate the session** (the auth helpers call `getUser()` through it), and otherwise only in the rare case where an RLS policy doing real work needs `auth.uid()` in-database and the admin-plus-scope pattern genuinely doesn't fit (see §8 "When to use createServerSupabaseClient()").
+- `supabaseAdmin` (`services/supabase-admin.ts`): bypasses RLS. **This is the service-layer default**, used with an explicit caller-verified scope (`clientId` / `coachId`). Every query goes through it — client and coach reads, cross-client coach aggregation and system writes alike.
+- `createServerSupabaseClient()` (`lib/supabase-server.ts`): the session client, built from the public key and the caller's login. It **validates the session** and reads nothing: `auth.getUser()` in the auth helpers and `GET /api/auth/me`; the middleware and `/auth/callback` build the same `@supabase/ssr` client for `getUser()` and the code exchange. Every table read, the sign-in lookups included, is `supabaseAdmin`'s, keyed on the user id the session validated (`lib/session-client-ownership.test.ts` holds every query, function call and storage call in the app to `supabaseAdmin`).
 - Every write goes through a route and `supabaseAdmin`; nothing writes through a session client (`lib/session-client-ownership.test.ts`). The one write rule left in the database, "Coaches can update their own clients" on `clients`, has no user (CONVENTIONS §8 → "RLS policies").
 
-**There are two data paths, not one.** Shape B is the rule and carries the overwhelming majority of traffic, but a second, smaller anon-key + RLS path exists alongside it — the middleware's `profiles` reads and the auth helpers' own lookups. On those reads **RLS is the enforcing control, not the route layer**, so a policy change there is a functional change, not defence-in-depth. (`scripts/assert-rls.ts:104` asserts the opposite — "this app's entire data path is service_role" — and is wrong; see `TECHNICAL-DEBT.md → Opened by the 2026-07-30 anon-path read trace`.)
-
-> ⚠️ **Four of those anon reads are universal gates. Dropping any of their policies is total product lockout, not a degraded feature.**
-> - `middleware.ts:105` → `profiles` — every non-exempt route in the product; a miss hard-redirects to `/login?error=profile_unavailable`
-> - `lib/auth-helpers.ts:82` → `coaches` — the step-2 auth check of **every** coach route; every coach API 401s
-> - `lib/auth-helpers.ts:135` → `clients` — every client-portal route, via `lib/require-client-auth.ts`
+**One data path.** Every query the app makes is the service role's, filtered in code by the coach or client id the route or the middleware verified; the session client and the browser client call `auth.*` alone. The SELECT policies in the database govern no app read.
 
 ### IDOR prevention
 

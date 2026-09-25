@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import type { NextRequest } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/services/supabase-admin";
 import { getCachedClientId, getCachedCoachId } from "@/lib/auth-cache";
 
 type AuthFailureReason =
@@ -48,7 +49,9 @@ function logAuthFailure(opts: {
 }
 
 /**
- * Gets the authenticated coach ID from the current session.
+ * Gets the authenticated coach ID from the current session: the session
+ * client validates it (`auth.getUser()`), and the coaches row is read by the
+ * validated user id.
  * @param request Optional NextRequest used for structured auth-failure logging
  *   (route + hashed IP). Coach-side callers can omit it; failures will log
  *   "unknown" for route/IP but still record the reason and timestamp.
@@ -76,7 +79,7 @@ export async function getAuthenticatedCoachId(
 
     return await getCachedCoachId(user.id, async () => {
       // Use maybeSingle() to avoid throwing PGRST116 when no coach found
-      const { data: coach, error } = await supabase
+      const { data: coach, error } = await supabaseAdmin
         .from("coaches")
         .select("id")
         .eq("user_id", user.id)
@@ -102,7 +105,9 @@ export async function getAuthenticatedCoachId(
 }
 
 /**
- * Gets the authenticated client ID from the current session.
+ * Gets the authenticated client ID from the current session: the session
+ * client validates it, and the clients row is read by the validated user id,
+ * active clients only.
  * @param request Optional NextRequest used for structured auth-failure logging.
  * @returns The client ID if authenticated as a client, null otherwise.
  */
@@ -130,7 +135,7 @@ export async function getAuthenticatedClientId(
       // Use maybeSingle() to avoid throwing PGRST116 when no client found.
       // active=true excludes deactivated clients (H6); the cache is busted on
       // deactivation so a previously-cached mapping cannot outlive it past the TTL.
-      const { data: client, error } = await supabase
+      const { data: client, error } = await supabaseAdmin
         .from("clients")
         .select("id")
         .eq("user_id", user.id)

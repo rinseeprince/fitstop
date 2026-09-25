@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
+// The service key reaches the Edge runtime as an env var and is never
+// inlined: `npm run check:service-key` scans the browser bundle for it, and
+// `npm run build` is the gate that compiles this file.
+import { supabaseAdmin } from "@/services/supabase-admin"
 
 /**
  * Redirect while preserving any cookies @supabase/ssr wrote onto `carrier`.
@@ -90,7 +94,7 @@ export async function middleware(request: NextRequest) {
 
     if (user) {
       // User is logged in, redirect to appropriate dashboard
-      const { data: profile } = await supabase
+      const { data: profile } = await supabaseAdmin
         .from("profiles")
         .select("role")
         .eq("user_id", user.id)
@@ -144,8 +148,8 @@ export async function middleware(request: NextRequest) {
     return redirectPreservingCookies(new URL("/login", request.url), response)
   }
 
-  // Get user's role from profile
-  const { data: profile } = await supabase
+  // Get user's role from profile, keyed on the id getUser() verified
+  const { data: profile } = await supabaseAdmin
     .from("profiles")
     .select("role")
     .eq("user_id", user.id)

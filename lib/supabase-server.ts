@@ -2,8 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies, headers } from "next/headers";
 
 /**
- * Create authenticated Supabase client for API routes
- * Uses regular client (not admin) to respect RLS policies
+ * The session client for API routes: built from the public key and the
+ * caller's login, it validates the session (`auth.getUser()`) and reads
+ * nothing. Every table read is `supabaseAdmin`'s (CONVENTIONS §8).
  */
 export async function createServerSupabaseClient() {
   const cookieStore = await cookies();

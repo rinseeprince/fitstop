@@ -10,8 +10,9 @@
  * row, a removed row, an unchanged value) and in the live view's filter and
  * the two derived views' ordering, so a vitest that mocks `supabaseAdmin`
  * proves nothing about them. This script creates two throwaway clients under
- * the owner's coach row — one with an auth user, so the client's own progress
- * read runs under its JWT and meets RLS plus the view — writes readings
+ * the owner's coach row — one with an auth user, so GET /api/client/progress
+ * can be driven as the client (the session validates who they are; the read
+ * is supabaseAdmin's, filtered on their id, through the view) — writes readings
  * through the app's own writer, drives the routes as the coach with a minted
  * session, calls the RPCs directly for their refusals, and reads every
  * surface back:
