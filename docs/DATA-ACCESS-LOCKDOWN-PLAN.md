@@ -1,6 +1,6 @@
 # Data access lockdown — the server is the only gatekeeper
 
-**Status: commits 1 (this plan) and 2 SHIPPED 2026-09-24, commit 3 SHIPPED 2026-09-25; commits 4–6 NOT STARTED.** Six
+**Status: commits 1 (this plan) and 2 SHIPPED 2026-09-24, commits 3 and 4 SHIPPED 2026-09-25; commits 5–6 NOT STARTED.** Six
 commits, agreed with the owner on 2026-09-24: this plan; the write side door closes (2); the reads outside sign-in move onto the server (3); the
 content library moves onto the server (4); sign-in reads move onto the server (5); the database is locked and the
 guard holds it (6). Commits 3–5 run in order, each after the owner's browser smoke of the one
@@ -347,7 +347,7 @@ the section lists: one action per step, on data you seeded on DEV.
 
 ### Commit 4 — `refactor(security): the content library reads through the server; the download's access check is code`
 
-**STATUS: NOT STARTED. After commit 3's smoke.**
+**STATUS: SHIPPED `6f76957a`, 2026-09-25 — no migration; browser smoke owed.**
 
 - **The 11 routes under `app/api/content/**`:** each route's own `getUser` and coach lookup are replaced by the
   auth seam (`lib/auth-helpers.ts`), and every table read goes through `supabaseAdmin`, scoped by the verified coach
