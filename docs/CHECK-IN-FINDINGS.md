@@ -94,7 +94,7 @@ is deleting fields from `NutritionPeriodSummary` and the cells that read them
 
 ### 2. Three versions of one check-in
 
-**Resolved 2026-09-22** (docs/MEASUREMENT-LOG-PLAN.md commit 8d1, first commit; owner ruling: a sent
+**Resolved 2026-09-22** (`88ff69a2`; owner ruling: a sent
 check-in is frozen in time). Every check-in now saves a copy of itself in its INSERT
 (`check_ins.sent_snapshot`, migration 195, write-once) — its readings, its goal section, the week's
 food against its targets, its habits, its days logged and its questions' wording — and the review

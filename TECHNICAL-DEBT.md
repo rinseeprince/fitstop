@@ -119,7 +119,7 @@ the anti-pattern that section names: there is no cache to invalidate at all, so
 **no other surface can refresh it** — only a caller holding the hook's own
 `refetchNutrition`.
 
-Narrowed 2026-09-23 (docs/MEASUREMENT-LOG-PLAN.md commit 8d1): the parts of the
+Narrowed 2026-09-23: the parts of the
 drawer that a goal, a reading or the profile move are no longer on this read.
 The drawer's calculator inputs and Goal line come from the SWR day read
 `GET …/nutrition/goal?date=`, and whether the versions still fit the goal from
@@ -760,7 +760,7 @@ Logged: 2026-06-10; updated 2026-06-12 (Session 7.85). Sessions 7.81–7.84 (`do
 
 ## Measurement log — follow-ups
 
-Logged: 2026-09-03 (`docs/MEASUREMENT-LOG-PLAN.md`; the shape is ARCHITECTURE → "client_measurements table").
+Logged: 2026-09-03 (the shape is ARCHITECTURE → "client_measurements table").
 
 ### P2 - Deferred
 - **Nothing captures girths at intake or manual add, and a client cannot log a reading between check-ins.** `client_measurements` accepts `intake` rows for all seven keys and `client_log` rows from the client, so each is a writer and nothing more: the intake questionnaire's step 1 asks weight and body fat only (`intakeStep1Schema`), the add-client form the same, and no `/api/client/**` route writes the log (a `client_log` route is additive to the RN contract). Until then a girth exists only when a check-in form asks for it or a coach logs it.
