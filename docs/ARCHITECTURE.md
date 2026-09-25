@@ -1213,7 +1213,7 @@ The nine wellness/tracking/activity triggers are pattern detectors over existing
 - Trainers: restricted to `trainerRoutes` (exported from `middleware.ts`) — `/dashboard`, `/clients`, `/crm`, `/automation`, `/settings`, the five folders of `app/(coach)/` (see "Coach route group"). Any other path is left to Next, which 404s it for either role
 - Clients: restricted to `/client/*` routes
 - Role mismatch: redirects to appropriate dashboard
-- The role comes from `profiles`, read through `supabaseAdmin` keyed on the user id `auth.getUser()` validated on the session client; a session with no profile row is sent to `/login?error=profile_unavailable` before any route runs. The middleware runs on the Edge runtime, where the service key is an env var, never inlined: `npm run check:service-key` scans the browser bundle for it, and `npm run build` compiles the middleware
+- The role comes from `profiles`, read through `supabaseAdmin` keyed on the user id `auth.getUser()` validated on the session client. A session whose role cannot be read (a failed read, no profile row) is sent to `/login?error=profile_unavailable` before any route runs, and on `/`, `/login` and `/signup` it is shown the page; the login page's notice (`components/auth/login-notice.tsx`, the only reader of `?error=`) carries the message. The middleware runs on the Edge runtime, where the service key is an env var, never inlined: `npm run check:service-key` scans the browser bundle for it, and `npm run build` compiles the middleware
 
 ### Coach route group (`app/(coach)/`)
 

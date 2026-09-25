@@ -18,10 +18,11 @@
  * `access` proves each role and each redirect with real sessions, on
  * throwaways made for the run and removed at the end: a deactivated client of
  * the owner's coach with a login, and a login whose profile row is gone.
- * Nothing here changes between before and after — that is the claim — so the
- * mode only labels the run; which code the dev server is serving is shown
- * outside this script (the edge chunk's reference to the service key, and
- * pg_stat_statements' per-role call counts on the three tables).
+ * Between commit 5's before and after nothing changes (which code the dev
+ * server served was shown outside this script: the edge chunk's reference to
+ * the service key, and pg_stat_statements' per-role call counts on the three
+ * tables). Case 8's public pages are the one answer the follow-up fix
+ * changes, so the mode decides their expectation.
  *   1  the coach: a coach page and two coach APIs answer 200
  *   2  the client: their home and a client API answer 200
  *   3  the client on coach URLs: a coach page → 307 to /client; a coach API →
@@ -35,10 +36,12 @@
  *      home answers 200 and a coach page sends them to /client; the seam's
  *      active filter answers 401 on a client API
  *   8  a login with no profile row: every guarded page → 307 to
- *      /login?error=profile_unavailable, before any route runs; on /login
- *      itself the public-page branch finds no role and sends them to
- *      /dashboard, which sends them back — a loop that predates this change
- *      and is recorded, not changed
+ *      /login?error=profile_unavailable, before any route runs. On /, /login
+ *      and /signup: before, the public-page branch found no role and sent them
+ *      to /dashboard, which sent them back to /login — a loop the browser gave
+ *      up on; after, the page shows (200). The login page's message is a
+ *      client leaf, proven by components/auth/login-notice.test.tsx and seen
+ *      in the browser smoke
  */
 import "./env-bootstrap";
 
@@ -213,6 +216,7 @@ async function link(clientId: string, userId: string): Promise<void> {
 
 async function access(mode: "before" | "after"): Promise<void> {
   console.info(`Access proof, ${mode} the change, against ${PROOF_BASE}`);
+  const AFTER = mode === "after";
   const coachId = await ownerCoachId();
   const stamp = Date.now();
   const email = (who: string) => `sign-in-proof-${who}-${stamp}@fixture.local`;
@@ -319,8 +323,20 @@ async function access(mode: "before" | "after"): Promise<void> {
       const res = await open(profilelessSession, path);
       check(`${path} → 307 to /login?error=profile_unavailable`, target(res) === "/login?error=profile_unavailable", seen(res));
     }
-    const profilelessLogin = await open(profilelessSession, "/login");
-    check("/login → 307 to /dashboard (no role found: the public-page branch's default)", target(profilelessLogin) === "/dashboard", seen(profilelessLogin));
+    for (const path of ["/", "/login", "/signup"]) {
+      const res = await open(profilelessSession, path);
+      check(
+        AFTER ? `${path} → 200, the page shows` : `${path} → 307 to /dashboard (no role found: the public-page branch's default)`,
+        AFTER ? res.status === 200 : target(res) === "/dashboard",
+        seen(res)
+      );
+    }
+    const withError = await open(profilelessSession, "/login?error=profile_unavailable");
+    check(
+      AFTER ? "/login?error=profile_unavailable → 200, the page shows (the message is the browser smoke's)" : "/login?error=profile_unavailable → 307 to /dashboard (the loop's other half)",
+      AFTER ? withError.status === 200 : target(withError) === "/dashboard",
+      seen(withError)
+    );
   } finally {
     console.info("Cleanup");
     for (const id of made.clients) {

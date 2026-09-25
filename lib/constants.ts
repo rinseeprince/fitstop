@@ -239,3 +239,7 @@ export const CHECK_IN_REVIEW_TIMEOUT_MS = 120_000;
 // above every check-in form limit (`submitCheckInSchema`'s 5,000-character
 // reflection is the longest), so a client's own words reach the model whole.
 export const AI_PROMPT_TEXT_LIMIT = 5000;
+
+// The error the middleware sends a signed-in visitor to /login with when
+// their role cannot be read; the login page's notice is its only reader.
+export const LOGIN_ERROR_PROFILE_UNAVAILABLE = "profile_unavailable";

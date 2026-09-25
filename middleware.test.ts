@@ -310,6 +310,31 @@ describe("middleware decisions", () => {
     expect(redirectsTo(await middleware(request(pathname)))?.pathname).toBe("/client")
   })
 
+  it.each([
+    ["no profile row", { data: null, error: null }],
+    ["a failed read", { data: null, error: { message: "connection refused" } }],
+    ["a row with no role", { data: { role: "" }, error: null }],
+  ] as const)("a signed-in visitor with %s on a public page sees the page: no guessed home", async (_label, result) => {
+    for (const pathname of ["/", "/login", "/signup", "/login?error=profile_unavailable"]) {
+      session({ id: "user-7" }, [{ name: "sb-test-auth-token", value: "rotated" }])
+      const read = profile(result as { data: { role: string } | null; error: unknown })
+      const response = await middleware(request(pathname))
+      expect(passesThrough(response)).toBe(true)
+      // The pass-through is the cookie carrier, so a session rotated during getUser() is kept.
+      expect(response.cookies.get("sb-test-auth-token")?.value).toBe("rotated")
+      expect(read.eq).toHaveBeenCalledWith("user_id", "user-7")
+    }
+    expect(console.error).toHaveBeenCalledWith("Profile lookup failed for authenticated user:", "user-7")
+  })
+
+  it("the guarded branch's fail-closed answer is a page the public branch shows, so nothing loops", async () => {
+    session({ id: "user-7" })
+    profile({ data: null, error: { message: "connection refused" } })
+    const sentTo = redirectsTo(await middleware(request("/dashboard")))
+    expect(sentTo?.pathname).toBe("/login")
+    expect(passesThrough(await middleware(request(`${sentTo!.pathname}${sentTo!.search}`)))).toBe(true)
+  })
+
   it.each(["/", "/login", "/signup"])("%s with no session passes through, and the role is never read", async (pathname) => {
     session(null)
     const read = profile({ data: null, error: null })

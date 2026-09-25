@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Chrome, Loader2 } from "lucide-react";
 import { loginSchema, type LoginFormData } from "@/lib/validations/auth";
+import { LoginNotice } from "@/components/auth/login-notice";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -114,6 +115,13 @@ export default function LoginPage() {
               Sign in to your account
             </motion.p>
           </div>
+
+          {/* The middleware's reason for sending a signed-in visitor here, if
+              any. Its own Suspense boundary: the reader must not deopt the
+              page's static prerender (CONVENTIONS §7). */}
+          <Suspense fallback={null}>
+            <LoginNotice />
+          </Suspense>
 
           {/* Google OAuth */}
           <motion.div

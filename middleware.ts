@@ -4,6 +4,7 @@ import { createServerClient } from "@supabase/ssr"
 // inlined: `npm run check:service-key` scans the browser bundle for it, and
 // `npm run build` is the gate that compiles this file.
 import { supabaseAdmin } from "@/services/supabase-admin"
+import { LOGIN_ERROR_PROFILE_UNAVAILABLE } from "@/lib/constants"
 
 /**
  * Redirect while preserving any cookies @supabase/ssr wrote onto `carrier`.
@@ -93,14 +94,23 @@ export async function middleware(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
 
     if (user) {
-      // User is logged in, redirect to appropriate dashboard
+      // A signed-in visitor goes to their home. When the role cannot be read
+      // (a failed read, no profile row) the page shows instead: guessing
+      // /dashboard here sent them to a page whose own check sent them back to
+      // /login, and the browser looped until it gave up. The login page
+      // carries the message the guarded branch below sends them with.
       const { data: profile } = await supabaseAdmin
         .from("profiles")
         .select("role")
         .eq("user_id", user.id)
         .single()
 
-      const redirectTo = profile?.role === "client" ? "/client" : "/dashboard"
+      if (!profile?.role) {
+        console.error("Profile lookup failed for authenticated user:", user.id)
+        return response
+      }
+
+      const redirectTo = profile.role === "client" ? "/client" : "/dashboard"
       return redirectPreservingCookies(new URL(redirectTo, request.url), response)
     }
 
@@ -160,7 +170,7 @@ export async function middleware(request: NextRequest) {
   if (!profile?.role) {
     console.error("Profile lookup failed for authenticated user:", user.id)
     const errorUrl = new URL("/login", request.url)
-    errorUrl.searchParams.set("error", "profile_unavailable")
+    errorUrl.searchParams.set("error", LOGIN_ERROR_PROFILE_UNAVAILABLE)
     return redirectPreservingCookies(errorUrl, response)
   }
 
