@@ -699,6 +699,18 @@ Logged: 2026-09-02. Exposed by the review redesign (R1–R6), none fixed by it. 
 ---
 
 
+## Coach check-ins — follow-ups the workstream left
+
+Logged: 2026-09-25, when the workstream's plan was deleted (C0–C7 shipped whole; the shape is ARCHITECTURE → "Check-in System", "Coach client roster" and "Client page tab structure").
+
+- **A check-in form template cannot be deleted or renamed.** The template list only grows: the create and apply paths exist, and there is no `DELETE /api/check-ins/forms/[id]`. Fix: the delete behind the destructive-confirm dialog, and a rename.
+- **Nothing in the app deactivates a client, so the deactivated-client paths rest on unit tests alone**: the roster row hiding "Review check-in" for an inactive client, `GET /api/check-ins/unreviewed`'s `.eq("active", true)`, and reactivation re-populating the view. `DELETE /api/clients/[id]` has no caller and `updateClientSchema.active` has no control bound to it. Build a fixture before trusting the path.
+- **`?view=review` keeps the roster's default "recent" sort** (newest client added), a poor order for a queue of check-ins waiting.
+- **A client with two unreviewed check-ins is one roster row and one count.** Every count is clients by design (ARCHITECTURE → "Coach client roster"), so reviewing the newer check-in leaves the number where it was. If wanted, the ROW says "2 waiting" — never a second count.
+- **Unverified on PROD: whether any check-in has an unresolvable period** (a row from before periods were stored, with no schedule to anchor a week to) — the review's empty-state path when `periodAdherence` is null.
+
+---
+
 ## Design System & Color Tokens
 
 Reviewed: 2026-05-12

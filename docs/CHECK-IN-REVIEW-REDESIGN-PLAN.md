@@ -2,7 +2,7 @@
 
 **Status: DRAFT — not approved, no code written.**
 
-This is the "own definition session" that `docs/CHECK-INS-COACH-EXECUTION-PLAN.md` §2.6
+This is the "own definition session" that the coach check-ins workstream's plan §2.6 (deleted 2026-09-25, in git history)
 deferred. Its recorded defect list is folded in below rather than re-derived.
 
 ## 0. Ruling order and scope
@@ -420,7 +420,7 @@ that is stated in each commit rather than skipped silently.
 | **R4** | **Card shells** | Training ∥ Nutrition side by side; all five section cards go borderless + un-animated (completing D7.3); Habits rows go compact. **Style and layout only — not one prop changes** | bordered, stacked cards |
 | **R5** | **Goal strip** | `CheckInGoalStrip` replaces `goal-progress-view.tsx` + the three cards (D2); deadline → rail meta; the met-state footer note; regeneration banner re-mounted above, unchanged; `goal-cards.test.tsx` rewritten | the Goal Progress pane |
 | **R5b** | **Set new goals** | The footer's button: `onTabChange` threaded into the review, a one-shot param, Overview opening `ClientDetailsSheet` on arrival. Separate because it is the one change that leaves this surface and touches the client page's URL contract | a note with no action |
-| **R6** | **Sweep** | `npx knip`, dead-import removal, docs: `ARCHITECTURE.md` → "The coach review surface" rewritten to the new shape (**current shape only — no "it used to be"**), `CHECK-INS-COACH-EXECUTION-PLAN.md` §2.6 closed, `TECHNICAL-DEBT.md` D7.3 sibling-cards row resolved, and C1/C2/C3 recorded as open defects | — |
+| **R6** | **Sweep** | `npx knip`, dead-import removal, docs: `ARCHITECTURE.md` → "The coach review surface" rewritten to the new shape (**current shape only — no "it used to be"**), the coach check-ins plan's §2.6 closed (that plan deleted 2026-09-25), `TECHNICAL-DEBT.md` D7.3 sibling-cards row resolved, and C1/C2/C3 recorded as open defects | — |
 
 **Two boundary changes from the first draft, and why.** (a) The separate "Review section"
 commit is **absorbed into R1** — once R1 gives every section a rail, converting the AI card's

@@ -999,7 +999,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **Do NOT**: Rebuild the submission form. Rebuild the check-in detail page. Change the window-gating logic. Add AI-regen or edit flows.
 
-> **Superseded 2026-08-30** (coach check-ins workstream, `docs/CHECK-INS-COACH-EXECUTION-PLAN.md` C6b): the wizard's step list is **no longer a fixed 4**. It derives from the coach's per-client form (migration 157) through `stepsForFields` — Feeling and Training are unconditional because they are the client's own week read back to them, while Metrics and Photos appear only if some field on them is asked. `useCheckInForm` takes the step count and clamps a restored draft into it. The window-gating logic above is untouched.
+> **Superseded 2026-08-30** (coach check-ins workstream, C6b, `435a9047`): the wizard's step list is **no longer a fixed 4**. It derives from the coach's per-client form (migration 157) through `stepsForFields` — Feeling and Training are unconditional because they are the client's own week read back to them, while Metrics and Photos appear only if some field on them is asked. `useCheckInForm` takes the step count and clamps a restored draft into it. The window-gating logic above is untouched.
 
 **Tests to write**:
 - `app/client/check-in/page.test.tsx`:
@@ -2191,7 +2191,7 @@ Commit.
 
 **Do NOT**: Add editing from this tab (global review queue owns that). Duplicate the review queue's unreviewed-filter logic. Build check-in generation or resubmission.
 
-> **Superseded 2026-08-29** (coach check-ins workstream, `docs/CHECK-INS-COACH-EXECUTION-PLAN.md`): the Check-ins tab IS the review surface — `?checkIn=<id>` renders `CheckInDetailView` with the AI review rail and Send (C1); the global queue page is deleted in C3, and the per-client check-in form editor arrives on this tab in C6. The "do not add editing here" rule above is kept as the record of the session as it shipped.
+> **Superseded 2026-08-29** (coach check-ins workstream, C1, `1ad3971`): the Check-ins tab IS the review surface — `?checkIn=<id>` renders `CheckInDetailView` with the AI review rail and Send (C1); the global queue page is deleted in C3, and the per-client check-in form editor arrives on this tab in C6. The "do not add editing here" rule above is kept as the record of the session as it shipped.
 
 **Tests to write**:
 - `check-ins-tab-content.test.tsx`: renders list from fixture; loading / error / empty states render; detail click opens detail.
