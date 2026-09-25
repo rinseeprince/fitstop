@@ -3,6 +3,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { uploadContentFile } from "@/services/content-storage-service";
 import { createContentItem } from "@/services/content-item-service";
+import { getCoachFolders } from "@/services/content-folder-service";
 import { fileSignatureMatches } from "@/lib/upload-validation";
 import type { ContentType } from "@/types/content";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -109,6 +110,24 @@ export async function POST(request: NextRequest) {
         { success: false, error: "File contents do not match the declared file type" },
         { status: 400 }
       );
+    }
+
+    // Verify the target folder (if any) belongs to this coach before the file is
+    // stored — a body-supplied folderId must not file the item in another
+    // coach's folder, nor leave a stored file behind when the save refuses it.
+    if (folderId) {
+      const folders = await getCoachFolders(coachId);
+      if (!folders.some((f) => f.id === folderId)) {
+        console.warn("Upload validation failed - folder not found", {
+          timestamp: new Date().toISOString(),
+          coachId,
+          folderId,
+        });
+        return NextResponse.json(
+          { success: false, error: "Folder not found" },
+          { status: 404 }
+        );
+      }
     }
 
     try {

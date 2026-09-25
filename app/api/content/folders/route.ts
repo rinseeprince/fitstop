@@ -63,8 +63,18 @@ export async function POST(request: NextRequest) {
     }
     const { name, parentFolderId } = parsed.data;
 
-    // Check for duplicate folder names at the same level
     const existingFolders = await getCoachFolders(coachId);
+
+    // Verify the parent folder (if any) belongs to this coach — a body-supplied
+    // parentFolderId must not nest the folder inside another coach's folder.
+    if (parentFolderId && !existingFolders.some((f) => f.id === parentFolderId)) {
+      return NextResponse.json(
+        { success: false, error: "Folder not found" },
+        { status: 404 }
+      );
+    }
+
+    // Check for duplicate folder names at the same level
     const duplicateExists = existingFolders.some(
       folder => 
         folder.name.toLowerCase() === name.toLowerCase() &&

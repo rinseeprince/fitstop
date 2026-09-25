@@ -40,6 +40,9 @@ function folder(id: string, name: string): ContentFolder {
 
 const existing = folder("folder-724", "Recovery");
 const made = folder("folder-736", "Race prep");
+// A parent in the body is a uuid: one of the coach's folders, and one that isn't.
+const PARENT = "9b2f4c71-3d5e-4a86-b097-000000000741";
+const FOREIGN_PARENT = "9b2f4c71-3d5e-4a86-b097-000000000752";
 
 function foldersRequest(method: "GET" | "POST", body?: unknown) {
   return new NextRequest("http://localhost:3000/api/content/folders", {
@@ -89,6 +92,23 @@ describe("/api/content/folders", () => {
     expect(getAuthenticatedCoachId).toHaveBeenCalledWith(request);
     expect(getCoachFolders).toHaveBeenCalledWith(COACH);
     expect(createContentFolder).toHaveBeenCalledWith({ coachId: COACH, name: "Race prep", parentFolderId: undefined });
+  });
+
+  it("POST nests the new folder in one of the coach's own folders", async () => {
+    vi.mocked(getCoachFolders).mockResolvedValue([existing, folder(PARENT, "Season plans")]);
+
+    const res = await POST(foldersRequest("POST", { name: "Race prep", parentFolderId: PARENT }));
+
+    expect(res.status).toBe(200);
+    expect(createContentFolder).toHaveBeenCalledWith({ coachId: COACH, name: "Race prep", parentFolderId: PARENT });
+  });
+
+  it("POST into a folder that is not the coach's is 404, and nothing is created", async () => {
+    const res = await POST(foldersRequest("POST", { name: "Race prep", parentFolderId: FOREIGN_PARENT }));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ success: false, error: "Folder not found" });
+    expect(createContentFolder).not.toHaveBeenCalled();
   });
 
   it("POST with a name the coach already has at that level is 400, and nothing is created", async () => {

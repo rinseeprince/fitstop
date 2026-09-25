@@ -48,6 +48,16 @@ export async function PATCH(
     }
     const { name, parentFolderId } = parsed.data;
 
+    // Verify the new parent folder (if any) belongs to this coach — a
+    // body-supplied parentFolderId must not move the folder into another
+    // coach's folder.
+    if (parentFolderId && !folders.some((f) => f.id === parentFolderId)) {
+      return NextResponse.json(
+        { success: false, error: "Folder not found" },
+        { status: 404 }
+      );
+    }
+
     // Check for duplicate names if name is being changed
     if (name && name.trim().toLowerCase() !== existingFolder.name.toLowerCase()) {
       const duplicateExists = folders.some(

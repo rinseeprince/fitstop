@@ -38,6 +38,7 @@ const own: ContentFolder = {
   updatedAt: "2026-06-03T12:15:00.000Z",
 };
 const renamed: ContentFolder = { ...own, name: "Mobility drills", updatedAt: "2026-09-25T08:03:00.000Z" };
+const season: ContentFolder = { ...own, id: "folder-861", name: "Race season" };
 
 function folderRequest(method: "PATCH" | "DELETE", id: string, body?: unknown) {
   const request = new NextRequest(`http://localhost:3000/api/content/folders/${id}`, {
@@ -74,6 +75,26 @@ describe("/api/content/folders/[id]", () => {
 
   it("PATCH on another coach's folder is 404, and nothing is renamed", async () => {
     const { request, context } = folderRequest("PATCH", "folder-837", { name: "Mobility drills" });
+
+    const res = await PATCH(request, context);
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ success: false, error: "Folder not found" });
+    expect(updateContentFolder).not.toHaveBeenCalled();
+  });
+
+  it("PATCH moves the folder into another of the coach's folders", async () => {
+    vi.mocked(getCoachFolders).mockResolvedValue([own, season]);
+    const { request, context } = folderRequest("PATCH", FOLDER, { parentFolderId: "folder-861" });
+
+    const res = await PATCH(request, context);
+
+    expect(res.status).toBe(200);
+    expect(updateContentFolder).toHaveBeenCalledWith(FOLDER, { name: undefined, parentFolderId: "folder-861" });
+  });
+
+  it("PATCH into a folder that is not the coach's is 404, and nothing is moved", async () => {
+    const { request, context } = folderRequest("PATCH", FOLDER, { parentFolderId: "folder-873" });
 
     const res = await PATCH(request, context);
 
