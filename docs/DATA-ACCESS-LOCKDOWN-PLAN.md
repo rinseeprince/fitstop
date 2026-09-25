@@ -1,6 +1,6 @@
 # Data access lockdown — the server is the only gatekeeper
 
-**Status: commits 1 (this plan) and 2 SHIPPED 2026-09-24, commits 3 and 4 SHIPPED 2026-09-25; commits 5–6 NOT STARTED.** Six
+**Status: commits 1 (this plan) and 2 SHIPPED 2026-09-24, commits 3–5 SHIPPED 2026-09-25; commit 6 NOT STARTED.** Six
 commits, agreed with the owner on 2026-09-24: this plan; the write side door closes (2); the reads outside sign-in move onto the server (3); the
 content library moves onto the server (4); sign-in reads move onto the server (5); the database is locked and the
 guard holds it (6). Commits 3–5 run in order, each after the owner's browser smoke of the one
@@ -404,7 +404,7 @@ the section lists: one action per step, on data you seeded on DEV.
 
 ### Commit 5 — `refactor(security): sign-in reads through the server — the middleware, the auth callback and the auth seam`
 
-**STATUS: NOT STARTED. After commit 4's smoke.**
+**STATUS: SHIPPED `534d852b`, 2026-09-25 — no migration; browser smoke owed. The auth callback needed no change: its `profiles` read was already `supabaseAdmin`'s (7a0c46c0, 2026-02-02).**
 
 - **What moves:** `middleware.ts` (its two `profiles` reads), `app/auth/callback/route.ts` (its `profiles` read) and
   `lib/auth-helpers.ts` (the `coaches` and `clients` lookups behind `getAuthenticatedCoachId` and
