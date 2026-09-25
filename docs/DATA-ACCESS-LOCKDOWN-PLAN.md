@@ -347,7 +347,7 @@ the section lists: one action per step, on data you seeded on DEV.
 
 ### Commit 4 — `refactor(security): the content library reads through the server; the download's access check is code`
 
-**STATUS: SHIPPED `6f76957a`, 2026-09-25 — no migration; browser smoke owed.**
+**STATUS: SHIPPED `6f76957a`, 2026-09-25 — no migration; browser smoke PASSED 2026-09-25.**
 
 - **The 11 routes under `app/api/content/**`:** each route's own `getUser` and coach lookup are replaced by the
   auth seam (`lib/auth-helpers.ts`), and every table read goes through `supabaseAdmin`, scoped by the verified coach
