@@ -472,7 +472,7 @@ the section lists: one action per step, on data you seeded on DEV.
 
 ### Commit 6 — `fix(security): the database is locked — no policy, no public-role privilege; check:rls holds it`
 
-**STATUS: SHIPPED `6010ee99`, 2026-09-25 — migration 201 on DEV only; browser smoke owed. The auth trigger `handle_new_user()` had relied on PUBLIC execute; it now holds an explicit grant to `supabase_auth_admin` beside `service_role`'s.**
+**STATUS: SHIPPED `6010ee99`, 2026-09-25 — migration 201 on DEV only; browser smoke PASSED 2026-09-25. The auth trigger `handle_new_user()` had relied on PUBLIC execute; it now holds an explicit grant to `supabase_auth_admin` beside `service_role`'s.**
 
 - **Probes first, read-only, on DEV and PROD:**
   - every policy in `public` and `storage`
