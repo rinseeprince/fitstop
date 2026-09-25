@@ -1,6 +1,6 @@
 # Data access lockdown — the server is the only gatekeeper
 
-**Status: commits 1 (this plan) and 2 SHIPPED 2026-09-24, commits 3–5 SHIPPED 2026-09-25; commit 6 NOT STARTED.** Six
+**Status: commits 1 (this plan) and 2 SHIPPED 2026-09-24, commits 3–6 SHIPPED 2026-09-25 — the plan is complete on DEV; PROD takes 185–201 on the owner's call, after the code of commits 3–5 is deployed there.** Six
 commits, agreed with the owner on 2026-09-24: this plan; the write side door closes (2); the reads outside sign-in move onto the server (3); the
 content library moves onto the server (4); sign-in reads move onto the server (5); the database is locked and the
 guard holds it (6). Commits 3–5 run in order, each after the owner's browser smoke of the one
@@ -472,7 +472,7 @@ the section lists: one action per step, on data you seeded on DEV.
 
 ### Commit 6 — `fix(security): the database is locked — no policy, no public-role privilege; check:rls holds it`
 
-**STATUS: NOT STARTED. Last — only after commits 3, 4 and 5 have shipped and been smoked.**
+**STATUS: SHIPPED `6010ee99`, 2026-09-25 — migration 201 on DEV only; browser smoke owed. The auth trigger `handle_new_user()` had relied on PUBLIC execute; it now holds an explicit grant to `supabase_auth_admin` beside `service_role`'s.**
 
 - **Probes first, read-only, on DEV and PROD:**
   - every policy in `public` and `storage`
