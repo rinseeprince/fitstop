@@ -195,7 +195,7 @@ describe("attention-feed-service", () => {
       data.logs = [
         log("2026-04-03", { mood: 4 }),
         log("2026-04-04", { caloriesConsumed: 2100 }),
-        log("2026-04-07"), // a spine row with nothing on it is not a log
+        log("2026-04-07"), // a day-form row with no reading is not a log
       ]
       data.habitLogs = [
         { id: "hl", dailyHabitId: "h1", clientId: "c1", date: "2026-04-02", completed: false, createdAt: "", updatedAt: "" },
@@ -309,7 +309,7 @@ describe("attention-feed-service", () => {
         evaluateAndSortTriggers(map, dateRange)
           .find((c) => c.clientId === "c1")?.alerts.map((a) => a.type) ?? []
 
-      it("a completed workout in the silence window clears no_engagement, and no spine row is needed", () => {
+      it("a completed workout in the silence window clears no_engagement, and no day-form row is needed", () => {
         const map = groupClientData(clients, null, null, null, [
           prescribed,
           { client_id: "c1", date: "2024-03-25", status: "completed", estimated_calories: 300 },
@@ -337,9 +337,9 @@ describe("attention-feed-service", () => {
         expect(alertsFor(map)).toContain("no_engagement")
       })
 
-      it("training-only days bridge a logging gap that the spine alone would open", () => {
-        // Spine rows on the 1st and the 9th; workouts on the 3rd, 5th and 7th.
-        // Counting spine rows this is a seven-day gap; counting logged days the
+      it("training-only days bridge a logging gap that the day-form rows alone would open", () => {
+        // Day-form rows on the 1st and the 9th; workouts on the 3rd, 5th and 7th.
+        // Counting day-form rows this is a seven-day gap; counting logged days the
         // longest gap is one day.
         const range = { start: "2024-03-01", end: "2024-03-09" }
         const map = groupClientData(clients, null, null, null, [

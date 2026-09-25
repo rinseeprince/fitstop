@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { CheckIn, CheckInTrainingEventDetail } from "@/types/check-in";
 
-// Mock the spine reader + the legacy-fallback dependencies. These let us assert
+// Mock the calendar reader and the period's dependencies. These let us assert
 // that the read uses the STORED period, never a today-relative window.
 const getTrainingEventDetailsForPeriodMock = vi.fn();
 const getClientByIdMock = vi.fn();

@@ -9,7 +9,7 @@ vi.mock('./supabase-admin', () => ({
   },
 }))
 
-// Session 6.4: submitCheckIn now DERIVES its snapshot columns from the spine.
+// submitCheckIn DERIVES its snapshot columns from the client's logs.
 // Mock those service dependencies so the submit tests assert the derived values
 // (and that the exercise-highlights writer is the only related-data write left —
 // the session-completions writer was deleted with its dropped table).
@@ -169,7 +169,7 @@ describe('Check-in Service', () => {
     buildSentSnapshotAtSendMock.mockResolvedValue(sentCopy({ weight: 79.9 }))
   })
 
-  describe('submitCheckIn (Session 6.4 spine derivation)', () => {
+  describe('submitCheckIn (derived from the client\'s logs)', () => {
     // The submit writes to two tables: the check_ins INSERT, and the clients
     // UPDATE that advances the schedule (submit is one of the two writers of
     // next_check_in_due). `advanceQuery` is returned so tests can assert on it.
@@ -570,7 +570,7 @@ describe('Check-in Service', () => {
       }
     })
 
-    it('DERIVES snapshot columns from the spine, not the form body', async () => {
+    it('DERIVES snapshot columns from the client\'s logs, not the form body', async () => {
       getEventsForDateRangeMock.mockResolvedValue([
         workout('2026-05-08', 'full'),
         workout('2026-05-09', 'full'),

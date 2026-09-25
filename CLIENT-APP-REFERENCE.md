@@ -1078,7 +1078,7 @@ Coaches receive alerts when:
 ```
 /app/
 └── client/                    # All authenticated client pages
-    ├── dashboard/page.tsx     # Main dashboard with Daily Pulse
+    ├── page.tsx               # Home: the day view (/client?date=)
     ├── training/page.tsx      # Training plans view
     ├── nutrition/page.tsx     # Nutrition targets
     ├── metrics/page.tsx       # Journey tab (progress tracking)
@@ -1091,13 +1091,9 @@ Coaches receive alerts when:
 ### Client Components
 ```
 /components/
-├── daily-pulse/              # Daily Pulse feature (20 files)
-│   ├── daily-pulse.tsx       # Main container
-│   ├── wellness-section.tsx  # Mood, energy, sleep, stress
-│   ├── training-section.tsx  # Training completion
-│   ├── nutrition-section.tsx # Calorie/macro tracking
-│   ├── habits-section.tsx    # Daily habits
-│   └── utils/               # Helper functions
+├── client-portal/            # The post-activation portal: day view, detail pages, nav, settings
+│   ├── day/                  # Home day cards: training, nutrition, wellness, habits, check-in
+│   └── training/             # The workout tracker (set-tracker.tsx)
 ├── client/                   # Client-specific components
 │   ├── notifications-dropdown.tsx
 │   └── walkthrough/         # Guided walkthrough (not mounted on web; the RN client re-mounts it)
@@ -1110,7 +1106,7 @@ Coaches receive alerts when:
 ### API Routes
 ```
 /app/api/client/
-├── daily-logs/route.ts      # Daily Pulse data
+├── daily-logs/[date]/       # The day-form's two cards: wellness/route.ts, nutrition/route.ts (GET + PATCH)
 ├── training/route.ts        # Training plans
 ├── nutrition/route.ts       # Nutrition targets
 ├── progress/route.ts        # Progress data
@@ -1126,12 +1122,12 @@ Coaches receive alerts when:
 ├── auth.ts                 # User, Profile, Role types
 ├── training.ts             # TrainingPlan, Session, Exercise
 ├── check-in.ts             # CheckIn, metrics types
-├── daily-log.ts            # DailyLog, training data
+├── daily-log.ts            # DailyLog, the assembled day
 └── habit.ts               # Habit, HabitLog types
 
 /services/
 ├── client-portal-service.ts # Client data fetching
-├── daily-logs-service.ts    # Daily Pulse operations
+├── daily-logs-service.ts    # The day reader: a day from its wellness and food rows
 ├── check-in-service.ts      # Check-in handling
 └── supabase-client.ts      # Database client
 ```

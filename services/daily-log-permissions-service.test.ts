@@ -111,9 +111,9 @@ describe("getLogWindow", () => {
   it("reads the client and the check-in period, and NOTHING else", async () => {
     mockFrom({ lastPeriodEnd: null });
     await getLogWindow("c1");
-    // Mutation guard: the old rule read a per-resource child table
-    // (nutrition_logs / wellness_logs / daily_habit_logs / training_logs) to ask
-    // whether the day was already logged. Nothing may read one again.
+    // Mutation guard: a day's LOG STATE decides nothing, so no log table
+    // (nutrition_logs / wellness_logs / daily_habit_logs) is read to ask
+    // whether the day was already logged.
     expect(new Set(touched)).toEqual(new Set(["clients", "check_ins"]));
   });
 

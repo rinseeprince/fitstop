@@ -2,10 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   calculateNutritionAdherence,
   calculateCalorieSurplusDeficit,
-  calculateStreakFromLogs,
   getDailyLogs,
   getTodayLog,
-  calculateStreaks,
   assembleDayLog,
   type NutritionLogRow,
   type WellnessLogRow,
@@ -16,7 +14,6 @@ import type { DailyLog } from '@/types/daily-log';
 vi.mock('./supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn(),
-    rpc: vi.fn(),
   },
 }));
 
@@ -159,101 +156,6 @@ describe('Daily Logs Service - Pure Functions', () => {
     });
   });
 
-  describe('calculateStreakFromLogs', () => {
-    const today = new Date('2024-01-15');
-
-    it('returns 0 for empty logs', () => {
-      const result = calculateStreakFromLogs([], today);
-      expect(result).toEqual({ currentStreak: 0, longestStreak: 0 });
-    });
-
-    it('calculates consecutive days correctly', () => {
-      const logs: DailyLog[] = [
-        { date: '2024-01-15', id: '1' } as DailyLog, // today
-        { date: '2024-01-14', id: '2' } as DailyLog, // yesterday
-        { date: '2024-01-13', id: '3' } as DailyLog, // day before
-      ];
-
-      const result = calculateStreakFromLogs(logs, today);
-      expect(result.currentStreak).toBe(3);
-      expect(result.longestStreak).toBe(3);
-    });
-
-    it('resets streak on gaps', () => {
-      const logs: DailyLog[] = [
-        { date: '2024-01-15', id: '1' } as DailyLog, // today
-        { date: '2024-01-14', id: '2' } as DailyLog, // yesterday
-        // gap on 2024-01-13
-        { date: '2024-01-12', id: '3' } as DailyLog,
-        { date: '2024-01-11', id: '4' } as DailyLog,
-      ];
-
-      const result = calculateStreakFromLogs(logs, today);
-      expect(result.currentStreak).toBe(2);
-      expect(result.longestStreak).toBe(2);
-    });
-
-    it('starts from yesterday if no log today', () => {
-      const logs: DailyLog[] = [
-        { date: '2024-01-14', id: '1' } as DailyLog, // yesterday
-        { date: '2024-01-13', id: '2' } as DailyLog, // day before
-      ];
-
-      const result = calculateStreakFromLogs(logs, today);
-      expect(result.currentStreak).toBe(2);
-    });
-
-    it('calculates longest streak correctly with gaps', () => {
-      const logs: DailyLog[] = [
-        { date: '2024-01-15', id: '1' } as DailyLog, // current: 1 day
-        // gap
-        { date: '2024-01-12', id: '2' } as DailyLog, // previous streak: 4 days
-        { date: '2024-01-11', id: '3' } as DailyLog,
-        { date: '2024-01-10', id: '4' } as DailyLog,
-        { date: '2024-01-09', id: '5' } as DailyLog,
-      ];
-
-      const result = calculateStreakFromLogs(logs, today);
-      expect(result.currentStreak).toBe(1);
-      expect(result.longestStreak).toBe(4);
-    });
-
-    // Bugfix (session 3.7): a leading gap resets the current streak to 0. Previously
-    // a single isolated older log was reported as a current streak of 1 because the
-    // backward scan latched onto the first run it found. These cases were uncovered.
-    it('reports current streak 0 when the only log is two days ago', () => {
-      const logs: DailyLog[] = [
-        { date: '2024-01-13', id: '1' } as DailyLog, // two days before today (01-15)
-      ];
-
-      const result = calculateStreakFromLogs(logs, today);
-      expect(result.currentStreak).toBe(0);
-      expect(result.longestStreak).toBe(1);
-    });
-
-    it('reports current streak 0 when the only log is five days ago', () => {
-      const logs: DailyLog[] = [
-        { date: '2024-01-10', id: '1' } as DailyLog, // five days before today
-      ];
-
-      const result = calculateStreakFromLogs(logs, today);
-      expect(result.currentStreak).toBe(0);
-      expect(result.longestStreak).toBe(1);
-    });
-
-    it('crosses a year boundary without breaking a real streak', () => {
-      const result = calculateStreakFromLogs(
-        [
-          { date: '2026-01-01', id: '1' } as DailyLog,
-          { date: '2025-12-31', id: '2' } as DailyLog,
-          { date: '2025-12-30', id: '3' } as DailyLog,
-        ],
-        new Date('2026-01-01'),
-      );
-      expect(result.currentStreak).toBe(3);
-      expect(result.longestStreak).toBe(3);
-    });
-  });
 
 });
 
@@ -460,41 +362,4 @@ describe('Daily Logs Service - Database Functions', () => {
     });
   });
 
-  describe('calculateStreaks', () => {
-    it('calls the get_client_streak RPC with the client-local today + a 365-day window anchored to it', async () => {
-      // The mocked client-local today (2026-04-08) diverges from the host
-      // clock, so these exact-match assertions fail if the implementation
-      // regresses to server time.
-      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({
-        data: [{ current_streak: 4, longest_streak: 9 }],
-        error: null,
-      } as any);
-
-      const result = await calculateStreaks('client-123');
-
-      expect(result).toEqual({ currentStreak: 4, longestStreak: 9 });
-      expect(getClientTodayString).toHaveBeenCalledWith('client-123');
-      expect(supabaseAdmin.rpc).toHaveBeenCalledWith('get_client_streak', {
-        p_client_id: 'client-123',
-        p_today: '2026-04-08',
-        p_start_date: '2025-04-08',
-      });
-    });
-
-    it('returns 0/0 when the RPC yields no row', async () => {
-      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: [], error: null } as any);
-
-      const result = await calculateStreaks('client-123');
-      expect(result).toEqual({ currentStreak: 0, longestStreak: 0 });
-    });
-
-    it('throws when the RPC errors', async () => {
-      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({
-        data: null,
-        error: { message: 'boom' },
-      } as any);
-
-      await expect(calculateStreaks('client-123')).rejects.toThrow('Failed to calculate streaks: boom');
-    });
-  });
 });

@@ -68,7 +68,7 @@ export async function GET(
 
     // Fetch related data.
     //
-    // `trainingEventDetails` is the period's own workouts, read from the spine
+    // `trainingEventDetails` is the period's own workouts, read from the calendar
     // (`training_events` with their logs) for the check-in's stored period —
     // the client's own logging of a week the Send closed, so it stands as it
     // was. Pass the mapped check-in (carries clientId, period, createdAt) so

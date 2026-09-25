@@ -141,9 +141,9 @@ describe("buildAdherenceSummary", () => {
   });
 
   it("reads a day the client only trained as a logged day, so an unticked habit is Missed", () => {
-    // Nothing on the spine: no wellness, no nutrition. A completed workout on
+    // No day-form row: no wellness, no nutrition. A completed workout on
     // the 23rd makes it a logged day, and zero of two eligible habits is a
-    // miss rather than silence. Under the spine count it read no_log.
+    // miss rather than silence. A count of day-form rows reads it as no_log.
     const summary = buildAdherenceSummary({
       ...fixture,
       nutritionLogs: [],
@@ -451,7 +451,7 @@ describe("getClientAdherenceForRange — the reads", () => {
     vi.mocked(getNutritionTargetsForDateRange).mockClear().mockResolvedValue(new Map());
   });
 
-  it("reads the five client sources and never the daily_logs spine", async () => {
+  it("reads the five client sources and never a daily_logs parent row", async () => {
     await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23", "2026-07-23");
 
     expect([...calls.keys()].sort()).toEqual(

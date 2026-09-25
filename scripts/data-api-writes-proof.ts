@@ -14,10 +14,9 @@
  * habit, check-ins, reading and invitation cascade) and the login (its profile
  * cascades). Every fixture number is distinct.
  *
- *   1  the client, through the side door: inserts a daily log and a habit log
- *      on one day, a wellness and a food log on another day's daily log, and a
- *      check-in; rewrites a seeded day's daily log, wellness, food log and
- *      habit log
+ *   1  the client, through the side door: inserts wellness and a habit log on
+ *      one day, wellness and a food log on another, and a check-in; rewrites a
+ *      seeded day's wellness, food log and habit log
  *   2  the coach, through the side door: inserts a check-in for the client,
  *      then deletes the client — before the push it is gone, and the proof
  *      recreates it
@@ -160,7 +159,7 @@ async function giveWeightAndHabit(clientId: string, coachId: string, today: stri
   return data.id;
 }
 
-async function countOf(table: "daily_logs" | "check_ins" | "daily_habits", clientId: string): Promise<number> {
+async function countOf(table: "wellness_logs" | "check_ins" | "daily_habits", clientId: string): Promise<number> {
   const { count, error } = await supabaseAdmin
     .from(table)
     .select("id", { count: "exact", head: true })
@@ -210,19 +209,12 @@ async function main(): Promise<void> {
 
     const T = await getClientTodayString(A);
     const day = (n: number) => addDaysToDateString(T, n);
-    const D1 = day(-3); // the side door's own day: a daily log and a habit log
+    const D1 = day(-3); // the side door's own day: wellness and a habit log
     const D2 = day(-4); // a seeded day the side door rewrites
-    const D3 = day(-5); // a seeded daily log the side door adds wellness and food to
+    const D3 = day(-5); // a day the side door writes wellness and food on
     const START = day(-6); // the start date activation sends
     let H = await giveWeightAndHabit(A, coach.id, T);
 
-    const seedDay = async (date: string, notes: string | null) => {
-      const { data, error } = await supabaseAdmin.from("daily_logs").insert({ client_id: A, date, notes }).select("id").single();
-      if (error || !data) throw new Error(`daily log seed: ${error?.message}`);
-      return data.id;
-    };
-    const S2 = await seedDay(D2, "seeded day");
-    const S3 = await seedDay(D3, null);
     const seeded = async <T extends { id: string }>(
       query: PromiseLike<{ data: T | null; error: { message: string } | null }>,
       what: string
@@ -232,13 +224,13 @@ async function main(): Promise<void> {
       return data.id;
     };
     const W2 = await seeded(
-      supabaseAdmin.from("wellness_logs").insert({ daily_log_id: S2, client_id: A, date: D2, mood: 1, energy: 6 }).select("id").single(),
+      supabaseAdmin.from("wellness_logs").insert({ client_id: A, date: D2, mood: 1, energy: 6 }).select("id").single(),
       "wellness"
     );
     const N2 = await seeded(
       supabaseAdmin
         .from("nutrition_logs")
-        .insert({ daily_log_id: S2, client_id: A, date: D2, calories_consumed: 1810, protein_g: 122 })
+        .insert({ client_id: A, date: D2, calories_consumed: 1810, protein_g: 122 })
         .select("id")
         .single(),
       "food log"
@@ -252,16 +244,15 @@ async function main(): Promise<void> {
     const coachSession = await mintSession(COACH_EMAIL, "coach");
 
     console.info(`1. The client, through the side door (${mode} the push)`);
-    const dailyLog = await sideDoor(client, "POST", "daily_logs", { client_id: A, date: D1, notes: "written through the side door" });
-    const { data: dailyLogRow } = await supabaseAdmin.from("daily_logs").select("notes").eq("client_id", A).eq("date", D1).maybeSingle();
-    insertCheck("a daily log", dailyLog, dailyLogRow?.notes === "written through the side door");
+    const wellnessD1 = await sideDoor(client, "POST", "wellness_logs", { client_id: A, date: D1, mood: 5, energy: 7 });
+    const { data: wellnessD1Row } = await supabaseAdmin.from("wellness_logs").select("mood, energy").eq("client_id", A).eq("date", D1).maybeSingle();
+    insertCheck("wellness on a day", wellnessD1, wellnessD1Row?.mood === 5 && wellnessD1Row.energy === 7);
 
-    const wellness = await sideDoor(client, "POST", "wellness_logs", { daily_log_id: S3, client_id: A, date: D3, mood: 2, energy: 9 });
-    const { data: wellnessRow } = await supabaseAdmin.from("wellness_logs").select("mood, energy").eq("daily_log_id", S3).maybeSingle();
-    insertCheck("wellness on a day", wellness, wellnessRow?.mood === 2 && wellnessRow.energy === 9);
+    const wellness = await sideDoor(client, "POST", "wellness_logs", { client_id: A, date: D3, mood: 2, energy: 9 });
+    const { data: wellnessRow } = await supabaseAdmin.from("wellness_logs").select("mood, energy").eq("client_id", A).eq("date", D3).maybeSingle();
+    insertCheck("wellness on another day", wellness, wellnessRow?.mood === 2 && wellnessRow.energy === 9);
 
     const food = await sideDoor(client, "POST", "nutrition_logs", {
-      daily_log_id: S3,
       client_id: A,
       date: D3,
       calories_consumed: 2465,
@@ -270,7 +261,8 @@ async function main(): Promise<void> {
     const { data: foodRow } = await supabaseAdmin
       .from("nutrition_logs")
       .select("calories_consumed, protein_g")
-      .eq("daily_log_id", S3)
+      .eq("client_id", A)
+      .eq("date", D3)
       .maybeSingle();
     insertCheck("a food log", food, foodRow?.calories_consumed === 2465 && foodRow.protein_g === 171);
 
@@ -290,10 +282,6 @@ async function main(): Promise<void> {
       .eq("client_id", A)
       .eq("notes", "side-door check-in from the client");
     insertCheck("a check-in", clientCheckIn, clientCheckIns === 1);
-
-    const rewriteDay = await sideDoor(client, "PATCH", `daily_logs?id=eq.${S2}`, { notes: "rewritten through the side door" });
-    const { data: dayAfter } = await supabaseAdmin.from("daily_logs").select("notes").eq("id", S2).maybeSingle();
-    changeCheck("the seeded day's daily log", rewriteDay, dayAfter?.notes === "rewritten through the side door", dayAfter?.notes === "seeded day");
 
     const rewriteWellness = await sideDoor(client, "PATCH", `wellness_logs?id=eq.${W2}`, { mood: 4 });
     const { data: wellnessAfter } = await supabaseAdmin.from("wellness_logs").select("mood").eq("id", W2).maybeSingle();
@@ -316,12 +304,12 @@ async function main(): Promise<void> {
       .eq("notes", "side-door check-in from the coach");
     insertCheck("a check-in for the client", coachCheckIn, coachCheckIns === 1);
 
-    const logsBefore = await countOf("daily_logs", A);
+    const logsBefore = await countOf("wellness_logs", A);
     const deleted = await sideDoor(coachSession, "DELETE", `clients?id=eq.${A}`);
     const { data: clientAfter } = await supabaseAdmin.from("clients").select("id").eq("id", A).maybeSingle();
-    const logsAfter = await countOf("daily_logs", A);
+    const logsAfter = await countOf("wellness_logs", A);
     changeCheck(
-      `deleting the client (${logsBefore} daily logs)`,
+      `deleting the client (${logsBefore} wellness logs)`,
       deleted,
       clientAfter === null && logsAfter === 0,
       clientAfter?.id === A && logsAfter === logsBefore
@@ -409,7 +397,7 @@ async function main(): Promise<void> {
       if (userDeleteError) console.error(`  login not deleted: ${userDeleteError.message}`);
     }
     if (clientId) {
-      const left = (await countOf("daily_logs", clientId)) + (await countOf("check_ins", clientId)) + (await countOf("daily_habits", clientId));
+      const left = (await countOf("wellness_logs", clientId)) + (await countOf("check_ins", clientId)) + (await countOf("daily_habits", clientId));
       const { data: clientLeft } = await supabaseAdmin.from("clients").select("id").eq("id", clientId).maybeSingle();
       check("cleanup: the client is gone, and its logs, check-ins and habit with it", clientLeft === null && left === 0, { clientLeft, left });
     }

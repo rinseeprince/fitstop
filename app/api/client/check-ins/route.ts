@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
  * Submits a comprehensive check-in for an authenticated client. This endpoint
  * takes what the client typed — their notes, their readings and their photos —
  * and the server derives the week's training, nutrition and wellness figures
- * from the spine (see `submitCheckIn`).
+ * from the client's logs (see `submitCheckIn`).
  * 
  * @param request - The Next.js request object with JSON body containing check-in data
  * @returns Promise<NextResponse> - JSON response with submission result

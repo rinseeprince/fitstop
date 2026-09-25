@@ -76,7 +76,7 @@ export type Archetype = {
   key: string;
   /** Share of the client population. */
   share: number;
-  /** Probability of producing a daily-log spine row on an eligible day. */
+  /** Probability of producing the day-form rows (wellness, food) on an eligible day. */
   logDensity: number;
   /** Probability a scheduled training event gets completed. */
   sessionCompletion: number;

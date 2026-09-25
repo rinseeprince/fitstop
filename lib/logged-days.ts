@@ -8,12 +8,11 @@
  * question is daily engagement, not the coach's work or the weekly report
  * (owner decision D11, 2026-09-02).
  *
- * The `daily_logs` spine row is the parent of the client's day-form (wellness,
- * nutrition, the day note), not an activity flag: workouts and habits never
- * create one, so counting spine rows read a client who only trains as silent.
- * Three readers used to answer the question three ways; every reader now
- * assembles the five sources from the rows it holds and asks this kernel.
- * `lib/logged-days-ownership.test.ts` keeps it that way.
+ * A day-form row (`wellness_logs`, `nutrition_logs`) is not an activity flag:
+ * workouts and habits write none, so a count of day-form rows reads a client
+ * who only trains as silent. Every reader assembles the five sources from the
+ * rows it holds and asks this kernel; `lib/logged-days-ownership.test.ts`
+ * keeps it that way.
  *
  * Pure and isomorphic: no server import, so the browser can run it too.
  */

@@ -173,7 +173,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   const events: Record<string, unknown>[] = [];
   const nPlans: Record<string, unknown>[] = [];
   const nTargets: Record<string, unknown>[] = [];
-  const dailyLogs: Record<string, unknown>[] = [];
   const wellness: Record<string, unknown>[] = [];
   const nutritionLogs: Record<string, unknown>[] = [];
   const habitLogs: Record<string, unknown>[] = [];
@@ -682,22 +681,11 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       const logs = logsOnDay(archetype, dayIdx, tenureDays, iso, breaks, logRng);
 
       if (logs) {
-        const dailyLogId = seedUuid("dlog", coachIdx, c, dayIdx);
-        dailyLogs.push({
-          id: dailyLogId,
-          client_id: clientId,
-          date: iso,
-          notes: logRng.bool(0.12) ? coachNote(logRng) : null,
-          created_at: timestampAt(iso, wellnessHour(logRng), logRng),
-          updated_at: timestampAt(iso, wellnessHour(logRng), logRng),
-        });
-
         // wellness_logs has ZERO check constraints — the 1-10 scales (and mood,
         // which is 1-5 on check_ins) are convention only. Held to the app's
         // ranges deliberately.
         wellness.push({
           id: seedUuid("wlog", coachIdx, c, dayIdx),
-          daily_log_id: dailyLogId,
           client_id: clientId,
           date: iso,
           mood: logRng.int(2, 5),
@@ -717,7 +705,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
           const consumed = Math.round(targetCals * logRng.gauss(1.0, 0.12, 0.6, 1.4));
           nutritionLogs.push({
             id: seedUuid("nlog", coachIdx, c, dayIdx),
-            daily_log_id: dailyLogId,
             client_id: clientId,
             date: iso,
             nutrition_plan_id: eraPlanId,
@@ -941,7 +928,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   push("training_events", events);
   push("nutrition_plans", nPlans);
   push("nutrition_plan_daily_targets", nTargets);
-  push("daily_logs", dailyLogs);
   push("wellness_logs", wellness);
   push("nutrition_logs", nutritionLogs);
   push("daily_habit_logs", habitLogs);

@@ -1,14 +1,10 @@
 /**
- * Per-card daily-log writes (Session 3.1).
+ * Per-card daily-log writes.
  *
- * The redesign retires the monolithic `upsert_daily_log_atomic` RPC: nutrition and
- * wellness save independently and write the `daily_logs` spine + their own child table
- * directly (docs/CLIENT-PORTAL-REDESIGN.md). Each writer ensures the spine row,
- * then upserts its child. Two-step is safe: a spine row without a child is benign,
- * the unique constraints make retries idempotent, and a failed child write leaves
- * the day open for the next attempt — the day rule keys on the client's check-in
- * weeks, never on whether a row already exists, so a half-written day cannot lock
- * itself out.
+ * Nutrition and wellness save independently: each card is ONE upsert on its
+ * own table, keyed by `(client_id, date)` — the UNIQUE the table carries
+ * (migration 202) — so a retry is idempotent and a day has no parent row to
+ * write first. Both read the assembled day back for the response.
  */
 
 import { supabaseAdmin } from "./supabase-admin";
@@ -30,26 +26,7 @@ type WellnessLogInput = {
   soreness?: number;
 };
 
-/**
- * Ensure the `daily_logs` spine row for (clientId, date) exists. Returns the
- * spine id for the child upsert.
- */
-async function ensureSpine(clientId: string, date: string): Promise<string> {
-  const payload = { client_id: clientId, date, updated_at: new Date().toISOString() };
-
-  const { data, error } = await supabaseAdmin
-    .from("daily_logs")
-    .upsert(payload, { onConflict: "client_id,date" })
-    .select("id")
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Failed to ensure daily log spine: ${error?.message ?? "no row returned"}`);
-  }
-  return data.id;
-}
-
-/** Read the consolidated daily log back (from daily_logs_full) for the response. */
+/** Read the assembled day back (the two tables by client and date) for the response. */
 async function readBack(clientId: string, date: string): Promise<DailyLog> {
   const log = await getTodayLog(clientId, date);
   if (!log) {
@@ -59,13 +36,13 @@ async function readBack(clientId: string, date: string): Promise<DailyLog> {
 }
 
 /**
- * Per-card nutrition write: the spine link, the four consumed columns, the
- * covering version's stamp when one is known, and `updated_at` — what the
- * client ate and nothing else (owner decision 2026-09-11). No target and no
- * verdict is written: every reader takes a day's target from the computed day
- * and derives the verdict from the pair, so the coach's change to today and a
- * session landing on a logged day reach them at once. A day no version covers
- * saves too, with no stamp; its meals carry no target and no verdict.
+ * Per-card nutrition write: the four consumed columns, the covering version's
+ * stamp when one is known, and `updated_at` — what the client ate and nothing
+ * else (owner decision 2026-09-11). No target and no verdict is written: every
+ * reader takes a day's target from the computed day and derives the verdict
+ * from the pair, so the coach's change to today and a session landing on a
+ * logged day reach them at once. A day no version covers saves too, with no
+ * stamp; its meals carry no target and no verdict.
  */
 export async function upsertNutritionLog(
   clientId: string,
@@ -73,11 +50,8 @@ export async function upsertNutritionLog(
   data: NutritionLogInput,
   ctx: { nutritionPlanId?: string | null }
 ): Promise<DailyLog> {
-  const spineId = await ensureSpine(clientId, date);
-
   const { error } = await supabaseAdmin.from("nutrition_logs").upsert(
     {
-      daily_log_id: spineId,
       client_id: clientId,
       date,
       // omit when null → preserve existing plan link on conflict
@@ -88,7 +62,7 @@ export async function upsertNutritionLog(
       fat_g: data.fatG ?? null,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "daily_log_id" }
+    { onConflict: "client_id,date" }
   );
 
   if (error) {
@@ -98,20 +72,14 @@ export async function upsertNutritionLog(
   return readBack(clientId, date);
 }
 
-/**
- * Per-card wellness write. Ensures the spine and upserts `wellness_logs`.
- * wellness_logs has no plan FK.
- */
+/** Per-card wellness write: one upsert on `wellness_logs`, which has no plan FK. */
 export async function upsertWellnessLog(
   clientId: string,
   date: string,
   data: WellnessLogInput
 ): Promise<DailyLog> {
-  const spineId = await ensureSpine(clientId, date);
-
   const { error } = await supabaseAdmin.from("wellness_logs").upsert(
     {
-      daily_log_id: spineId,
       client_id: clientId,
       date,
       mood: data.mood ?? null,
@@ -121,7 +89,7 @@ export async function upsertWellnessLog(
       soreness: data.soreness ?? null,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "daily_log_id" }
+    { onConflict: "client_id,date" }
   );
 
   if (error) {

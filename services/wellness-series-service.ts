@@ -30,8 +30,8 @@ import type { WellnessSeries, WellnessSeriesPoint } from "@/types/coach-overview
 
 async function readWellnessLogDays(clientId: string): Promise<WellnessLogDay[]> {
   // Ordered by day then id: the paged reader's contract wants a unique
-  // tiebreak, and the store's one-row-per-day guarantee lives on the spine,
-  // not on this table. `idx_wellness_logs_client_date` serves the scan.
+  // tiebreak. The table holds one row per client and day (UNIQUE
+  // (client_id, date), migration 202), and that index serves the scan.
   const rows = await fetchAllPages<WellnessLogRow>(
     (from, to) =>
       supabaseAdmin

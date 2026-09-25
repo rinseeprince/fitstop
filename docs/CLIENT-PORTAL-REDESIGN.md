@@ -12,7 +12,7 @@ The daily logs are not the product. They are the feedstock for the two systems t
 2. **Auto-populated weekly check-in** (`services/check-in-context-service.ts`): pre-fills the Sunday check-in form from the week's daily logs, so the client reviews and annotates rather than refilling.
 
 Every design decision in this redesign must preserve or strengthen these two feeds. Concretely:
-- Wellness and nutrition each write the `daily_logs` spine and their own child table by client and date, habits write `daily_habit_logs` by client and date; the attention feed and the check-in context read `wellness_logs` and `nutrition_logs` by client and date.
+- Wellness and nutrition each write their own table by client and date, habits write `daily_habit_logs` by client and date; the attention feed and the check-in context read `wellness_logs` and `nutrition_logs` by client and date.
 - Training moves to event-keyed writes, which fixes the edited-clone bleed that currently gives the check-in an ambiguous "sessions completed" count.
 - The attention feed's training signals rewire to `training_events.status` directly (no denormalized flag).
 - The check-in's AI summary gets enriched with `exercise_logs` data for richer progression insights.
@@ -26,7 +26,7 @@ If scope ever has to be cut, **Session 1.7 (attention feed rewire), Session 6.2 
 Pre-launch, no users. The next milestones are iOS and Android app builds, then launch. Before committing to mobile, we are replacing Daily Pulse with a client portal that mirrors the coach-side event-driven model.
 
 **Current portal:**
-- `/client/dashboard` (Daily Pulse): one monolithic page. Wellness, training, nutrition, and habits all save atomically via `upsert_daily_log_atomic()` behind a single "Log Day" button.
+- `/client/dashboard` (Daily Pulse): one monolithic page.
 - `/client/training`: flat list of `plan.sessions` (not events), keyed on `training_session_id`. Completion is binary. No per-exercise logging, even though `exercise_logs` schema supports it.
 
 **Problems this redesign fixes:**
@@ -180,7 +180,7 @@ Replaces the chart-only `HistoryChartDialog`. Shows prescribed vs actual per exe
 
 ### Alternative session logging
 
-Clients sometimes train differently from what the coach prescribed: doing a different session on a planned day (a swap), or training on a prescribed rest day. The legacy Daily Pulse supported this via a session picker that wrote a flag in `training_logs.training_data` JSONB. The new event-keyed architecture supports the same behavior natively, without the JSONB cache.
+Clients sometimes train differently from what the coach prescribed: doing a different session on a planned day (a swap), or training on a prescribed rest day. The event-keyed model supports both natively.
 
 **Two scenarios, one rule:**
 
@@ -210,7 +210,7 @@ The coach drill-down reads both: "Prescribed Push Day on Monday. Client performe
 
 ## Nutrition logging (scope)
 
-Calories and macros only. No meal or food-item logging in this pass. The card logs four numbers per day: kcal, protein (g), carbs (g), fat (g). Writes to the `nutrition_logs` child of `daily_logs`.
+Calories and macros only. No meal or food-item logging in this pass. The card logs four numbers per day: kcal, protein (g), carbs (g), fat (g). Writes `nutrition_logs`, one row per client and date.
 
 The summary bar reads the nutrition target via the three-level priority already documented in `docs/ARCHITECTURE.md` (logged snapshot to event to template fallback).
 
@@ -278,7 +278,7 @@ of `CLIENT-PORTAL-EXECUTION-PLAN.md` (Sessions 8.1-8.3) is superseded with it.
 
 1. **API contract is what mobile consumes.** Ship the right contract once. Changing it later means coordinating web, iOS, and Android simultaneously (forced updates, dual-write, data migration).
 2. **Day-centric swipe UX is the mobile UX.** Validating it on web before writing it natively saves a rebuild.
-3. **Data is already day-keyed.** `training_events`, `daily_logs` with children, `daily_habit_logs` are all date-partitioned, and a nutrition day is computed per date from the version covering it (the day table went in migration 170; `docs/ARCHITECTURE.md` → "The window is the row"). The redesign is primarily a UI plus API-shape change. (The weight-unit column anticipated here went the other way: migrations 140 + 141 made storage canonical kg/cm and DROPPED every unit-tag column.)
+3. **Data is already day-keyed.** `training_events`, `wellness_logs`, `nutrition_logs` and `daily_habit_logs` are all keyed by client and date, and a nutrition day is computed per date from the version covering it (the day table went in migration 170; `docs/ARCHITECTURE.md` → "The window is the row"). The redesign is primarily a UI plus API-shape change. (The weight-unit column anticipated here went the other way: migrations 140 + 141 made storage canonical kg/cm and DROPPED every unit-tag column.)
 4. **Detailed workout logging is a mobile-first feature.** Clients log sets on their phone. Shipping empty `exercise_logs` to mobile launch means that surface has no implementation at all.
 
 ---
@@ -326,8 +326,6 @@ No `useClientDay` hook. `useSWR` is called directly in the page. Only create a w
 - `app/api/client/training/completions/route.ts` (old session-keyed completion).
 - `services/client-portal-training.ts:markSessionComplete` and now-unused exports.
 - `components/clients/training/history-chart-dialog.tsx`.
-
-`upsert_daily_log_atomic()` stays in the DB as an unused RPC; removing it is a separate schema change (since migration 173 its body names food-log columns that no longer exist, so it cannot run).
 
 ---
 
@@ -386,9 +384,9 @@ API `/api/clients/[id]/check-ins` already supports status filtering. This is pri
 
 Two systems are partially coupled to the old model and get addressed in Phase 6.
 
-**Weekly check-in system**: the context API already reads events for targets but uses session-keyed `session_logs` for completion counts and the day reader (`getDailyLogs`, over `wellness_logs` and `nutrition_logs` by client and date) for 7-day wellness/nutrition history. Wellness plus nutrition keep writing to the `daily_logs` spine (per-card, not monolithic). Training writes move to event-keyed, which fixes the ambiguous "X of Y completed" count for cloned sessions. Phase 6 scope: switch the completion count query from `session_logs` to `training_events.status`, optionally enrich the AI summary with `exercise_logs` data, UX refresh if desired.
+**Weekly check-in system**: the context API already reads events for targets but uses session-keyed `session_logs` for completion counts and the day reader (`getDailyLogs`, over `wellness_logs` and `nutrition_logs` by client and date) for 7-day wellness/nutrition history. Wellness and nutrition keep their per-card writes, each to its own table. Training writes move to event-keyed, which fixes the ambiguous "X of Y completed" count for cloned sessions. Phase 6 scope: switch the completion count query from `session_logs` to `training_events.status`, optionally enrich the AI summary with `exercise_logs` data, UX refresh if desired.
 
-**Needs-attention feed**: 7 of 8 signals derive from the `daily_logs` spine (wellness, nutrition adherence, logging gap, habit dropoff, logging metadata). These survive unchanged. The "training missed" signal already reads `training_events`. The "activity-calorie mismatch" signal currently reads `training_logs.trained`. The rewire happens as part of Phase 1 (no denormalized flag ever; Phase 7 removed).
+**Needs-attention feed**: 7 of 8 signals derive from the wellness and food logs (wellness, nutrition adherence, logging gap, habit dropoff, logging metadata). These survive unchanged. The "training missed" signal already reads `training_events`. The rewire happens as part of Phase 1 (no denormalized flag ever; Phase 7 removed).
 
 ---
 

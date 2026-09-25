@@ -1,6 +1,6 @@
 /**
  * Correctness fixture for the migration-094 RPCs (Session 3.6) and the
- * migration-095 streak RPC + check-in keyset cursor (Session 3.7).
+ * migration-095 check-in keyset cursor (Session 3.7).
  *
  * Seeds small deterministic fixtures (separate from PERF_CLIENT_ID) and
  * asserts exact outputs the unit tests can no longer cover, because they mock
@@ -8,9 +8,6 @@
  *   - 094 RPCs: identity-union merging, legacy name-fallback, list ordering on
  *     completed_at-tie, PR-date oldest-on-tie, SQL window cap at
  *     p_session_count, COALESCE default guard against LIMIT NULL.
- *   - 095 get_client_streak: gaps-and-islands current/longest, the "run must end
- *     today or yesterday" rule (incl. the isolated-older-log → current 0 edge),
- *     and the empty window.
  *   - check-in keyset: the (created_at, id) `.or()` cursor predicate against real
  *     PostgREST, including a same-created_at tie split across a page boundary.
  *
@@ -86,18 +83,11 @@ function weekStart(dateStr: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Session 3.7 fixtures — streak RPC (migration 095) + check-in keyset cursor.
+// Session 3.7 fixture — the check-in keyset cursor (migration 095).
 // Its own client so cleanup stays scoped; same "5ca1ec0" prefix as above.
-// "today" is passed to the RPC explicitly, so the fixture is date-independent.
 // ---------------------------------------------------------------------------
 
 const S37_CLIENT_ID = "5ca1ec0c-0000-4000-8000-000000000002";
-
-// Streak: a 5-day run (May 10–14) + a 3-day run ending May 28, gap between.
-const STREAK_DATES = [
-  "2026-05-10", "2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", // longest run = 5
-  "2026-05-26", "2026-05-27", "2026-05-28",                              // recent run = 3
-];
 
 // Check-ins: 5 rows; CI_TIE_HI and CI_TIE_LO share created_at 2026-05-06 to
 // exercise the (created_at, id) tiebreak. CI_TIE_HI has the larger id, so under
@@ -176,7 +166,7 @@ async function main() {
   await seedClient();
   await seedPlanAndExercises();
   await seedSessionsAndLogs();
-  await seedStreakAndCheckin();
+  await seedKeysetCheckins();
   await seedRecordsFixture();
 
   const failures: string[] = [];
@@ -189,7 +179,6 @@ async function main() {
   await assertProgressionWindowUncapped(failures);
   await assertListWindow(failures);
   await assertLegacyNameFallback(failures);
-  await assertStreak(failures);
   await assertCheckinCursor(failures);
   await assertRaceRecords(failures);
   await assertOneIdentity(failures);
@@ -235,8 +224,6 @@ async function clean() {
     supabaseAdmin.from("exercises").delete().in("id", [BENCH_ID, SQUAT_ID, OHP_ID]));
 
   // Session 3.7 fixture — delete children before the client row.
-  await del("daily_logs (3.7)",
-    supabaseAdmin.from("daily_logs").delete().eq("client_id", S37_CLIENT_ID));
   await del("check_ins (3.7)",
     supabaseAdmin.from("check_ins").delete().eq("client_id", S37_CLIENT_ID));
   await del("clients (3.7)",
@@ -500,11 +487,11 @@ function makeUUID(grp: string, idx: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Session 3.7 seed — its own client with daily_logs (streak) + check_ins (cursor)
+// Session 3.7 seed — its own client with check_ins (cursor)
 // ---------------------------------------------------------------------------
 
-async function seedStreakAndCheckin() {
-  console.log("Seeding 3.7 streak daily_logs + keyset check_ins...");
+async function seedKeysetCheckins() {
+  console.log("Seeding 3.7 keyset check_ins...");
 
   const { error: cErr } = await supabaseAdmin.from("clients").insert({
     id: S37_CLIENT_ID,
@@ -515,14 +502,6 @@ async function seedStreakAndCheckin() {
     unit_preference: "imperial",
   });
   if (cErr) throw new Error(`3.7 client seed: ${cErr.message}`);
-
-  const dlRows = STREAK_DATES.map((date, i) => ({
-    id: makeUUID("0d00", i),
-    client_id: S37_CLIENT_ID,
-    date,
-  }));
-  const { error: dlErr } = await supabaseAdmin.from("daily_logs").insert(dlRows);
-  if (dlErr) throw new Error(`3.7 daily_logs seed: ${dlErr.message}`);
 
   // created_at set explicitly (overriding DEFAULT now()) to control the ordering
   // and the same-created_at tie. client_id is TEXT on check_ins (migration 023).
@@ -543,7 +522,7 @@ async function seedStreakAndCheckin() {
   const copies = await fillSentSnapshots({ clientIds: [String(S37_CLIENT_ID)] });
   if (copies.failed.length > 0) throw new Error(`3.7 check-in copies: ${copies.failed[0].error}`);
 
-  console.log(`  inserted ${dlRows.length} daily_logs + ${ciRows.length} check_ins for the 3.7 client`);
+  console.log(`  inserted ${ciRows.length} check_ins for the 3.7 client`);
 }
 
 // ---------------------------------------------------------------------------
@@ -876,37 +855,6 @@ async function assertLegacyNameFallback(failures: string[]) {
     return;
   }
   expect(rows[0], "prs-legacy[0]", { reps: 3, weight: 200 }, failures);
-}
-
-async function assertStreak(failures: string[]) {
-  console.log("Asserting get_client_streak (gaps-and-islands, migration 095)...");
-
-  // "today" is a parameter, so each case fixes it explicitly against the same logs.
-  const cases = [
-    { today: "2026-05-28", start: "2026-01-01", current: 3, longest: 5, note: "run ends today" },
-    { today: "2026-05-29", start: "2026-01-01", current: 3, longest: 5, note: "run ends yesterday (grace)" },
-    { today: "2026-05-30", start: "2026-01-01", current: 0, longest: 5, note: "most-recent log 2d ago → current 0 (the edge mocks can't prove)" },
-    { today: "2026-06-02", start: "2026-06-01", current: 0, longest: 0, note: "empty window" },
-  ];
-
-  for (const c of cases) {
-    const { data, error } = await supabaseAdmin.rpc("get_client_streak", {
-      p_client_id: S37_CLIENT_ID,
-      p_today: c.today,
-      p_start_date: c.start,
-    });
-    if (error) {
-      failures.push(`streak[p_today=${c.today}]: rpc error ${error.message}`);
-      continue;
-    }
-    const row = (data ?? [])[0] ?? { current_streak: 0, longest_streak: 0 };
-    expect(
-      row,
-      `streak[p_today=${c.today}] (${c.note})`,
-      { current_streak: c.current, longest_streak: c.longest },
-      failures
-    );
-  }
 }
 
 async function assertCheckinCursor(failures: string[]) {

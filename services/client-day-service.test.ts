@@ -238,9 +238,9 @@ describe("client-day-service", () => {
     });
   });
 
-  // ---- Wellness: spine exists but no wellness fields ----
+  // ---- Wellness: a day with a food row and no wellness reading ----
 
-  it("returns hasLog false when daily log exists but wellness fields are empty", async () => {
+  it("returns hasLog false when the day exists but its wellness fields are empty", async () => {
     mockTodayLog.mockResolvedValue({
       id: "dl1",
       clientId: CLIENT_ID,

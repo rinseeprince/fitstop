@@ -12,14 +12,9 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getTodayLog } from "./daily-logs-service";
 import { upsertNutritionLog, upsertWellnessLog } from "./daily-log-card-service";
 
-const mockDailyLog = { id: "log-1", clientId: "c1", date: "2026-05-21" } as never;
+const mockDailyLog = { id: "2026-05-21", clientId: "c1", date: "2026-05-21" } as never;
 
-const spineQuery = (id = "spine-1") => ({
-  upsert: vi.fn().mockReturnThis(),
-  select: vi.fn().mockReturnThis(),
-  single: vi.fn().mockResolvedValue({ data: { id }, error: null }),
-});
-const childQuery = (error: { message: string } | null = null) => ({
+const tableQuery = (error: { message: string } | null = null) => ({
   upsert: vi.fn().mockResolvedValue({ data: null, error }),
 });
 
@@ -29,15 +24,13 @@ beforeEach(() => {
 });
 
 // The food log holds what the client ate and nothing else (owner decision
-// 2026-09-11): the spine link, the four consumed columns, the covering
-// version's stamp when known, and updated_at. No target and no verdict is
-// written — every reader takes the day's target from the computed day.
+// 2026-09-11): the four consumed columns, the covering version's stamp when
+// known, and updated_at. No target and no verdict is written — every reader
+// takes the day's target from the computed day.
 describe("upsertNutritionLog", () => {
-  it("ensures the spine, then writes the meals and the stamp — and nothing else", async () => {
-    const spine = spineQuery();
-    const child = childQuery();
-    vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) =>
-      t === "daily_logs" ? spine : child) as never);
+  it("is ONE upsert on nutrition_logs keyed by (client_id, date) — the meals and the stamp, nothing else", async () => {
+    const table = tableQuery();
+    vi.mocked(supabaseAdmin.from).mockReturnValue(table as never);
 
     const result = await upsertNutritionLog(
       "c1",
@@ -47,14 +40,12 @@ describe("upsertNutritionLog", () => {
     );
 
     expect(result).toBe(mockDailyLog);
-    expect(spine.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ client_id: "c1", date: "2026-05-21" }),
-      { onConflict: "client_id,date" }
-    );
-    const [payload, options] = child.upsert.mock.calls[0];
-    expect(options).toEqual({ onConflict: "daily_log_id" });
+    // No parent row is written first: the card's table is the only table touched.
+    expect(supabaseAdmin.from).toHaveBeenCalledTimes(1);
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("nutrition_logs");
+    const [payload, options] = table.upsert.mock.calls[0];
+    expect(options).toEqual({ onConflict: "client_id,date" });
     expect(payload).toEqual({
-      daily_log_id: "spine-1",
       client_id: "c1",
       date: "2026-05-21",
       nutrition_plan_id: "np-1",
@@ -64,21 +55,17 @@ describe("upsertNutritionLog", () => {
       fat_g: null,
       updated_at: expect.any(String),
     });
-    // The row is only ever read by the day readers; nothing is looked up here.
-    expect(supabaseAdmin.from).toHaveBeenCalledTimes(2);
   });
 
   it("a day no version covers saves with no stamp — the meals go in, nothing is refused", async () => {
-    const spine = spineQuery();
-    const child = childQuery();
-    vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) =>
-      t === "daily_logs" ? spine : child) as never);
+    const table = tableQuery();
+    vi.mocked(supabaseAdmin.from).mockReturnValue(table as never);
 
     await upsertNutritionLog("c1", "2026-05-21", { caloriesConsumed: 1800 }, {
       nutritionPlanId: null,
     });
 
-    const payload = child.upsert.mock.calls[0][0] as Record<string, unknown>;
+    const payload = table.upsert.mock.calls[0][0] as Record<string, unknown>;
     expect(payload).not.toHaveProperty("nutrition_plan_id");
     expect(payload.calories_consumed).toBe(1800);
     for (const never of [
@@ -93,11 +80,8 @@ describe("upsertNutritionLog", () => {
     }
   });
 
-  it("throws when the child write fails", async () => {
-    const spine = spineQuery();
-    const child = childQuery({ message: "boom" });
-    vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) =>
-      t === "daily_logs" ? spine : child) as never);
+  it("throws when the write fails", async () => {
+    vi.mocked(supabaseAdmin.from).mockReturnValue(tableQuery({ message: "boom" }) as never);
 
     await expect(
       upsertNutritionLog("c1", "2026-05-21", { caloriesConsumed: 2000 }, {})
@@ -113,33 +97,46 @@ describe("upsertNutritionLog", () => {
       /getPlanTargetForDate|getNutritionTargetsForDateRange|calculateNutritionAdherence|calculateCalorieSurplusDeficit|target_calories|target_protein_g|target_carbs_g|target_fat_g|nutrition_adherence|calorie_surplus_deficit/
     );
   });
+
+  // A day has no parent row (migration 202). A writer that ensures one before
+  // its own upsert, or keys its row by a parent id, is the two-statement shape
+  // this module left behind.
+  it("writes no parent row and keys nothing by a parent id", () => {
+    const source = readFileSync(resolve(__dirname, "daily-log-card-service.ts"), "utf8");
+    expect(source).not.toMatch(/daily_logs|daily_log_id|ensureSpine|spine/);
+  });
 });
 
 describe("upsertWellnessLog", () => {
-  it("ensures the spine and writes wellness_logs (no plan FK)", async () => {
-    const spine = spineQuery();
-    const child = childQuery();
-    vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) =>
-      t === "daily_logs" ? spine : child) as never);
+  it("is ONE upsert on wellness_logs keyed by (client_id, date), with no plan FK", async () => {
+    const table = tableQuery();
+    vi.mocked(supabaseAdmin.from).mockReturnValue(table as never);
 
     const result = await upsertWellnessLog("c1", "2026-05-21", { mood: 4, energy: 7, soreness: 2 });
 
     expect(result).toBe(mockDailyLog);
-    expect(spine.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ client_id: "c1", date: "2026-05-21" }),
-      { onConflict: "client_id,date" }
-    );
-    expect(child.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        daily_log_id: "spine-1",
+    expect(supabaseAdmin.from).toHaveBeenCalledTimes(1);
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("wellness_logs");
+    expect(table.upsert).toHaveBeenCalledWith(
+      {
+        client_id: "c1",
+        date: "2026-05-21",
         mood: 4,
         energy: 7,
         sleep: null,
         stress: null,
         soreness: 2,
-      }),
-      { onConflict: "daily_log_id" }
+        updated_at: expect.any(String),
+      },
+      { onConflict: "client_id,date" }
     );
-    expect(child.upsert.mock.calls[0][0]).not.toHaveProperty("nutrition_plan_id");
+  });
+
+  it("throws when the write fails", async () => {
+    vi.mocked(supabaseAdmin.from).mockReturnValue(tableQuery({ message: "boom" }) as never);
+
+    await expect(upsertWellnessLog("c1", "2026-05-21", { mood: 4 })).rejects.toThrow(
+      "Failed to upsert wellness log: boom"
+    );
   });
 });

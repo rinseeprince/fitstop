@@ -40,7 +40,7 @@ export async function GET(
       throw error;
     }
 
-    // Fetch related data. The period's workouts are read from the spine
+    // Fetch related data. The period's workouts are read from the calendar
     // (`training_events` with their logs) for the check-in's stored period —
     // there is no stored per-session table, and they are the same rows the
     // wizard was given when the client filled this check-in in. The IDOR guard

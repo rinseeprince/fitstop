@@ -59,9 +59,8 @@ describe("the wizard's training summary renders the server's figures", () => {
     expect(screen.queryByText("Of those, partial")).not.toBeInTheDocument();
   });
 
-  // The fallback this block used to carry read `training_logs`, which nothing
-  // has written since the Daily Pulse was retired, so it could only ever report
-  // zero of zero under a week the client had actually trained.
+  // A count of this block's own would be a second definition of the training
+  // figure: with no figures it says nothing, never zero of zero.
   it("counts nothing of its own — with no figures it shows a dash, not zero", () => {
     render(<DailyLogsTrainingSummary trainingPeriodStats={null} nutritionSummary={null} />);
 

@@ -4,15 +4,13 @@ import { join, relative } from "node:path";
 
 /**
  * "Did the client log today?" is answered ONCE, by `loggedDays` in
- * `./logged-days.ts`, from the five sources a client writes themselves. It
- * used to be answered three ways: the check-in header and the logging-gap
- * alert counted `daily_logs` spine rows, which only wellness and nutrition
- * create, while the no-engagement alert unioned the spine, the habit logs and
- * the completed events itself — so a client who only trained read as silent
- * on two surfaces and as active on the third, with no error anywhere.
+ * `./logged-days.ts`, from the five sources a client writes themselves. A
+ * second definition reads a client who only trains as silent on one surface
+ * and as active on another, with no error anywhere.
  *
  * This scan, in the shape of `lib/check-in/adherence-ownership.test.ts`,
- * forbids the three shapes a second definition takes: reading the spine as an
+ * forbids the three shapes a second definition takes: reading a parent day
+ * row (`daily_logs`, which the schema no longer has and must not regain) as an
  * activity flag, spelling the union over raw rows, and counting day-form rows
  * as logged days. One positive check keeps the two assemblers on the kernel.
  */
@@ -49,14 +47,14 @@ const EXCLUDE: string[] = [
 // The two places the five sources are assembled from rows already in hand.
 const ASSEMBLERS = ["services/client-adherence-service.ts", "lib/attention-feed-helpers.ts"];
 
-// The bare spine. `wellness_logs` and `nutrition_logs` are different strings
+// A parent day row. `wellness_logs` and `nutrition_logs` are different strings
 // and stay readable: the feed assembles its days from them for the wellness
 // and nutrition pattern triggers' values.
 const SPINE_READ = /\.from\(\s*["']daily_logs["']\s*\)/g;
 // `logs.some((log) => log.date >= cutoff)` — an activity test over raw rows,
 // the shape the old union was written in.
 const RAW_ACTIVITY_TEST = /\.some\(\s*\(?\s*\w+\s*\)?\s*=>\s*\w+\.date\s*>=/g;
-// The spine as an engagement flag, by either name it carried.
+// A parent day row as an engagement flag, by either name it carried.
 const SPINE_FLAG = /\b(spineDates|hasSpineRow)\b/g;
 // `daysLogged: dailyLogs.length` — day-form rows counted as logged days.
 const DAY_FORM_COUNT = /\b(dailyLogs|logs)\.length\b|daysLogged:\s*\w+\.length/g;
@@ -102,11 +100,11 @@ function offenders(pattern: RegExp, targets: string[]): string[] {
 }
 
 describe("a logged day is derived once", () => {
-  it("no reader reads the daily_logs spine — it is the day-form's parent, not an activity flag", () => {
+  it("no reader reads a daily_logs parent row — the day-form has none, and a row is not an activity flag", () => {
     expect(offenders(SPINE_READ, SCAN)).toEqual([]);
   });
 
-  it("no reader spells the union over raw rows, or keeps the spine as an engagement flag", () => {
+  it("no reader spells the union over raw rows, or keeps a parent day row as an engagement flag", () => {
     expect(offenders(RAW_ACTIVITY_TEST, SCAN)).toEqual([]);
     expect(offenders(SPINE_FLAG, SCAN)).toEqual([]);
   });

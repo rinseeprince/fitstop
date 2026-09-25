@@ -1,8 +1,8 @@
 /**
- * Wire proof for the day-form (docs/DAY-SPINE-FLATTEN-PLAN.md §5, commit 1):
- * every route that carries a day keeps its bytes when the day is assembled
- * from `wellness_logs` and `nutrition_logs` instead of read off the
- * `daily_logs_full` view.
+ * Wire proof for the day-form (docs/DAY-SPINE-FLATTEN-PLAN.md §5): every
+ * route that carries a day keeps its bytes across a change to how the day is
+ * written or read. A day is two rows, `wellness_logs` and `nutrition_logs`,
+ * each found by (client_id, date), assembled at read.
  *
  *   npx tsx scripts/wire-proof-day-form.ts record before
  *   npx tsx scripts/wire-proof-day-form.ts record after
@@ -18,28 +18,25 @@
  * For the fixture client and Sam Kalepa, as the client:
  * - `GET /api/client/daily-logs/[date]/wellness`, `…/nutrition` and
  *   `GET /api/client/day-summary?date=` on a logged day, an unlogged day a
- *   version covers and a gap day: byte-identical.
- * - `GET /api/client/check-in-context`: byte-identical outside `dailyLogs`,
- *   whose rows follow the day rule below.
+ *   version covers and a gap day.
+ * - `GET /api/client/check-in-context`.
  * As the coach: `GET /api/clients/[id]/daily-logs` over the default 30 days and
- * over a 30-day window that holds data: the same dates in the same order, each
- * day by the day rule.
+ * over a 30-day window that holds data.
  * On the fixture client only, a write: `PATCH …/wellness` and `PATCH …/nutrition`
  * on a day inside its open check-in week, twice each (a first save and a
  * re-save). The day's rows are deleted before each recording so the first save
- * is one, and `cleanup` deletes them at the end; the responses follow the day
- * rule, and the day then reads back through the three GETs.
+ * is one, and `cleanup` deletes them at the end; the day then reads back
+ * through the three GETs. The rows are snapshotted right after each save,
+ * because a response's stamps are judged against the rows as they stood when
+ * it was sent.
  *
- * The day rule (commit 1): every key byte-identical in its place, except
- * - `id`, `createdAt`, `updatedAt` (D3): after, `id` is the date and the two
- *   stamps are the earliest `created_at` and the latest `updated_at` of the
- *   day's rows, checked against the tables;
- * - `notes` (D1): absent after;
- * - `trained`, `trainingSessionId`, `trainingData` (D2): absent after, and
- *   `trained` present before exactly on a day with a `training_logs` row.
- * The one data difference allowed on a list of days: a day listed before and
- * not after because its only row was a childless spine row, which the view
- * listed and the tables hold nothing for — named in the diff, never silent.
+ * The rule: every response byte-identical, with one exception the proof itself
+ * makes — the proof day is written afresh at each recording, so its
+ * `createdAt` and `updatedAt` are new each time. On that day alone the two
+ * stamps are held out of the byte comparison and checked instead against the
+ * tables: `createdAt` the earliest `created_at` and `updatedAt` the latest
+ * `updated_at` of the day's rows at send, and `id` still the date. Every other
+ * key, every other day, and the rows outside the proof day are identical.
  */
 import "./env-bootstrap";
 
@@ -94,16 +91,12 @@ type DayRow = Record<string, unknown> & { date: string };
 type StampRow = { date: string; created_at: string; updated_at: string };
 type Snapshot = {
   clientToday: string;
-  trainingLogDates: string[];
-  /** Spine rows with neither child: listed by the view, listed by nothing after — the one allowed difference. */
-  childlessSpineDates: string[];
   wellness: StampRow[];
   nutrition: StampRow[];
 };
 type Meta = { patchDay: string };
 
-const STRIPPED = ["id", "createdAt", "updatedAt", "notes", "trained", "trainingSessionId", "trainingData"];
-const REMOVED = ["notes", "trained", "trainingSessionId", "trainingData"];
+const STAMPS = ["createdAt", "updatedAt"];
 const ISO_STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(\+00:00|Z)$/;
 
 let failures = 0;
@@ -136,7 +129,7 @@ async function recordOne(
   return res.json;
 }
 
-/** The client's rows in the three tables, as the tables hold them — no kernel. */
+/** The client's rows in the two tables, as the tables hold them — no kernel. */
 async function snapshot(clientId: string): Promise<Snapshot> {
   const stamps = (table: "wellness_logs" | "nutrition_logs") =>
     fetchAllPages<StampRow>(
@@ -150,33 +143,12 @@ async function snapshot(clientId: string): Promise<Snapshot> {
           .range(from, to),
       { errorLabel: table }
     );
-  const dates = (table: "training_logs" | "daily_logs") =>
-    fetchAllPages<{ date: string }>(
-      (from, to) =>
-        supabaseAdmin
-          .from(table)
-          .select("date")
-          .eq("client_id", clientId)
-          .order("date", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, to),
-      { errorLabel: table }
-    );
-  const [clientToday, trainingLogs, spine, wellness, nutrition] = await Promise.all([
+  const [clientToday, wellness, nutrition] = await Promise.all([
     getClientTodayString(clientId),
-    dates("training_logs"),
-    dates("daily_logs"),
     stamps("wellness_logs"),
     stamps("nutrition_logs"),
   ]);
-  const childDates = new Set([...wellness, ...nutrition].map((row) => row.date));
-  return {
-    clientToday,
-    trainingLogDates: trainingLogs.map((row) => row.date),
-    childlessSpineDates: spine.map((row) => row.date).filter((date) => !childDates.has(date)),
-    wellness,
-    nutrition,
-  };
+  return { clientToday, wellness, nutrition };
 }
 
 /** One day's rows in the two tables as they stand right now — a PATCH response is judged against these. */
@@ -194,10 +166,10 @@ async function snapshotDay(clientId: string, date: string): Promise<Pick<Snapsho
   return { wellness, nutrition };
 }
 
-/** The fixture's proof day, rows the proof itself made: children first, then the spine. */
+/** The fixture's proof day: the rows the proof itself made, one per table. */
 async function deleteFixtureDay(clientId: string, date: string): Promise<void> {
   if (date < "2026-09-01") throw new Error(`refusing to delete a day before the proof's window: ${date}`);
-  for (const table of ["nutrition_logs", "wellness_logs", "daily_logs"] as const) {
+  for (const table of ["nutrition_logs", "wellness_logs"] as const) {
     const { error, count } = await supabaseAdmin
       .from(table)
       .delete({ count: "exact" })
@@ -274,7 +246,7 @@ async function recordSubject(dir: string, coach: ProofSession, subject: Subject)
   );
 
   writeFileSync(join(dir, `db-${p}.json`), JSON.stringify(await snapshot(subject.clientId)));
-  console.info(`  db-${p}  ←  training_logs, wellness_logs, nutrition_logs (service role)`);
+  console.info(`  db-${p}  ←  wellness_logs, nutrition_logs (service role)`);
 }
 
 async function record(label: string): Promise<void> {
@@ -304,8 +276,9 @@ async function cleanup(label: string): Promise<void> {
 // The diff
 // ---------------------------------------------------------------------------
 
-const strip = (day: DayRow): Record<string, unknown> =>
-  Object.fromEntries(Object.entries(day).filter(([key]) => !STRIPPED.includes(key)));
+/** The day with its two stamps held out — only ever applied to the proof day. */
+const withoutStamps = (day: DayRow): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(day).filter(([key]) => !STAMPS.includes(key)));
 
 const stampsFor = (rows: StampRow[], date: string) => rows.filter((row) => row.date === date);
 const earliest = (rows: StampRow[]) =>
@@ -313,59 +286,48 @@ const earliest = (rows: StampRow[]) =>
 const latest = (rows: StampRow[]) =>
   rows.map((row) => row.updated_at).reduce((max, stamp) => (Date.parse(stamp) > Date.parse(max) ? stamp : max));
 
-/** One day against the day rule. Returns the problems, none when it holds. */
-function dayProblems(before: DayRow, after: DayRow, snap: Snapshot): string[] {
+/**
+ * The proof day against the rule: every key but the two stamps byte-identical,
+ * `id` the date, and the stamps the earliest and latest of the day's rows as
+ * they stood when the response was sent. Returns the problems, none when it holds.
+ */
+function proofDayProblems(before: DayRow, after: DayRow, rows: Pick<Snapshot, "wellness" | "nutrition">): string[] {
   const problems: string[] = [];
   const date = after.date;
   if (before.date !== date) problems.push(`dates differ: ${before.date} vs ${date}`);
-  if (JSON.stringify(strip(before)) !== JSON.stringify(strip(after))) {
-    problems.push(`${date}: the kept keys differ — before ${JSON.stringify(strip(before))}, after ${JSON.stringify(strip(after))}`);
+  if (JSON.stringify(withoutStamps(before)) !== JSON.stringify(withoutStamps(after))) {
+    problems.push(
+      `${date}: the kept keys differ — before ${JSON.stringify(withoutStamps(before))}, after ${JSON.stringify(withoutStamps(after))}`
+    );
   }
   if (after.id !== date) problems.push(`${date}: id is ${String(after.id)}, not the date`);
-  for (const key of REMOVED) if (key in after) problems.push(`${date}: ${key} still on the wire`);
-  const trainingLog = snap.trainingLogDates.includes(date);
-  if (("trained" in before) !== trainingLog) {
-    problems.push(`${date}: trained ${"trained" in before ? "present" : "absent"} before, training_logs row ${trainingLog ? "exists" : "absent"}`);
-  }
-  const rows = [...stampsFor(snap.wellness, date), ...stampsFor(snap.nutrition, date)];
-  if (rows.length === 0) {
-    problems.push(`${date}: listed after, but neither table holds a row`);
+  const dayRows = [...stampsFor(rows.wellness, date), ...stampsFor(rows.nutrition, date)];
+  if (dayRows.length === 0) {
+    problems.push(`${date}: listed, but neither table holds a row`);
     return problems;
   }
   if (typeof after.createdAt !== "string" || !ISO_STAMP.test(after.createdAt)) problems.push(`${date}: createdAt ${String(after.createdAt)}`);
   if (typeof after.updatedAt !== "string" || !ISO_STAMP.test(after.updatedAt)) problems.push(`${date}: updatedAt ${String(after.updatedAt)}`);
-  if (after.createdAt !== earliest(rows)) problems.push(`${date}: createdAt ${String(after.createdAt)}, the earliest row is ${earliest(rows)}`);
-  if (after.updatedAt !== latest(rows)) problems.push(`${date}: updatedAt ${String(after.updatedAt)}, the latest row is ${latest(rows)}`);
+  if (after.createdAt !== earliest(dayRows)) problems.push(`${date}: createdAt ${String(after.createdAt)}, the earliest row is ${earliest(dayRows)}`);
+  if (after.updatedAt !== latest(dayRows)) problems.push(`${date}: updatedAt ${String(after.updatedAt)}, the latest row is ${latest(dayRows)}`);
   return problems;
 }
 
 /**
- * A list of days against the day rule. A day listed before and not after is
- * allowed only when its one row was a childless spine row (the view listed
- * it, the tables hold nothing for it); such days are named, never counted as
- * a problem. Every other day must be listed on both sides, in the same order.
+ * A list of days: the same dates in the same order, every day byte-identical
+ * except the proof day, which follows the rule above against the rows as they
+ * stood at the end of the recording (nothing is written after the lists).
  */
-function listProblems(
-  before: DayRow[],
-  after: DayRow[],
-  snap: Snapshot
-): { problems: string[]; dropped: string[] } {
-  if (!Array.isArray(before) || !Array.isArray(after)) return { problems: ["not a list on both sides"], dropped: [] };
-  const childless = new Set(snap.childlessSpineDates ?? []);
-  const afterDates = after.map((day) => day.date);
-  const dropped = before
-    .map((day) => day.date)
-    .filter((date) => !afterDates.includes(date) && childless.has(date));
-  const kept = before.filter((day) => !dropped.includes(day.date));
-  const keptDates = kept.map((day) => day.date).join();
-  if (keptDates !== afterDates.join()) {
-    return { problems: [`the days listed differ: [${keptDates}] vs [${afterDates.join()}]`], dropped };
-  }
-  return { problems: kept.flatMap((day, i) => dayProblems(day, after[i], snap)), dropped };
+function listProblems(before: DayRow[], after: DayRow[], patchDay: string | null, snap: Snapshot): string[] {
+  if (!Array.isArray(before) || !Array.isArray(after)) return ["not a list on both sides"];
+  const beforeDates = before.map((day) => day.date).join();
+  const afterDates = after.map((day) => day.date).join();
+  if (beforeDates !== afterDates) return [`the days listed differ: [${beforeDates}] vs [${afterDates}]`];
+  return before.flatMap((day, i) => {
+    if (day.date === patchDay) return proofDayProblems(day, after[i], snap);
+    return JSON.stringify(day) === JSON.stringify(after[i]) ? [] : [`${day.date}: differs — before ${JSON.stringify(day)}, after ${JSON.stringify(after[i])}`];
+  });
 }
-
-const droppedNote = (dropped: string[]) =>
-  dropped.length === 0 ? "" : `; ${dropped.length} childless spine day(s) no longer listed: ${dropped.join(", ")}`;
 
 function diff(beforeLabel: string, afterLabel: string): void {
   const a = join(OUT_ROOT, beforeLabel);
@@ -385,13 +347,25 @@ function diff(beforeLabel: string, afterLabel: string): void {
       `the client's today is the same at both recordings (${snapAfter.clientToday})`,
       snapBefore.clientToday === snapAfter.clientToday
     );
+
+    let patchDay: string | null = null;
+    if (subject.writes) {
+      const metaBefore = JSON.parse(read(a, `meta-${p}`)) as Meta;
+      const metaAfter = JSON.parse(read(b, `meta-${p}`)) as Meta;
+      check(`the proof day is the same at both recordings (${metaAfter.patchDay})`, metaBefore.patchDay === metaAfter.patchDay);
+      patchDay = metaAfter.patchDay;
+    }
+
+    // The tables outside the proof day are untouched by the proof, so their
+    // rows — dates and stamps — must be the same at both recordings.
+    const outside = (snap: Snapshot) =>
+      JSON.stringify({
+        wellness: snap.wellness.filter((row) => row.date !== patchDay),
+        nutrition: snap.nutrition.filter((row) => row.date !== patchDay),
+      });
     check(
-      `the training_logs rows are the same at both recordings (${snapAfter.trainingLogDates.length} days)`,
-      snapBefore.trainingLogDates.join() === snapAfter.trainingLogDates.join()
-    );
-    console.info(
-      `  · ${snapAfter.childlessSpineDates.length} childless spine row(s) in the client's whole log` +
-        (snapAfter.childlessSpineDates.length > 0 ? `: ${snapAfter.childlessSpineDates.join(", ")}` : "")
+      `the rows outside the proof day are the same at both recordings (${snapAfter.wellness.length} wellness, ${snapAfter.nutrition.length} food)`,
+      outside(snapBefore) === outside(snapAfter)
     );
 
     const days = subject.writes ? [...subject.days, "written"] : subject.days;
@@ -402,9 +376,6 @@ function diff(beforeLabel: string, afterLabel: string): void {
     }
 
     if (subject.writes) {
-      const metaBefore = JSON.parse(read(a, `meta-${p}`)) as Meta;
-      const metaAfter = JSON.parse(read(b, `meta-${p}`)) as Meta;
-      check(`the proof day is the same at both recordings (${metaAfter.patchDay})`, metaBefore.patchDay === metaAfter.patchDay);
       for (const name of ["patch-wellness-first", "patch-wellness-resave", "patch-nutrition-first", "patch-nutrition-resave"]) {
         const was = JSON.parse(read(a, `${name}-${p}`)) as { success: boolean; data: DayRow };
         const now = JSON.parse(read(b, `${name}-${p}`)) as { success: boolean; data: DayRow };
@@ -412,38 +383,32 @@ function diff(beforeLabel: string, afterLabel: string): void {
         const atSend = JSON.parse(read(b, `stamps-${name}-${p}`)) as Pick<Snapshot, "wellness" | "nutrition">;
         const problems = [
           ...(was.success === true && now.success === true ? [] : ["success is not true on both sides"]),
-          ...dayProblems(was.data, now.data, { ...snapAfter, ...atSend }),
+          ...proofDayProblems(was.data, now.data, atSend),
         ];
-        check(`${name}-${p}: the day follows the day rule`, problems.length === 0, problems);
+        check(`${name}-${p}: identical outside the two stamps, which match the rows at send`, problems.length === 0, problems);
       }
     }
 
     const ctxBefore = JSON.parse(read(a, `check-in-context-${p}`)) as { data: Record<string, unknown> & { dailyLogs: DayRow[] } };
     const ctxAfter = JSON.parse(read(b, `check-in-context-${p}`)) as { data: Record<string, unknown> & { dailyLogs: DayRow[] } };
     const heldOut = (ctx: typeof ctxBefore) => JSON.stringify({ ...ctx, data: { ...ctx.data, dailyLogs: "<held out>" } });
-    check(`check-in-context-${p}: everything but dailyLogs is identical`, heldOut(ctxBefore) === heldOut(ctxAfter));
-    const ctx = listProblems(ctxBefore.data.dailyLogs, ctxAfter.data.dailyLogs, snapAfter);
+    check(`check-in-context-${p}: everything but dailyLogs is byte-identical`, heldOut(ctxBefore) === heldOut(ctxAfter));
+    const ctx = listProblems(ctxBefore.data.dailyLogs, ctxAfter.data.dailyLogs, patchDay, snapAfter);
     check(
-      `check-in-context-${p}: dailyLogs follow the day rule (${ctxAfter.data.dailyLogs.length} day(s)${droppedNote(ctx.dropped)})`,
-      ctx.problems.length === 0,
-      ctx.problems
+      `check-in-context-${p}: dailyLogs identical (${ctxAfter.data.dailyLogs.length} day(s); the proof day's stamps match the rows)`,
+      ctx.length === 0,
+      ctx
     );
 
     for (const window of ["default", "window"]) {
       const name = `coach-daily-logs-${p}-${window}`;
       const was = JSON.parse(read(a, name)) as { success: boolean; data: DayRow[] };
       const now = JSON.parse(read(b, name)) as { success: boolean; data: DayRow[] };
-      const list = listProblems(was.data, now.data, snapAfter);
       const problems = [
         ...(was.success === true && now.success === true ? [] : ["success is not true on both sides"]),
-        ...list.problems,
+        ...listProblems(was.data, now.data, patchDay, snapAfter),
       ];
-      const trained = was.data.filter((day) => "trained" in day).length;
-      check(
-        `${name}: the same ${now.data.length} day(s), each by the day rule (${trained} carried the training keys before${droppedNote(list.dropped)})`,
-        problems.length === 0,
-        problems
-      );
+      check(`${name}: the same ${now.data.length} day(s), identical (the proof day's stamps match the rows)`, problems.length === 0, problems);
     }
   }
 

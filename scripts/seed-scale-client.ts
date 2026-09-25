@@ -181,8 +181,7 @@ async function main() {
   await insertNutritionPlan();
   const { sessionIds, exerciseRowsBySession, hotExerciseId } = await insertTrainingPlan(exerciseIds, rng);
   await insertHabits();
-  const dailyLogIdsByDate = await insertDailyLogsSpine(args.months);
-  await insertDailyChildren(dailyLogIdsByDate, rng);
+  await insertDailyChildren(args.months, rng);
   await insertSessionLogsAndCompletions(sessionIds, exerciseRowsBySession, args, rng);
   await insertHabitLogs(args.months, rng);
   const checkInRows = await insertCheckIns(args.months, rng);
@@ -223,7 +222,8 @@ async function cleanExistingFixtures(fullReset: boolean) {
   await del("daily_habits", supabaseAdmin.from("daily_habits").delete().eq("client_id", c));
   await del("session_logs (→ exercise_logs → set_logs)", supabaseAdmin.from("session_logs").delete().eq("client_id", c));
   await del("training_plans (→ sessions, exercises)", supabaseAdmin.from("training_plans").delete().eq("client_id", c));
-  await del("daily_logs (→ wellness/nutrition/training children)", supabaseAdmin.from("daily_logs").delete().eq("client_id", c));
+  await del("wellness_logs", supabaseAdmin.from("wellness_logs").delete().eq("client_id", c));
+  await del("nutrition_logs", supabaseAdmin.from("nutrition_logs").delete().eq("client_id", c));
   await del("nutrition_plans (→ daily_targets)", supabaseAdmin.from("nutrition_plans").delete().eq("client_id", c));
   // The goal tables take no DELETE from the app role (migration 193): each
   // goal goes through delete_client_goal, taking its deadlines with it.
@@ -650,45 +650,19 @@ async function insertHabits() {
 }
 
 // ---------------------------------------------------------------------------
-// daily_logs spine (one per day)
+// wellness_logs, nutrition_logs (one row per day each, keyed by client and date)
 // ---------------------------------------------------------------------------
 
-async function insertDailyLogsSpine(months: number): Promise<Map<string, string>> {
+async function insertDailyChildren(months: number, rng: Rng) {
   const days = months * 30;
-  console.log(`Inserting daily_logs spine (${days} days)...`);
-
-  const rows: Array<{ id: string; client_id: string; date: string }> = [];
-  for (let i = 0; i < days; i++) {
-    const dateStr = getDateDaysAgo(days - 1 - i);
-    rows.push({
-      id: deterministicUuid(`dl-${dateStr}`),
-      client_id: PERF_CLIENT_ID,
-      date: dateStr,
-    });
-  }
-
-  await insertInBatches("daily_logs", rows, 500);
-
-  return new Map(rows.map((r) => [r.date, r.id]));
-}
-
-// ---------------------------------------------------------------------------
-// wellness_logs, nutrition_logs, training_logs (1:1 with daily_logs)
-// ---------------------------------------------------------------------------
-
-async function insertDailyChildren(
-  dailyLogIdsByDate: Map<string, string>,
-  rng: Rng
-) {
-  console.log("Inserting wellness_logs, nutrition_logs, training_logs...");
+  console.log(`Inserting wellness_logs, nutrition_logs (${days} days)...`);
 
   const wellness: Array<Record<string, unknown>> = [];
   const nutrition: Array<Record<string, unknown>> = [];
-  const training: Array<Record<string, unknown>> = [];
 
-  for (const [date, dailyLogId] of dailyLogIdsByDate) {
+  for (let i = 0; i < days; i++) {
+    const date = getDateDaysAgo(days - 1 - i);
     wellness.push({
-      daily_log_id: dailyLogId,
       client_id: PERF_CLIENT_ID,
       date,
       mood: rng.int(3, 5),
@@ -704,7 +678,6 @@ async function insertDailyChildren(
     const targetCal = 2400;
     const consumed = targetCal + rng.int(-200, 200);
     nutrition.push({
-      daily_log_id: dailyLogId,
       client_id: PERF_CLIENT_ID,
       date,
       calories_consumed: consumed,
@@ -713,21 +686,10 @@ async function insertDailyChildren(
       fat_g: 70 + rng.int(-10, 10),
       nutrition_plan_id: PERF_NUTRITION_PLAN_ID,
     });
-
-    // trained=true on session days only (Mon/Tue/Thu/Sat)
-    const dayIdx = new Date(date + "T00:00:00").getDay();
-    const isSessionDay = [1, 2, 4, 6].includes(dayIdx);
-    training.push({
-      daily_log_id: dailyLogId,
-      client_id: PERF_CLIENT_ID,
-      date,
-      trained: isSessionDay,
-    });
   }
 
   await insertInBatches("wellness_logs", wellness, 500);
   await insertInBatches("nutrition_logs", nutrition, 500);
-  await insertInBatches("training_logs", training, 500);
 }
 
 // ---------------------------------------------------------------------------

@@ -6,8 +6,8 @@ import { WELLNESS_KEYS, type WellnessKey } from "./keys";
  * column is that day's reading, a null column no reading of that metric that
  * day. There is one source: a wellness score is the client's self-report.
  *
- * `wellness_logs` holds ONE row per client and day (the spine is unique on
- * client and date, the wellness row on its spine id), and the client's write
+ * `wellness_logs` holds ONE row per client and day (`UNIQUE (client_id, date)`,
+ * migration 202), and the client's write
  * upserts that row: editing or backfilling a day changes its row in place and
  * keeps its date. So nothing here orders by write time — every list ascends
  * by `date`, and a row's `updatedAt` only rides along as `recordedAt` for the

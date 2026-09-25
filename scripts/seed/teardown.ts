@@ -46,7 +46,6 @@ export const TEARDOWN_ORDER: readonly string[] = [
   "daily_habit_logs",
   "nutrition_logs",
   "wellness_logs",
-  "daily_logs",
   "nutrition_plan_daily_targets",
   "nutrition_plans",
   "training_events",
@@ -150,7 +149,6 @@ const CASCADE_WITNESS_TABLES: readonly string[] = [
   "content_assignments",
   "check_in_reminders",
   "nutrition_weekly_summaries",
-  "training_logs",
 ];
 
 /**

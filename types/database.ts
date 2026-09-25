@@ -1722,41 +1722,6 @@ export type Database = {
           },
         ]
       }
-      daily_logs: {
-        Row: {
-          client_id: string
-          created_at: string
-          date: string
-          id: string
-          notes: string | null
-          updated_at: string
-        }
-        Insert: {
-          client_id: string
-          created_at?: string
-          date: string
-          id?: string
-          notes?: string | null
-          updated_at?: string
-        }
-        Update: {
-          client_id?: string
-          created_at?: string
-          date?: string
-          id?: string
-          notes?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "daily_logs_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       exercise_logs: {
         Row: {
           completed: boolean | null
@@ -1928,7 +1893,6 @@ export type Database = {
           carbs_g: number | null
           client_id: string
           created_at: string
-          daily_log_id: string
           date: string
           fat_g: number | null
           id: string
@@ -1941,7 +1905,6 @@ export type Database = {
           carbs_g?: number | null
           client_id: string
           created_at?: string
-          daily_log_id: string
           date: string
           fat_g?: number | null
           id?: string
@@ -1954,7 +1917,6 @@ export type Database = {
           carbs_g?: number | null
           client_id?: string
           created_at?: string
-          daily_log_id?: string
           date?: string
           fat_g?: number | null
           id?: string
@@ -1968,20 +1930,6 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "nutrition_logs_daily_log_id_fkey"
-            columns: ["daily_log_id"]
-            isOneToOne: true
-            referencedRelation: "daily_logs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "nutrition_logs_daily_log_id_fkey"
-            columns: ["daily_log_id"]
-            isOneToOne: true
-            referencedRelation: "daily_logs_full"
             referencedColumns: ["id"]
           },
           {
@@ -2654,74 +2602,6 @@ export type Database = {
           },
         ]
       }
-      training_logs: {
-        Row: {
-          client_id: string
-          created_at: string
-          daily_log_id: string
-          date: string
-          id: string
-          trained: boolean | null
-          training_data: Json | null
-          training_plan_id: string | null
-          training_session_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          client_id: string
-          created_at?: string
-          daily_log_id: string
-          date: string
-          id?: string
-          trained?: boolean | null
-          training_data?: Json | null
-          training_plan_id?: string | null
-          training_session_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          client_id?: string
-          created_at?: string
-          daily_log_id?: string
-          date?: string
-          id?: string
-          trained?: boolean | null
-          training_data?: Json | null
-          training_plan_id?: string | null
-          training_session_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "training_logs_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "training_logs_daily_log_id_fkey"
-            columns: ["daily_log_id"]
-            isOneToOne: true
-            referencedRelation: "daily_logs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "training_logs_daily_log_id_fkey"
-            columns: ["daily_log_id"]
-            isOneToOne: true
-            referencedRelation: "daily_logs_full"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "training_logs_training_plan_id_fkey"
-            columns: ["training_plan_id"]
-            isOneToOne: false
-            referencedRelation: "training_plans"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       training_plans: {
         Row: {
           ai_response_raw: string | null
@@ -2930,7 +2810,6 @@ export type Database = {
         Row: {
           client_id: string
           created_at: string
-          daily_log_id: string
           date: string
           energy: number | null
           id: string
@@ -2943,7 +2822,6 @@ export type Database = {
         Insert: {
           client_id: string
           created_at?: string
-          daily_log_id: string
           date: string
           energy?: number | null
           id?: string
@@ -2956,7 +2834,6 @@ export type Database = {
         Update: {
           client_id?: string
           created_at?: string
-          daily_log_id?: string
           date?: string
           energy?: number | null
           id?: string
@@ -2972,20 +2849,6 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "wellness_logs_daily_log_id_fkey"
-            columns: ["daily_log_id"]
-            isOneToOne: true
-            referencedRelation: "daily_logs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "wellness_logs_daily_log_id_fkey"
-            columns: ["daily_log_id"]
-            isOneToOne: true
-            referencedRelation: "daily_logs_full"
             referencedColumns: ["id"]
           },
         ]
@@ -3103,37 +2966,6 @@ export type Database = {
             columns: ["voided_by"]
             isOneToOne: false
             referencedRelation: "coaches"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      daily_logs_full: {
-        Row: {
-          calories_consumed: number | null
-          carbs_g: number | null
-          client_id: string | null
-          created_at: string | null
-          date: string | null
-          energy: number | null
-          fat_g: number | null
-          id: string | null
-          mood: number | null
-          notes: string | null
-          protein_g: number | null
-          sleep: number | null
-          soreness: number | null
-          stress: number | null
-          trained: boolean | null
-          training_data: Json | null
-          training_session_id: string | null
-          updated_at: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "daily_logs_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]
@@ -3303,13 +3135,6 @@ export type Database = {
           name: string
         }[]
       }
-      get_client_streak: {
-        Args: { p_client_id: string; p_start_date: string; p_today: string }
-        Returns: {
-          current_streak: number
-          longest_streak: number
-        }[]
-      }
       get_exercise_progression_window: {
         Args: {
           p_client_id: string
@@ -3424,31 +3249,6 @@ export type Database = {
           metric: string
         }[]
       }
-      upsert_daily_log_atomic:
-        | {
-            Args: {
-              p_client_id: string
-              p_date: string
-              p_notes: string
-              p_nutrition: Json
-              p_training: Json
-              p_wellness: Json
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              p_client_id: string
-              p_date: string
-              p_notes: string
-              p_nutrition: Json
-              p_nutrition_plan_id?: string
-              p_training: Json
-              p_training_plan_id?: string
-              p_wellness: Json
-            }
-            Returns: string
-          }
       void_measurement: {
         Args: {
           p_actor: string

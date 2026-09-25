@@ -7,11 +7,9 @@ import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 type DailyLogsTrainingSummaryProps = {
   /**
    * The period's training, counted server-side by the ONE summariser
-   * (`lib/training-adherence.ts`). Nothing is counted here: this block used to
-   * fall back to an aggregation over `training_logs`, a table nothing has
-   * written since the Daily Pulse was retired, so the fallback could only ever
-   * report zero. `null` on a wire that carries no stats — the figures then read
-   * as a dash rather than as nothing done.
+   * (`lib/training-adherence.ts`). Nothing is counted here. `null` on a wire
+   * that carries no stats — the figures then read as a dash rather than as
+   * nothing done.
    */
   trainingPeriodStats: CheckInTrainingPeriodStats | null;
   /**

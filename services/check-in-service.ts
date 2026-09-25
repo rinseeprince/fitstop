@@ -66,7 +66,7 @@ function measurementValuesFromForm(formData: CheckInFormData): MeasurementValues
 // Session 6.4: daily logs are the single source of truth. The check-in's weekly
 // snapshot columns (workouts_completed, nutrition_days_on_target,
 // adherence_percentage, mood/energy/sleep/stress) and its period_snapshot are
-// DERIVED server-side from the spine for the check-in's period — never read
+// DERIVED server-side from the client's logs for the check-in's period — never read
 // from the form body — in ONE computation: the nutrition columns and the
 // frozen nutrition rows come from the same kernel run, so they cannot
 // disagree. The columns stay populated so the AI's previous-check-in trend

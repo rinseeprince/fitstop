@@ -29,7 +29,6 @@ import {
   getExerciseProgressionSeries,
   getExercisePRs,
 } from "@/services/exercise-analytics-service";
-import { calculateStreaks } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getClientProgressData } from "@/services/client-portal-progress";
 
@@ -108,13 +107,6 @@ async function main() {
     "services/client-portal-progress.ts:160",
     `getClientProgressData(PERF_CLIENT_ID, 90)`,
     () => getClientProgressData(PERF_CLIENT_ID, 90),
-  ));
-
-  baselines.push(await measure(
-    "calculateStreaks",
-    "services/daily-logs-service.ts:285",
-    `calculateStreaks(PERF_CLIENT_ID)`,
-    () => calculateStreaks(PERF_CLIENT_ID),
   ));
 
   // Session 6: the block-facts fan-out and the paged plan-notes read. Both are
@@ -214,7 +206,8 @@ type FixtureCounts = {
   session_logs: number;
   exercise_logs: number;
   set_logs: number;
-  daily_logs: number;
+  wellness_logs: number;
+  nutrition_logs: number;
   check_ins: number;
   daily_habit_logs: number;
   client_measurements: number;
@@ -227,7 +220,8 @@ async function fetchFixtureCounts(): Promise<FixtureCounts> {
     session_logs: 0,
     exercise_logs: 0,
     set_logs: 0,
-    daily_logs: 0,
+    wellness_logs: 0,
+    nutrition_logs: 0,
     check_ins: 0,
     daily_habit_logs: 0,
     client_measurements: 0,
@@ -239,7 +233,8 @@ async function fetchFixtureCounts(): Promise<FixtureCounts> {
     ["session_logs", supabaseAdmin.from("session_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["exercise_logs", supabaseAdmin.from("exercise_logs").select("id, session_logs!inner(client_id)", { count: "exact", head: true }).eq("session_logs.client_id", c)],
     ["set_logs", supabaseAdmin.from("set_logs").select("id, exercise_logs!inner(session_logs!inner(client_id))", { count: "exact", head: true }).eq("exercise_logs.session_logs.client_id", c)],
-    ["daily_logs", supabaseAdmin.from("daily_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
+    ["wellness_logs", supabaseAdmin.from("wellness_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
+    ["nutrition_logs", supabaseAdmin.from("nutrition_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["check_ins", supabaseAdmin.from("check_ins").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["daily_habit_logs", supabaseAdmin.from("daily_habit_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["client_measurements", supabaseAdmin.from("client_measurements_live").select("id", { count: "exact", head: true }).eq("client_id", c)],
@@ -289,7 +284,8 @@ function buildMarkdown(baselines: FunctionBaseline[], fixtures: FixtureCounts): 
   lines.push(`| session_logs | ${fixtures.session_logs} |`);
   lines.push(`| exercise_logs | ${fixtures.exercise_logs} |`);
   lines.push(`| set_logs | ${fixtures.set_logs} |`);
-  lines.push(`| daily_logs | ${fixtures.daily_logs} |`);
+  lines.push(`| wellness_logs | ${fixtures.wellness_logs} |`);
+  lines.push(`| nutrition_logs | ${fixtures.nutrition_logs} |`);
   lines.push(`| check_ins | ${fixtures.check_ins} |`);
   lines.push(`| daily_habit_logs | ${fixtures.daily_habit_logs} |`);
   lines.push(`| client_measurements | ${fixtures.client_measurements} |`);
@@ -309,7 +305,6 @@ function buildMarkdown(baselines: FunctionBaseline[], fixtures: FixtureCounts): 
   lines.push("");
   lines.push(`- **\`check_ins.client_id\` is TEXT, not UUID.** Migration 023 artifact; everywhere else UUID. Worth a typed-FK migration eventually.`);
   lines.push(`- **3.6 resolved:** \`getClientExerciseList\` / \`getExerciseProgressionSeries\` / \`getExercisePRs\` now go through SQL aggregation RPCs (migration 094) — reads are result-bounded, not history-bounded. The prior \`PostgREST 1000-row cap\` followup is gone with the multi-call fetch pattern.`);
-  lines.push(`- **3.7 resolved:** \`calculateStreaks\` no longer reads the \`daily_logs_full\` view + runs an O(D²) Node loop; it now calls the \`get_client_streak\` gaps-and-islands RPC (migration 095) over the \`daily_logs\` spine via the \`(client_id, date DESC)\` index, returning two integers (result-bounded, not history-bounded).`);
   lines.push("");
 
   return lines.join("\n");

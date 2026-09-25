@@ -88,8 +88,7 @@ export const getCheckInPeriodAdherence = (
 /**
  * The per-workout training detail for a check-in's own reporting period — the
  * same rows the client's wizard receives, read back for one submitted
- * check-in. There is no stored per-session table: the legacy completions table
- * was dropped in Session 6.4 (migration 098), and the spine
+ * check-in. There is no stored per-session table: the calendar
  * (`training_events` + its logs) is the only source.
  *
  * The window comes from `resolveCheckInReportingPeriod`, which is also what the

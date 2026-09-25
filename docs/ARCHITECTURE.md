@@ -37,6 +37,10 @@ coaches
         │     │     └── training_exercise_groups  -- the session's groups, in order: format + settings (mig 178)
         │     │           └── training_exercises  -- its group and its place in it; exercise_id FK to exercises catalog
         │     └── training_events        -- one row per session per date, a day's sessions in order (calendar SOT; training_plan_id FK is SET NULL)
+        │           └── session_logs     -- the workout's log, keyed to its event (mig 097)
+        │                 ├── session_log_group_scores  -- a timed group's score on the log: rounds + reps, or a finish time (mig 186)
+        │                 └── exercise_logs
+        │                       └── set_logs   -- per-set actuals: every measure a coach can prescribe, as real columns (mig 184)
         ├── nutrition_plans           -- DATE-RANGED VERSIONS, each a PLACEMENT with a stored end (mig 166); a day's target is COMPUTED from the version covering it -- there is no day table; the save's coach_note rides the row (mig 172)
         │     └── nutrition_plan_daily_targets  -- the version's per-weekday grid, the numbers a computed day takes verbatim
         ├── nutrition_day_edits       -- the coach's per-day override, one row per (client, date) (mig 169)
@@ -44,15 +48,9 @@ coaches
         ├── exercises (catalog)          -- two-tier: global (coach_id=NULL) + coach-specific; every row carries its exercise_type (mig 185)
         ├── daily_habits
         │
-        ├── daily_logs (spine)        -- one per client per day
-        │     ├── wellness_logs
-        │     ├── nutrition_logs         -- what the client ate; the target is computed (see "A logged day carries no target")
-        │     ├── training_logs
-        │     │     └── session_logs
-        │     │           ├── session_log_group_scores  -- a timed group's score on the log: rounds + reps, or a finish time (mig 186)
-        │     │           └── exercise_logs
-        │     │                 └── set_logs   -- per-set actuals: every measure a coach can prescribe, as real columns (mig 184)
-        │     └── daily_habit_logs
+        ├── wellness_logs             -- one row per client per day: the five scores; UNIQUE (client_id, date) (mig 202)
+        ├── nutrition_logs            -- one row per client per day: what the client ate; the target is computed (see "A logged day carries no target"); UNIQUE (client_id, date)
+        ├── daily_habit_logs          -- one row per habit per day, keyed by client and date
         │
         ├── check_in_forms            -- the CLIENT's own form (at most one; no row = the full default form)
         ├── check_ins                 -- weekly structured submissions, each frozen at Send in the copy it saves (sent_snapshot, mig 195)
@@ -197,23 +195,20 @@ Who triggers a recompute: `appendMeasurements`, when a row it wrote is the clien
 
 ---
 
-## Daily Logs (spine + child tables)
+## Daily logs (the day-form)
 
-Daily tracking data is split into a spine table and domain-specific child tables:
+A client's day-form is two tables, each one row per client per day, found by `(client_id, date)` and by nothing else:
 ```
-daily_logs (spine)         -- id, client_id, date, notes
-  ├── wellness_logs        -- mood, energy, sleep, stress, soreness (1:1 via daily_log_id FK)
-  ├── nutrition_logs       -- what the client ate (1:1 via daily_log_id FK); the day's target and verdict are computed at read time (migration 173)
-  ├── training_logs        -- trained, training_session_id, training_data JSONB (legacy/orphaned) (1:1 via daily_log_id FK)
-  └── daily_habit_logs     -- per-habit completion (1:many, FK to daily_habits)
+wellness_logs        -- mood, energy, sleep, stress, soreness
+nutrition_logs       -- what the client ate; the day's target and verdict are computed at read time (migration 173)
 ```
-- **Writes**: per-card independent writes. Each per-card endpoint (`PATCH /api/client/daily-logs/[date]/nutrition`, `/wellness`, and similar) ensures the day's `daily_logs` spine row exists and upserts only its own child table. (The `upsert_daily_log_atomic()` RPC remains in the DB as an unused function — its removal is separate schema work — and must not be used for new writes; since migration 173 its body names food-log columns that no longer exist, so it cannot run at all.)
-- **Domain-specific reads** query child tables directly (e.g. the Wellness tab's history, and the Journey's Wellness pane — `GET /api/clients/[id]/wellness-series`, one value per score per day through `wellnessDayValues`, `lib/wellness/day-values.ts` — query `wellness_logs`, not the view)
-- **Cross-domain reads** assemble a day from `wellness_logs` and `nutrition_logs` by client and date — `getDailyLogs` / `getTodayLog` (`services/daily-logs-service.ts`) for the check-in context, the check-in submit, the review input and the coach's day-logs read, and the attention feed's two cross-client reads merged per client and date; nothing reads the view
-- Each child table has `client_id` and `date` columns for direct querying without joining the spine
-- The `DailyLog` TypeScript type remains flat. The split is DB + service layer only. Hooks, components, and utils are unaffected
+Each carries `UNIQUE (client_id, date)` (migration 202): the upsert's conflict target and every reader's key. There is no parent row and no child id. `daily_habit_logs` sits beside them, one row per habit per day, keyed the same way.
+- **Writes**: per-card, one statement each. `PATCH /api/client/daily-logs/[date]/wellness` and `…/nutrition` (`services/daily-log-card-service.ts`) each upsert their own table on `client_id,date` and read the assembled day back for the response
+- **Domain-specific reads** query one table directly (e.g. the Wellness tab's history, and the Journey's Wellness pane — `GET /api/clients/[id]/wellness-series`, one value per score per day through `wellnessDayValues`, `lib/wellness/day-values.ts` — read `wellness_logs`)
+- **Cross-domain reads** assemble a day from `wellness_logs` and `nutrition_logs` by client and date — `getDailyLogs` / `getTodayLog` (`services/daily-logs-service.ts`) for the check-in context, the check-in submit, the review input and the coach's day-logs read, and the attention feed's two cross-client reads merged per client and date. A date is listed when either table holds a row on it
+- **The wire is the day, not a row.** `DailyLog` (`types/daily-log.ts`) is flat: `id` is the date, stable and unique per client, and `createdAt` / `updatedAt` are the earliest `created_at` and the latest `updated_at` of the day's rows
 
-**A logged day is derived, never stored, and never read off the spine.** "Did the client log today?" has one answer, `loggedDays` in `lib/logged-days.ts`: a day with any log the client made themselves, on their own calendar — a nutrition entry (any consumed value), a wellness reading (any of the five), a habit log (ticked or unticked, since either is the client acting), a workout log (a `training_event` whose status is `completed` — logged, at any quality) or a measurement they logged in the app (a `client_measurements_live` row with `source = 'client_log'`, empty until the client app can write one and read from the start so the definition cannot lose a source). One is enough. **Coach entries, intake readings and the check-in submission do not count** (owner decision D11, 2026-09-02): the question is daily engagement, not the coach's work or the weekly report. The spine row is the parent of the client's day-form (wellness, nutrition, the day note) and not an activity flag — workouts and habits never create one, so counting spine rows read a client who only trained as silent, and `lib/logged-days-ownership.test.ts` forbids it. The source predicates live beside the kernel, spelled once; the two readers that hold the rows assemble the five sources from them and ask the kernel: the Overview adherence kernel (`services/client-adherence-service.ts` — `AdherenceSummary.loggedDates`, which the habits rail reads for Missed versus No log and the check-in review's header prints over `dates`) and the attention feed (`loggedDaysFor` in `lib/attention-feed-helpers.ts`, for the logging-gap and no-engagement alerts).
+**A logged day is derived, never stored.** "Did the client log today?" has one answer, `loggedDays` in `lib/logged-days.ts`: a day with any log the client made themselves, on their own calendar — a nutrition entry (any consumed value), a wellness reading (any of the five), a habit log (ticked or unticked, since either is the client acting), a workout log (a `training_event` whose status is `completed` — logged, at any quality) or a measurement they logged in the app (a `client_measurements_live` row with `source = 'client_log'`, empty until the client app can write one and read from the start so the definition cannot lose a source). One is enough. **Coach entries, intake readings and the check-in submission do not count** (owner decision D11, 2026-09-02): the question is daily engagement, not the coach's work or the weekly report. A day-form row is not an activity flag — workouts and habits write none, so a count of day-form rows reads a client who only trained as silent, and `lib/logged-days-ownership.test.ts` forbids it. The source predicates live beside the kernel, spelled once; the two readers that hold the rows assemble the five sources from them and ask the kernel: the Overview adherence kernel (`services/client-adherence-service.ts` — `AdherenceSummary.loggedDates`, which the habits rail reads for Missed versus No log and the check-in review's header prints over `dates`) and the attention feed (`loggedDaysFor` in `lib/attention-feed-helpers.ts`, for the logging-gap and no-engagement alerts).
 
 ---
 
@@ -378,7 +373,7 @@ The DTO is `NutritionEvent` (`types/check-in.ts`): `id` is the date (stable and 
 
 **What keeps a derived past stable: a version — its grid and its two surplus settings — is never edited in place once its first day has passed.** Ended plans keep their windows, edits before today are refused, the same-day replace-in-place can only touch a version starting today, and a coach can neither move a session off a past day nor put one on it (see "Calendar operations"). The one act that can still change a past day is the client's own: a session they have not logged may move within the week their current check-in covers (`applyClientLayout`, `services/training-event-layout-service.ts` — owner, 2026-08-26, "backfill is important", kept as the exception on 2026-09-23), and a past day of that week takes or loses that session's surplus with it; once their check-in closes the week, nothing moves there. The orchestrator's past-date belt is the pin; a future "adjust the running plan's numbers" feature must mint a version, as every save does today.
 
-**A logged day carries no target** (owner decision 2026-09-11): the food log holds what the client ate and nothing else — the spine link, the four consumed columns, the covering version's stamp when known — so the target for any day is the computed day, and the coach's change to today and a session landing on a logged day reach every reader at once. The history table, the calendar, the client's day, the check-in week, the Overview rail and the dashboard feed all take the target from the day reader and derive the verdict — hit / partial / missed, the surplus or deficit — from what was eaten against it (`calculateNutritionAdherence` / `calculateCalorieSurplusDeficit`, `lib/nutrition-verdict.ts` — pure, re-exported by `services/daily-logs-service.ts`). The check-in's figures are the nutrition kernel (`utils/nutrition-period-summary.ts`) over those days — a logged day with no target is counted as logged and is in no ratio — and the check-in submit is the one freeze (`period_snapshot`, `nutrition_days_on_target`). Every client wire keeps its shape — `{ consumed, target, source }` on the day GET; `targetCalories` / `nutritionAdherence` / `calorieSurplusDeficit` on `DailyLog` — now derived; the browser and React Native compute nothing.
+**A logged day carries no target** (owner decision 2026-09-11): the food log holds what the client ate and nothing else — the four consumed columns and the covering version's stamp when known — so the target for any day is the computed day, and the coach's change to today and a session landing on a logged day reach every reader at once. The history table, the calendar, the client's day, the check-in week, the Overview rail and the dashboard feed all take the target from the day reader and derive the verdict — hit / partial / missed, the surplus or deficit — from what was eaten against it (`calculateNutritionAdherence` / `calculateCalorieSurplusDeficit`, `lib/nutrition-verdict.ts` — pure, re-exported by `services/daily-logs-service.ts`). The check-in's figures are the nutrition kernel (`utils/nutrition-period-summary.ts`) over those days — a logged day with no target is counted as logged and is in no ratio — and the check-in submit is the one freeze (`period_snapshot`, `nutrition_days_on_target`). Every client wire keeps its shape — `{ consumed, target, source }` on the day GET; `targetCalories` / `nutritionAdherence` / `calorieSurplusDeficit` on `DailyLog` — now derived; the browser and React Native compute nothing.
 
 ### Read priority for nutrition targets
 
@@ -396,11 +391,10 @@ The **plan-based "typical week" / client program-card path** — `buildDailyTarg
 ## Training Completion Hierarchy
 
 ```
-training_logs            -- did the client train today? (1:1 per day, child of daily_logs)
-  └── session_logs       -- one row per logged session, keyed to a training_event (renamed from client_session_completions)
-        ├── session_log_group_scores  -- a timed group's score: rounds + reps, or a finish time (migration 186)
-        └── exercise_logs    -- per-exercise metadata (renamed from client_exercise_completions)
-              └── set_logs   -- per-set actuals (added in migration 090)
+session_logs             -- one row per logged session, keyed to a training_event (renamed from client_session_completions)
+  ├── session_log_group_scores  -- a timed group's score: rounds + reps, or a finish time (migration 186)
+  └── exercise_logs          -- per-exercise metadata (renamed from client_exercise_completions)
+        └── set_logs         -- per-set actuals (added in migration 090)
 ```
 ### Event-keyed identity (migration 097, Session 5.2)
 - `session_logs` is keyed by **`training_event_id`** (FK → `training_events`, `ON DELETE SET NULL`), with a partial unique index `session_logs_training_event_id_key ON (training_event_id) WHERE training_event_id IS NOT NULL`. The old session-week composite `UNIQUE(client_id, training_session_id, week_start_date)` is **dropped** — it silently overwrote two events that shared a session in one week.
@@ -953,7 +947,7 @@ The client portal at `/client` is a day-centric, event-driven interface: the cli
 1. **Day-centric, URL-driven.** Home is `/client?date=YYYY-MM-DD` (today by default). Date lives in the URL so back/forward and deep links work. Prev/next via arrows + horizontal swipe on touch.
 2. **Event-keyed, not session-keyed.** Training reads/writes key on `training_events.id`, not `training_session_id`. This fixes the edited-clone bleed that gave the check-in an ambiguous "sessions completed" count.
 3. **Per-card independent saves.** No monolithic "Log Day" button. Each detail page saves only its own domain. The old Daily Pulse "lifted state / no auto-save / single atomic write" rule is retired.
-4. **Per-table writes.** Wellness and nutrition each write the `daily_logs` spine and their own child table by client and date, habits write `daily_habit_logs` by client and date; the attention feed and the check-in context read `wellness_logs` and `nutrition_logs` by client and date.
+4. **Per-table writes.** Wellness and nutrition each write their own table by client and date, habits write `daily_habit_logs` by client and date; the attention feed and the check-in context read `wellness_logs` and `nutrition_logs` by client and date.
 5. **Render-ready payloads.** The API emits display-ready, locale-neutral data (ISO dates on the wire, server-side aggregation/summaries) and speaks **canonical kg/cm** — there is no per-record unit on the wire and no conversion at the API boundary. The client renders in the viewer's own unit at the presentation layer, through `utils/unit-conversions.ts` with the preference from `useUnits()`: `formatWeight` for body weight, `formatLoad` for a barbell load (it snaps to a loadable increment), `formatLength` for girths, `formatHeight` for height. See `CONVENTIONS.md §20 Units`. (The old `formatWeight(weightKg, unitPreference)` in `utils/nutrition-helpers.ts` is deleted, along with that module's other conversion helpers.)
 
 ### Page / navigation structure
@@ -970,8 +964,8 @@ A persistent bottom tab bar (`components/client-portal/nav/client-nav.tsx`, `Cli
 
 Reads/writes the existing day-keyed tables — no portal-specific schema:
 - **Targets (read):** `training_events` (one row per session per date); nutrition targets computed per date from the covering version (see "The window is the row").
-- **Daily-logs spine + children (write):** `daily_logs` → `wellness_logs`, `nutrition_logs`, `training_logs`, `daily_habit_logs`.
-- **Training completion:** `training_logs` → `session_logs` → `exercise_logs` → `set_logs` (per-set actuals). `prescribed_session_snapshot` / `prescribed_exercise_snapshot` JSONB preserve history when plans change.
+- **Client logs (write):** `wellness_logs`, `nutrition_logs`, `daily_habit_logs` — each by `(client, date)`.
+- **Training completion:** `session_logs` (keyed to `training_events`) → `exercise_logs` → `set_logs` (per-set actuals). `prescribed_session_snapshot` / `prescribed_exercise_snapshot` JSONB preserve history when plans change.
 
 ### Database access (which client, and why)
 
@@ -1185,7 +1179,7 @@ Wellness/tracking/activity triggers evaluate across all coach's clients:
 - `services/attention-feed-service.ts` - aggregates triggers into prioritized feed
 - `components/dashboard/needs-attention-feed.tsx` - renders on coach dashboard via SWR
 
-The nine wellness/tracking/activity triggers are pattern detectors over existing `daily_logs`, so they can only fire for clients who have logged. `evaluateAndSortTriggers` (`lib/attention-feed-helpers.ts`) therefore evaluates any client with **prescribed work** (training events, habits, or a plan window on either track) even before their first daily log — it skips only clients with nothing logged AND nothing prescribed. `evaluateNoEngagement` is one *absence* signal: it flags an active client who has prescribed work but no logged day within the silence window, past an activation grace period. Both it and the logging-gap trigger read the one derived definition of a logged day (see "Daily Logs"), assembled per client by `loggedDaysFor` from the rows the feed already reads plus the client's own measurement logs, so a client who only trains or only ticks habits is never read as silent. This is why a never-logged client with an assigned plan surfaces instead of being silently counted "on track".
+The nine wellness/tracking/activity triggers are pattern detectors over the client's wellness and food logs, so they can only fire for clients who have logged. `evaluateAndSortTriggers` (`lib/attention-feed-helpers.ts`) therefore evaluates any client with **prescribed work** (training events, habits, or a plan window on either track) even before their first daily log — it skips only clients with nothing logged AND nothing prescribed. `evaluateNoEngagement` is one *absence* signal: it flags an active client who has prescribed work but no logged day within the silence window, past an activation grace period. Both it and the logging-gap trigger read the one derived definition of a logged day (see "Daily Logs"), assembled per client by `loggedDaysFor` from the rows the feed already reads plus the client's own measurement logs, so a client who only trains or only ticks habits is never read as silent. This is why a never-logged client with an assigned plan surfaces instead of being silently counted "on track".
 
 **A prescription that stops is the other absence signal** (`evaluatePrescriptionEnding`, `lib/prescription-triggers.ts`; alert types `nutrition_ending` / `training_ending`, one per track so each dismisses on its own). Past a version's end there are deliberately no days — the client's meals save with no target to judge them — and no surface told the coach. The feed reads every active nutrition version's window (`getNutritionWindowsForClients`) and every live program's window (`getLiveProgramWindowsForClients` — a plain read of each row's window, migration 167), two chunked cross-client reads that degrade like the habits and events reads. `findPrescriptionGap` merges a client's windows into stretches and walks from the feed's coach-local today to the next uncovered day; a plan queued to start the day after the current one ends is continuous coverage. **HIGH** once the stop has happened with nothing queued — "No nutrition targets from 16 Feb", anchored on today so it returns daily until the coach sets targets, places a program or deletes the plan (a delete archives on both tracks, and both readers filter archived out). **MEDIUM** while the stop is inside the final `PLAN_ENDING_LEAD_DAYS` (7, the end day included — the same lead the Overview's block-ending row reads), whether or not a plan is queued after the gap: "Nutrition targets end 13 Mar, nothing until 20 Mar". Anchored on the lead window's first day, fixed per end date, so one dismissal covers the whole heads-up and a later end date brings it back. **Nothing** during a gap that has a plan queued after it — a holiday or a rest period the coach laid out (owner, 2026-09-10) — and nothing for a client whose every window is still ahead, a queued first plan being setup rather than a stop. A client with blocks gets the block named (owner, 2026-09-10), from one more chunked read (`getBlockWindowsForClients`, non-archived only) that is context and never a bound: the HIGH names the block the client is sitting in with nothing ("…, in Cut"); the MEDIUM names the block the last day falls in — "the last day of Build" when the prescription ends with its block, "inside Build" when it stops before its block does — and, when nothing is queued on the track and a block follows, "and Cut has no targets set" / "has no program placed", the block card's own words. No block covering the day, plain form. The message carries the dates and is never parsed: both copy switches hand it back and the Overview row is one line. Every calendar writer clears the Overview's two reads (`useClearClientOverview`, `hooks/use-client-overview.ts`, the `/api/clients/[id]/overview` area) and this feed (`useClearAttentionFeed`, `hooks/use-attention-feed.ts`) on success — cleared rather than revalidated, because both render definite answers and SWR would serve the stale one for the whole refetch; `hooks/use-client-overview.test.ts` scans the tree for the writers.
 
@@ -1392,14 +1386,6 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 - `/api/client/*` - client-side routes (use `clientApiRateLimit`, `getAuthenticatedClientId`)
 - `/api/check-in/[id]/*` - coach-side per-check-in routes (detail, comparison, review, AI regenerate) behind `requireCoachOwnsCheckIn` (the review POST spells the same chain inline: `getAuthenticatedCoachId` + ownership); `apiRateLimit`, with the coach-keyed `aiRateLimit` on the regenerate. Not public since migration 142 — `checkInRateLimit` has no live route today; it survives only as `requireClientAuth`'s uncalled `rateLimit: "checkIn"` tier
 - `/api/dashboard/*` - coach dashboard aggregation routes
-
----
-
-## JSONB Conventions
-
-- `training_data` / `activityStatuses` were the Daily Pulse training UI cache (now deleted). These shapes are no longer written; they persist only as dead data on legacy `training_logs` rows.
-- (Legacy shape, for anyone inspecting old rows) `activityStatuses` is `Record<string, { completed, activityName, estimatedCalories }>` — read the `.completed` field, never use the object as a truthy check.
-- `training_data` JSONB on `training_logs` was the Daily Pulse UI restore cache; it is now **orphaned** — no current code reads or writes it. The **source of truth** for training completion is `session_logs` + `exercise_logs` + `set_logs` (post migration 090; per-set actuals were inline scalars on `exercise_logs` before).
 
 ---
 

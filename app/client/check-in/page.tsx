@@ -118,7 +118,7 @@ export default function ClientCheckInPage() {
       // authority; this one is courtesy.
       //
       // The server DERIVES the week's training and nutrition figures and
-      // mood…stress from the spine — the form only sends the qualitative
+      // mood…stress from the client's logs — the form only sends the qualitative
       // fields it owns.
       //
       // The form holds the client's OWN display units while it is being filled

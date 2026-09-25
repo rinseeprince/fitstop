@@ -81,8 +81,8 @@ export async function GET(
     const { limit, offset } = pagination;
 
     // The history range starts at the client's earliest training_event. The
-    // schedule is built from the calendar's own workouts — each with its log
-    // embedded — never the legacy daily_logs + week_start_date derivation.
+    // schedule is built from the calendar's own workouts, each with its log
+    // embedded.
     const rangeStart = await getEarliestEventDate(clientId);
 
     // Nothing on the calendar → nothing to show.

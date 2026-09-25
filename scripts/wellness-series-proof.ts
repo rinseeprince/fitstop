@@ -101,7 +101,7 @@ async function createClient(name: string): Promise<string> {
   return data.id;
 }
 
-async function countRows(table: "wellness_logs" | "daily_logs", clientId: string): Promise<number | null> {
+async function countRows(table: "wellness_logs", clientId: string): Promise<number | null> {
   const { count } = await supabaseAdmin
     .from(table)
     .select("id", { count: "exact", head: true })
@@ -164,10 +164,9 @@ async function partTwo(): Promise<void> {
   } finally {
     const { error } = await supabaseAdmin.from("clients").delete().eq("id", clientId);
     const wellnessAfter = await countRows("wellness_logs", clientId);
-    const spineAfter = await countRows("daily_logs", clientId);
     check(
-      `cascade: the client's wellness rows (${wellnessAfter ?? "?"}) and spine rows (${spineAfter ?? "?"}) go with the client`,
-      !error && wellnessAfter === 0 && spineAfter === 0,
+      `cascade: the client's wellness rows (${wellnessAfter ?? "?"}) go with the client`,
+      !error && wellnessAfter === 0,
       error?.message
     );
   }
