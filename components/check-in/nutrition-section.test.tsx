@@ -4,8 +4,45 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NutritionSection } from "./nutrition-section";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
+import type { NutritionDay } from "@/types/schedule";
 
 type Nutrition = CheckInPeriodAdherence["nutrition"];
+
+const row = (
+  date: string,
+  status: NutritionDay["status"],
+  eaten: [number, number, number, number] | null,
+  target: [number, number, number, number] | null
+): NutritionDay => ({
+  date,
+  dayOfWeek: "monday",
+  status,
+  targetCalories: target?.[0] ?? null,
+  targetProteinG: target?.[1] ?? null,
+  targetCarbsG: target?.[2] ?? null,
+  targetFatG: target?.[3] ?? null,
+  actualCalories: eaten?.[0] ?? null,
+  actualProteinG: eaten?.[1] ?? null,
+  actualCarbsG: eaten?.[2] ?? null,
+  actualFatG: eaten?.[3] ?? null,
+});
+
+const TARGET: [number, number, number, number] = [2343, 170, 229, 83];
+
+/**
+ * The smoke week's frozen rows (Sat 5 – Fri 11 Sep): six days within 50 kcal
+ * of 2,343, and Friday logged with no target. Their sums are the summary's
+ * figures below — 14,060 kcal on the targeted days, 2,309 a day over seven.
+ */
+const WEEK: NutritionDay[] = [
+  row("2026-09-05", "hit", [2351, 165, 225, 79], TARGET),
+  row("2026-09-06", "hit", [2320, 168, 231, 84], TARGET),
+  row("2026-09-07", "hit", [2368, 171, 228, 82], TARGET),
+  row("2026-09-08", "hit", [2339, 174, 234, 87], TARGET),
+  row("2026-09-09", "hit", [2301, 169, 222, 81], TARGET),
+  row("2026-09-10", "hit", [2381, 173, 232, 86], TARGET),
+  row("2026-09-11", "no_target", [2105, 176, 198, 61], null),
+];
 
 /**
  * The smoke week (owner, 2026-09-11): six days logged on target, and today
@@ -15,6 +52,7 @@ type Nutrition = CheckInPeriodAdherence["nutrition"];
 function summary(overrides: Partial<Nutrition> = {}): Nutrition {
   return {
     rail: [],
+    days: WEEK,
     periodDays: 7,
     loggedDays: 7,
     targetedDays: 6,
@@ -131,12 +169,91 @@ describe("the figures come from the kernel, over one day set each", () => {
   });
 });
 
+describe("the week day by day — the copy's rows, worded from their frozen standing", () => {
+  it("lists one row per frozen day under the summary, in the copy's order, each with its word and its eaten and target kcal", () => {
+    const { container } = render(<NutritionSection nutrition={summary()} />);
+    const text = container.textContent ?? "";
+
+    // Seven rows, oldest first, after the averages they add up to.
+    expect(screen.getAllByText("On target")).toHaveLength(6);
+    expect(screen.getByText("No target")).toBeInTheDocument();
+    const dates = ["5 Sep", "6 Sep", "7 Sep", "8 Sep", "9 Sep", "10 Sep", "11 Sep"].map((d) => text.indexOf(d));
+    expect(dates.every((at) => at > text.indexOf("Avg macros / day"))).toBe(true);
+    expect([...dates].sort((a, b) => a - b)).toEqual(dates);
+    expect(screen.getByText("Sat")).toBeInTheDocument();
+    expect(screen.getByText("Fri")).toBeInTheDocument();
+    // What was eaten of the target, as the row's own figures.
+    expect(text).toContain("2,351 of 2,343 kcal");
+    expect(text).toContain("2,381 of 2,343 kcal");
+  });
+
+  it("shows each macro eaten against its target, in the grammar of the averages above", () => {
+    const { container } = render(<NutritionSection nutrition={summary()} />);
+    const text = container.textContent ?? "";
+
+    expect(text).toContain("Protein 165g / 170g · Carbs 225g / 229g · Fats 79g / 83g");
+    expect(text).toContain("Protein 173g / 170g · Carbs 232g / 229g · Fats 86g / 83g");
+  });
+
+  it("words the day from the standing the check-in froze, never from its numbers", () => {
+    // Frozen as on target with figures today's thresholds would call missed:
+    // a sent week never rewords itself.
+    const frozen = [row("2026-09-05", "hit", [1500, 110, 140, 50], [2300, 172, 241, 71])];
+    render(<NutritionSection nutrition={summary({ days: frozen })} />);
+
+    expect(screen.getByText("On target")).toBeInTheDocument();
+    expect(screen.queryByText("Missed")).not.toBeInTheDocument();
+  });
+
+  it("reads No target with the eaten alone, No food logged with the target alone, and a dash with neither", () => {
+    const days = [
+      row("2026-09-06", "no_target", [1870, 148, 190, 62], null),
+      row("2026-09-07", "not_logged", null, [2300, 172, 241, 71]),
+      row("2026-09-08", "no_target", null, null),
+    ];
+    const { container } = render(<NutritionSection nutrition={summary({ days })} />);
+    const text = container.textContent ?? "";
+
+    expect(screen.getAllByText("No target")).toHaveLength(2);
+    expect(text).toContain("1,870 kcal");
+    expect(text).not.toContain("1,870 of");
+    expect(text).toContain("Protein 148g · Carbs 190g · Fats 62g");
+    expect(screen.getByText("No food logged")).toBeInTheDocument();
+    expect(text).toContain("2,300 kcal target");
+    expect(text).toContain("Protein 172g · Carbs 241g · Fats 71g");
+    expect(text).not.toContain("Protein 172g / ");
+    // The empty day: its word, a placeholder, no macro line.
+    expect(text).toContain("—");
+    expect(text.match(/Protein/g)).toHaveLength(2 + 1); // two rows + the protein bar above
+  });
+
+  it("colours each word the adherence rail's way: teal, amber, rose, the faint tint, none", () => {
+    const days = [
+      row("2026-09-05", "hit", [2260, 169, 236, 70], [2300, 172, 241, 71]),
+      row("2026-09-06", "partial", [2140, 161, 219, 66], [2300, 172, 241, 71]),
+      row("2026-09-07", "missed", [1690, 133, 168, 58], [2300, 172, 241, 71]),
+      row("2026-09-08", "not_logged", null, [2300, 172, 241, 71]),
+      row("2026-09-09", "no_target", [1870, 148, 190, 62], null),
+    ];
+    render(<NutritionSection nutrition={summary({ days })} />);
+
+    expect(screen.getByText("On target").className).toContain("text-[#0d9488]");
+    expect(screen.getByText("Missed").className).toContain("text-[#c06060]");
+    expect(screen.getByText("No food logged").className).toContain("bg-[rgba(13,148,136,0.04)]");
+    expect(screen.getByText("No target").className).not.toContain("bg-");
+    // The row's pill (a word) beside the week's pill (a figure): the week pill carries the amber.
+    expect(screen.getAllByText(/Partial/).some((el) => el.className.includes("text-[#d97706]"))).toBe(true);
+  });
+});
+
 describe("the card computes nothing", () => {
   // The defect this guards: the card once summed calories over the days with
   // a target and macros over the days a macro was logged, and read 173 g
-  // against 146 g for a client on 170 g every day. It takes no rows now.
-  it("takes no log rows and folds no figure of its own", () => {
+  // against 146 g for a client on 170 g every day. It takes no rows now, and
+  // it judges no day of its own: a row's word is the standing the check-in
+  // froze, so the per-day verdict and any classifier of a day stay out.
+  it("takes no log rows, folds no figure of its own and judges no day", () => {
     const source = readFileSync(join(process.cwd(), "components/check-in/nutrition-section.tsx"), "utf8");
-    expect(source).not.toMatch(/dailyLogs|DailyLog|\.reduce\(|fullWeekTarget|periodDays/);
+    expect(source).not.toMatch(/dailyLogs|DailyLog|\.reduce\(|fullWeekTarget|periodDays|nutrition-verdict|classifyDay/);
   });
 });

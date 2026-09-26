@@ -16,17 +16,13 @@ import {
   LABEL_CLASS,
   MONO,
 } from "@/components/clients/training/program-builder/builder-tokens";
+import { dayLabel } from "./day-label";
 
 type TrainingSectionProps = {
   /** The period's workouts, in calendar order — the review read's own rows. */
   workouts: CheckInTrainingEventDetail[];
   highlights: CheckInExerciseHighlight[];
 };
-
-// The workout's day, from its own date. Parsed at local noon so the weekday is
-// stable across a DST boundary.
-const dayLabel = (date: string) =>
-  new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" });
 
 // Teal Summit two-colour status: teal full, amber partial, muted missed (no
 // red). The three words a WORKOUT is described in — "completed" is reserved for

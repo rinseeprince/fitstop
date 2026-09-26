@@ -108,7 +108,18 @@ describe("GET /api/check-in/[id] (coach)", () => {
     const periodAdherence = {
       dates: ["2026-05-08", "2026-05-09"],
       loggedDates: ["2026-05-08"],
-      nutrition: { rail: [], onTarget: 1, loggedDays: 1, targetedDays: 2, daysOnTargetPct: 50 },
+      nutrition: {
+        rail: [],
+        // The copy's frozen food rows, which the Nutrition card lists day by day.
+        days: [
+          {
+            date: "2026-05-08", dayOfWeek: "friday", status: "hit",
+            targetCalories: 2180, targetProteinG: 163, targetCarbsG: 218, targetFatG: 68,
+            actualCalories: 2210, actualProteinG: 159, actualCarbsG: 227, actualFatG: 64,
+          },
+        ],
+        onTarget: 1, loggedDays: 1, targetedDays: 2, daysOnTargetPct: 50,
+      },
       habits: { rail: [], avgPct: 50, daysBelow50: 0, perHabit: [] },
     };
     vi.mocked(getCheckInPeriodAdherence).mockReturnValue(periodAdherence as never);
@@ -117,6 +128,7 @@ describe("GET /api/check-in/[id] (coach)", () => {
     const body = await (await GET(req(), params("ci-1"))).json();
 
     expect(body.periodAdherence).toEqual(periodAdherence);
+    expect(body.periodAdherence.nutrition.days).toEqual(periodAdherence.nutrition.days);
     // Read from the check-in's saved copy: the mapped check-in carries it.
     expect(getCheckInPeriodAdherence).toHaveBeenCalledWith(
       expect.objectContaining({ id: "ci-1", sentSnapshot: expect.objectContaining({ version: 1 }) })

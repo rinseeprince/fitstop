@@ -1528,8 +1528,9 @@ as towards or away.
   seeds call the same fill). The status, the coach's reply and the AI review still change.
 - **Every check-in surface reads it**: the check-in object's readings (`mapCheckInRow`) and so the
   review's ribbon, the AI review, the client's check-in list and detail and the coach's recent list;
-  the goal section and the drift note (`buildCheckInComparison`); the nutrition card, the habits and
-  the days logged (`getCheckInPeriodAdherence`, the Overview kernel's rules over the saved rows); the
+  the goal section and the drift note (`buildCheckInComparison`); the nutrition card — its summary
+  and its day-by-day rows — the habits and
+  the days logged (`getCheckInPeriodAdherence`, the Overview kernel's rules over the saved rows, and the saved rows themselves); the
   AI's food rows (`getCheckInNutritionPeriod`); the answers' wording (`getCheckInAnswers`). The one
   live answer is whether the goal judged is still the client's goal today (`goalIsCurrent`), which is
   what "Set new goals" asks. The routes that send a check-in to a browser leave the copy off
@@ -1845,9 +1846,21 @@ target is in no ratio, and a period with none reads "No targets set", never
 per-day averages all from the same run, each over its named day set. Habits
 divide by eligible days, from `periodAdherence.dates` — never a day count
 derived in the renderer, which resolves differently on a legacy row. The KPI
-ribbon's **Nutrition** cell is that fraction; the Nutrition card renders the same summary and
-computes nothing — it takes no log rows (`nutrition-section.test.tsx` scans
-for it). Habits come from `perHabit`, built from the HABIT list, so a
+ribbon's **Nutrition** cell is that fraction; the Nutrition card renders the same summary and,
+under it, the week day by day from the same frozen rows the count was taken over
+(`periodAdherence.nutrition.days` — the copy's rows verbatim, in the copy's order, coach wire only):
+each row the weekday and date, what was eaten of the target (`2,260 of 2,300 kcal`; the target alone
+on a day with no food logged, the eaten alone on a day no target covered, a dash with neither), each
+macro eaten against its target under it in the grammar of the averages above (`Protein 169g / 172g ·
+Carbs 236g / 241g · Fats 70g / 71g`), and the day's standing as one of five words through one lookup
+table — **On target**, **Partial**, **Missed**, **No food logged**, **No target** — worded from the
+standing the check-in froze at Send and never re-judged from the row's numbers, so a threshold
+changed later never rewords a sent week. The colours are the adherence rail's, one meaning each:
+teal, amber, rose, the faint tint for a targeted day with no food log, and no colour for nothing to
+judge. "No food logged" names what this list counts: the header chip counts days with ANY log, so
+the two can differ on one screen (TECHNICAL-DEBT → "Check-in review surface"). The card computes
+nothing — it takes no log rows, folds no figure and judges no day (`nutrition-section.test.tsx`
+scans for it). Habits come from `perHabit`, built from the HABIT list, so a
 habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
 writes a row only when they act, and the old grid read `/habits/logs`. **Training
 is deliberately NOT on that wire**: the review already carries the period's own

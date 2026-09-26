@@ -75,7 +75,7 @@ const loaded = {
       "2026-08-26", "2026-08-27", "2026-08-28",
     ],
     loggedDates: ["2026-08-24", "2026-08-27"],
-    nutrition: { rail: [], onTarget: 0, loggedDays: 0, pct: null },
+    nutrition: { rail: [], days: [], onTarget: 0, loggedDays: 0, pct: null },
     habits: { rail: [], avgPct: null, daysBelow50: 0, perHabit: [] },
   },
   dailyContextLoading: false,

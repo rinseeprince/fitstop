@@ -55,8 +55,10 @@ export const resolveCheckInReportingPeriod = async (
  * so a nutrition setting switched, a same-day re-save or a habit switched off
  * afterwards never moves them (owner ruling 2026-09-22). The food against each
  * day's target is the saved rows through the same kernel the Overview runs
- * (`summarizeNutritionPeriod`, one dot per day by `classifyNutritionDay`); the
- * habits, the days and the days logged are the saved figures themselves.
+ * (`summarizeNutritionPeriod`, one dot per day by `classifyNutritionDay`), and
+ * the saved rows themselves, verbatim and in the copy's order, for the card's
+ * day-by-day list; the habits, the days and the days logged are the saved
+ * figures themselves.
  *
  * **Training is deliberately NOT on this wire.** The review page counts the
  * period's training itself, from the per-workout detail it already carries,
@@ -78,6 +80,9 @@ export const getCheckInPeriodAdherence = (
     dates: period.dates,
     loggedDates: period.loggedDates,
     nutrition: {
+      // The copy's rows as they are: the card lists the week from these and
+      // words each day from the standing frozen on it.
+      days: period.nutrition,
       rail: period.nutrition.map((day) => classifyNutritionDay(day.status)),
       ...summarizeNutritionPeriod(period.nutrition),
     },

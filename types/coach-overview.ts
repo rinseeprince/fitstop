@@ -7,6 +7,7 @@
  */
 
 import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
+import type { NutritionDay } from "@/types/schedule";
 import type { MeasurementKey, MeasurementSource } from "@/lib/measurements/keys";
 import type { WellnessKey } from "@/lib/wellness/keys";
 
@@ -111,17 +112,30 @@ export type HabitBreakdown = {
 };
 
 /**
- * What `GET /api/check-in/[id]` carries for the check-in's own reporting period.
+ * What `GET /api/check-in/[id]` carries for the check-in's own reporting
+ * period, read from the copy the check-in saved at Send
+ * (lib/check-in/sent-snapshot.ts): the Overview kernel's dates, logged dates
+ * and habit figures, and the nutrition summary with its rail plus the frozen
+ * food rows themselves — `nutrition.days`, one per day of the week in the
+ * copy's order, which the review's Nutrition card lists under its summary. Its
+ * own type rather than a `Pick` of `AdherenceSummary`, so the Overview's own
+ * summary carries no rows it never renders.
  *
  * Training is deliberately absent: the review page already carries the period's
  * own workouts and counts them once with `summariseTraining`
  * (`lib/training-adherence.ts`), so a training figure here would be a second
  * derivation of the same number on the same screen.
  */
-export type CheckInPeriodAdherence = Pick<
-  AdherenceSummary,
-  "dates" | "loggedDates" | "nutrition" | "habits"
->;
+export type CheckInPeriodAdherence = Pick<AdherenceSummary, "dates" | "loggedDates" | "habits"> & {
+  nutrition: AdherenceSummary["nutrition"] & {
+    /**
+     * The week's food rows as the check-in froze them, verbatim: date, weekday,
+     * standing, target and eaten kcal and macros. The card renders their words
+     * and numbers and derives nothing from them.
+     */
+    days: NutritionDay[];
+  };
+};
 
 export type AdherenceSummary = {
   /**

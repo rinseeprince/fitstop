@@ -32,6 +32,8 @@ function nutrition(
 ): CheckInPeriodAdherence["nutrition"] {
   return {
     rail: [],
+    // The frozen rows ride on the same wire; the ribbon reads none of them.
+    days: [],
     periodDays: 7,
     loggedDays: 3,
     targetedDays: 7,

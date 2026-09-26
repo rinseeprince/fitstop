@@ -1,27 +1,117 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { formatDateOnlyShort } from "@/lib/date-helpers";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import {
+  LABEL_CLASS,
   MONO,
   MONO_META_CLASS,
   TEXT_PRIMARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
+import type { NutritionDay, NutritionDayStatus } from "@/types/schedule";
+import { dayLabel } from "./day-label";
 
 type NutritionSectionProps = {
   /**
    * The period's nutrition figures, server-computed by the ONE kernel
-   * (`utils/nutrition-period-summary.ts`) and carried on the detail wire. The
-   * card renders them and counts nothing of its own — it takes no log rows,
-   * so a day can never be priced one way here and another on the ribbon.
-   * `null` on a legacy row whose period cannot be resolved: the card renders
-   * nothing rather than a second definition.
+   * (`utils/nutrition-period-summary.ts`) and carried on the detail wire, with
+   * the week's food rows as the check-in froze them (`days`). The card renders
+   * them and counts nothing of its own — it takes no log rows and judges no
+   * day, so a day can never be priced one way here and another on the ribbon,
+   * and a sent week never rewords itself. `null` on a legacy row whose period
+   * cannot be resolved: the card renders nothing rather than a second
+   * definition.
    */
   nutrition: CheckInPeriodAdherence["nutrition"] | null;
 };
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+const kcal = (value: number) => value.toLocaleString();
+// A figure the frozen row does not hold: a placeholder, not punctuation.
+const grams = (value: number | null) => (value == null ? "—" : `${value}g`);
+
+// The day's word and its colour, from the standing the check-in froze at Send
+// and never re-judged from the row's numbers. One meaning per colour, the
+// adherence rail's rule (components/clients/overview/adherence-card.tsx): teal
+// on target, amber partial, rose missed, the faint tint for a targeted day with
+// no food log; nothing to judge wears no colour. "No food logged" rather than
+// "Not logged" because the header chip counts days with ANY log and this list
+// counts food, and the two sit on one screen.
+const DAY_STANDING: Record<NutritionDayStatus, { label: string; pill: string }> = {
+  hit: { label: "On target", pill: "bg-[rgba(13,148,136,0.08)] text-[#0d9488]" },
+  partial: { label: "Partial", pill: "bg-[rgba(245,158,11,0.07)] text-[#d97706]" },
+  missed: { label: "Missed", pill: "bg-[rgba(192,96,96,0.08)] text-[#c06060]" },
+  not_logged: { label: "No food logged", pill: "bg-[rgba(13,148,136,0.04)] text-[#93b0b4]" },
+  no_target: { label: "No target", pill: "text-[#93b0b4]" },
+};
+
+const MACROS = [
+  ["Protein", "actualProteinG", "targetProteinG"],
+  ["Carbs", "actualCarbsG", "targetCarbsG"],
+  ["Fats", "actualFatG", "targetFatG"],
+] as const;
+
+/**
+ * Each macro eaten against its target, in the grammar of the averages above
+ * ("169g / 172g"): the targets alone on a day with no food logged, the eaten
+ * alone on a day no target covered, nothing on a day with neither.
+ */
+function macroLine(day: NutritionDay): string | null {
+  const logged = day.actualCalories != null;
+  const targeted = day.targetCalories != null;
+  if (!logged && !targeted) return null;
+  return MACROS.map(([label, eatenKey, targetKey]) => {
+    const eaten = grams(day[eatenKey]);
+    const target = grams(day[targetKey]);
+    if (logged && targeted) return `${label} ${eaten} / ${target}`;
+    return `${label} ${targeted ? target : eaten}`;
+  }).join(" · ");
+}
+
+/** "2,260 of 2,300 kcal"; the target alone with no food logged; the eaten alone with no target. */
+function CaloriesLine({ day }: { day: NutritionDay }) {
+  const eaten = day.actualCalories;
+  const target = day.targetCalories;
+  const muted = cn(MONO_META_CLASS, "text-[13px]");
+  if (eaten == null && target == null) return <span className={muted}>—</span>;
+  if (eaten == null) return <span className={muted}>{kcal(target!)} kcal target</span>;
+  return (
+    <>
+      <span className={cn(MONO, "text-[13px] font-medium", TEXT_PRIMARY)}>{kcal(eaten)}</span>
+      <span className={muted}>{target == null ? " kcal" : ` of ${kcal(target)} kcal`}</span>
+    </>
+  );
+}
+
+/** One day of the week, as the check-in froze it. */
+function DayRow({ day }: { day: NutritionDay }) {
+  const standing = DAY_STANDING[day.status];
+  const macros = macroLine(day);
+  return (
+    <div className="rounded-[6px] bg-[rgba(13,148,136,0.03)] px-3 py-2.5">
+      <div className="flex items-center gap-3">
+        <span className={cn(LABEL_CLASS, "w-8 shrink-0")}>{dayLabel(day.date)}</span>
+        <span className={cn(MONO_META_CLASS, "w-12 shrink-0 text-[11px]")}>
+          {formatDateOnlyShort(day.date)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <CaloriesLine day={day} />
+        </div>
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center rounded-[4px] px-2 py-0.5 text-[11px] font-medium",
+            standing.pill
+          )}
+        >
+          {standing.label}
+        </span>
+      </div>
+      {macros && <div className={cn(MONO_META_CLASS, "mt-1 text-[11px]")}>{macros}</div>}
+    </div>
+  );
+}
 
 export const NutritionSection = ({ nutrition }: NutritionSectionProps) => {
   if (!nutrition || nutrition.loggedDays === 0) return null;
@@ -141,6 +231,17 @@ export const NutritionSection = ({ nutrition }: NutritionSectionProps) => {
               })}
             </div>
           )}
+
+          {/* The week day by day, under the summary it adds up to — every row
+              a frozen row from the check-in's copy, in the copy's order, worded
+              from its own standing. The list is the coach's figures per day;
+              the summary stays because without it they would be adding the
+              days up (owner, D7). */}
+          <div className="flex flex-col gap-2">
+            {nutrition.days.map((day) => (
+              <DayRow key={day.date} day={day} />
+            ))}
+          </div>
         </div>
       </div>
     </div>

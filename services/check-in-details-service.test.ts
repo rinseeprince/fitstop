@@ -319,6 +319,15 @@ describe("getCheckInPeriodAdherence — the week as it stood when the check-in w
     expect(getClientByIdMock).not.toHaveBeenCalled();
   });
 
+  it("carries the copy's food rows verbatim, in the copy's order — the card lists the week from them", () => {
+    const result = getCheckInPeriodAdherence({ id: "ci-15", sentSnapshot: sentCopy({ period: week }) });
+
+    expect(result?.nutrition.days).toEqual(week.nutrition);
+    expect(result?.nutrition.days.map((day) => day.date)).toEqual(week.dates);
+    // The standing on each row is the one frozen at Send, not one judged now.
+    expect(result?.nutrition.days.map((day) => day.status)).toEqual(["hit", "not_logged", "no_target"]);
+  });
+
   it("does NOT carry training — the page derives its own, differently", () => {
     const result = getCheckInPeriodAdherence({ id: "ci-12", sentSnapshot: sentCopy({ period: week }) });
     expect(Object.keys(result ?? {}).sort()).toEqual(["dates", "habits", "loggedDates", "nutrition"]);
