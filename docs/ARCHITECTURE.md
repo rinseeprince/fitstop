@@ -1861,11 +1861,15 @@ warning amber) it (`MACRO_OFF_TARGET_PERCENT`), a day no target covered never ti
 the day's word behind its dot — **On target**, **Partial**, **Missed**, **No food logged**, **No
 target** — the standing the check-in froze at Send through one lookup table, never re-judged from the
 numbers, so a threshold changed later never rewords a sent week; the tints are drawn from the same
-frozen numbers. The **Week** row under the days carries, where Training sits, the week's intake on
-the targeted days against every targeted day's target ("kcal total"), then the kernel's averages per
-JUDGED day, intake over target ("kcal avg / day"; intake per logged day, named so, when no day was
-both logged and targeted), and nothing under Nutrition — the week's on-target count is the ribbon's,
-as is the training count. Every nutrition figure is a frozen row from the copy
+frozen numbers. The **Week** row under the days is drawn like a day: where Training sits, the kernel's calorie
+average per JUDGED day over its target ("kcal avg / day"; intake per logged day, named so, when no
+day was both logged and targeted); under Calories, the week's intake on the targeted days over every
+targeted day's target with a bar and a tick at that target, in the week's colour; the macros'
+averages per judged day, tinted the same way; and under Nutrition the week's word — the kernel's
+`periodVerdict` (On target, Partial, Missed; No target when none was set). The bar sits beside the
+totals, not the averages, because the totals are what the word judges: a targeted day with no food
+counts its whole target against the week, so an average beside a Missed week could read nearly full.
+The training count is the ribbon's. Every nutrition figure is a frozen row from the copy
 (`periodAdherence.nutrition.days`, verbatim, coach wire only). The colours are the adherence rail's,
 one meaning each: teal, amber, rose, and a hollow dot for nothing to judge or nothing logged. "No
 food logged" names what the column counts: the header chip counts days with ANY log, so the two can

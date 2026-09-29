@@ -65,20 +65,25 @@ const LEGEND = [
   { swatch: cn("h-2.5 w-3 rounded-[2px]", MACRO_MARK.over.tint), label: "10%+ over" },
 ];
 
-/** The week's intake on the targeted days against every targeted day's target — the kernel's totals. */
-function WeekTotal({ nutrition }: { nutrition: Nutrition }) {
-  const { targetTotals, consumedOnTargetedDays } = nutrition;
-  // The coach prescribed nothing all week: no total — never 0 of 0.
+/**
+ * The week's calories, drawn like a day's: the intake on the targeted days
+ * against every targeted day's target, a bar with a tick at that target, in the
+ * week's own colour. These are the figures the week's word judges — a
+ * targeted day with no food counts its whole target against the week — so the
+ * bar beside them never reads fuller than its word.
+ */
+function WeekCalories({ nutrition }: { nutrition: Nutrition }) {
+  const { targetTotals, consumedOnTargetedDays, periodVerdict } = nutrition;
+  // The coach prescribed nothing all week: no total, no bar — never 0 of 0.
   if (!targetTotals || !consumedOnTargetedDays) return <span className="text-[12px] text-[#93b0b4]">No target set</span>;
+  const scale = Math.max(consumedOnTargetedDays.calories, targetTotals.calories, 1) * BAR_HEADROOM;
   return (
-    <span className="whitespace-nowrap">
-      <EatenOverTarget
-        eaten={consumedOnTargetedDays.calories.toLocaleString()}
-        target={targetTotals.calories.toLocaleString()}
-        strong
-      />
-      <span className={cn(MONO_CELL_CLASS, TEXT_MUTED)}> kcal total</span>
-    </span>
+    <CaloriesCell
+      eaten={consumedOnTargetedDays.calories}
+      target={targetTotals.calories}
+      status={periodVerdict ?? "no_target"}
+      scale={scale}
+    />
   );
 }
 
@@ -102,9 +107,10 @@ function WeekAverage({ nutrition }: { nutrition: Nutrition }) {
  * The check-in's week, one line per day (owner, 2026-09-29): the day, its
  * workouts, its calories and macros each over that day's own target, and the
  * day's word; the week's row under them carries the calorie total against its
- * target and the averages. Every nutrition figure is a frozen row from the
+ * target drawn like a day's, with the week's word, and the averages. Every nutrition figure is a frozen row from the
  * check-in's copy, worded from its own standing; the grid takes no log rows
- * and counts nothing — the week's total and averages are the kernel's.
+ * and counts nothing — the week's total, its word and the averages are the
+ * kernel's.
  */
 export function WeekGrid({ dates, workouts, highlights, nutrition }: WeekGridProps) {
   const { preference } = useUnits();
@@ -173,14 +179,20 @@ export function WeekGrid({ dates, workouts, highlights, nutrition }: WeekGridPro
                   </TableCell>
                   {nutrition && (
                     <>
-                      <TableCell data-col="calories">{day ? <CaloriesCell day={day} scale={scale} /> : <Dash />}</TableCell>
+                      <TableCell data-col="calories">
+                        {day ? (
+                          <CaloriesCell eaten={day.actualCalories} target={day.targetCalories} status={day.status} scale={scale} />
+                        ) : (
+                          <Dash />
+                        )}
+                      </TableCell>
                       {MACROS.map((macro) => (
                         <TableCell key={macro.name} data-col={macro.name.toLowerCase()}>
                           {day ? <MacroCell eaten={day[macro.eaten]} target={day[macro.target]} /> : <Dash />}
                         </TableCell>
                       ))}
                       <TableCell data-col="nutrition" className="pr-0">
-                        {day ? <StandingCell day={day} /> : <Dash />}
+                        {day ? <StandingCell status={day.status} /> : <Dash />}
                       </TableCell>
                     </>
                   )}
@@ -194,11 +206,13 @@ export function WeekGrid({ dates, workouts, highlights, nutrition }: WeekGridPro
                 <TableCell data-col="day" className={cn(PINNED_CELL, "pl-0 text-[13px] font-semibold text-[#0c1a1e]")}>
                   <span className={DAY_LINE}>Week</span>
                 </TableCell>
+                {/* The day's calorie average where Training sits (owner, 2026-09-29):
+                    the calorie column carries the week drawn like a day. */}
                 <TableCell data-col="training">
-                  <WeekTotal nutrition={nutrition} />
+                  <WeekAverage nutrition={nutrition} />
                 </TableCell>
                 <TableCell data-col="calories">
-                  <WeekAverage nutrition={nutrition} />
+                  <WeekCalories nutrition={nutrition} />
                 </TableCell>
                 {MACROS.map((macro) => (
                   <TableCell key={macro.name} data-col={macro.name.toLowerCase()}>
@@ -215,8 +229,11 @@ export function WeekGrid({ dates, workouts, highlights, nutrition }: WeekGridPro
                     )}
                   </TableCell>
                 ))}
-                {/* The week's on-target count is the ribbon's (owner, 2026-09-29). */}
-                <TableCell data-col="nutrition" className="pr-0" />
+                {/* The week's word: the kernel's verdict on the week's total, as a
+                    day's word sits at the end of its line. */}
+                <TableCell data-col="nutrition" className="pr-0">
+                  <StandingCell status={nutrition.periodVerdict ?? "no_target"} />
+                </TableCell>
               </TableRow>
             </TableFooter>
           )}

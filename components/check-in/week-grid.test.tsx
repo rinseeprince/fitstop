@@ -179,29 +179,45 @@ describe("the week, one line per day — its workouts, its calories and macros o
     expect(macroMark(null, 200)).toBeNull();
   });
 
-  it("closes the week with its calorie total against its target where training sits, and the averages under their columns", () => {
+  it("closes the week like a day: its total over its target with a bar, the averages, and the week's word", () => {
     const { container } = renderGrid();
 
     expect(week(container, "day").textContent).toBe("Week");
-    // The kernel's figures: 10,890 eaten on the targeted days against 13,800.
-    expect(week(container, "training").textContent).toBe("10,890 / 13,800 kcal total");
-    // Per judged day on both sides.
-    expect(week(container, "calories").textContent).toBe("2,178 / 2,300 kcal avg / day");
+    // The calorie average per judged day, where Training sits.
+    expect(week(container, "training").textContent).toBe("2,178 / 2,300 kcal avg / day");
+    // The kernel's totals — 10,890 eaten on the targeted days against 13,800 —
+    // the figures the week's word judges, so the bar agrees with it.
+    expect(week(container, "calories").textContent).toBe("10,890 / 13,800");
+    const fill = week(container, "calories").querySelector<HTMLElement>('[data-bar="fill"]')!;
+    const tick = week(container, "calories").querySelector<HTMLElement>('[data-bar="tick"]')!;
+    expect(fill.className).toContain("bg-[#c06060]");
+    expect(parseFloat(fill.style.width)).toBeCloseTo((10890 / (13800 * 1.08)) * 100, 1);
+    expect(parseFloat(tick.style.left)).toBeCloseTo((1 / 1.08) * 100, 1);
+    expect(week(container, "nutrition").textContent).toBe("Missed");
     expect(week(container, "protein").textContent).toBe("164 / 172");
     expect(within(week(container, "protein")).getByText("164").className).not.toMatch(/bg-/);
     expect(within(week(container, "carbs")).getByText("225").className).toContain(MACRO_MARK.over.tint);
     expect(within(week(container, "fats")).getByText("69").className).toContain(MACRO_MARK.under.tint);
-    // The on-target count is the ribbon's.
-    expect(week(container, "nutrition").textContent).toBe("");
-    expect(screen.queryByText(/on target\b.*\d|\d of \d/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\d of \d/)).not.toBeInTheDocument();
   });
 
-  it("says no target was set, and averages per logged day, when the coach prescribed nothing all week", () => {
+  it("words the week from the kernel's verdict, the bar in the same colour", () => {
+    // Every targeted day eaten close to its target: the week is on target.
+    const close = [food("2026-09-21", "hit", [2280, 170, 200, 90], TARGET), food("2026-09-22", "hit", [2330, 173, 205, 91], TARGET)];
+    const { container } = renderGrid({ dates: ["2026-09-21", "2026-09-22"], nutrition: nutritionOf(close) });
+
+    expect(week(container, "nutrition").textContent).toBe("On target");
+    expect(week(container, "calories").querySelector('[data-bar="fill"]')!.className).toContain("bg-[#0d9488]");
+  });
+
+  it("says no target was set, with no bar, and averages per logged day, when the coach prescribed nothing all week", () => {
     const untargeted = [food("2026-09-20", "no_target", [1870, 148, 190, 62], null), food("2026-09-21", "no_target", [2105, 176, 198, 61], null)];
     const { container } = renderGrid({ dates: ["2026-09-20", "2026-09-21"], nutrition: nutritionOf(untargeted) });
 
-    expect(week(container, "training").textContent).toBe("No target set");
-    expect(week(container, "calories").textContent).toBe("1,988 kcal avg / logged day");
+    expect(week(container, "training").textContent).toBe("1,988 kcal avg / logged day");
+    expect(week(container, "calories").textContent).toBe("No target set");
+    expect(week(container, "calories").querySelector("[data-bar]")).toBeNull();
+    expect(week(container, "nutrition").textContent).toBe("No target");
   });
 
   it("keeps only the legend a glance can't read off the rows", () => {

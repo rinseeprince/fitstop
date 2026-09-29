@@ -13,7 +13,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { trainingAdherenceStatus } from "@/lib/training-adherence";
 import type { CheckInTrainingEventDetail } from "@/types/check-in";
-import type { NutritionDay } from "@/types/schedule";
+import type { NutritionDayStatus } from "@/types/schedule";
 import { DAY_STANDING, MACRO_MARK, SESSIONS_SHOWN, TARGET_TICK, WORKOUT_STATUS, macroMark } from "./week-grid-words";
 
 export const Dash = () => <span className="text-[#c2d0cc]">—</span>;
@@ -88,30 +88,45 @@ export function EatenOverTarget({ eaten, target, strong }: { eaten: string | nul
 }
 
 /**
- * A day's calories: eaten over its own target, and a bar on the week's one
- * scale with a tick at the day's target — a training day's surplus moves its
- * tick. No bar with no food; a grey bar and no tick with no target.
+ * Calories eaten over their target and a bar with a tick at the target, in
+ * the standing's colour — a day on the week's one scale (a training day's
+ * surplus moves its tick), or the week's total on its own. No bar with nothing
+ * eaten; a grey bar and no tick with no target.
  */
-export function CaloriesCell({ day, scale }: { day: NutritionDay; scale: number }) {
+export function CaloriesCell({
+  eaten,
+  target,
+  status,
+  scale,
+}: {
+  eaten: number | null;
+  target: number | null;
+  status: NutritionDayStatus;
+  scale: number;
+}) {
   const width = (value: number) => `${Math.min(value / scale, 1) * 100}%`;
-  const standing = DAY_STANDING[day.status];
   return (
     <span className="flex items-center gap-4">
       <span className="w-[112px] shrink-0">
         <EatenOverTarget
-          eaten={day.actualCalories == null ? null : day.actualCalories.toLocaleString()}
-          target={day.targetCalories == null ? null : day.targetCalories.toLocaleString()}
+          eaten={eaten == null ? null : eaten.toLocaleString()}
+          target={target == null ? null : target.toLocaleString()}
           strong
         />
       </span>
       <span className="relative h-1.5 min-w-[96px] flex-1 rounded-full bg-[rgba(13,148,136,0.08)]" aria-hidden>
-        {day.actualCalories != null && (
-          <span className={cn("absolute inset-y-0 left-0 rounded-full", standing.bar)} style={{ width: width(day.actualCalories) }} />
-        )}
-        {day.targetCalories != null && (
+        {eaten != null && (
           <span
+            data-bar="fill"
+            className={cn("absolute inset-y-0 left-0 rounded-full", DAY_STANDING[status].bar)}
+            style={{ width: width(eaten) }}
+          />
+        )}
+        {target != null && (
+          <span
+            data-bar="tick"
             className={cn("absolute top-1/2 h-3 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded-full", TARGET_TICK)}
-            style={{ left: width(day.targetCalories) }}
+            style={{ left: width(target) }}
           />
         )}
       </span>
@@ -145,9 +160,9 @@ export function MacroCell({ eaten, target, strong }: { eaten: number | null; tar
   );
 }
 
-/** The day's word as the check-in froze it, behind its dot. */
-export function StandingCell({ day }: { day: NutritionDay }) {
-  const standing = DAY_STANDING[day.status];
+/** A standing's word behind its dot — a day's as the check-in froze it, or the week's. */
+export function StandingCell({ status }: { status: NutritionDayStatus }) {
+  const standing = DAY_STANDING[status];
   return (
     <span className="flex items-center gap-2">
       <span className={cn("h-2 w-2 shrink-0 rounded-full", standing.dot)} aria-hidden />

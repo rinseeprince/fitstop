@@ -790,7 +790,7 @@ Reference: `components/check-in/week-grid.tsx` (with `week-grid-rows.tsx` and `w
 - **The calorie bar**: `h-1.5` on the `0.08` track, `min-w-[96px] flex-1` `gap-4` after a `112px` figure, one scale for the week, the fill in the day's colour (the faint grey with no target, none with no food) and a `h-3 w-[2px]` ink tick at the day's target.
 - **Marked figures**: a macro 10% or more off its target wears a `rounded-[4px] px-1.5 py-0.5` tint — under in the protein blue (`rgba(45,143,181,0.10)` / `#2d8fb5`), over in the warning pair — with its words as a `title` and sr-only.
 - **Nutrition**: a `h-2 w-2` dot (filled in the day's colour; a hollow `#93b0b4` ring with nothing to judge or nothing logged) and the word `text-[13px] font-medium` in the same colour.
-- **The week row** (`TableFooter`): "Week" `text-[13px] font-semibold` ink, then the figures in the same eaten / target grammar with a muted mono tail naming them ("kcal total", "kcal avg / day").
+- **The week row** (`TableFooter`) is drawn like a day line: "Week" `text-[13px] font-semibold` ink in the Day cell's `min-h-[44px]` line, the calorie average in the eaten / target grammar with a muted mono tail ("kcal avg / day") where Training sits, the week's total over its target with the same bar and tick (its own scale, the week's colour), the macro averages, and the week's word behind its dot.
 
 ### Grouped exercises (editor)
 
