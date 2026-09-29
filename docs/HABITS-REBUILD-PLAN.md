@@ -276,7 +276,7 @@ Each prompt is complete on its own. Paste it into a fresh session. **The session
 
 ### Commit 1 — `feat(habits): the habit engine — five tables, their write functions, the week kernel and the new routes, used by no screen yet`
 
-**STATUS: not started.**
+**STATUS: SHIPPED `978ec389` 2026-09-30.** Migrations 203 and 204 (204 corrects three of 203's catalog comments) on DEV; PROD at 184 owes 185–204, so commit 2's migration is 205. The decisions this plan left open are in the commit body.
 
 - Migration (the next free number, 203 at planning): §2.1's five tables with their keys, CHECKs, the no-overlap exclusion (`btree_gist` is installed — migrations 144, 164, 167), indexes, `updated_at` triggers and privileges; the eight functions of rule 8 — `add_client_habits` (one or more habits from a start day, as JSON input: name, how-to, measure, unit, direction, target, weekdays or times per week; appended in order), `change_client_habit`, `stop_client_habit`, `delete_client_habit`, `rename_client_habit`, `order_client_habits`, `set_client_habit_day`, `reset_client_habit_day` — and the read function `coach_habit_choices` (§2.1), each `REVOKE`d from PUBLIC, anon and authenticated and granted to `service_role` by full signature. No data moved; the old tables untouched.
 - The kernel (§2.3) with its tests and mutations; `types/habits.ts`; the three services; `lib/validations/client-habits.ts` (strict objects); the refusal map; the habit `AUDIT_ACTIONS`.
