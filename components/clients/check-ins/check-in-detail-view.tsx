@@ -139,8 +139,11 @@ export const CheckInDetailView = ({
           {/* Flex, not a 2-col grid: either section returns null on an empty
               week, and a grid would leave a hole where the missing one was.
               Both carry `flex-1`, so a lone survivor takes the whole row and
-              this page never has to ask which of them rendered. */}
-          <div className="flex flex-col gap-5 lg:flex-row">
+              this page never has to ask which of them rendered. Side by side,
+              each card is as tall as its own content: stretched to its
+              neighbour's height, a two-workout week stood as a tall empty
+              card beside the nutrition table. */}
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
             <TrainingSection
               workouts={trainingEventDetails}
               highlights={data.checkIn.exerciseHighlights ?? []}

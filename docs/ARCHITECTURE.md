@@ -1654,7 +1654,8 @@ structure").
 Nutrition, Training), then Training beside Nutrition, Wellness, Habits, Client notes, Goal
 progress, the AI review, and last the Reply. Training and Nutrition share a flex row rather than a
 two-column grid: either returns null on an empty week, and a lone survivor takes the whole row
-instead of leaving a hole. **Every section renders its own `SectionLabel` rail, inside the
+instead of leaving a hole; side by side, each card is as tall as its own content, never stretched to
+its neighbour's. **Every section renders its own `SectionLabel` rail, inside the
 component that decides whether it has anything to show** — five of them return null on an empty
 week, so a rail owned by the page would stand over empty space, or the page would need a second
 copy of each child's emptiness predicate. Every card is borderless white on the `#f4f7f6` page per
@@ -1849,18 +1850,19 @@ derived in the renderer, which resolves differently on a legacy row. The KPI
 ribbon's **Nutrition** cell is that fraction; the Nutrition card renders the same summary and,
 under it, the week day by day from the same frozen rows the count was taken over
 (`periodAdherence.nutrition.days` — the copy's rows verbatim, in the copy's order, coach wire only):
-each row the weekday and date, what was eaten of the target (`2,260 of 2,300 kcal`; the target alone
-on a day with no food logged, the eaten alone on a day no target covered, a dash with neither), each
-macro eaten against its target under it in the grammar of the averages above (`Protein 169g / 172g ·
-Carbs 236g / 241g · Fats 70g / 71g`), and the day's standing as one of five words through one lookup
-table — **On target**, **Partial**, **Missed**, **No food logged**, **No target** — worded from the
-standing the check-in froze at Send and never re-judged from the row's numbers, so a threshold
-changed later never rewords a sent week. The colours are the adherence rail's, one meaning each:
+a table (`nutrition-days-table.tsx`) in the design system's target-over-actual readout, one line per
+day — the day (`Sun 20`; the header names the week), then Kcal, Protein (g), Carbs (g) and Fats (g),
+each cell the day's target over what was eaten, a blank target line where no target covered the day
+and a faint dash where nothing was eaten, no figure marked — and the day's standing as one of five
+words through one lookup table — **On target**, **Partial**, **Missed**, **No food logged**, **No
+target** — worded from the standing the check-in froze at Send and never re-judged from the row's
+numbers, so a threshold changed later never rewords a sent week. On a narrow card the figures scroll
+sideways under the pinned Day column. The colours are the adherence rail's, one meaning each:
 teal, amber, rose, the faint tint for a targeted day with no food log, and no colour for nothing to
 judge. "No food logged" names what this list counts: the header chip counts days with ANY log, so
 the two can differ on one screen (TECHNICAL-DEBT → "Check-in review surface"). The card computes
 nothing — it takes no log rows, folds no figure and judges no day (`nutrition-section.test.tsx`
-scans for it). Habits come from `perHabit`, built from the HABIT list, so a
+scans it and its table). Habits come from `perHabit`, built from the HABIT list, so a
 habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
 writes a row only when they act, and the old grid read `/habits/logs`. **Training
 is deliberately NOT on that wire**: the review already carries the period's own

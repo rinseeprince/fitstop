@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NutritionSection } from "./nutrition-section";
@@ -169,30 +169,36 @@ describe("the figures come from the kernel, over one day set each", () => {
   });
 });
 
-describe("the week day by day — the copy's rows, worded from their frozen standing", () => {
-  it("lists one row per frozen day under the summary, in the copy's order, each with its word and its eaten and target kcal", () => {
+describe("the week day by day — a table of the copy's rows, worded from their frozen standing", () => {
+  const rowsOf = () => screen.getAllByTestId("nutrition-day-row");
+  /** Each figure cell's two lines, [target, eaten], for Kcal, Protein, Carbs and Fats. */
+  const figures = (row: HTMLElement) =>
+    within(row)
+      .getAllByRole("cell")
+      .slice(1, 5)
+      .map((cell) => [...cell.children].map((line) => line.textContent));
+  const dayCell = (row: HTMLElement) => within(row).getAllByRole("cell")[0].textContent;
+
+  it("lists one line per frozen day under the summary, in the copy's order, the units named once in the headings", () => {
     const { container } = render(<NutritionSection nutrition={summary()} />);
     const text = container.textContent ?? "";
 
-    // Seven rows, oldest first, after the averages they add up to.
+    expect(rowsOf().map(dayCell)).toEqual(["Sat 5", "Sun 6", "Mon 7", "Tue 8", "Wed 9", "Thu 10", "Fri 11"]);
+    expect(text.indexOf("Avg macros / day")).toBeLessThan(text.indexOf("Sat 5"));
+    for (const heading of ["Day", "Kcal", "Protein (g)", "Carbs (g)", "Fats (g)"]) {
+      expect(screen.getByRole("columnheader", { name: heading })).toBeInTheDocument();
+    }
     expect(screen.getAllByText("On target")).toHaveLength(6);
     expect(screen.getByText("No target")).toBeInTheDocument();
-    const dates = ["5 Sep", "6 Sep", "7 Sep", "8 Sep", "9 Sep", "10 Sep", "11 Sep"].map((d) => text.indexOf(d));
-    expect(dates.every((at) => at > text.indexOf("Avg macros / day"))).toBe(true);
-    expect([...dates].sort((a, b) => a - b)).toEqual(dates);
-    expect(screen.getByText("Sat")).toBeInTheDocument();
-    expect(screen.getByText("Fri")).toBeInTheDocument();
-    // What was eaten of the target, as the row's own figures.
-    expect(text).toContain("2,351 of 2,343 kcal");
-    expect(text).toContain("2,381 of 2,343 kcal");
   });
 
-  it("shows each macro eaten against its target, in the grammar of the averages above", () => {
-    const { container } = render(<NutritionSection nutrition={summary()} />);
-    const text = container.textContent ?? "";
+  it("puts each day's target over what was eaten, figure by figure, with no unit in the cells", () => {
+    render(<NutritionSection nutrition={summary()} />);
+    const rows = rowsOf();
 
-    expect(text).toContain("Protein 165g / 170g · Carbs 225g / 229g · Fats 79g / 83g");
-    expect(text).toContain("Protein 173g / 170g · Carbs 232g / 229g · Fats 86g / 83g");
+    expect(figures(rows[0])).toEqual([["2,343", "2,351"], ["170", "165"], ["229", "225"], ["83", "79"]]);
+    expect(figures(rows[5])).toEqual([["2,343", "2,381"], ["170", "173"], ["229", "232"], ["83", "86"]]);
+    expect(rows[0].textContent).not.toMatch(/kcal|\dg\b/);
   });
 
   it("words the day from the standing the check-in froze, never from its numbers", () => {
@@ -205,26 +211,22 @@ describe("the week day by day — the copy's rows, worded from their frozen stan
     expect(screen.queryByText("Missed")).not.toBeInTheDocument();
   });
 
-  it("reads No target with the eaten alone, No food logged with the target alone, and a dash with neither", () => {
+  it("keeps a blank target line where no target covered the day, and a dash where nothing was eaten", () => {
     const days = [
       row("2026-09-06", "no_target", [1870, 148, 190, 62], null),
       row("2026-09-07", "not_logged", null, [2300, 172, 241, 71]),
       row("2026-09-08", "no_target", null, null),
     ];
-    const { container } = render(<NutritionSection nutrition={summary({ days })} />);
-    const text = container.textContent ?? "";
+    render(<NutritionSection nutrition={summary({ days })} />);
+    const [eatenOnly, targetOnly, neither] = rowsOf();
+    const blank = " ";
 
-    expect(screen.getAllByText("No target")).toHaveLength(2);
-    expect(text).toContain("1,870 kcal");
-    expect(text).not.toContain("1,870 of");
-    expect(text).toContain("Protein 148g · Carbs 190g · Fats 62g");
-    expect(screen.getByText("No food logged")).toBeInTheDocument();
-    expect(text).toContain("2,300 kcal target");
-    expect(text).toContain("Protein 172g · Carbs 241g · Fats 71g");
-    expect(text).not.toContain("Protein 172g / ");
-    // The empty day: its word, a placeholder, no macro line.
-    expect(text).toContain("—");
-    expect(text.match(/Protein/g)).toHaveLength(2 + 1); // two rows + the protein bar above
+    expect(figures(eatenOnly)).toEqual([[blank, "1,870"], [blank, "148"], [blank, "190"], [blank, "62"]]);
+    expect(figures(targetOnly)).toEqual([["2,300", "—"], ["172", "—"], ["241", "—"], ["71", "—"]]);
+    expect(figures(neither)).toEqual([[blank, "—"], [blank, "—"], [blank, "—"], [blank, "—"]]);
+    expect(within(eatenOnly).getByText("No target")).toBeInTheDocument();
+    expect(within(targetOnly).getByText("No food logged")).toBeInTheDocument();
+    expect(within(neither).getByText("No target")).toBeInTheDocument();
   });
 
   it("colours each word the adherence rail's way: teal, amber, rose, the faint tint, none", () => {
@@ -236,13 +238,13 @@ describe("the week day by day — the copy's rows, worded from their frozen stan
       row("2026-09-09", "no_target", [1870, 148, 190, 62], null),
     ];
     render(<NutritionSection nutrition={summary({ days })} />);
+    const [hit, partial, missed, notLogged, noTarget] = rowsOf();
 
-    expect(screen.getByText("On target").className).toContain("text-[#0d9488]");
-    expect(screen.getByText("Missed").className).toContain("text-[#c06060]");
-    expect(screen.getByText("No food logged").className).toContain("bg-[rgba(13,148,136,0.04)]");
-    expect(screen.getByText("No target").className).not.toContain("bg-");
-    // The row's pill (a word) beside the week's pill (a figure): the week pill carries the amber.
-    expect(screen.getAllByText(/Partial/).some((el) => el.className.includes("text-[#d97706]"))).toBe(true);
+    expect(within(hit).getByText("On target").className).toContain("text-[#0d9488]");
+    expect(within(partial).getByText("Partial").className).toContain("text-[#d97706]");
+    expect(within(missed).getByText("Missed").className).toContain("text-[#c06060]");
+    expect(within(notLogged).getByText("No food logged").className).toContain("bg-[rgba(13,148,136,0.04)]");
+    expect(within(noTarget).getByText("No target").className).not.toContain("bg-");
   });
 });
 
@@ -252,8 +254,10 @@ describe("the card computes nothing", () => {
   // against 146 g for a client on 170 g every day. It takes no rows now, and
   // it judges no day of its own: a row's word is the standing the check-in
   // froze, so the per-day verdict and any classifier of a day stay out.
-  it("takes no log rows, folds no figure of its own and judges no day", () => {
-    const source = readFileSync(join(process.cwd(), "components/check-in/nutrition-section.tsx"), "utf8");
-    expect(source).not.toMatch(/dailyLogs|DailyLog|\.reduce\(|fullWeekTarget|periodDays|nutrition-verdict|classifyDay/);
+  it("takes no log rows, folds no figure of its own and judges no day — the card or its table", () => {
+    for (const file of ["nutrition-section.tsx", "nutrition-days-table.tsx"]) {
+      const source = readFileSync(join(process.cwd(), "components/check-in", file), "utf8");
+      expect(source).not.toMatch(/dailyLogs|DailyLog|\.reduce\(|fullWeekTarget|periodDays|nutrition-verdict|classifyDay/);
+    }
   });
 });

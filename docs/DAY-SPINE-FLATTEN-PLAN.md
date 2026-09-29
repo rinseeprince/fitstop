@@ -230,7 +230,7 @@ and hand me the browser smokelist from §5 and the PROD checklist.
 
 ### Commit 3 — `feat(check-ins): the review's Nutrition card shows the week day by day — from the copy the check-in froze`
 
-**STATUS: SHIPPED `c000eedf` 2026-09-26.** Independent of commits 1 and 2 (no migration, no spine read). Each day row also carries its macros eaten against target (owner, 2026-09-26, added at plan review).
+**STATUS: SHIPPED `c000eedf` 2026-09-26.** Independent of commits 1 and 2 (no migration, no spine read). Each day also carries its macros against target (owner, 2026-09-26, added at plan review). After the owner's first look (2026-09-29) the day rows became a target-over-eaten table, one line per day, and the Training and Nutrition cards stopped stretching to each other's height (the commit after `c000eedf`).
 
 What the coach sees today: the review's Nutrition card gives the week's total against its target, the HIT / PARTIAL / MISSED pill with "N/M on target", the bar and the average macros, and nothing per day. Which days were missed, which were never logged and which had no target is visible only in the AI review's text and on the Overview's rail. The rows that answer it are already frozen in the check-in's copy at Send (`sent_snapshot.period.nutrition`, one row per day: date, weekday, standing, target and eaten kcal and macros), already reach the coach's detail wire as one dot per day, and are already what the AI prompt reads day by day.
 

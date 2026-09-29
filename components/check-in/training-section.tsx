@@ -49,7 +49,7 @@ export const TrainingSection = ({ workouts, highlights }: TrainingSectionProps) 
       {/* No count on the rail: the KPI ribbon above states the week's
           completed-over-prescribed figure once (owner, 2026-09-04). */}
       <SectionLabel label="Training" />
-      <div className="flex-1 rounded-[6px] bg-white p-5">
+      <div className="rounded-[6px] bg-white p-5">
         {workouts.length > 0 && (
           <div className="flex flex-col gap-2">
             {workouts.map((workout) => {
