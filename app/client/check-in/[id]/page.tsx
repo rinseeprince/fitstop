@@ -280,7 +280,7 @@ export default function CheckInDetailPage() {
               )}
               {checkIn.adherencePercentage && (
                 <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Training Adherence</span>
+                  <span className="text-muted-foreground">Nutrition Adherence</span>
                   <span className="font-medium">{checkIn.adherencePercentage}%</span>
                 </div>
               )}

@@ -185,6 +185,11 @@ for what it is ("Calorie adherence") or, with the figure's removal in §1, drop
 it from the client surfaces. The training figure a client can trust is
 completed over planned, which the wire does not carry today (next item).
 
+**Fixed 2026-09-30 on the detail page** (owner: "if it's wrong please ensure it
+is fixed"): the label reads "Nutrition Adherence", the name
+`CLIENT-APP-REFERENCE.md` gives this figure ("Weekly nutrition adherence").
+Still open: the list card's bare "Adherence", and the figure's removal with §1.
+
 ### 7. Two smaller things on the same page
 
 - **"Workouts Completed 3" has no denominator.** The stored column counts full
