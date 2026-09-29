@@ -1,5 +1,6 @@
 /**
- * Wire proof for the day-form (docs/DAY-SPINE-FLATTEN-PLAN.md §5): every
+ * Wire proof for the day-form (the day-spine flatten plan's §5, in git history at
+ * cfa28d81:docs/DAY-SPINE-FLATTEN-PLAN.md): every
  * route that carries a day keeps its bytes across a change to how the day is
  * written or read. A day is two rows, `wellness_logs` and `nutrition_logs`,
  * each found by (client_id, date), assembled at read.

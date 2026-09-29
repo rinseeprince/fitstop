@@ -160,7 +160,7 @@ describe('Daily Logs Service - Pure Functions', () => {
 });
 
 // A day is assembled from its wellness row and its food row
-// (docs/DAY-SPINE-FLATTEN-PLAN.md §2, rules 2 to 4): one function, the two
+// (ARCHITECTURE → "Daily logs (the day-form)"): one function, the two
 // rows in, one day out, its target from the computed day.
 describe('assembleDayLog', () => {
   const wellness = wellnessRow('2026-05-21', { mood: 4, sleep: 7, soreness: 6 });
