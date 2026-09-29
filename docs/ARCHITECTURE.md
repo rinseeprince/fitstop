@@ -1848,26 +1848,29 @@ divide by eligible days, from `periodAdherence.dates` — never a day count
 derived in the renderer, which resolves differently on a legacy row. The KPI
 ribbon's **Nutrition** cell is that fraction. **The week grid** (`components/check-in/week-grid.tsx`,
 "Day by day"; owner, 2026-09-29) sets the week out under one row of day columns — the copy's
-`periodAdherence.dates`, oldest first — with each row's average in a tinted column on the right.
-Its rail carries the week's calorie total against its target, the bar and the HIT/PARTIAL/MISSED
-pill with `N/M on target`. Its rows: **Training** — each workout under its own day as its name
-and its word off its log (Full, Partial, Missed, `trainingAdherenceStatus`), every workout of a day
-shown, and the average cell the page's one `summariseTraining` count; **Calories** — each day's
-eaten figure over a bar against a line at that day's target, with the day's word under it;
-**Protein**, **Carbs** and **Fats** — each day's grams, tinted when 10% or more under (the protein
-blue) or over (the warning amber) that day's target (`MACRO_OFF_TARGET_PERCENT`), a day no target
-covered never tinted. The row label names the week's target when every targeted day shares one.
-Every nutrition cell is a frozen row from the copy (`periodAdherence.nutrition.days` — the rows
+`periodAdherence.dates`, oldest first — with the nutrition rows' averages in a tinted column on the
+right, headed where it starts. Its rail carries its name alone: the week's on-target count is the
+ribbon's. Its rows: **Training** — each workout under its own day as its name and its word off its
+log (Full, Partial, Missed, `trainingAdherenceStatus`), every workout of a day shown, and no average
+(a week's training is its sessions; the ribbon carries the count); **Calories** — the row's name
+over the week's intake on the targeted days against every targeted day's target and its bar, then
+each day's own target small and muted over what was eaten (a blank line where no target covered the
+day), a bar against a line at that day's target — a training day's surplus lifts its line — and the
+day's word under it; **Protein**, **Carbs** and **Fats** — each day's grams under that day's own
+target, tinted when 10% or more under (the protein blue) or over (the warning amber) it
+(`MACRO_OFF_TARGET_PERCENT`), a day no target covered never tinted. Targets differ day to day, so no
+row names one for the week. Every nutrition cell is a frozen row from the copy (`periodAdherence.nutrition.days` — the rows
 verbatim, coach wire only), and a day's word — **On target**, **Partial**, **Missed**, **No food
 logged**, **No target** — is the standing the check-in froze at Send through one lookup table, never
 re-judged from the numbers, so a threshold changed later never rewords a sent week; the tints are
-drawn from the same frozen numbers. The averages are the kernel's per JUDGED day (intake per logged
+drawn from the same frozen numbers. The averages are the kernel's per JUDGED day, target over intake (intake per logged
 day, named "kcal / logged day", when no day was both logged and targeted). The colours are the
 adherence rail's, one meaning each: teal, amber, rose, the faint tint for a targeted day with no
 food log, and no colour for nothing to judge. "No food logged" names what the row counts: the
 header chip counts days with ANY log, so the two can differ on one screen (TECHNICAL-DEBT →
-"Check-in review surface"). The footer names the logged days no target covered ("Sun has no target
-and isn't counted"). A legacy row whose copy saved no week shows its training alone, over the
+"Check-in review surface"). The footer's legend keeps only what a glance can't read off the grid —
+the no-food box, the target line and the two tints; every day already names its standing. A legacy
+row whose copy saved no week shows its training alone, over the
 check-in's own period. The grid takes no log rows, folds no figure and words no day of its own
 (`week-grid.test.tsx` scans it). Habits come from `perHabit`, built from the HABIT list, so a
 habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`

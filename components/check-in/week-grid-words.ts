@@ -1,9 +1,8 @@
 import { CheckCircle2, CircleDashed, XCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { NutritionDay, NutritionDayStatus } from "@/types/schedule";
+import type { NutritionDayStatus } from "@/types/schedule";
 import type { TrainingAdherenceStatus } from "@/lib/training-adherence";
 import { MACRO_OFF_TARGET_PERCENT } from "@/lib/constants";
-import { dayLabel } from "./day-label";
 
 /**
  * A day's food, in words and colours, from the standing the check-in froze at
@@ -67,29 +66,3 @@ export const MACROS = [
   { name: "Carbs", eaten: "actualCarbsG", target: "targetCarbsG", dot: "bg-carbs", average: "carbsG" },
   { name: "Fats", eaten: "actualFatG", target: "targetFatG", dot: "bg-fat", average: "fatG" },
 ] as const;
-
-/**
- * One target for the whole week, or none: "Target 2,300" when every targeted
- * day shares it, null when the days differ (a training-day surplus, a coach's
- * day edit) or no day had one.
- */
-export function sharedTarget(values: (number | null)[]): number | null {
-  const targets = new Set(values.filter((value): value is number => value != null));
-  return targets.size === 1 ? [...targets][0] : null;
-}
-
-/** "Sun", "Sun and Mon", "Sun, Mon and Tue". */
-function listDays(days: string[]): string {
-  return days.length <= 1 ? days.join("") : `${days.slice(0, -1).join(", ")} and ${days[days.length - 1]}`;
-}
-
-/** The days the client logged food on that no target covered, named: they are counted as logged and nothing else. */
-export function noTargetNote(days: NutritionDay[]): string | null {
-  const named = days
-    .filter((day) => day.status === "no_target" && day.actualCalories != null)
-    .map((day) => dayLabel(day.date));
-  if (named.length === 0) return null;
-  return named.length === 1
-    ? `${named[0]} has no target and isn't counted`
-    : `${listDays(named)} have no target and aren't counted`;
-}

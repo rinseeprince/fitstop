@@ -88,19 +88,18 @@ const average = (container: HTMLElement, row: string) =>
 afterEach(cleanup);
 
 describe("one grid for the week — training, calories and macros under the same days", () => {
-  it("sets the days out once, oldest first, with an average column on the right", () => {
+  it("sets the days out once, oldest first, every row on the same columns", () => {
     const { container } = renderGrid();
     const header = [...container.querySelectorAll<HTMLElement>('[data-row="days"] [data-day]')];
 
     expect(header.map((day) => day.dataset.day)).toEqual(DATES);
     expect(header.map((day) => day.textContent)).toEqual(["Sun20", "Mon21", "Tue22", "Wed23", "Thu24", "Fri25", "Sat26"]);
-    expect(average(container, "days").textContent).toBe("Avg");
     for (const row of ["training", "calories", "protein", "carbs", "fats"]) {
       expect([...container.querySelectorAll(`[data-row="${row}"] [data-day]`)].map((day) => (day as HTMLElement).dataset.day)).toEqual(DATES);
     }
   });
 
-  it("puts each workout under its own day with its word, and the page's count in the average", () => {
+  it("puts each workout under its own day with its word, and gives training no average", () => {
     const both = [...WORKOUTS, workout("e-3", "2026-09-25", "Mobility", true)];
     const { container } = renderGrid({ workouts: both });
 
@@ -110,21 +109,49 @@ describe("one grid for the week — training, calories and macros under the same
     expect(cell(container, "training", "2026-09-25").textContent).toContain("Lower A");
     expect(within(cell(container, "training", "2026-09-25")).getByText("Full")).toBeInTheDocument();
     expect(cell(container, "training", "2026-09-20").textContent).toBe("—");
-    expect(average(container, "training").textContent).toBe("1/3");
     expect(screen.getByText("3 sessions planned")).toBeInTheDocument();
+    // The average column belongs to the nutrition rows: bare beside Training
+    // and the day header, and headed where it starts.
+    expect(average(container, "training").textContent).toBe("");
+    expect(average(container, "training").className).not.toContain("bg-");
+    expect(average(container, "days").textContent).toBe("");
+    expect(average(container, "calories").textContent).toMatch(/^Avg/);
   });
 
-  it("puts each day's eaten calories over its bar, with the word the check-in froze under it", () => {
+  it("puts each day's target over what was eaten, the bar under them and the word the check-in froze under that", () => {
     const { container } = renderGrid();
 
-    expect(cell(container, "calories", "2026-09-21").textContent).toBe("2,260On target");
-    expect(cell(container, "calories", "2026-09-22").textContent).toBe("2,140Partial");
-    expect(cell(container, "calories", "2026-09-23").textContent).toBe("1,690Missed");
-    expect(cell(container, "calories", "2026-09-24").textContent).toBe("—No food logged");
-    expect(cell(container, "calories", "2026-09-20").textContent).toBe("1,870No target");
-    expect(screen.getByText("Target 2,300")).toBeInTheDocument();
-    // Per judged day: 10,890 over five days.
-    expect(average(container, "calories").textContent).toBe("2,178kcal / day");
+    expect(cell(container, "calories", "2026-09-21").textContent).toBe("2,3002,260On target");
+    expect(cell(container, "calories", "2026-09-22").textContent).toBe("2,3002,140Partial");
+    expect(cell(container, "calories", "2026-09-23").textContent).toBe("2,3001,690Missed");
+    expect(cell(container, "calories", "2026-09-24").textContent).toBe("2,300—No food logged");
+    // No target covered the day: a blank line where the target would be.
+    expect(cell(container, "calories", "2026-09-20").textContent).toBe(" 1,870No target");
+    // Per judged day on both sides: 10,890 eaten over five days, against 2,300 a day.
+    expect(average(container, "calories").textContent).toBe("Avg2,3002,178kcal / day");
+  });
+
+  it("shows each day under its OWN target, so a training day's surplus reads on the day it lands", () => {
+    const training: Figures = [2576, 172, 271, 90];
+    const surplus = WEEK.map((day) =>
+      day.date === "2026-09-22" ? food("2026-09-22", "hit", [2601, 175, 280, 88], training) : day
+    );
+    const { container } = renderGrid({ nutrition: nutritionOf(surplus) });
+
+    expect(cell(container, "calories", "2026-09-22").textContent).toBe("2,5762,601On target");
+    expect(cell(container, "calories", "2026-09-21").textContent).toBe("2,3002,260On target");
+    expect(cell(container, "carbs", "2026-09-22").textContent).toBe("271g280");
+    // 280 against its own 271 is on target; against the rest day's 202 it would be tinted.
+    expect(within(cell(container, "carbs", "2026-09-22")).getByText("280").className).not.toMatch(/bg-/);
+  });
+
+  it("carries the week's total against its target and its bar beside the Calories row, and nothing on the rail", () => {
+    const { container } = renderGrid();
+    const label = container.querySelector<HTMLElement>('[data-row="calories"] > div')!;
+
+    expect(label.textContent).toBe("Calories10,890of 13,800 kcal");
+    expect(screen.queryByText(/2\/6 on target/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/MISSED/)).not.toBeInTheDocument();
   });
 
   it("words the day from the standing the check-in froze, never from its numbers", () => {
@@ -133,19 +160,23 @@ describe("one grid for the week — training, calories and macros under the same
     const frozen = [food("2026-09-20", "hit", [1500, 110, 140, 50], TARGET)];
     const { container } = renderGrid({ dates: ["2026-09-20"], nutrition: nutritionOf(frozen) });
 
-    expect(cell(container, "calories", "2026-09-20").textContent).toBe("1,500On target");
+    expect(cell(container, "calories", "2026-09-20").textContent).toBe("2,3001,500On target");
   });
 
   it("tints a macro 10% or more off that day's target — under in blue, over in amber — and never a day with no target", () => {
     const { container } = renderGrid();
     const figure = (row: string, date: string, value: string) => within(cell(container, row, date)).getByText(value);
 
+    // A tinted figure carries its words for a screen reader.
+    expect(cell(container, "protein", "2026-09-23").textContent).toBe("172g133, 10% or more under target");
     expect(figure("protein", "2026-09-23", "133").className).toContain(MACRO_MARK.under.tint);
     expect(figure("carbs", "2026-09-21", "236").className).toContain(MACRO_MARK.over.tint);
     expect(figure("protein", "2026-09-21", "169").className).not.toMatch(/bg-/);
+    expect(cell(container, "protein", "2026-09-20").textContent).toBe(" 148");
     expect(figure("protein", "2026-09-20", "148").className).not.toMatch(/bg-/);
-    expect(cell(container, "fats", "2026-09-24").textContent).toBe("—");
+    expect(cell(container, "fats", "2026-09-24").textContent).toBe("90g—");
     // The averages, per judged day, against the judged days' target.
+    expect(average(container, "protein").textContent).toBe("172g164");
     expect(within(average(container, "protein")).getByText("164").className).not.toMatch(/bg-/);
     expect(within(average(container, "carbs")).getByText("225").className).toContain(MACRO_MARK.over.tint);
     expect(within(average(container, "fats")).getByText("69").className).toContain(MACRO_MARK.under.tint);
@@ -160,33 +191,21 @@ describe("one grid for the week — training, calories and macros under the same
     expect(macroMark(null, 200)).toBeNull();
   });
 
-  it("carries the week's total against its target, the bar and the pill on its rail", () => {
-    renderGrid();
-
-    expect(screen.getByText("10,890")).toBeInTheDocument();
-    expect(screen.getByText(/of 13,800 kcal/)).toBeInTheDocument();
-    expect(screen.getByText("MISSED · 2/6 on target")).toBeInTheDocument();
-  });
-
-  it("says no target was set, with no total, no bar and no pill, when the coach prescribed nothing all week", () => {
+  it("says no target was set, with no total and no bar, when the coach prescribed nothing all week", () => {
     const untargeted = [food("2026-09-20", "no_target", [1870, 148, 190, 62], null), food("2026-09-21", "no_target", [2105, 176, 198, 61], null)];
     const { container } = renderGrid({ dates: ["2026-09-20", "2026-09-21"], nutrition: nutritionOf(untargeted) });
 
-    expect(screen.getByText("No target set this week")).toBeInTheDocument();
-    expect(screen.queryByText(/on target/)).not.toBeInTheDocument();
-    expect(screen.getByText("No target set")).toBeInTheDocument();
-    // What they ate per logged day, named so.
-    expect(average(container, "calories").textContent).toBe("1,988kcal / logged day");
+    expect(container.querySelector<HTMLElement>('[data-row="calories"] > div')!.textContent).toBe("CaloriesNo target set");
+    expect(screen.queryByText(/kcal target|of .* kcal/)).not.toBeInTheDocument();
+    // What they ate per logged day, named so, under a blank target line.
+    expect(average(container, "calories").textContent).toBe("Avg 1,988kcal / logged day");
   });
 
-  it("names the logged days no target covered, one or several", () => {
-    renderGrid();
-    expect(screen.getByText("Sun has no target and isn't counted")).toBeInTheDocument();
-    cleanup();
+  it("keeps only the legend a glance can't read off the grid, and no footer note", () => {
+    const { container } = renderGrid();
 
-    const two = [food("2026-09-20", "no_target", [1870, 148, 190, 62], null), food("2026-09-21", "no_target", [2105, 176, 198, 61], null)];
-    renderGrid({ dates: ["2026-09-20", "2026-09-21"], nutrition: nutritionOf(two) });
-    expect(screen.getByText("Sun and Mon have no target and aren't counted")).toBeInTheDocument();
+    expect(container.querySelector("[data-legend]")!.textContent).toBe("No food loggedTarget10%+ under10%+ over");
+    expect(screen.queryByText(/isn't counted/)).not.toBeInTheDocument();
   });
 
   it("shows the week's training alone on a legacy row whose copy saved no week", () => {
@@ -194,7 +213,8 @@ describe("one grid for the week — training, calories and macros under the same
 
     expect(container.querySelector('[data-row="training"]')).not.toBeNull();
     expect(container.querySelector('[data-row="calories"]')).toBeNull();
-    expect(screen.queryByText(/on target/i)).not.toBeInTheDocument();
+    expect(container.querySelector("[data-legend]")).toBeNull();
+    expect(screen.queryByText("Avg")).not.toBeInTheDocument();
   });
 });
 

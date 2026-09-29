@@ -8,7 +8,6 @@ import { SectionLabel } from "@/components/programs/shared/section-label";
 import {
   LABEL_CLASS,
   MONO,
-  MONO_META_CLASS,
   TEXT_PRIMARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { TrainingAdherence } from "@/lib/training-adherence";
@@ -16,7 +15,7 @@ import type { CheckInExerciseHighlight, CheckInTrainingEventDetail } from "@/typ
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 import { dayLabel } from "./day-label";
 import { CaloriesRow, GridRow, MacroRow, TrainingRow } from "./week-grid-rows";
-import { DAY_STANDING, MACROS, MACRO_MARK, NO_FOOD_BOX, TARGET_LINE, noTargetNote } from "./week-grid-words";
+import { MACROS, MACRO_MARK, NO_FOOD_BOX, TARGET_LINE } from "./week-grid-words";
 
 type Nutrition = CheckInPeriodAdherence["nutrition"];
 
@@ -39,47 +38,10 @@ type WeekGridProps = {
 const LABEL_COLUMN = "148px";
 const AVERAGE_COLUMN = "88px";
 
-/** The week's total against its target, the bar and the week's pill — the rail's right side. */
-function WeekSummary({ nutrition }: { nutrition: Nutrition | null }) {
-  if (!nutrition) return null;
-  const { targetTotals, consumedOnTargetedDays } = nutrition;
-  // The coach prescribed nothing all week: no total, no bar, no pill — never
-  // 0 of 0, never MISSED over nothing to hit.
-  if (!targetTotals || !consumedOnTargetedDays) {
-    return <span className="whitespace-nowrap text-[11px] text-[#93b0b4]">No target set this week</span>;
-  }
-  const fill = targetTotals.calories > 0 ? Math.min((consumedOnTargetedDays.calories / targetTotals.calories) * 100, 100) : 0;
-  const verdict = nutrition.periodVerdict?.toUpperCase() ?? null;
-  return (
-    <div className="flex items-center gap-3">
-      <span className="whitespace-nowrap">
-        <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
-          {consumedOnTargetedDays.calories.toLocaleString()}
-        </span>
-        <span className={cn(MONO_META_CLASS, "text-[11px]")}> of {targetTotals.calories.toLocaleString()} kcal</span>
-      </span>
-      <span className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-[rgba(13,148,136,0.08)]" aria-hidden>
-        <span className="block h-full rounded-full bg-[#0d9488]" style={{ width: `${fill}%` }} />
-      </span>
-      <span
-        className={cn(
-          "whitespace-nowrap rounded-[4px] px-2 py-0.5 text-[11px] font-semibold",
-          MONO,
-          verdict === "HIT" ? "bg-[rgba(13,148,136,0.08)] text-[#0d9488]" : "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
-        )}
-      >
-        {verdict} · {nutrition.onTarget}/{nutrition.targetedDays} on target
-      </span>
-    </div>
-  );
-}
-
+// Only what a glance can't read off the grid itself: every day already names
+// its own standing in words (owner, 2026-09-29).
 const LEGEND = [
-  { swatch: cn("h-2 w-2 rounded-[2px]", DAY_STANDING.hit.bar), label: DAY_STANDING.hit.label },
-  { swatch: cn("h-2 w-2 rounded-[2px]", DAY_STANDING.partial.bar), label: DAY_STANDING.partial.label },
-  { swatch: cn("h-2 w-2 rounded-[2px]", DAY_STANDING.missed.bar), label: DAY_STANDING.missed.label },
-  { swatch: cn("h-2 w-2 rounded-[2px]", DAY_STANDING.no_target.bar), label: DAY_STANDING.no_target.label },
-  { swatch: cn("h-2 w-2", NO_FOOD_BOX), label: DAY_STANDING.not_logged.label },
+  { swatch: cn("h-2 w-2", NO_FOOD_BOX), label: "No food logged" },
   { swatch: cn("h-[3px] w-3 rounded-full", TARGET_LINE), label: "Target" },
 ];
 
@@ -104,13 +66,13 @@ function Legend({ items }: { items: { swatch: string; label: string }[] }) {
 
 /**
  * The check-in's week in one grid (owner, 2026-09-29): Training, Calories and
- * the three macros as rows under the same seven days, with each row's
- * average on the right. One card rather than a Training card beside a
+ * the three macros as rows under the same seven days, each nutrition figure
+ * under that day's own target, and the nutrition rows' averages on the right. One card rather than a Training card beside a
  * Nutrition card, so the page never sets two cards of different heights side
  * by side. Every nutrition cell is a frozen row from the check-in's copy,
  * worded from its own standing; the grid takes no log rows and counts
- * nothing — the training figure is the page's `summariseTraining` run and the
- * averages are the kernel's.
+ * nothing — the planned count is the page's `summariseTraining` run and the
+ * averages and the week's total are the kernel's.
  */
 export function WeekGrid({ dates, workouts, training, highlights, nutrition }: WeekGridProps) {
   const { preference } = useUnits();
@@ -120,11 +82,10 @@ export function WeekGrid({ dates, workouts, training, highlights, nutrition }: W
   const byDate = new Map((nutrition?.days ?? []).map((day) => [day.date, day]));
   const food = dates.map((date) => byDate.get(date) ?? null);
   const prHighlights = highlights.filter((highlight) => highlight.highlightType === "pr");
-  const note = nutrition ? noTargetNote(nutrition.days) : null;
 
   return (
     <div>
-      <SectionLabel label="Day by day" actions={<WeekSummary nutrition={nutrition} />} />
+      <SectionLabel label="Day by day" />
       <div className="rounded-[6px] bg-white p-5">
         {/* A narrow screen scrolls the week sideways rather than crushing seven columns. */}
         <div className="overflow-x-auto">
@@ -143,7 +104,6 @@ export function WeekGrid({ dates, workouts, training, highlights, nutrition }: W
                   </>
                 ),
               }))}
-              average={<span className={LABEL_CLASS}>Avg</span>}
             />
             <TrainingRow template={template} dates={dates} workouts={workouts} training={training} />
             {nutrition && (
@@ -185,13 +145,13 @@ export function WeekGrid({ dates, workouts, training, highlights, nutrition }: W
         )}
 
         {nutrition && (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-[rgba(13,148,136,0.06)] pt-3">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <Legend items={LEGEND} />
-              <span className="h-3 w-px bg-[rgba(13,148,136,0.12)]" aria-hidden />
-              <Legend items={MARK_LEGEND} />
-            </div>
-            {note && <span className="text-[11px] text-[#93b0b4]">{note}</span>}
+          <div
+            data-legend=""
+            className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-[rgba(13,148,136,0.06)] pt-3"
+          >
+            <Legend items={LEGEND} />
+            <span className="h-3 w-px bg-[rgba(13,148,136,0.12)]" aria-hidden />
+            <Legend items={MARK_LEGEND} />
           </div>
         )}
       </div>
