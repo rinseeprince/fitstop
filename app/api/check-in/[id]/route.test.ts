@@ -110,7 +110,7 @@ describe("GET /api/check-in/[id] (coach)", () => {
       loggedDates: ["2026-05-08"],
       nutrition: {
         rail: [],
-        // The copy's frozen food rows, which the Nutrition card lists day by day.
+        // The copy's frozen food rows, which the review's week lists one line per day.
         days: [
           {
             date: "2026-05-08", dayOfWeek: "friday", status: "hit",

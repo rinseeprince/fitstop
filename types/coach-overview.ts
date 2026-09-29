@@ -117,7 +117,7 @@ export type HabitBreakdown = {
  * (lib/check-in/sent-snapshot.ts): the Overview kernel's dates, logged dates
  * and habit figures, and the nutrition summary with its rail plus the frozen
  * food rows themselves — `nutrition.days`, one per day of the week in the
- * copy's order, which the review's Nutrition card lists under its summary. Its
+ * copy's order, which the review's week lists one line per day. Its
  * own type rather than a `Pick` of `AdherenceSummary`, so the Overview's own
  * summary carries no rows it never renders.
  *
