@@ -26,8 +26,7 @@ vi.mock("@/components/check-in/kpi-ribbon", () => ({
   KPIRibbon: () => <div data-testid="ribbon" />,
 }));
 vi.mock("@/components/check-in/wellness-section", () => ({ WellnessSection: () => null }));
-vi.mock("@/components/check-in/nutrition-section", () => ({ NutritionSection: () => null }));
-vi.mock("@/components/check-in/training-section", () => ({ TrainingSection: () => null }));
+vi.mock("@/components/check-in/week-grid", () => ({ WeekGrid: () => null }));
 vi.mock("@/components/check-in/client-notes-section", () => ({ ClientNotesSection: () => null }));
 vi.mock("@/components/check-in/habits-section", () => ({ HabitsSection: () => null }));
 vi.mock("./check-in-goal-strip", () => ({

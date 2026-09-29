@@ -1077,7 +1077,7 @@ A type-level guard in the module fails the build if a seventh view is added with
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |
 | Daily Habits | `HabitsTabContent` + `HabitsHistoryTable` | Habit management, analytics |
-| Check-ins | `CheckInsTabContent` | A `Check-in history` rail whose one action, "Customise check-in", opens the per-client form editor (see "The customisable form" under Check-in System) — it sits ABOVE the body's four states, because a coach shapes a form before the first check-in exists. Under it, the client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page on a **keyset cursor**; `hooks/use-check-in-data.ts` owns the list key and its invalidator). Each row is a `<Link>` to `checkInReviewUrl`; with `?checkIn=<id>` present the tab renders the review surface, `CheckInDetailView` (`components/clients/check-ins/`), in place of the list — one page: the KPI ribbon over Training beside Nutrition, then Wellness, Habits, Client notes, Goal progress, the AI review (Regenerate) and the Reply (Send). See "The coach review surface" under Check-in System |
+| Check-ins | `CheckInsTabContent` | A `Check-in history` rail whose one action, "Customise check-in", opens the per-client form editor (see "The customisable form" under Check-in System) — it sits ABOVE the body's four states, because a coach shapes a form before the first check-in exists. Under it, the client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page on a **keyset cursor**; `hooks/use-check-in-data.ts` owns the list key and its invalidator). Each row is a `<Link>` to `checkInReviewUrl`; with `?checkIn=<id>` present the tab renders the review surface, `CheckInDetailView` (`components/clients/check-ins/`), in place of the list — one page: the KPI ribbon over the week grid ("Day by day"), then Wellness, Habits, Client notes, Goal progress, the AI review (Regenerate) and the Reply (Send). See "The coach review surface" under Check-in System |
 | Notes | `NotesTabContent` | `client_notes` list — pinned first, newest-first, add + pin/unpin. Same endpoints as the Overview card |
 
 `activeTab` is DERIVED from `?tab=` on every render (CONVENTIONS.md §7 → URL-driven UI state). Tab changes go through `handleTabChange` → `buildClientTabUrl` (`lib/client-tabs.ts`): it is the URL **builder**, so cross-tab navigation runs through it to get the query assembled correctly (`?subtab=` stripped, `extraParams` applied), and it pushes a history entry on a tab change (scrolling to top) and replaces in place on a same-tab address. **A place pushes, a refinement replaces**: a tab, a pane (`?journey=`, `?training=`, `?nutrition=`), an opened check-in (`?checkIn=`) and a roster view (`?view=`) each push, so browser Back returns one step; the metric (`?metric=`), an exercise pick, a filter or a sort replaces; a one-shot param is stripped by a replace, so no entry re-opens a flow; overlays (drawers, dialogs) are not entries. Browser Back is one step. A page's arrow — the client sidebar's, the intake review's, the client page's error card, the library builder's exit — LEAVES the page: back over every entry of it to the one before it began when a coach page precedes it, else to its parent (`lib/coach-history.ts` keeps the count and the page start; `components/coach/back-link.tsx` is an arrow that is a link). A one-step return (`hooks/use-coach-back.ts`) serves the review's post-Send return and an editor's own exit. The Training tab's apply tray and its two editors are places of their own: `?apply=1`, the program list, pushed by "Apply program" and popped by its X; `?editor=<savedPlanId>`, the client editor, which a pick REPLACES the tray's entry with and whose arrow replaces back to the list; `?plan=<planId>`, the plan editor, pushed on open. Back closes each onto the calendar, a save completes the entry, and `buildClientTabUrl` drops all three on a tab change. `components/clients/url-writer-class.test.ts` pins each writer's class; `components/clients/training/builder/surface-ownership.test.ts` pins that the tray and the editors hold no state of their own. Every surface has one owner and no frame disagrees: CONVENTIONS §7 → "No frame disagrees". The training history table's exercise drill-down takes the handler as a prop, and the nutrition drawer's `GoalLine` writes a sentence rather than a link. **Every tab owns a pane param named after itself** — `?journey=` (Physique/Goals/Training/Wellness/Blocks), `?training=` (Data/Plans), `?nutrition=` (Data/Plans). Single-owner is the whole contract: only its own tab reads it, so it rides through a tab switch and restores that pane on the return trip, and it is read *unconditionally* — a deep link resolves on the first render. Journey owns a second, `?metric=`, the selected metric of its Physique and Wellness panes: read unconditionally, validated against the pane's own list (an unknown value or the other pane's metric derives to the pane default, `DEFAULT_FOCUS`), written by the hero's switcher alone, and deleted by a pane switch in the same navigation, so the URL never asserts a metric the pane cannot show; the measurement log remounts on it (`key`), which is what returns its page to 1. The shared `?subtab=` that Training and Nutrition both used to write is retired (Session 7.2) — still read as a guarded fallback so old links resolve, still deleted on every tab change, written by nothing. `extraParams` ADDRESS a pane on arrival and a `null` value deletes a carried key.
@@ -1651,12 +1651,11 @@ its list whenever `?checkIn=<id>` is present (the tab's single-owner param — s
 structure").
 
 **One page, no switcher**, read in the order the review runs: the KPI ribbon (Weight, Body Fat,
-Nutrition, Training), then Training beside Nutrition, Wellness, Habits, Client notes, Goal
-progress, the AI review, and last the Reply. Training and Nutrition share a flex row rather than a
-two-column grid: either returns null on an empty week, and a lone survivor takes the whole row
-instead of leaving a hole; side by side, each card is as tall as its own content, never stretched to
-its neighbour's. **Every section renders its own `SectionLabel` rail, inside the
-component that decides whether it has anything to show** — five of them return null on an empty
+Nutrition, Training), then the week grid, Wellness, Habits, Client notes, Goal
+progress, the AI review, and last the Reply. The week grid is ONE card for Training and Nutrition
+under the same days, so the page never sets two cards of different heights side by side. **Every
+section renders its own `SectionLabel` rail, inside the
+component that decides whether it has anything to show** — three of them return null on an empty
 week, so a rail owned by the page would stand over empty space, or the page would need a second
 copy of each child's emptiness predicate. Every card is borderless white on the `#f4f7f6` page per
 the SOT's "spacing does separation, not borders"; nothing animates in; names and body sit at 13px
@@ -1763,7 +1762,7 @@ with the change the ribbon shows (`metricComparison`), the goal strip's rows, it
 the goal's deadline, through `lib/check-in/review-figures.ts`, which the strip and the ribbon
 import too, so the model and the page cannot word one verdict two ways. Then the week's figures: the
 session count through `summariseTraining` (a partial workout counts as done, the breakdown beside it),
-the Nutrition card's sentence figure for figure, the wellness changes since the last check-in
+the week grid's nutrition figures, figure for figure, the wellness changes since the last check-in
 (`formatDeltaValue`), and each habit's count over its eligible days. Then each day of the period: every
 workout on it — a logged one with the quality off its log, its note and one line per logged exercise,
 set by set, target beside result, measure by measure, in the coach's units, naming every measure outside
@@ -1847,22 +1846,30 @@ target is in no ratio, and a period with none reads "No targets set", never
 per-day averages all from the same run, each over its named day set. Habits
 divide by eligible days, from `periodAdherence.dates` — never a day count
 derived in the renderer, which resolves differently on a legacy row. The KPI
-ribbon's **Nutrition** cell is that fraction; the Nutrition card renders the same summary and,
-under it, the week day by day from the same frozen rows the count was taken over
-(`periodAdherence.nutrition.days` — the copy's rows verbatim, in the copy's order, coach wire only):
-a table (`nutrition-days-table.tsx`) in the design system's target-over-actual readout, one line per
-day — the day (`Sun 20`; the header names the week), then Kcal, Protein (g), Carbs (g) and Fats (g),
-each cell the day's target over what was eaten, a blank target line where no target covered the day
-and a faint dash where nothing was eaten, no figure marked — and the day's standing as one of five
-words through one lookup table — **On target**, **Partial**, **Missed**, **No food logged**, **No
-target** — worded from the standing the check-in froze at Send and never re-judged from the row's
-numbers, so a threshold changed later never rewords a sent week. On a narrow card the figures scroll
-sideways under the pinned Day column. The colours are the adherence rail's, one meaning each:
-teal, amber, rose, the faint tint for a targeted day with no food log, and no colour for nothing to
-judge. "No food logged" names what this list counts: the header chip counts days with ANY log, so
-the two can differ on one screen (TECHNICAL-DEBT → "Check-in review surface"). The card computes
-nothing — it takes no log rows, folds no figure and judges no day (`nutrition-section.test.tsx`
-scans it and its table). Habits come from `perHabit`, built from the HABIT list, so a
+ribbon's **Nutrition** cell is that fraction. **The week grid** (`components/check-in/week-grid.tsx`,
+"Day by day"; owner, 2026-09-29) sets the week out under one row of day columns — the copy's
+`periodAdherence.dates`, oldest first — with each row's average in a tinted column on the right.
+Its rail carries the week's calorie total against its target, the bar and the HIT/PARTIAL/MISSED
+pill with `N/M on target`. Its rows: **Training** — each workout under its own day as its name
+and its word off its log (Full, Partial, Missed, `trainingAdherenceStatus`), every workout of a day
+shown, and the average cell the page's one `summariseTraining` count; **Calories** — each day's
+eaten figure over a bar against a line at that day's target, with the day's word under it;
+**Protein**, **Carbs** and **Fats** — each day's grams, tinted when 10% or more under (the protein
+blue) or over (the warning amber) that day's target (`MACRO_OFF_TARGET_PERCENT`), a day no target
+covered never tinted. The row label names the week's target when every targeted day shares one.
+Every nutrition cell is a frozen row from the copy (`periodAdherence.nutrition.days` — the rows
+verbatim, coach wire only), and a day's word — **On target**, **Partial**, **Missed**, **No food
+logged**, **No target** — is the standing the check-in froze at Send through one lookup table, never
+re-judged from the numbers, so a threshold changed later never rewords a sent week; the tints are
+drawn from the same frozen numbers. The averages are the kernel's per JUDGED day (intake per logged
+day, named "kcal / logged day", when no day was both logged and targeted). The colours are the
+adherence rail's, one meaning each: teal, amber, rose, the faint tint for a targeted day with no
+food log, and no colour for nothing to judge. "No food logged" names what the row counts: the
+header chip counts days with ANY log, so the two can differ on one screen (TECHNICAL-DEBT →
+"Check-in review surface"). The footer names the logged days no target covered ("Sun has no target
+and isn't counted"). A legacy row whose copy saved no week shows its training alone, over the
+check-in's own period. The grid takes no log rows, folds no figure and words no day of its own
+(`week-grid.test.tsx` scans it). Habits come from `perHabit`, built from the HABIT list, so a
 habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
 writes a row only when they act, and the old grid read `/habits/logs`. **Training
 is deliberately NOT on that wire**: the review already carries the period's own
@@ -1881,7 +1888,7 @@ each row its attendance word plus the quality on its own log, and empty when the
 period cannot be resolved) — and `summariseTraining`
 (`lib/training-adherence.ts`, see "How a workout reads") is the ONE function
 that counts them. There is no stored per-session table and no second
-per-check-in shape: the review's KPI ribbon and its pills, the wizard's Training
+per-check-in shape: the review's KPI ribbon and the week grid's workout words, the wizard's Training
 Summary, the AI prompt and the figure the submit freezes all come out of that
 one summariser. A SECOND definition is what is forbidden, and
 `lib/training-adherence-ownership.test.ts` scans every check-in surface for the

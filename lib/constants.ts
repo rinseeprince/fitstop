@@ -70,6 +70,11 @@ export const NUTRITION_ADHERENCE_PARTIAL_THRESHOLD = 200; // Within 200 calories
 export const WEEKLY_NUTRITION_HIT_PER_DAY = 50;
 export const WEEKLY_NUTRITION_PARTIAL_PER_DAY = 143;
 
+// A macro 10% or more off the day's target, under or over, is tinted on the
+// check-in review's week grid (owner, 2026-09-29). A mark, not a verdict: the
+// day's one verdict is the calorie standing above.
+export const MACRO_OFF_TARGET_PERCENT = 10;
+
 // Sanity bounds for stored body measurements and loads.
 //
 // Storage is canonical: every weight is KILOGRAMS and every length is

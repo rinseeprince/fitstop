@@ -17,7 +17,7 @@ import { goalTypeBesideName } from "@/lib/goals/goal-types";
  * The two headline blocks of the check-in review prompt: the client's weight
  * and goal as the KPI ribbon and the goal strip show them, and the week's
  * figures as the ribbon and the cards show them — the session count through
- * the one summariser, the Nutrition card's sentence figure for figure, the
+ * the one summariser, the week grid's nutrition figures, figure for figure, the
  * wellness changes and the habit counts. Every rule is the page's own
  * (lib/check-in/review-figures.ts); nothing here is worked out a second way.
  */
@@ -111,7 +111,7 @@ export function weightAndGoal(input: CheckInReviewInput): string[] {
   return lines;
 }
 
-/** The Nutrition card's sentence, figure for figure. */
+/** The week's nutrition figures, as the review's week grid shows them. */
 function foodFigures(s: NutritionPeriodSummary): string {
   if (s.loggedDays === 0) {
     const targets =

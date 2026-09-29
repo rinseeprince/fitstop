@@ -6,8 +6,7 @@ import { SectionLabel } from "@/components/programs/shared/section-label";
 import { CheckInReviewSection } from "@/components/check-in/check-in-review-section";
 import { KPIRibbon } from "@/components/check-in/kpi-ribbon";
 import { WellnessSection } from "@/components/check-in/wellness-section";
-import { NutritionSection } from "@/components/check-in/nutrition-section";
-import { TrainingSection } from "@/components/check-in/training-section";
+import { WeekGrid } from "@/components/check-in/week-grid";
 import { ClientNotesSection } from "@/components/check-in/client-notes-section";
 import { HabitsSection } from "@/components/check-in/habits-section";
 import { CheckInReviewHeader } from "./check-in-review-header";
@@ -16,6 +15,7 @@ import { CheckInGoalStrip } from "./check-in-goal-strip";
 import { useCheckInDetailData } from "@/hooks/use-check-in-detail-data";
 import { summariseTraining } from "@/lib/training-adherence";
 import { toCheckInReview } from "@/lib/check-in/to-review";
+import { expandDateRange, getDateString } from "@/lib/date-helpers";
 import { OPEN_GOALS_SHEET_PARAM, type ClientTab } from "@/lib/client-tabs";
 import type { Client } from "@/types/check-in";
 
@@ -59,7 +59,7 @@ const Notice = ({ children }: { children: ReactNode }) => (
  * sent back (the AI review and the reply).
  *
  * **Each section renders its OWN rail**, inside the component that decides
- * whether there is something to show. Five of them return null on an empty
+ * whether there is something to show. Three of them return null on an empty
  * week, and a rail owned by this page would leave a bare label over empty
  * space — or force this page to hold a second copy of each child's
  * emptiness predicate.
@@ -136,24 +136,19 @@ export const CheckInDetailView = ({
             nutrition={periodAdherence?.nutrition ?? null}
           />
 
-          {/* Flex, not a 2-col grid: either section returns null on an empty
-              week, and a grid would leave a hole where the missing one was.
-              Both carry `flex-1`, so a lone survivor takes the whole row and
-              this page never has to ask which of them rendered. Side by side,
-              each card is as tall as its own content: stretched to its
-              neighbour's height, a two-workout week stood as a tall empty
-              card beside the nutrition table. */}
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-            <TrainingSection
-              workouts={trainingEventDetails}
-              highlights={data.checkIn.exerciseHighlights ?? []}
-            />
-
-            {/* The kernel's figures off the detail wire — the card counts
-                nothing from the logs, so a day with no target can never be
-                priced differently here and on the ribbon. */}
-            <NutritionSection nutrition={periodAdherence?.nutrition ?? null} />
-          </div>
+          {/* The week in one grid: Training, Calories and the macros under the
+              same days. Its days are the copy's; a legacy row whose copy saved
+              no week shows its training over the check-in's own period. */}
+          <WeekGrid
+            dates={
+              periodAdherence?.dates ??
+              expandDateRange(getDateString(contextStartDate), getDateString(contextEndDate))
+            }
+            workouts={trainingEventDetails}
+            training={adherence}
+            highlights={data.checkIn.exerciseHighlights ?? []}
+            nutrition={periodAdherence?.nutrition ?? null}
+          />
 
           <WellnessSection
             dailyLogs={dailyLogs}
