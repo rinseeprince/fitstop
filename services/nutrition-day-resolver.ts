@@ -1,6 +1,6 @@
 import type { DietType, NutritionEvent } from "@/types/check-in";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
-import { DAY_NAMES } from "@/lib/date-helpers";
+import { weekdayOf } from "@/lib/date-helpers";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { SurplusSettings } from "@/lib/nutrition/surplus-settings";
 
@@ -87,14 +87,13 @@ type NutritionDayInputs = {
 };
 
 /**
- * The weekday a date falls on, spelled the way the grid keys it. A
- * local-midnight parse read back through `getDay()` — the same expression the
- * day-table generator used, so the two agree on every host (the test suite pins
- * TZ=UTC). Exported so a caller picking the grid row derives the weekday HERE,
- * never with a second spelling of its own.
+ * The weekday a date falls on, spelled the way the grid keys it: the one
+ * weekday helper, `weekdayOf` (`lib/date-helpers.ts`). Exported so a caller
+ * picking the grid row derives the weekday HERE, never with a second spelling
+ * of its own.
  */
 export function nutritionDayOfWeek(date: string): DayOfWeek {
-  return DAY_NAMES[new Date(date + "T00:00:00").getDay()];
+  return weekdayOf(date);
 }
 
 /**

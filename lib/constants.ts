@@ -181,6 +181,20 @@ export const HIGH_SORENESS_CONSECUTIVE_DAYS = 3;
 export const HABIT_DROPOFF_THRESHOLD_PERCENT = 50; // Completion rate %
 export const HABIT_DROPOFF_DAYS_IN_WEEK = 5; // Days out of 7
 
+// Habits (migration 203). A target and a number entry are NUMERIC(10,2): the
+// wire refuses more than two decimals, and anything above this, rather than
+// letting Postgres round or overflow a value quietly.
+export const HABIT_AMOUNT_MAX = 1_000_000;
+// A note on an entry; migration 203's CHECK holds the same bound.
+export const HABIT_NOTE_MAX = 500;
+// The most habits one new order may name: a client's whole list, stopped ones included.
+export const HABIT_ORDER_MAX = 500;
+// The Journey's habits: the client weeks it shows unless asked for another
+// number, the most it will show, and the days it lists, ending today.
+export const HABIT_PROGRESS_WEEKS_DEFAULT = 8;
+export const HABIT_PROGRESS_WEEKS_MAX = 26;
+export const HABIT_PROGRESS_DAYS = 28;
+
 export const ACTIVITY_CAL_MISMATCH_DAY_COUNT = 2; // Days in 28-day window
 export const ACTIVITY_CAL_MISMATCH_WINDOW_DAYS = 28;
 
@@ -194,6 +208,12 @@ export const AUDIT_ACTIONS = {
   GOAL_DEADLINE: "goal.deadline",
   GOAL_RENAME: "goal.rename",
   GOAL_DELETE: "goal.delete",
+  HABIT_CREATE: "habit.create",
+  HABIT_CHANGE: "habit.change",
+  HABIT_STOP: "habit.stop",
+  HABIT_RENAME: "habit.rename",
+  HABIT_DELETE: "habit.delete",
+  HABIT_DAY_EDIT: "habit.day_edit",
   MEASUREMENT_CREATE: "measurement.create",
   MEASUREMENT_UPDATE: "measurement.update",
   MEASUREMENT_VOID: "measurement.void",

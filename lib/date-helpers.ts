@@ -172,6 +172,14 @@ export const DAY_NAMES: Record<number, DayOfWeek> = {
 };
 
 /**
+ * The weekday a YYYY-MM-DD calendar date falls on, in the product's one
+ * spelling. A local-midnight parse read back through `getDay()`, so the answer
+ * is the date's own weekday on any host, whatever its timezone.
+ */
+export const weekdayOf = (date: string): DayOfWeek =>
+  DAY_NAMES[new Date(`${date}T00:00:00`).getDay()];
+
+/**
  * Returns the start of the training week containing dateString.
  * Training week starts the day after the client's check-in day.
  * Defaults to Monday when checkInDay is null/undefined (backward compatible).

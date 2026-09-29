@@ -621,6 +621,233 @@ export type Database = {
           },
         ]
       }
+      client_habit_day_edits: {
+        Row: {
+          client_habit_id: string
+          coach_id: string | null
+          created_at: string
+          date: string
+          planned: boolean
+          target: number | null
+          updated_at: string
+        }
+        Insert: {
+          client_habit_id: string
+          coach_id?: string | null
+          created_at?: string
+          date: string
+          planned: boolean
+          target?: number | null
+          updated_at?: string
+        }
+        Update: {
+          client_habit_id?: string
+          coach_id?: string | null
+          created_at?: string
+          date?: string
+          planned?: boolean
+          target?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_habit_day_edits_client_habit_id_fkey"
+            columns: ["client_habit_id"]
+            isOneToOne: false
+            referencedRelation: "client_habits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_habit_day_edits_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_habit_logs: {
+        Row: {
+          client_habit_id: string
+          client_id: string
+          created_at: string
+          date: string
+          done: boolean | null
+          id: string
+          note: string | null
+          updated_at: string
+          value: number | null
+        }
+        Insert: {
+          client_habit_id: string
+          client_id: string
+          created_at?: string
+          date: string
+          done?: boolean | null
+          id?: string
+          note?: string | null
+          updated_at?: string
+          value?: number | null
+        }
+        Update: {
+          client_habit_id?: string
+          client_id?: string
+          created_at?: string
+          date?: string
+          done?: boolean | null
+          id?: string
+          note?: string | null
+          updated_at?: string
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_habit_logs_client_habit_id_fkey"
+            columns: ["client_habit_id"]
+            isOneToOne: false
+            referencedRelation: "client_habits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_habit_logs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_habit_version_days: {
+        Row: {
+          version_id: string
+          weekday: string
+        }
+        Insert: {
+          version_id: string
+          weekday: string
+        }
+        Update: {
+          version_id?: string
+          weekday?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_habit_version_days_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "client_habit_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_habit_versions: {
+        Row: {
+          client_habit_id: string
+          created_at: string
+          created_by: string | null
+          ends_on: string | null
+          id: string
+          starts_on: string
+          target: number | null
+          times_per_week: number | null
+          updated_at: string
+        }
+        Insert: {
+          client_habit_id: string
+          created_at?: string
+          created_by?: string | null
+          ends_on?: string | null
+          id?: string
+          starts_on: string
+          target?: number | null
+          times_per_week?: number | null
+          updated_at?: string
+        }
+        Update: {
+          client_habit_id?: string
+          created_at?: string
+          created_by?: string | null
+          ends_on?: string | null
+          id?: string
+          starts_on?: string
+          target?: number | null
+          times_per_week?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_habit_versions_client_habit_id_fkey"
+            columns: ["client_habit_id"]
+            isOneToOne: false
+            referencedRelation: "client_habits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_habit_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_habits: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by: string | null
+          direction: string | null
+          how_to: string | null
+          id: string
+          measure: string
+          name: string
+          position: number
+          unit: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          direction?: string | null
+          how_to?: string | null
+          id?: string
+          measure: string
+          name: string
+          position?: number
+          unit?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          direction?: string | null
+          how_to?: string | null
+          id?: string
+          measure?: string
+          name?: string
+          position?: number
+          unit?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_habits_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_habits_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_intake: {
         Row: {
           anything_else: string | null
@@ -2988,6 +3215,16 @@ export type Database = {
         }
         Returns: string
       }
+      add_client_habits: {
+        Args: {
+          p_client_id: string
+          p_created_by?: string
+          p_habits: Json
+          p_starts_on: string
+          p_today: string
+        }
+        Returns: string[]
+      }
       calculate_client_adherence_stats: {
         Args: { client_uuid: string }
         Returns: {
@@ -2995,6 +3232,19 @@ export type Database = {
           adherence_rate: number
           expected_count: number
         }[]
+      }
+      change_client_habit: {
+        Args: {
+          p_client_id: string
+          p_created_by?: string
+          p_habit_id: string
+          p_starts_on: string
+          p_target?: number
+          p_times_per_week?: number
+          p_today: string
+          p_weekdays?: string[]
+        }
+        Returns: boolean
       }
       check_in_form_write_children: {
         Args: {
@@ -3008,6 +3258,19 @@ export type Database = {
       clear_training_event_log: {
         Args: { p_client_id: string; p_event_id: string }
         Returns: Json
+      }
+      coach_habit_choices: {
+        Args: { p_client_id: string; p_coach_id: string; p_today: string }
+        Returns: {
+          direction: string
+          how_to: string
+          measure: string
+          name: string
+          target: number
+          times_per_week: number
+          unit: string
+          weekdays: string[]
+        }[]
       }
       create_check_in_form_template_atomic: {
         Args: {
@@ -3080,6 +3343,10 @@ export type Database = {
       }
       delete_client_goal: {
         Args: { p_client_id: string; p_goal_id: string }
+        Returns: undefined
+      }
+      delete_client_habit: {
+        Args: { p_client_id: string; p_habit_id: string }
         Returns: undefined
       }
       edit_client_goal: {
@@ -3202,12 +3469,34 @@ export type Database = {
         }
         Returns: Json
       }
+      order_client_habits: {
+        Args: { p_client_id: string; p_habit_ids: string[] }
+        Returns: boolean
+      }
       rename_client_goal: {
         Args: {
           p_client_id: string
           p_description?: string
           p_goal_id: string
           p_name: string
+        }
+        Returns: boolean
+      }
+      rename_client_habit: {
+        Args: {
+          p_client_id: string
+          p_habit_id: string
+          p_how_to?: string
+          p_name: string
+        }
+        Returns: boolean
+      }
+      reset_client_habit_day: {
+        Args: {
+          p_client_id: string
+          p_date: string
+          p_habit_id: string
+          p_today: string
         }
         Returns: boolean
       }
@@ -3233,6 +3522,27 @@ export type Database = {
           p_deadline?: string
           p_goal_id: string
           p_set_by?: string
+          p_today: string
+        }
+        Returns: boolean
+      }
+      set_client_habit_day: {
+        Args: {
+          p_client_id: string
+          p_coach_id?: string
+          p_date: string
+          p_habit_id: string
+          p_planned: boolean
+          p_target?: number
+          p_today: string
+        }
+        Returns: boolean
+      }
+      stop_client_habit: {
+        Args: {
+          p_client_id: string
+          p_habit_id: string
+          p_stops_on: string
           p_today: string
         }
         Returns: boolean

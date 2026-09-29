@@ -1,5 +1,28 @@
 import { describe, it, expect } from "vitest";
-import { formatHistoryDate, getTodayDateString, isCalendarDay, parseDateParamOrToday } from "./date-helpers";
+import { formatHistoryDate, getTodayDateString, isCalendarDay, parseDateParamOrToday, weekdayOf } from "./date-helpers";
+
+describe("weekdayOf", () => {
+  it("names a calendar date's own weekday in the product's spelling", () => {
+    expect(weekdayOf("2026-09-28")).toBe("monday");
+    expect(weekdayOf("2026-09-30")).toBe("wednesday");
+    expect(weekdayOf("2026-10-04")).toBe("sunday");
+    expect(weekdayOf("2028-02-29")).toBe("tuesday");
+  });
+
+  it("reads the date's own weekday on a host west or east of UTC, not a neighbour's", () => {
+    // The suite pins TZ=UTC, where a UTC and a local parse agree; Node applies a
+    // TZ changed at runtime, so the two sides of the date line are tried here.
+    const pinned = process.env.TZ;
+    try {
+      for (const zone of ["America/Los_Angeles", "Pacific/Auckland"]) {
+        process.env.TZ = zone;
+        expect(weekdayOf("2026-09-28")).toBe("monday");
+      }
+    } finally {
+      process.env.TZ = pinned;
+    }
+  });
+});
 
 describe("formatHistoryDate", () => {
   const now = new Date("2026-09-23T12:00:00");

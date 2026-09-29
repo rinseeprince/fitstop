@@ -28,24 +28,15 @@
  * the day went.
  */
 
-import type { DayOfWeek } from "@/types/check-in";
 import type { NutritionDay, NutritionDayStatus } from "@/types/schedule";
 import type { NutritionLogRow } from "@/services/schedule-data-service";
 import type { NutritionDayTarget } from "@/services/nutrition-days-service";
 import { calculateNutritionAdherence } from "@/lib/nutrition-verdict";
+import { weekdayOf } from "@/lib/date-helpers";
 import {
   WEEKLY_NUTRITION_HIT_PER_DAY,
   WEEKLY_NUTRITION_PARTIAL_PER_DAY,
 } from "@/lib/constants";
-
-const DAY_NAMES: Record<number, DayOfWeek> = {
-  0: "sunday", 1: "monday", 2: "tuesday", 3: "wednesday",
-  4: "thursday", 5: "friday", 6: "saturday",
-};
-
-function getDayOfWeek(dateStr: string): DayOfWeek {
-  return DAY_NAMES[new Date(dateStr + "T00:00:00").getDay()];
-}
 
 /**
  * A day's standing. No target outranks everything: a day the coach
@@ -83,7 +74,7 @@ export function buildNutritionSummary(
 
     return {
       date,
-      dayOfWeek: getDayOfWeek(date),
+      dayOfWeek: weekdayOf(date),
       status: classifyDay(actualCalories, targetCalories),
       targetCalories,
       targetProteinG: target?.proteinG ?? null,
