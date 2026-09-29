@@ -136,16 +136,16 @@ export const CheckInDetailView = ({
             nutrition={periodAdherence?.nutrition ?? null}
           />
 
-          {/* The week in one grid: Training, Calories and the macros under the
-              same days. Its days are the copy's; a legacy row whose copy saved
-              no week shows its training over the check-in's own period. */}
+          {/* The week, one line per day: its workouts, its calories and macros
+              over that day's target, and its word. Its days are the copy's; a
+              legacy row whose copy saved no week shows its training over the
+              check-in's own period. */}
           <WeekGrid
             dates={
               periodAdherence?.dates ??
               expandDateRange(getDateString(contextStartDate), getDateString(contextEndDate))
             }
             workouts={trainingEventDetails}
-            training={adherence}
             highlights={data.checkIn.exerciseHighlights ?? []}
             nutrition={periodAdherence?.nutrition ?? null}
           />

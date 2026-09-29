@@ -9,36 +9,38 @@ import { MACRO_OFF_TARGET_PERCENT } from "@/lib/constants";
  * Send — never re-judged from the day's numbers, so a threshold changed later
  * never rewords a sent week. One meaning per colour, the adherence rail's rule
  * (components/clients/overview/adherence-card.tsx): teal on target, amber
- * partial, rose missed, the faint tint for a targeted day with no food log, and
- * nothing to judge wears no colour. "No food logged" rather than "Not logged"
- * because the header chip counts days with ANY log and this row counts food.
+ * partial, rose missed; a day with nothing to judge, or nothing logged, wears
+ * a hollow dot. "No food logged" rather than "Not logged" because the header
+ * chip counts days with ANY log and this column counts food.
  */
-export const DAY_STANDING: Record<
-  NutritionDayStatus,
-  { label: string; pill: string; bar: string; figure: string }
-> = {
-  hit: { label: "On target", pill: "bg-[rgba(13,148,136,0.08)] text-[#0d9488]", bar: "bg-[#0d9488]", figure: "text-[#0d9488]" },
-  partial: { label: "Partial", pill: "bg-[rgba(245,158,11,0.07)] text-[#d97706]", bar: "bg-[#d97706]", figure: "text-[#d97706]" },
-  missed: { label: "Missed", pill: "bg-[rgba(192,96,96,0.08)] text-[#c06060]", bar: "bg-[#c06060]", figure: "text-[#c06060]" },
-  not_logged: { label: "No food logged", pill: "bg-[rgba(13,148,136,0.04)] text-[#93b0b4]", bar: "", figure: "text-[#93b0b4]" },
-  no_target: { label: "No target", pill: "text-[#93b0b4]", bar: "bg-[#93b0b4]", figure: "text-[#5a7d82]" },
+export const DAY_STANDING: Record<NutritionDayStatus, { label: string; text: string; dot: string; bar: string }> = {
+  hit: { label: "On target", text: "text-[#0d9488]", dot: "bg-[#0d9488]", bar: "bg-[#0d9488]" },
+  partial: { label: "Partial", text: "text-[#d97706]", dot: "bg-[#d97706]", bar: "bg-[#d97706]" },
+  missed: { label: "Missed", text: "text-[#c06060]", dot: "bg-[#c06060]", bar: "bg-[#c06060]" },
+  not_logged: { label: "No food logged", text: "text-[#93b0b4]", dot: "border border-[#93b0b4]", bar: "" },
+  no_target: { label: "No target", text: "text-[#93b0b4]", dot: "border border-[#93b0b4]", bar: "bg-[#c2d0cc]" },
 };
 
 /**
  * The three words a WORKOUT is described in — "completed" is reserved for
- * counts, so a chip never says it beside "0/2" (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md,
- * §4.7 M8). Teal Summit's workout colours: teal full, amber partial, muted
- * missed.
+ * counts (docs/TRAINING-UPGRADE-EXECUTION-PLAN.md, §4.7 M8) — in the rail's
+ * colours: teal full, amber partial, rose missed. A full workout shows its
+ * tick alone; the word is written out where something went short.
  */
-export const WORKOUT_STATUS: Record<TrainingAdherenceStatus, { label: string; icon: LucideIcon; chip: string }> = {
-  full: { label: "Full", icon: CheckCircle2, chip: "bg-[rgba(13,148,136,0.08)] text-[#0d9488]" },
-  partial: { label: "Partial", icon: CircleDashed, chip: "bg-[rgba(245,158,11,0.07)] text-[#d97706]" },
-  missed: { label: "Missed", icon: XCircle, chip: "bg-[rgba(13,148,136,0.04)] text-[#93b0b4]" },
+export const WORKOUT_STATUS: Record<
+  TrainingAdherenceStatus,
+  { label: string; icon: LucideIcon; tone: string; wordShown: boolean }
+> = {
+  full: { label: "Full", icon: CheckCircle2, tone: "text-[#0d9488]", wordShown: false },
+  partial: { label: "Partial", icon: CircleDashed, tone: "text-[#d97706]", wordShown: true },
+  missed: { label: "Missed", icon: XCircle, tone: "text-[#c06060]", wordShown: true },
 };
 
-/** The line at a day's calorie target, and the box a day with no food logged stands in for its bar. */
-export const TARGET_LINE = "bg-[rgba(13,148,136,0.25)]";
-export const NO_FOOD_BOX = "rounded-[4px] border border-dashed border-[rgba(13,148,136,0.35)]";
+/** A day's row holds two workouts; a third and more open from "+N more" (owner, 2026-09-29). */
+export const SESSIONS_SHOWN = 2;
+
+/** The tick at a day's calorie target on its bar. */
+export const TARGET_TICK = "bg-[#0c1a1e]";
 
 type MacroMark = "under" | "over";
 
@@ -62,7 +64,7 @@ export const MACRO_MARK: Record<MacroMark, { tint: string; words: string }> = {
 };
 
 export const MACROS = [
-  { name: "Protein", eaten: "actualProteinG", target: "targetProteinG", dot: "bg-protein", average: "proteinG" },
-  { name: "Carbs", eaten: "actualCarbsG", target: "targetCarbsG", dot: "bg-carbs", average: "carbsG" },
-  { name: "Fats", eaten: "actualFatG", target: "targetFatG", dot: "bg-fat", average: "fatG" },
+  { name: "Protein", eaten: "actualProteinG", target: "targetProteinG", average: "proteinG" },
+  { name: "Carbs", eaten: "actualCarbsG", target: "targetCarbsG", average: "carbsG" },
+  { name: "Fats", eaten: "actualFatG", target: "targetFatG", average: "fatG" },
 ] as const;

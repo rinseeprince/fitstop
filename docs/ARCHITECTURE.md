@@ -1652,8 +1652,8 @@ structure").
 
 **One page, no switcher**, read in the order the review runs: the KPI ribbon (Weight, Body Fat,
 Nutrition, Training), then the week grid, Wellness, Habits, Client notes, Goal
-progress, the AI review, and last the Reply. The week grid is ONE card for Training and Nutrition
-under the same days, so the page never sets two cards of different heights side by side. **Every
+progress, the AI review, and last the Reply. The week grid is ONE card for Training and Nutrition —
+the week one line per day — so the page never sets two cards of different heights side by side. **Every
 section renders its own `SectionLabel` rail, inside the
 component that decides whether it has anything to show** — three of them return null on an empty
 week, so a rail owned by the page would stand over empty space, or the page would need a second
@@ -1847,32 +1847,32 @@ per-day averages all from the same run, each over its named day set. Habits
 divide by eligible days, from `periodAdherence.dates` — never a day count
 derived in the renderer, which resolves differently on a legacy row. The KPI
 ribbon's **Nutrition** cell is that fraction. **The week grid** (`components/check-in/week-grid.tsx`,
-"Day by day"; owner, 2026-09-29) sets the week out under one row of day columns — the copy's
-`periodAdherence.dates`, oldest first — with the nutrition rows' averages in a tinted column on the
-right, headed where it starts. Its rail carries its name alone: the week's on-target count is the
-ribbon's. Its rows: **Training** — each workout under its own day as its name and its word off its
-log (Full, Partial, Missed, `trainingAdherenceStatus`), every workout of a day shown, and no average
-(a week's training is its sessions; the ribbon carries the count); **Calories** — the row's name
-over the week's intake on the targeted days against every targeted day's target and its bar, then
-each day's own target small and muted over what was eaten (a blank line where no target covered the
-day), a bar against a line at that day's target — a training day's surplus lifts its line — and the
-day's word under it; **Protein**, **Carbs** and **Fats** — each day's grams under that day's own
-target, tinted when 10% or more under (the protein blue) or over (the warning amber) it
-(`MACRO_OFF_TARGET_PERCENT`), a day no target covered never tinted. Targets differ day to day, so no
-row names one for the week. Every nutrition cell is a frozen row from the copy (`periodAdherence.nutrition.days` — the rows
-verbatim, coach wire only), and a day's word — **On target**, **Partial**, **Missed**, **No food
-logged**, **No target** — is the standing the check-in froze at Send through one lookup table, never
-re-judged from the numbers, so a threshold changed later never rewords a sent week; the tints are
-drawn from the same frozen numbers. The averages are the kernel's per JUDGED day, target over intake (intake per logged
-day, named "kcal / logged day", when no day was both logged and targeted). The colours are the
-adherence rail's, one meaning each: teal, amber, rose, the faint tint for a targeted day with no
-food log, and no colour for nothing to judge. "No food logged" names what the row counts: the
-header chip counts days with ANY log, so the two can differ on one screen (TECHNICAL-DEBT →
-"Check-in review surface"). The footer's legend keeps only what a glance can't read off the grid —
-the no-food box, the target line and the two tints; every day already names its standing. A legacy
-row whose copy saved no week shows its training alone, over the
-check-in's own period. The grid takes no log rows, folds no figure and words no day of its own
-(`week-grid.test.tsx` scans it). Habits come from `perHabit`, built from the HABIT list, so a
+"Day by day"; the owner's design, 2026-09-29) is the week one line per day — the copy's
+`periodAdherence.dates`, oldest first — in the `Table` primitive, under the headings Day, Training,
+Calories (kcal), Protein (g), Carbs (g), Fats (g) and Nutrition. **Training**: each workout
+on its day as its status icon and name, with its word (Partial, Missed, `trainingAdherenceStatus`
+off its log) where it went short and the tick alone when done in full; a day's line holds two
+workouts and a third and more open from "+N more" in the calendar's 320px list. **Calories**: the
+day's intake over that day's own target (`2,260 / 2,300`; the target alone after a dash with no food
+logged, the intake alone with no target) and a bar on the week's one scale with a tick at the day's
+target — a training day's surplus moves its tick. **Protein**, **Carbs** and **Fats**: each day's
+grams over that day's own target, tinted when 10% or more under (the protein blue) or over (the
+warning amber) it (`MACRO_OFF_TARGET_PERCENT`), a day no target covered never tinted. **Nutrition**:
+the day's word behind its dot — **On target**, **Partial**, **Missed**, **No food logged**, **No
+target** — the standing the check-in froze at Send through one lookup table, never re-judged from the
+numbers, so a threshold changed later never rewords a sent week; the tints are drawn from the same
+frozen numbers. The **Week** row under the days carries, where Training sits, the week's intake on
+the targeted days against every targeted day's target ("kcal total"), then the kernel's averages per
+JUDGED day, intake over target ("kcal avg / day"; intake per logged day, named so, when no day was
+both logged and targeted), and nothing under Nutrition — the week's on-target count is the ribbon's,
+as is the training count. Every nutrition figure is a frozen row from the copy
+(`periodAdherence.nutrition.days`, verbatim, coach wire only). The colours are the adherence rail's,
+one meaning each: teal, amber, rose, and a hollow dot for nothing to judge or nothing logged. "No
+food logged" names what the column counts: the header chip counts days with ANY log, so the two can
+differ on one screen (TECHNICAL-DEBT → "Check-in review surface"). The legend, on the rail, keeps only
+what a glance can't read off the rows: the day's-target tick and the two tints. A legacy row whose copy
+saved no week shows Day and Training alone, over the check-in's own period. The grid takes no log
+rows, folds no figure and words no day of its own (`week-grid.test.tsx` scans it). Habits come from `perHabit`, built from the HABIT list, so a
 habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
 writes a row only when they act, and the old grid read `/habits/logs`. **Training
 is deliberately NOT on that wire**: the review already carries the period's own
