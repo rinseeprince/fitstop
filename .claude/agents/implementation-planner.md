@@ -115,7 +115,7 @@ Before creating new helpers, check these first:
 
 Types live in `types/` organized by domain:
 - `types/database.ts` — Supabase generated types (source of truth for DB schema)
-- `types/training.ts`, `types/check-in.ts`, `types/daily-habit.ts`, `types/daily-log.ts`, etc.
+- `types/training.ts`, `types/check-in.ts`, `types/habits.ts`, `types/daily-log.ts`, etc.
 
 New types go in the existing domain file if one exists. Only create a new type file for a genuinely new domain.
 

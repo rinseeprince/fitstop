@@ -206,10 +206,10 @@ export function getHabitPeriodWeek({ habits, entries }: HabitRange, start: strin
 
 /**
  * The coach's list of the client's habits — running, upcoming and stopped, in
- * their order — each with every version, the one-date edits from the client's
- * today on, whether the client has made an entry for it, where it stands on
- * that today and its words. `today` is the client's, when the caller has
- * already read it.
+ * their order; the ones the coach deleted left out — each with every version,
+ * the one-date edits from the client's today on, whether the client has made
+ * an entry for it, where it stands on that today and its words. `today` is the
+ * client's, when the caller has already read it.
  */
 export async function getCoachHabitList(clientId: string, today?: string): Promise<CoachHabitList> {
   const [clientToday, habits] = await Promise.all([

@@ -35,7 +35,6 @@ export const HABIT_REFUSAL_CODES = [
   "weekly_version",
   "target_required",
   "target_not_allowed",
-  "has_entries",
   "order_mismatch",
   "expects_tick",
   "expects_number",
@@ -155,11 +154,16 @@ export async function stopHabit(input: {
   return data;
 }
 
-/** A habit the client never made an entry for, deleted; one with entries is refused. */
-export async function deleteHabit(input: { habitId: string; clientId: string }): Promise<void> {
+/**
+ * Any habit, deleted from the client's today: one the client never made an
+ * entry for is removed with its schedule; one with entries is stopped from
+ * today and marked deleted, its past and its entries kept.
+ */
+export async function deleteHabit(input: { habitId: string; clientId: string; today: string }): Promise<void> {
   const { error } = await supabaseAdmin.rpc("delete_client_habit", {
     p_habit_id: input.habitId,
     p_client_id: input.clientId,
+    p_today: input.today,
   });
   if (error) throw toHabitWriteError(error);
 }

@@ -15,19 +15,23 @@ import { cn } from "@/lib/utils";
 import { THUMB_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type { CoachHabit } from "@/types/habits";
 
-/** What the confirm is about: stopping a habit from today, or deleting one the client never logged. */
+/** What the confirm is about: stopping a habit from today, or deleting one. */
 export type HabitConfirmSubject = { kind: "stop" | "delete"; habit: CoachHabit };
 
 const COPY = {
   stop: {
     title: (name: string) => `Stop ${name}?`,
-    body: "It stops from today. Its past stays.",
+    body: () => "It stops from today. Its past stays.",
     action: "Stop habit",
     failed: "Could not stop the habit",
   },
   delete: {
     title: (name: string) => `Delete ${name}?`,
-    body: "Removes it and its schedule for good; the client never logged it.",
+    // A habit the client logged is kept for its past; one they never logged goes.
+    body: (habit: CoachHabit) =>
+      habit.hasEntries
+        ? "It leaves the list from today. Everything the client logged stays."
+        : "Removes it and its schedule for good; the client never logged it.",
     action: "Delete habit",
     failed: "Delete failed",
   },
@@ -94,7 +98,7 @@ export function HabitConfirmDialog({
           </div>
         </DialogHeader>
 
-        <p className="text-sm text-[#5a7d82]">{copy.body}</p>
+        <p className="text-sm text-[#5a7d82]">{subject ? copy.body(subject.habit) : null}</p>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>

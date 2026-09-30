@@ -97,7 +97,7 @@ Zod schemas live in `lib/validations/` with domain-specific files:
 - `lib/validations/check-in.ts`
 - `lib/validations/training.ts`
 - `lib/validations/nutrition.ts`
-- `lib/validations/daily-habit.ts`
+- `lib/validations/client-habits.ts`
 - `lib/validations/daily-log.ts`
 - `lib/validations/daily-activity.ts`
 - `lib/validations/external-activity.ts`

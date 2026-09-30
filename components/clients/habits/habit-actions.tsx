@@ -22,8 +22,7 @@ type HabitActionsProps = {
   onStop?: () => void;
   /** A stopped habit's alone: a running or upcoming one is stopped instead. */
   onStartAgain?: () => void;
-  /** Absent once the client has made an entry: a habit with entries can only be stopped. */
-  onDelete?: () => void;
+  onDelete: () => void;
   /** Absent on a stopped habit: it sits below the running and upcoming ones and never moves. */
   onMoveUp?: () => void;
   /** Absent on a stopped habit, like Move up. */
@@ -36,10 +35,10 @@ const ITEM_ICON = "size-3.5";
 /**
  * A habit row's ⋯ menu (docs/newdesignsystem.md → Dropdown menu): Edit, Stop
  * and the two moves on a running or upcoming habit; Start again and Edit on a
- * stopped one; then, for a habit the client never logged, Delete, last behind
- * a separator. Stop is no deletion (a stopped habit starts again), so it is a
- * plain item. The ⋯ is always in sight, in the row actions' muted icon style,
- * and names its habit for a screen reader.
+ * stopped one; then Delete, on every habit, last behind a separator. Stop is
+ * no deletion (a stopped habit starts again), so it is a plain item. The ⋯ is
+ * always in sight, in the row actions' muted icon style, and names its habit
+ * for a screen reader.
  */
 export const HabitActions = ({
   name,
@@ -100,15 +99,11 @@ export const HabitActions = ({
             Move down
           </DropdownMenuItem>
         )}
-        {onDelete && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-              <Trash2 className={ITEM_ICON} strokeWidth={1.5} />
-              Delete
-            </DropdownMenuItem>
-          </>
-        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+          <Trash2 className={ITEM_ICON} strokeWidth={1.5} />
+          Delete
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

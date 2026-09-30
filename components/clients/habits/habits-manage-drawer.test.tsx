@@ -145,27 +145,27 @@ afterEach(() => cleanup());
 
 describe("the drawer lists the client's habits and what each can do", () => {
   // Each row's ⋯ menu: Edit, Stop and the two moves on a running or upcoming
-  // habit; Start again and Edit on a stopped one; then, for a habit the client
-  // never logged, Delete, last behind a separator.
+  // habit; Start again and Edit on a stopped one; then Delete, on every
+  // habit, last behind a separator.
   it("shows each habit's days and target, where it stands, and in its menu only the actions it allows, in order", async () => {
     const user = renderDrawer();
 
     expect(within(rowOf("Water")).getByText("Mon, Wed, Fri · at least 3 L")).toBeInTheDocument();
     expect(within(rowOf("Water")).getByText("A glass with each meal")).toBeInTheDocument();
-    // Running, entries made: it can be stopped, never deleted.
-    expect(await menuOf(user, "Water")).toEqual(["Edit", "Stop", "Move up", "Move down"]);
-    // Running, never logged: stopped or deleted.
+    // Running, entries made: stopped or deleted.
+    expect(await menuOf(user, "Water")).toEqual(["Edit", "Stop", "Move up", "Move down", "---", "Delete"]);
+    // Running, never logged: the same.
     expect(await menuOf(user, "Walk")).toEqual(["Edit", "Stop", "Move up", "Move down", "---", "Delete"]);
     // Stopped: started again in Stop's place, never stopped twice, never moved.
     expect(within(rowOf("Sauna")).getByText("Stopped")).toBeInTheDocument();
-    expect(await menuOf(user, "Sauna")).toEqual(["Start again", "Edit"]);
-    // Upcoming: the day it starts; it can be stopped before then, and, never logged, deleted.
+    expect(await menuOf(user, "Sauna")).toEqual(["Start again", "Edit", "---", "Delete"]);
+    // Upcoming: the day it starts; it can be stopped before then, or deleted.
     expect(within(rowOf("Stretch")).getByText("Starts 5 Oct · Every day")).toBeInTheDocument();
     expect(await menuOf(user, "Stretch")).toEqual(["Edit", "Stop", "Move up", "Move down", "---", "Delete"]);
   });
 
   // A stopped habit sits below the running and upcoming ones and never moves.
-  it("offers a stopped habit Start again and Edit, then Delete only when the client never logged it, and no move", async () => {
+  it("offers a stopped habit Start again and Edit, then Delete, logged or not, and no move", async () => {
     const NEVER_LOGGED = habit({
       id: "h-meditation",
       name: "Meditation",
@@ -175,9 +175,9 @@ describe("the drawer lists the client's habits and what each can do", () => {
     });
     const user = renderDrawer({ ...LIST, habits: [...LIST.habits, NEVER_LOGGED] });
 
-    expect(await menuOf(user, "Sauna")).toEqual(["Start again", "Edit"]);
+    expect(await menuOf(user, "Sauna")).toEqual(["Start again", "Edit", "---", "Delete"]);
     expect(await menuOf(user, "Meditation")).toEqual(["Start again", "Edit", "---", "Delete"]);
-    expect(await itemOf(user, "Meditation", "Delete")).toHaveAttribute("data-variant", "destructive");
+    expect(await itemOf(user, "Sauna", "Delete")).toHaveAttribute("data-variant", "destructive");
   });
 
   // Stop deletes nothing: a stopped habit starts again.
@@ -453,8 +453,23 @@ describe("stopping and deleting", () => {
     expect(toast.success).toHaveBeenCalledWith('"Walk" deleted');
   });
 
+  it("deletes a habit the client logged: the confirm says it leaves the list from today and everything logged stays", async () => {
+    writes.remove.mockResolvedValue({ changed: true, habits: { ...LIST, habits: [WALK, SAUNA, STRETCH] } });
+    const user = renderDrawer();
+
+    await choose(user, "Water", "Delete");
+    expect(within(confirmDialog()).getByText("It leaves the list from today. Everything the client logged stays.")).toBeInTheDocument();
+    expect(within(confirmDialog()).queryByText(/for good/)).toBeNull();
+    await user.click(within(confirmDialog()).getByRole("button", { name: "Delete habit" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /^Delete / })).toBeNull());
+    expect(writes.remove).toHaveBeenCalledWith("h-water");
+    expect(screen.queryByText("Water", { selector: "p" })).toBeNull();
+    expect(toast.success).toHaveBeenCalledWith('"Water" deleted');
+  });
+
   it("a refused delete says why and leaves the confirm open", async () => {
-    writes.remove.mockRejectedValue(new HabitRequestError("This habit has entries, so it can only be stopped.", 409));
+    writes.remove.mockRejectedValue(new HabitRequestError("Habit not found.", 404));
     const user = renderDrawer();
 
     await choose(user, "Walk", "Delete");
@@ -462,7 +477,7 @@ describe("stopping and deleting", () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Delete failed", {
-        description: "This habit has entries, so it can only be stopped.",
+        description: "Habit not found.",
       })
     );
     expect(within(confirmDialog()).getByRole("button", { name: "Delete habit" })).toBeEnabled();
@@ -509,7 +524,7 @@ describe("starting a stopped habit again", () => {
     expect(menuButton("Sauna")).toBeEnabled();
     expect(icons()).toHaveLength(1);
     expect(icons()[0]).not.toHaveClass("animate-spin");
-    expect(await menuOf(user, "Sauna")).toEqual(["Edit", "Stop", "Move up", "Move down"]);
+    expect(await menuOf(user, "Sauna")).toEqual(["Edit", "Stop", "Move up", "Move down", "---", "Delete"]);
   });
 
   it("a set-days habit starts again on its days, a number habit with its target", async () => {

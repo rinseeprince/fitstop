@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { query, result } = vi.hoisted(() => {
   const result: { value: { data: unknown; error: unknown } } = { value: { data: [], error: null } };
   const query: Record<string, ReturnType<typeof vi.fn>> & { then?: unknown } = {};
-  for (const method of ["select", "eq", "in", "or", "gte", "lte", "order", "range", "limit"]) query[method] = vi.fn(() => query);
+  for (const method of ["select", "eq", "in", "or", "is", "gte", "lte", "order", "range", "limit"]) query[method] = vi.fn(() => query);
   query.maybeSingle = vi.fn(() => Promise.resolve(result.value));
   query.then = (resolve: (value: unknown) => unknown) => resolve(result.value);
   return { query, result };
@@ -130,7 +130,7 @@ describe("listClientHabitsWithEntryCheck", () => {
     expect(habits[0].versions).toHaveLength(2);
   });
 
-  it("is listClientHabits' own query — the same client, edits and order — with the check added", async () => {
+  it("is listClientHabits' own query — the same client, edits and order — with the check added and the deleted habits left out", async () => {
     const filters = () => ({
       eq: [...query.eq.mock.calls],
       gte: [...query.gte.mock.calls],
@@ -139,14 +139,17 @@ describe("listClientHabitsWithEntryCheck", () => {
     });
     await listClientHabits("client-3", { from: "2026-09-30" });
     const list = { select: query.select.mock.calls[0][0] as string, filters: filters() };
-    // Only the list with the check looks at the entries.
+    // Only the list with the check looks at the entries, and only it leaves a
+    // deleted habit out: every other read keeps it for the days it ran.
     expect(query.limit).not.toHaveBeenCalled();
+    expect(query.is).not.toHaveBeenCalled();
 
     vi.clearAllMocks();
     await listClientHabitsWithEntryCheck("client-3", { from: "2026-09-30" });
 
     expect(query.select.mock.calls[0][0]).toBe(`${list.select}, client_habit_logs(id)`);
     expect(filters()).toEqual(list.filters);
+    expect(query.is.mock.calls).toEqual([["deleted_at", null]]);
     expect(list.filters.gte).toEqual([["client_habit_day_edits.date", "2026-09-30"]]);
   });
 });
@@ -155,11 +158,24 @@ describe("the attention feed's cross-client reads", () => {
   const WINDOW = { from: "2026-09-02", to: "2026-09-30" };
 
   it("reads the roster's habits a version covers on a day of the window, with those days' versions and edits, and names each one's client", async () => {
-    result.value = { data: [{ ...waterRow, client_id: "client-3" }], error: null };
+    result.value = {
+      data: [
+        { ...waterRow, client_id: "client-3", deleted_at: null },
+        { ...waterRow, id: "habit-read", client_id: "client-4", deleted_at: "2026-09-29T08:00:00+00:00" },
+      ],
+      error: null,
+    };
     const habits = await listHabitsForClients(["client-3", "client-4"], WINDOW);
 
     expect(supabaseAdmin.from).toHaveBeenCalledWith("client_habits");
     expect(query.select.mock.calls[0][0]).toContain("client_habit_versions!inner(");
+    // A deleted habit is read like any other, its mark with it: its days stay prescribed work.
+    expect(query.select.mock.calls[0][0]).toContain("deleted_at");
+    expect(query.is).not.toHaveBeenCalled();
+    expect(habits.map((habit) => [habit.id, habit.deleted])).toEqual([
+      ["habit-water", false],
+      ["habit-read", true],
+    ]);
     expect(query.in).toHaveBeenCalledWith("client_id", ["client-3", "client-4"]);
     // A version overlapping the window: it starts by its end, and runs on or ends in it.
     expect(query.lte).toHaveBeenCalledWith("client_habit_versions.starts_on", "2026-09-30");
@@ -209,6 +225,12 @@ describe("getClientHabit", () => {
       ["id", "habit-water"],
       ["client_id", "client-3"],
     ]);
+  });
+
+  it("reads a deleted habit like any other: the client's entry still reaches the days it ran", async () => {
+    result.value = { data: { ...waterRow, deleted_at: "2026-09-29T08:00:00+00:00" }, error: null };
+    expect((await getClientHabit("client-3", "habit-water", RANGE))?.id).toBe("habit-water");
+    expect(query.is).not.toHaveBeenCalled();
   });
 });
 

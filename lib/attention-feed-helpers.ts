@@ -79,8 +79,11 @@ export type ClientLogRow = {
 type ClientData = {
   client: ClientInfo
   logs: DailyLog[]
-  /** The client's habits a version covers on a day of the window, with those days' versions and one-date edits. */
-  habits: ClientHabit[]
+  /**
+   * The client's habits a version covers on a day of the window, with those
+   * days' versions and one-date edits; `deleted` marks one the coach deleted.
+   */
+  habits: (ClientHabit & { deleted: boolean })[]
   /**
    * The client's habit entries over the window — either answer is the client
    * acting. Null when the entries read failed: unknown, never none, so a failed
@@ -307,8 +310,16 @@ export function evaluateAndSortTriggers(
       // One line per missed habit, judged over the days gone by before the
       // window's end, the feed's one anchor. With the entries unknown (their
       // read failed) nothing can be judged, so the lines are silent for the
-      // request, as a failed target read silences the nutrition triggers.
-      ...(data.habitEntries === null ? [] : evaluateMissedHabits(data.habits, data.habitEntries, dateRange.end)),
+      // request, as a failed target read silences the nutrition triggers. A
+      // habit the coach deleted is named in no line; its past days still
+      // count as prescribed work.
+      ...(data.habitEntries === null
+        ? []
+        : evaluateMissedHabits(
+            data.habits.filter((habit) => !habit.deleted),
+            data.habitEntries,
+            dateRange.end
+          )),
       evaluateActivityCalMismatch(data.logs, data.trainingEvents, windowNow),
       habitEntriesKnown
         ? evaluateNoEngagement({

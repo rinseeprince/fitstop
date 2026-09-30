@@ -201,14 +201,18 @@ export type CoachHabit = HabitIdentity & {
   versions: HabitVersion[];
   /** The one-date edits from the client's today on. */
   dayEdits: HabitDayEdit[];
-  /** The client has made an entry for it: it can be stopped, never deleted. */
+  /** The client has made an entry for it: a delete keeps it, with everything logged, rather than removing it. */
   hasEntries: boolean;
   status: HabitStatus;
   /** Its words from the version running today, else its last before today, else its first. */
   words: HabitWords;
 };
 
-/** `GET /api/clients/[id]/habits`, and what every coach habit write answers with once it has landed. */
+/**
+ * `GET /api/clients/[id]/habits` — every habit but the deleted ones — and what
+ * every coach habit write but a one-date edit and its reset answers with once
+ * it has landed.
+ */
 export type CoachHabitList = { clientToday: string; habits: CoachHabit[] };
 
 /**

@@ -23,6 +23,7 @@ import { generateTrainingEvents } from "@/services/training-event-service";
 import { listClientGoals } from "@/services/client-goals-service";
 import { addGoal, deleteGoal } from "@/services/client-goal-writes-service";
 import { addHabits, deleteHabit } from "@/services/client-habit-writes-service";
+import { getClientTodayString } from "@/services/today-service";
 import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import { fillSentSnapshots } from "@/services/check-in-sent-snapshot-fill";
@@ -212,6 +213,22 @@ async function cleanExistingFixtures(fullReset: boolean) {
   console.log("Cleaning existing fixtures...");
 
   const c = PERF_CLIENT_ID;
+  // A habit the coach deleted is kept for its past (migration 206) and leaves
+  // only with its client: a --full-reset takes it with the client row below,
+  // and a standard re-seed stops here, before it has cleared anything.
+  const { data: habits, error: habitsError } = await supabaseAdmin
+    .from("client_habits")
+    .select("id, deleted_at")
+    .eq("client_id", c);
+  if (habitsError) throw new Error(`Clean failed for client_habits: ${habitsError.message}`);
+  const liveHabits = (habits ?? []).filter((habit) => habit.deleted_at === null);
+  const deletedCount = (habits ?? []).length - liveHabits.length;
+  if (deletedCount > 0 && !fullReset) {
+    throw new Error(
+      `The fixture client holds ${deletedCount} deleted habit(s), which leave only with the client: re-run with --full-reset.`
+    );
+  }
+
   await del("training_events", supabaseAdmin.from("training_events").delete().eq("client_id", c));
   // client_measurements is NOT cleared here: the app role holds no DELETE on
   // the measurement log (migration 158, append-only by design). Its rows carry
@@ -220,19 +237,17 @@ async function cleanExistingFixtures(fullReset: boolean) {
   // delete, cascading) removes them.
   await del("check_ins", supabaseAdmin.from("check_ins").delete().eq("client_id", String(c)));
   // The habit tables take no DELETE from the app role (migration 203): each
-  // habit goes through delete_client_habit, taking its versions and one-date
-  // edits with it — and only once its entries are gone, since a habit with
-  // entries can only be stopped.
+  // habit not yet deleted goes through delete_client_habit, taking its
+  // versions and one-date edits with it — once its entries are gone, since a
+  // habit with entries is kept, marked deleted, rather than removed.
   await del("client_habit_logs", supabaseAdmin.from("client_habit_logs").delete().eq("client_id", c));
-  const { data: habits, error: habitsError } = await supabaseAdmin
-    .from("client_habits")
-    .select("id")
-    .eq("client_id", c);
-  if (habitsError) throw new Error(`Clean failed for client_habits: ${habitsError.message}`);
-  for (const habit of habits ?? []) {
-    await deleteHabit({ habitId: habit.id, clientId: c });
+  if (liveHabits.length > 0) {
+    const today = await getClientTodayString(c);
+    for (const habit of liveHabits) {
+      await deleteHabit({ habitId: habit.id, clientId: c, today });
+    }
   }
-  console.log(`  cleared client_habits (${(habits ?? []).length})`);
+  console.log(`  cleared client_habits (${liveHabits.length})`);
   await del("session_logs (→ exercise_logs → set_logs)", supabaseAdmin.from("session_logs").delete().eq("client_id", c));
   await del("training_plans (→ sessions, exercises)", supabaseAdmin.from("training_plans").delete().eq("client_id", c));
   await del("wellness_logs", supabaseAdmin.from("wellness_logs").delete().eq("client_id", c));

@@ -3,6 +3,7 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { deleteHabit, renameHabit } from "@/services/client-habit-writes-service";
+import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { habitWriteErrorResponse } from "@/lib/habits/habit-write-response";
@@ -77,10 +78,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 }
 
 /**
- * A habit the client never made an entry for, deleted with its versions and
- * one-date edits. One with entries is refused — it can only be stopped, so
- * the client's history stays. Answers with the client's habits as they now
- * stand.
+ * Any habit, deleted from the client's today. One the client never made an
+ * entry for goes with its versions and one-date edits; one with entries is
+ * stopped from today and leaves the list, everything the client logged kept.
+ * Answers with the client's habits as they now stand.
  */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
@@ -88,7 +89,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     if (!verified.ok) return verified.response;
     const { clientId, habitId, coachId } = verified;
 
-    await deleteHabit({ habitId, clientId });
+    const today = await getClientTodayString(clientId);
+    await deleteHabit({ habitId, clientId, today });
 
     void recordAuditEvent({
       actorId: coachId,
@@ -100,7 +102,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       request,
     });
 
-    return await habitListAfterWrite(clientId, undefined, (habits) => ({ changed: true, habits }));
+    return await habitListAfterWrite(clientId, today, (habits) => ({ changed: true, habits }));
   } catch (error) {
     return habitWriteErrorResponse(error);
   }

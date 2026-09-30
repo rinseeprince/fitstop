@@ -796,6 +796,7 @@ export type Database = {
           client_id: string
           created_at: string
           created_by: string | null
+          deleted_at: string | null
           direction: string | null
           how_to: string | null
           id: string
@@ -809,6 +810,7 @@ export type Database = {
           client_id: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           direction?: string | null
           how_to?: string | null
           id?: string
@@ -822,6 +824,7 @@ export type Database = {
           client_id?: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           direction?: string | null
           how_to?: string | null
           id?: string
@@ -3232,7 +3235,7 @@ export type Database = {
         Returns: undefined
       }
       delete_client_habit: {
-        Args: { p_client_id: string; p_habit_id: string }
+        Args: { p_client_id: string; p_habit_id: string; p_today: string }
         Returns: undefined
       }
       edit_client_goal: {

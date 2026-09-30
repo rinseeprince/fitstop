@@ -1,24 +1,25 @@
 /**
- * Proof of every rule of the habit functions (migration 203;
- * docs/HABITS-REBUILD-PLAN.md §6 commit 1), on the linked DEV database, inside
- * ONE transaction that is rolled back — nothing it writes survives.
+ * Proof of every rule of the habit functions (migrations 203 and 206;
+ * docs/HABITS-REBUILD-PLAN.md §6 commits 1 and 3), on the linked DEV database,
+ * inside ONE transaction that is rolled back — nothing it writes survives.
  *
  *   npx tsx scripts/habit-functions-proof.ts
  *   npx tsx scripts/habit-functions-proof.ts --before-push
  *
  * Each rule is checked twice: against the live function, where it must hold,
  * and against a copy of that function with the rule taken out (a planted bug,
- * loaded as a pg_temp function from the migration's own text), where the same
- * check must FAIL — a check that passes either way proves nothing. The two
- * table rules (versions never overlap; the grants) are planted by dropping the
- * constraint and adding a grant inside the same transaction. The fixtures are
- * three throwaway clients — two under the perf coach (never in any roster), one
+ * loaded as a pg_temp function from the text of the newest migration that
+ * defines it), where the same check must FAIL — a check that passes either way
+ * proves nothing. The three catalog rules (versions never overlap; the grants;
+ * one delete function) are planted by dropping the constraint, adding a grant
+ * and adding an overload inside the same transaction. The fixtures are three
+ * throwaway clients — two under the perf coach (never in any roster), one
  * under another coach — written as `postgres`; every day is fixed, and "today"
  * is the functions' `p_today`.
  *
- * `--before-push` applies the migration itself at the start of the same
- * rolled-back transaction, so the functions are proven before `db push` makes
- * them live; run without it once they are.
+ * `--before-push` applies the newest migration that defines habit functions at
+ * the start of the same rolled-back transaction, so its functions are proven
+ * before `db push` makes them live; run without it once they are.
  *
  * Needs `npx supabase db query --linked` access (no password) and the DEV link.
  */
@@ -28,7 +29,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PERF_COACH_ID } from "./perf-fixtures";
 
-const MIGRATION = readFileSync(join(process.cwd(), "supabase", "migrations", "203_client_habits.sql"), "utf8");
+/** The migrations that define habit functions, oldest first: a function's text is its newest definition. */
+const MIGRATIONS = ["203_client_habits.sql", "206_client_habits_delete_any.sql"].map((file) =>
+  readFileSync(join(process.cwd(), "supabase", "migrations", file), "utf8")
+);
+/** The migration `--before-push` applies: the newest of them, not yet live when the flag is used. */
+const PENDING_MIGRATION = MIGRATIONS[MIGRATIONS.length - 1];
 
 const CREATE_FUNCTION = /CREATE (OR REPLACE )?FUNCTION public\.\w+\(/;
 
@@ -56,13 +62,16 @@ type FunctionName =
   | "reset_client_habit_day"
   | "coach_habit_choices";
 
-/** One function's text, from CREATE to its closing $$;. */
+/** One function's text, from CREATE to its closing $$;, in the newest migration that defines it. */
 function functionText(name: FunctionName): string {
   const header = new RegExp(`CREATE (OR REPLACE )?FUNCTION public\\.${name}\\(`);
-  const match = header.exec(MIGRATION);
-  if (!match) throw new Error(`No ${name} in the migration`);
-  const end = MIGRATION.indexOf("\n$$;", match.index);
-  return MIGRATION.slice(match.index, end + "\n$$;".length);
+  for (const migration of [...MIGRATIONS].reverse()) {
+    const match = header.exec(migration);
+    if (!match) continue;
+    const end = migration.indexOf("\n$$;", match.index);
+    return migration.slice(match.index, end + "\n$$;".length);
+  }
+  throw new Error(`No ${name} in the habit migrations`);
 }
 
 type Edit = { from: string; to: string };
@@ -70,6 +79,14 @@ type Edit = { from: string; to: string };
 type Bug = { fn: FunctionName; edits: Edit[] };
 
 const bug = (fn: FunctionName, from: string, to: string): Bug => ({ fn, edits: [{ from, to }] });
+
+/** The function finding a habit the coach deleted, as though it were not. */
+const deletedGuard = (fn: FunctionName): Bug =>
+  bug(
+    fn,
+    "   WHERE id = p_habit_id AND client_id = p_client_id AND deleted_at IS NULL\n   FOR UPDATE;",
+    "   WHERE id = p_habit_id AND client_id = p_client_id\n   FOR UPDATE;"
+  );
 
 /** A pg_temp copy of the function with one rule taken out, and its name. */
 function plantedCopy(tag: string, planted: Bug): { sql: string; name: string } {
@@ -118,6 +135,16 @@ const version = (
 
 const dayEdit = (habitId: string, date: string, planned: boolean, target: number | null = null) =>
   `PERFORM pg_temp.put_edit('${habitId}', '${date}', ${planned}, ${sqlValue(target)});`;
+
+const entry = (habitId: string, client: string, date: string) =>
+  `PERFORM pg_temp.put_entry('${habitId}', '${client}', '${date}', true, NULL);`;
+
+/** A habit the coach has deleted: the mark alone, whatever its versions and entries. */
+const markDeleted = (habitId: string) =>
+  `UPDATE public.client_habits SET deleted_at = '2026-10-06T09:00:00Z' WHERE id = '${habitId}';`;
+
+const remove = (fn: string, habitId: string, client = C) =>
+  `${fn}(p_habit_id => '${habitId}', p_client_id => '${client}', p_today => '${TODAY}')`;
 
 /** Every call must be refused with `code`; `ok` is whether all were. */
 const refusals = (calls: string[], code: string) =>
@@ -412,8 +439,8 @@ const RULES: Rule[] = [
       `\n  ok := ok AND ${expectVersions(H2, [["2026-09-01", null, null, null, EVERY_DAY]])};`,
     bug: bug(
       "change_client_habit",
-      "   WHERE id = p_habit_id AND client_id = p_client_id\n   FOR UPDATE;",
-      "   WHERE id = p_habit_id\n   FOR UPDATE;"
+      "   WHERE id = p_habit_id AND client_id = p_client_id AND deleted_at IS NULL\n   FOR UPDATE;",
+      "   WHERE id = p_habit_id AND deleted_at IS NULL\n   FOR UPDATE;"
     ),
   },
 
@@ -450,6 +477,18 @@ const RULES: Rule[] = [
       "  IF (p_times_per_week IS NULL) = (cardinality(v_weekdays) = 0) THEN\n    RAISE EXCEPTION 'invalid_args: a habit runs on chosen weekdays or a number of times a week';\n  END IF;\n",
       ""
     ),
+  },
+  {
+    id: "C15",
+    says: "a deleted habit is not found, and never starts again",
+    fn: "change_client_habit",
+    check: (fn) =>
+      habit(C, H1, "Walk") +
+      version(H1, "2026-09-01", "2026-10-06", null, EVERY_DAY) +
+      markDeleted(H1) +
+      refusal(change(fn, H1, TODAY, `p_weekdays => ${days(EVERY_DAY)}`), "not_found") +
+      `\n  ok := ok AND ${expectVersions(H1, [["2026-09-01", "2026-10-06", null, null, EVERY_DAY]])};`,
+    bug: deletedGuard("change_client_habit"),
   },
 
   // ---- stop_client_habit ---------------------------------------------------
@@ -518,38 +557,55 @@ const RULES: Rule[] = [
       `\n  ok := ok AND ${expectVersions(H2, [["2026-09-01", null, null, null, EVERY_DAY]])};`,
     bug: bug(
       "stop_client_habit",
-      "   WHERE id = p_habit_id AND client_id = p_client_id\n   FOR UPDATE;",
-      "   WHERE id = p_habit_id\n   FOR UPDATE;"
+      "   WHERE id = p_habit_id AND client_id = p_client_id AND deleted_at IS NULL\n   FOR UPDATE;",
+      "   WHERE id = p_habit_id AND deleted_at IS NULL\n   FOR UPDATE;"
     ),
+  },
+
+  {
+    id: "S6",
+    says: "a deleted habit is not found",
+    fn: "stop_client_habit",
+    check: (fn) =>
+      habit(C, H1, "Walk") +
+      version(H1, "2026-09-01", null, null, EVERY_DAY) +
+      markDeleted(H1) +
+      refusal(`${fn}(p_habit_id => '${H1}', p_client_id => '${C}', p_today => '${TODAY}', p_stops_on => '2026-10-12')`, "not_found") +
+      `\n  ok := ok AND ${expectVersions(H1, [["2026-09-01", null, null, null, EVERY_DAY]])};`,
+    bug: deletedGuard("stop_client_habit"),
   },
 
   // ---- delete_client_habit -------------------------------------------------
   {
     id: "D1",
-    says: "a habit with entries can't be deleted, only stopped",
+    says: "a habit with entries is kept when deleted: marked deleted, its entries and its past versions untouched",
     fn: "delete_client_habit",
     check: (fn) =>
       habit(C, H1, "Walk") +
       version(H1, "2026-09-01", null, null, EVERY_DAY) +
-      `PERFORM pg_temp.put_entry('${H1}', '${C}', '2026-10-05', true, NULL);` +
-      refusal(`${fn}(p_habit_id => '${H1}', p_client_id => '${C}')`, "has_entries") +
-      `\n  ok := ok AND EXISTS (SELECT 1 FROM public.client_habits WHERE id = '${H1}');`,
+      entry(H1, C, "2026-10-05") +
+      `
+  PERFORM ${remove(fn, H1)};
+  msg := ${versionsOf(H1)}::text || ' deleted_at: ' || coalesce((SELECT deleted_at::text FROM public.client_habits WHERE id = '${H1}'), 'none');
+  ok := EXISTS (SELECT 1 FROM public.client_habits WHERE id = '${H1}' AND deleted_at IS NOT NULL)
+        AND (SELECT count(*) FROM public.client_habit_logs WHERE client_habit_id = '${H1}' AND date = '2026-10-05' AND done) = 1
+        AND ${expectVersions(H1, [["2026-09-01", "2026-10-06", null, null, EVERY_DAY]])};`,
     bug: bug(
       "delete_client_habit",
-      "  IF EXISTS (SELECT 1 FROM client_habit_logs WHERE client_habit_id = p_habit_id) THEN\n    RAISE EXCEPTION 'has_entries: a habit with entries can only be stopped';\n  END IF;\n",
-      ""
+      "  UPDATE client_habits SET deleted_at = NOW() WHERE id = p_habit_id AND client_id = p_client_id;",
+      "  PERFORM 1;"
     ),
   },
   {
     id: "D2",
-    says: "a habit with no entries is deleted with its versions and one-date edits",
+    says: "a habit with no entries is removed with its versions and one-date edits",
     fn: "delete_client_habit",
     check: (fn) =>
       habit(C, H1, "Walk") +
       version(H1, "2026-09-01", null, null, EVERY_DAY) +
       dayEdit(H1, "2026-10-14", false) +
       `
-  PERFORM ${fn}(p_habit_id => '${H1}', p_client_id => '${C}');
+  PERFORM ${remove(fn, H1)};
   ok := NOT EXISTS (SELECT 1 FROM public.client_habits WHERE id = '${H1}')
         AND NOT EXISTS (SELECT 1 FROM public.client_habit_versions WHERE client_habit_id = '${H1}')
         AND NOT EXISTS (SELECT 1 FROM public.client_habit_day_edits WHERE client_habit_id = '${H1}');
@@ -562,18 +618,49 @@ const RULES: Rule[] = [
     fn: "delete_client_habit",
     check: (fn) =>
       habit(OTHER, H2, "Walk") +
-      refusal(`${fn}(p_habit_id => '${H2}', p_client_id => '${C}')`, "not_found") +
+      refusal(remove(fn, H2), "not_found") +
       `\n  ok := ok AND EXISTS (SELECT 1 FROM public.client_habits WHERE id = '${H2}');`,
     bug: {
       fn: "delete_client_habit",
       edits: [
-        { from: "   WHERE id = p_habit_id AND client_id = p_client_id\n   FOR UPDATE;", to: "   WHERE id = p_habit_id\n   FOR UPDATE;" },
+        { from: "   WHERE id = p_habit_id AND client_id = p_client_id AND deleted_at IS NULL\n   FOR UPDATE;", to: "   WHERE id = p_habit_id AND deleted_at IS NULL\n   FOR UPDATE;" },
         {
           from: "  DELETE FROM client_habits WHERE id = p_habit_id AND client_id = p_client_id;",
           to: "  DELETE FROM client_habits WHERE id = p_habit_id;",
         },
       ],
     },
+  },
+  {
+    id: "D4",
+    says: "a habit with entries is stopped from today when deleted: the running version ends the day before, what is queued and the one-date edits from today go",
+    fn: "delete_client_habit",
+    check: (fn) =>
+      habit(C, H1, "Walk") +
+      version(H1, "2026-09-01", "2026-10-18", null, EVERY_DAY) +
+      version(H1, "2026-10-19", null, null, [], 3) +
+      dayEdit(H1, "2026-10-05", false) +
+      dayEdit(H1, "2026-10-09", false) +
+      entry(H1, C, "2026-10-06") +
+      `
+  PERFORM ${remove(fn, H1)};
+  msg := ${versionsOf(H1)}::text || ' ' || ${editsOf(H1)}::text;
+  ok := ${expectVersions(H1, [["2026-09-01", "2026-10-06", null, null, EVERY_DAY]])}
+        AND ${expectEdits(H1, [["2026-10-05", false, null]])};`,
+    bug: bug("delete_client_habit", "  PERFORM stop_client_habit(p_habit_id, p_client_id, p_today, p_today);\n", ""),
+  },
+  {
+    id: "D5",
+    says: "a deleted habit is not found by another delete, and stays, even once its entries are cleared",
+    fn: "delete_client_habit",
+    check: (fn) =>
+      habit(C, H1, "Walk") +
+      version(H1, "2026-09-01", "2026-10-06", null, EVERY_DAY) +
+      markDeleted(H1) +
+      refusal(remove(fn, H1), "not_found") +
+      `\n  ok := ok AND EXISTS (SELECT 1 FROM public.client_habits WHERE id = '${H1}')
+        AND ${expectVersions(H1, [["2026-09-01", "2026-10-06", null, null, EVERY_DAY]])};`,
+    bug: deletedGuard("delete_client_habit"),
   },
 
   // ---- rename_client_habit -------------------------------------------------
@@ -601,9 +688,20 @@ const RULES: Rule[] = [
       `\n  ok := ok AND (SELECT name = 'Walk' FROM public.client_habits WHERE id = '${H2}');`,
     bug: bug(
       "rename_client_habit",
-      "   WHERE id = p_habit_id AND client_id = p_client_id\n   FOR UPDATE;",
-      "   WHERE id = p_habit_id\n   FOR UPDATE;"
+      "   WHERE id = p_habit_id AND client_id = p_client_id AND deleted_at IS NULL\n   FOR UPDATE;",
+      "   WHERE id = p_habit_id AND deleted_at IS NULL\n   FOR UPDATE;"
     ),
+  },
+  {
+    id: "R3",
+    says: "a deleted habit is not found, and keeps its name",
+    fn: "rename_client_habit",
+    check: (fn) =>
+      habit(C, H1, "Walk") +
+      markDeleted(H1) +
+      refusal(`${fn}(p_habit_id => '${H1}', p_client_id => '${C}', p_name => 'Renamed')`, "not_found") +
+      `\n  ok := ok AND (SELECT name = 'Walk' FROM public.client_habits WHERE id = '${H1}');`,
+    bug: deletedGuard("rename_client_habit"),
   },
 
   // ---- order_client_habits -------------------------------------------------
@@ -646,6 +744,27 @@ const RULES: Rule[] = [
   ok := ok AND NOT v_changed;
   msg := v_after::text || ' second changed: ' || v_changed;`,
     bug: bug("order_client_habits", "  IF v_current = p_habit_ids THEN\n    RETURN false;", "  IF false THEN\n    RETURN false;"),
+  },
+  {
+    id: "O3",
+    says: "the order counts the client's habits without a deleted one: naming it is refused, the rest take their order",
+    fn: "order_client_habits",
+    check: (fn) =>
+      habit(C, H1, "Walk", "tick", 1) +
+      habit(C, H2, "Water", "number", 2) +
+      habit(C, H3, "Sauna", "tick", 3) +
+      markDeleted(H2) +
+      refusal(`${fn}(p_client_id => '${C}', p_habit_ids => ARRAY['${H3}', '${H2}', '${H1}']::uuid[])`, "order_mismatch") +
+      `
+  v_changed := ${fn}(p_client_id => '${C}', p_habit_ids => ARRAY['${H3}', '${H1}']::uuid[]);
+  v_after := (SELECT jsonb_agg(id ORDER BY position) FROM public.client_habits WHERE client_id = '${C}' AND deleted_at IS NULL);
+  ok := ok AND v_changed AND v_after = '["${H3}", "${H1}"]'::jsonb;
+  msg := msg || ' ' || coalesce(v_after::text, 'none');`,
+    bug: bug(
+      "order_client_habits",
+      "     WHERE client_id = p_client_id AND deleted_at IS NULL\n",
+      "     WHERE client_id = p_client_id\n"
+    ),
   },
 
   // ---- set_client_habit_day ------------------------------------------------
@@ -753,9 +872,21 @@ const RULES: Rule[] = [
       `\n  ok := ok AND ${expectEdits(H2, [])};`,
     bug: bug(
       "set_client_habit_day",
-      "   WHERE id = p_habit_id AND client_id = p_client_id\n   FOR UPDATE;",
-      "   WHERE id = p_habit_id\n   FOR UPDATE;"
+      "   WHERE id = p_habit_id AND client_id = p_client_id AND deleted_at IS NULL\n   FOR UPDATE;",
+      "   WHERE id = p_habit_id AND deleted_at IS NULL\n   FOR UPDATE;"
     ),
+  },
+  {
+    id: "E9",
+    says: "a deleted habit is not found, and gets no edit",
+    fn: "set_client_habit_day",
+    check: (fn) =>
+      habit(C, H1, "Walk") +
+      version(H1, "2026-09-01", null, null, EVERY_DAY) +
+      markDeleted(H1) +
+      refusal(setDay(fn, H1, "2026-10-14", "p_planned => false"), "not_found") +
+      `\n  ok := ok AND ${expectEdits(H1, [])};`,
+    bug: deletedGuard("set_client_habit_day"),
   },
 
   // ---- reset_client_habit_day ----------------------------------------------
@@ -803,9 +934,22 @@ const RULES: Rule[] = [
       `\n  ok := ok AND ${expectEdits(H2, [["2026-10-14", false, null]])};`,
     bug: bug(
       "reset_client_habit_day",
-      "   WHERE id = p_habit_id AND client_id = p_client_id\n   FOR UPDATE;",
-      "   WHERE id = p_habit_id\n   FOR UPDATE;"
+      "   WHERE id = p_habit_id AND client_id = p_client_id AND deleted_at IS NULL\n   FOR UPDATE;",
+      "   WHERE id = p_habit_id AND deleted_at IS NULL\n   FOR UPDATE;"
     ),
+  },
+  {
+    id: "X4",
+    says: "a deleted habit is not found, and keeps its edit",
+    fn: "reset_client_habit_day",
+    check: (fn) =>
+      habit(C, H1, "Walk") +
+      version(H1, "2026-09-01", null, null, EVERY_DAY) +
+      dayEdit(H1, "2026-10-14", false) +
+      markDeleted(H1) +
+      refusal(`${fn}(p_habit_id => '${H1}', p_client_id => '${C}', p_today => '${TODAY}', p_date => '2026-10-14')`, "not_found") +
+      `\n  ok := ok AND ${expectEdits(H1, [["2026-10-14", false, null]])};`,
+    bug: deletedGuard("reset_client_habit_day"),
   },
 
   // ---- coach_habit_choices -------------------------------------------------
@@ -837,7 +981,7 @@ const RULES: Rule[] = [
                WHERE q.name ILIKE 'proof%');
   msg := v_after::text;
   ok := NOT (v_after ? 'Proof foreign') AND jsonb_array_length(v_after) = 3;`,
-    bug: bug("coach_habit_choices", "     WHERE c.coach_id = p_coach_id\n  ),", "  ),"),
+    bug: bug("coach_habit_choices", "     WHERE c.coach_id = p_coach_id\n       AND h.deleted_at IS NULL\n", "     WHERE h.deleted_at IS NULL\n"),
   },
   {
     id: "Q3",
@@ -865,6 +1009,23 @@ const RULES: Rule[] = [
       "  IF NOT EXISTS (SELECT 1 FROM clients AS c WHERE c.id = p_client_id AND c.coach_id = p_coach_id) THEN\n    RAISE EXCEPTION 'not_found: client % is not this coach''s', p_client_id;\n  END IF;\n",
       ""
     ),
+  },
+  {
+    id: "Q5",
+    says: "the choices leave out a habit the coach deleted",
+    fn: "coach_habit_choices",
+    check: (fn) =>
+      choicesFixture() +
+      `
+  PERFORM pg_temp.put_habit('${OTHER}', '0a0a0203-0000-4000-8000-0000000000b5', 'Proof gone', 'tick', 6);
+  v_id := pg_temp.put_version('0a0a0203-0000-4000-8000-0000000000b5', '2026-09-01', '2026-10-06', NULL, NULL, ${days(EVERY_DAY)});
+  ${markDeleted("0a0a0203-0000-4000-8000-0000000000b5")}
+  v_after := (SELECT coalesce(jsonb_agg(q.name ORDER BY q.name), '[]'::jsonb)
+                FROM ${fn}(p_coach_id => '${PERF_COACH_ID}', p_client_id => '${C}', p_today => '${TODAY}') AS q
+               WHERE q.name ILIKE 'proof%');
+  msg := v_after::text;
+  ok := NOT (v_after ? 'Proof gone') AND (v_after ? 'Proof stretch');`,
+    bug: bug("coach_habit_choices", "     WHERE c.coach_id = p_coach_id\n       AND h.deleted_at IS NULL\n", "     WHERE c.coach_id = p_coach_id\n"),
   },
 ];
 
@@ -913,7 +1074,7 @@ const FUNCTION_SIGNATURES = [
   "public.add_client_habits(uuid, date, date, jsonb, uuid)",
   "public.change_client_habit(uuid, uuid, date, date, uuid, numeric, integer, text[])",
   "public.stop_client_habit(uuid, uuid, date, date)",
-  "public.delete_client_habit(uuid, uuid)",
+  "public.delete_client_habit(uuid, uuid, date)",
   "public.rename_client_habit(uuid, uuid, text, text)",
   "public.order_client_habits(uuid, uuid[])",
   "public.set_client_habit_day(uuid, uuid, date, date, boolean, uuid, numeric)",
@@ -948,6 +1109,14 @@ const GRANT_CHECK = `
   ].join("\n    AND ")};
   msg := 'grants';`;
 
+/** One delete: the one taking the client's today. A second would let a caller delete without it. */
+const ONE_DELETE_CHECK = `
+  v_after := (SELECT jsonb_agg(p.oid::regprocedure::text)
+                FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
+               WHERE n.nspname = 'public' AND p.proname = 'delete_client_habit');
+  msg := v_after::text;
+  ok := v_after = '["delete_client_habit(uuid,uuid,date)"]'::jsonb;`;
+
 function block(rule: string, variant: string, body: string): string {
   return `
 DO $proof$
@@ -971,7 +1140,7 @@ $proof$;`;
 
 function buildSql(beforePush: boolean): string {
   const parts: string[] = ["BEGIN;"];
-  if (beforePush) parts.push(MIGRATION);
+  if (beforePush) parts.push(PENDING_MIGRATION);
   parts.push(
     "CREATE TEMP TABLE proof_results (n SERIAL, rule TEXT, variant TEXT, passed BOOLEAN, detail TEXT);",
     `INSERT INTO public.clients (id, coach_id, name, email) VALUES
@@ -1042,6 +1211,12 @@ function buildSql(beforePush: boolean): string {
   parts.push("GRANT INSERT ON public.client_habits TO service_role;");
   parts.push(block("G1", "planted bug", GRANT_CHECK));
 
+  parts.push(block("K2", "live", ONE_DELETE_CHECK));
+  parts.push(
+    "CREATE FUNCTION public.delete_client_habit(p_habit_id UUID, p_client_id UUID) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN END; $$;"
+  );
+  parts.push(block("K2", "planted bug", ONE_DELETE_CHECK));
+
   parts.push("SELECT rule, variant, passed, detail FROM proof_results ORDER BY n;");
   parts.push("ROLLBACK;");
   return parts.join("\n\n");
@@ -1065,6 +1240,7 @@ function run(): void {
   const says = new Map(RULES.map((rule) => [rule.id, rule.says]));
   says.set("K1", "a habit's versions never overlap");
   says.set("G1", "the server reads the prescription and writes it only through the functions; it writes entries; the public roles run no habit function");
+  says.set("K2", "one delete, and it takes the client's today");
   let failures = 0;
   for (const id of [...says.keys()]) {
     const live = parsed.rows.find((r) => r.rule === id && r.variant === "live");

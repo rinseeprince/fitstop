@@ -26,7 +26,6 @@ const CASES: Array<[HabitRefusalCode, number, string]> = [
   ["weekly_version", 409, "This habit is done a number of times a week, so it has no set days to change."],
   ["target_required", 400, "A number habit needs a target."],
   ["target_not_allowed", 400, "A tick habit has no target."],
-  ["has_entries", 409, "This habit has entries, so it can only be stopped."],
   ["order_mismatch", 409, "The habits have changed since this list was loaded. Reload it and try again."],
   ["expects_tick", 400, "This habit is ticked, not counted."],
   ["expects_number", 400, "This habit takes a number."],

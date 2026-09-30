@@ -174,10 +174,10 @@ describe("each write goes to its route and answers with the habits as they now s
   });
 
   it("throws the server's sentence and its status on a refusal", async () => {
-    stubFetch(respond(409, { success: false, error: "This habit has entries, so it can only be stopped.", code: "has_entries" }));
-    const failure = await writes().remove(HABIT).catch((error: unknown) => error);
+    stubFetch(respond(409, { success: false, error: "Pick today or a later day to stop from.", code: "stops_in_past" }));
+    const failure = await writes().stop(HABIT).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(HabitRequestError);
-    expect(failure).toMatchObject({ message: "This habit has entries, so it can only be stopped.", status: 409 });
+    expect(failure).toMatchObject({ message: "Pick today or a later day to stop from.", status: 409 });
   });
 
   it("says something went wrong when the answer carries no sentence", async () => {

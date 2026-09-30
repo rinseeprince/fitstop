@@ -27,7 +27,7 @@ Types live in `types/` organized by domain:
 | `types/database.ts` | Supabase-generated types — the source of truth for DB schema |
 | `types/training.ts` | `TrainingPlan`, `TrainingSession`, `TrainingExercise`, `TrainingSplitType`, etc. |
 | `types/check-in.ts` | `CheckIn`, `CheckInStatus`, `Client`, `SubjectiveMetrics`, `BodyMetrics`, etc. |
-| `types/daily-habit.ts` | `DailyHabit`, `DailyHabitLog`, `DailyHabitInput` |
+| `types/habits.ts` | `ClientHabit`, `HabitVersion`, `HabitEntry`, `HabitWeek` and the habit wires |
 | `types/daily-log.ts` | `DailyLog` and related types |
 | `types/daily-activity.ts` | Daily activity tracking types |
 | `types/external-activity.ts` | `ActivityMetadata`, `IntensityLevel`, `MuscleGroup` |

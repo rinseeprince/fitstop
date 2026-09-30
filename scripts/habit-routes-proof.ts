@@ -1,5 +1,5 @@
 /**
- * Request-level proof of the habit routes commits 1 and 2 build
+ * Request-level proof of the habit routes commits 1 to 3 build
  * (docs/HABITS-REBUILD-PLAN.md §2.4 and §5) against the linked DEV database
  * through a running `next dev`: the full chain, every write and its audit row,
  * and each refusal's status and sentence.
@@ -8,10 +8,12 @@
  *
  * A vitest that mocks the services proves nothing about a route's chain or the
  * functions behind it. This drives the real routes: as the owner's coach, on
- * two throwaway clients created under that coach and one under the perf coach
- * to attack (their habits, entries and audit rows go at the end — a client's
- * teardown removes both in one statement); and as the perf fixture client, on
- * habits the proof adds to it and removes at the end. Habits are set up
+ * throwaway clients created under that coach and one under the perf coach to
+ * attack (their habits, entries and audit rows go at the end — a client's
+ * teardown removes both in one statement); as the perf fixture client, on
+ * habits the proof adds to it and removes at the end; and as a throwaway
+ * client with a login of its own, whose deleted habit the fixture client could
+ * never be rid of (the login goes at the end too). Habits are set up
  * through `addHabits`, the path the product will use. Every fixture number is
  * distinct.
  *
@@ -27,8 +29,12 @@
  *   9  the entry's four refusals: another client's habit 404, a day no version covers 409,
  *      an answer that does not fit 400, a locked day 403
  *  10  the client's week inside one of their weeks, and the Journey's weeks
- *  11  the coach's habit list, and habits added, renamed and deleted (commit 2): the chain, another coach's client
- *      and another client's habit 404, strict bodies, a habit with entries only stopped, a repeat rename writes nothing
+ *  11  the coach's habit list, and habits added, renamed and deleted (commits 2 and 3): the chain, another coach's
+ *      client and another client's habit 404, strict bodies, a repeat rename writes nothing; a habit never logged
+ *      goes, a logged one leaves the list from today with its entries and its past weeks kept, no coach write
+ *      reaches it after, and it is no longer offered for reuse
+ *  11b a deleted habit as its client sees it (commit 3), on a throwaway client the proof signs in as: listed on a
+ *      day it ran and not today; an entry on a day it ran saved and cleared, one today 409
  *  12  the audit trail once every row has landed: one per write that changed something, none for a repeat or a refusal
  *
  * The fixture client may hold habits of its own (the scale seed gives it some),
@@ -125,6 +131,7 @@ async function main(): Promise<void> {
 
   const stamp = Date.now();
   const made: string[] = [];
+  const logins: string[] = [];
   const perfHabits: string[] = [];
   const makeClient = async (name: string, coachId: string = coach.id) => {
     const { data, error } = await supabaseAdmin
@@ -135,6 +142,36 @@ async function main(): Promise<void> {
     if (error || !data) throw new Error(`client insert: ${error?.message}`);
     made.push(data.id);
     return data.id;
+  };
+  /**
+   * A throwaway client of the coach's that the proof can sign in as: active,
+   * with an accepted invitation so the signup trigger makes the login a
+   * client's, and the login linked. Its teardown takes its habits and entries
+   * with the client row, then the login.
+   */
+  const makeClientWithLogin = async (name: string) => {
+    const email = `habit-routes-proof-${made.length}-${stamp}@fixture.local`;
+    const { data, error } = await supabaseAdmin
+      .from("clients")
+      .insert({ coach_id: coach.id, name, email, active: true, onboarding_status: "active", timezone: "Europe/London" })
+      .select("id")
+      .single();
+    if (error || !data) throw new Error(`client insert: ${error?.message}`);
+    made.push(data.id);
+    const { error: inviteError } = await supabaseAdmin
+      .from("client_invitations")
+      .insert({ client_id: data.id, email, status: "accepted" });
+    if (inviteError) throw new Error(`invitation insert: ${inviteError.message}`);
+    const { data: login, error: loginError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      email_confirm: true,
+      password: `Habit-proof-${stamp}-${Math.random().toString(36).slice(2)}`,
+    });
+    if (loginError || !login.user) throw new Error(`createUser: ${loginError?.message}`);
+    logins.push(login.user.id);
+    const { error: linkError } = await supabaseAdmin.from("clients").update({ user_id: login.user.id }).eq("id", data.id);
+    if (linkError) throw new Error(`client link: ${linkError.message}`);
+    return { clientId: data.id, email };
   };
 
   try {
@@ -564,20 +601,6 @@ async function main(): Promise<void> {
       { oneLabel: oneLabel.status, blankName: blankName.status }
     );
 
-    // An entry on the sauna, as the client would make one: a habit with entries is stopped, never deleted.
-    const { error: entryError } = await supabaseAdmin
-      .from("client_habit_logs")
-      .insert({ client_id: A, client_habit_id: sauna, date: today, done: true });
-    if (entryError) throw new Error(`Setup: the sauna's entry: ${entryError.message}`);
-    const kept = await call(coachSession, "DELETE", `${habitsOf(A)}/${sauna}`);
-    const listedWithEntry = await call<CoachHabitList>(coachSession, "GET", habitsOf(A));
-    check(
-      "a habit with entries: 409 and its sentence, it stays, and the list says it has entries",
-      kept.status === 409 && kept.body.error === "This habit has entries, so it can only be stopped." &&
-        (await versionsOf(sauna)).length === 1 &&
-        listedWithEntry.body.data?.habits.find((h) => h.id === sauna)?.hasEntries === true,
-      kept
-    );
     const deleted = await call<CoachHabitWriteResult>(coachSession, "DELETE", `${habitsOf(A)}/${journal}`);
     const { count: journalLeft } = await supabaseAdmin.from("client_habits").select("id", { count: "exact", head: true }).eq("id", journal);
     const { count: journalVersions } = await supabaseAdmin
@@ -594,6 +617,141 @@ async function main(): Promise<void> {
     const deletedAgain = await call(coachSession, "DELETE", `${habitsOf(A)}/${journal}`);
     check("a habit already deleted: 404", deletedAgain.status === 404 && deletedAgain.body.error === "Habit not found.", deletedAgain);
 
+    // A logged habit: a walk the client has done since three days ago, added
+    // as a seed adds history (the function takes the today it is given), with
+    // an entry each on the two days before today, as the client would make them.
+    const [walk] = await addHabits({
+      clientId: A,
+      today: day(-3),
+      startsOn: day(-3),
+      createdBy: coach.id,
+      habits: [{ name: "Proof walk", howTo: null, measure: "tick", unit: null, direction: null, target: null, schedule: { weekdays: [...EVERY_DAY] } }],
+    });
+    const { error: walkEntriesError } = await supabaseAdmin.from("client_habit_logs").insert([
+      { client_id: A, client_habit_id: walk, date: day(-2), done: true },
+      { client_id: A, client_habit_id: walk, date: day(-1), done: false },
+    ]);
+    if (walkEntriesError) throw new Error(`Setup: the walk's entries: ${walkEntriesError.message}`);
+    const offeredBefore = await call<HabitChoice[]>(coachSession, "GET", `${habitsOf(B)}/choices`);
+    const logged = await call<CoachHabitWriteResult>(coachSession, "DELETE", `${habitsOf(A)}/${walk}`);
+    const { data: walkRow } = await supabaseAdmin.from("client_habits").select("deleted_at").eq("id", walk).maybeSingle();
+    const { data: walkEntries } = await supabaseAdmin
+      .from("client_habit_logs")
+      .select("date, done")
+      .eq("client_habit_id", walk)
+      .order("date");
+    check(
+      "a logged habit: 200, it leaves the answer's list, and it is kept — marked deleted, stopped from today, both entries untouched",
+      logged.status === 200 && logged.body.data.changed && logged.body.data.habits !== null &&
+        !logged.body.data.habits.habits.some((h) => h.id === walk) &&
+        walkRow !== null && walkRow.deleted_at !== null &&
+        JSON.stringify(await versionsOf(walk)) === JSON.stringify([[day(-3), day(-1), null]]) &&
+        JSON.stringify(walkEntries) === JSON.stringify([{ date: day(-2), done: true }, { date: day(-1), done: false }]),
+      { logged: logged.body, walkRow, walkEntries }
+    );
+    check("audited as habit.delete", await auditedTimes(A, "habit.delete", 2));
+    const walkWeek = await call<CoachHabitWeek>(coachSession, "GET", `${habitsOf(A)}/week?start=${day(-2)}`);
+    const walkDay = walkWeek.body.data?.habits.find((row) => row.habit.id === walk)?.days.find((d) => d.date === day(-2));
+    check(
+      "its past stays: the coach's week holding a day it ran lists it, the day done",
+      walkWeek.status === 200 && walkDay?.covered === true && walkDay.met && walkDay.entry?.done === true,
+      walkDay
+    );
+    const offeredAfter = await call<HabitChoice[]>(coachSession, "GET", `${habitsOf(B)}/choices`);
+    check(
+      "it is offered for reuse before its delete and not after",
+      (offeredBefore.body.data ?? []).some((c) => c.name === "Proof walk") &&
+        offeredAfter.status === 200 && !(offeredAfter.body.data ?? []).some((c) => c.name === "Proof walk"),
+      { before: offeredBefore.body.data?.map((c) => c.name), after: offeredAfter.body.data?.map((c) => c.name) }
+    );
+    const listedAfter = await call<CoachHabitList>(coachSession, "GET", habitsOf(A));
+    const writesToDeleted = await Promise.all([
+      call(coachSession, "PATCH", `${habitsOf(A)}/${walk}`, { name: "Proof walk again", howTo: null }),
+      call(coachSession, "POST", `${habitsOf(A)}/${walk}/change`, { weekdays: [...EVERY_DAY] }),
+      call(coachSession, "POST", `${habitsOf(A)}/${walk}/stop`, {}),
+      call(coachSession, "PUT", `${habitsOf(A)}/${walk}/days/${day(1)}`, { planned: true }),
+      call(coachSession, "DELETE", `${habitsOf(A)}/${walk}/days/${day(1)}`),
+      call(coachSession, "DELETE", `${habitsOf(A)}/${walk}`),
+    ]);
+    const liveIds = (listedAfter.body.data?.habits ?? []).map((h) => h.id);
+    const orderNamingIt = await call(coachSession, "PUT", `${habitsOf(A)}/order`, { habitIds: [...liveIds, walk] });
+    check(
+      "no coach write reaches it after: a rename, a change (starting it again), a stop, a day's edit and its reset, another delete — each 404; an order naming it 409",
+      writesToDeleted.every((r) => r.status === 404 && r.body.error === "Habit not found.") &&
+        orderNamingIt.status === 409 &&
+        JSON.stringify(await versionsOf(walk)) === JSON.stringify([[day(-3), day(-1), null]]),
+      { writes: writesToDeleted.map((r) => r.status), order: orderNamingIt.status }
+    );
+
+    // A habit started today with the client's entry today: deleting it from
+    // today leaves it no day to run on, and the entry stays.
+    const { error: saunaEntryError } = await supabaseAdmin
+      .from("client_habit_logs")
+      .insert({ client_id: A, client_habit_id: sauna, date: today, done: true });
+    if (saunaEntryError) throw new Error(`Setup: the sauna's entry: ${saunaEntryError.message}`);
+    const saunaDeleted = await call<CoachHabitWriteResult>(coachSession, "DELETE", `${habitsOf(A)}/${sauna}`);
+    const { count: saunaEntries } = await supabaseAdmin
+      .from("client_habit_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("client_habit_id", sauna);
+    check(
+      "a habit logged only today: deleted from today it runs no day, leaves the list, and its entry stays",
+      saunaDeleted.status === 200 && saunaDeleted.body.data.habits !== null &&
+        !saunaDeleted.body.data.habits.habits.some((h) => h.id === sauna) &&
+        (await versionsOf(sauna)).length === 0 && saunaEntries === 1,
+      { saunaDeleted: saunaDeleted.body, saunaEntries }
+    );
+
+    console.info("11b. A deleted habit, as its client sees it");
+    // A client of the coach's the proof signs in as: with no check-in
+    // schedule nothing closes a week for them, so every day before today is
+    // open to their entries.
+    const L = await makeClientWithLogin("Habit routes proof L");
+    const lToday = await getClientTodayString(L.clientId);
+    const lDay = (n: number) => addDaysToDateString(lToday, n);
+    const [yoga] = await addHabits({
+      clientId: L.clientId,
+      today: lDay(-3),
+      startsOn: lDay(-3),
+      createdBy: coach.id,
+      habits: [{ name: "Proof yoga", howTo: null, measure: "tick", unit: null, direction: null, target: null, schedule: { weekdays: [...EVERY_DAY] } }],
+    });
+    const { error: yogaEntryError } = await supabaseAdmin
+      .from("client_habit_logs")
+      .insert({ client_id: L.clientId, client_habit_id: yoga, date: lDay(-3), done: true });
+    if (yogaEntryError) throw new Error(`Setup: the yoga's entry: ${yogaEntryError.message}`);
+    const yogaDeleted = await call<CoachHabitWriteResult>(coachSession, "DELETE", `${habitsOf(L.clientId)}/${yoga}`);
+    const { data: yogaRow } = await supabaseAdmin.from("client_habits").select("deleted_at").eq("id", yoga).maybeSingle();
+    check(
+      "the coach deletes the client's logged habit: kept, marked deleted, stopped from today",
+      yogaDeleted.status === 200 && yogaRow?.deleted_at != null &&
+        JSON.stringify(await versionsOf(yoga)) === JSON.stringify([[lDay(-3), lDay(-1), null]]),
+      { yogaDeleted: yogaDeleted.body, yogaRow }
+    );
+    const lClient = await mintSession(L.email, "client L");
+    const lEntry = (date: string) => `/api/client/habits/${yoga}/days/${date}`;
+    const ranDay = await call<ClientHabitDay>(lClient, "GET", `/api/client/habits/day?date=${lDay(-1)}`);
+    const todayRead = await call<ClientHabitDay>(lClient, "GET", `/api/client/habits/day?date=${lToday}`);
+    check(
+      "the client's day lists it on a day it ran and not today",
+      ranDay.status === 200 && ranDay.body.data.habits.some((item) => item.habit.id === yoga) &&
+        todayRead.status === 200 && !todayRead.body.data.habits.some((item) => item.habit.id === yoga),
+      { ranDay: ranDay.body.data?.habits.map((i) => i.habit.name), today: todayRead.body.data?.habits.map((i) => i.habit.name) }
+    );
+    const madeUp = await call<HabitEntryResult>(lClient, "PUT", lEntry(lDay(-1)), { done: true });
+    const unmade = await call<HabitEntryResult>(lClient, "DELETE", lEntry(lDay(-1)));
+    const onToday = await call(lClient, "PUT", lEntry(lToday), { done: true });
+    const { count: yogaEntries } = await supabaseAdmin
+      .from("client_habit_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("client_habit_id", yoga);
+    check(
+      "the client's entry still reaches it on a day it ran — saved and met, then cleared — while today, which it no longer runs, is 409",
+      madeUp.status === 200 && madeUp.body.data.day.met && unmade.status === 200 && unmade.body.data.day.entry === null &&
+        onToday.status === 409 && onToday.body.error === "That habit isn't running on that day." && yogaEntries === 1,
+      { madeUp: madeUp.body, unmade: unmade.status, onToday, yogaEntries }
+    );
+
     console.info("12. The audit trail, once every row has landed");
     // Audit rows are written after the response. By now any a repeated or a
     // refused write had wrongly recorded would be there too.
@@ -603,7 +761,7 @@ async function main(): Promise<void> {
       auditedTimes(A, "habit.stop", 1),
       auditedTimes(A, "habit.create", 3),
       auditedTimes(A, "habit.rename", 1),
-      auditedTimes(A, "habit.delete", 1),
+      auditedTimes(A, "habit.delete", 3),
     ]);
     const auditsOn = async (clientId: string) => {
       const { count, error } = await supabaseAdmin.from("audit_logs").select("id", { count: "exact", head: true }).eq("client_id", clientId);
@@ -619,12 +777,18 @@ async function main(): Promise<void> {
     );
   } finally {
     const cleanupErrors: string[] = [];
-    // The fixture client's entries first: a habit with entries cannot be deleted.
+    // The fixture client's entries first: a habit with entries is kept when
+    // deleted, one without is removed.
     if (perfHabits.length > 0) {
       const { error: logsError } = await supabaseAdmin.from("client_habit_logs").delete().in("client_habit_id", perfHabits);
       if (logsError) cleanupErrors.push(logsError.message);
+      const perfToday = await getClientTodayString(PERF_CLIENT_ID);
       for (const habitId of perfHabits) {
-        const { error } = await supabaseAdmin.rpc("delete_client_habit", { p_habit_id: habitId, p_client_id: PERF_CLIENT_ID });
+        const { error } = await supabaseAdmin.rpc("delete_client_habit", {
+          p_habit_id: habitId,
+          p_client_id: PERF_CLIENT_ID,
+          p_today: perfToday,
+        });
         if (error) cleanupErrors.push(error.message);
       }
     }
@@ -636,6 +800,11 @@ async function main(): Promise<void> {
       const { error: clientError } = await supabaseAdmin.from("clients").delete().in("id", made);
       if (auditError) cleanupErrors.push(auditError.message);
       if (clientError) cleanupErrors.push(clientError.message);
+    }
+    // The logins go after their clients; each takes its profile with it.
+    for (const id of logins) {
+      const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
+      if (error) cleanupErrors.push(error.message);
     }
     // What is left, counted rather than assumed.
     const count = async (query: PromiseLike<{ count: number | null; error: { message: string } | null }>) => {
@@ -650,13 +819,20 @@ async function main(): Promise<void> {
         : 0) +
       (perfHabits.length > 0
         ? await count(supabaseAdmin.from("client_habits").select("id", { count: "exact", head: true }).in("id", perfHabits))
+        : 0) +
+      (logins.length > 0
+        ? await count(supabaseAdmin.from("profiles").select("user_id", { count: "exact", head: true }).in("user_id", logins))
         : 0);
+    for (const id of logins) {
+      const { data: login } = await supabaseAdmin.auth.admin.getUserById(id);
+      if (login?.user) cleanupErrors.push(`login ${id} is still there`);
+    }
     if (cleanupErrors.length > 0 || left > 0) {
       console.error("Cleanup failed:", { errors: cleanupErrors, rowsLeft: left });
       process.exitCode = 1;
     } else {
       console.info(
-        `Cleanup: ${made.length} throwaway clients removed with their habits, entries and audit rows; ${perfHabits.length} fixture habits removed with their entries; nothing left.`
+        `Cleanup: ${made.length} throwaway clients removed with their habits, entries and audit rows, ${logins.length} login with its profile; ${perfHabits.length} fixture habits removed with their entries; nothing left.`
       );
     }
   }

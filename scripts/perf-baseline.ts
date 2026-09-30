@@ -134,7 +134,7 @@ async function main() {
 
   baselines.push(await measure(
     "listHabitEntries",
-    "services/client-habits-service.ts:150",
+    "services/client-habits-service.ts:155",
     `listHabitEntries(PERF_CLIENT_ID, { from: today-90d, to: today })`,
     () => listHabitEntries(PERF_CLIENT_ID, { from: getDateDaysAgo(90), to: getTodayDateString() }),
   ));

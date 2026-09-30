@@ -1,6 +1,6 @@
 # Client portal — perf baseline
 
-**Captured:** 2026-09-25 · **Git SHA:** 56ce443a · **Target:** aeaphsslctwcmebldrzx.supabase.co
+**Captured:** 2026-09-30 · **Git SHA:** eda2bc0b · **Target:** aeaphsslctwcmebldrzx.supabase.co
 **Node:** v26.3.0 · Moving snapshot — re-run after each scale session (3.6+) to refresh.
 
 ## Fixture
@@ -9,14 +9,14 @@ Client: `5ca1ec1e-0000-4000-8000-000000000001`
 
 | Table | Rows |
 |---|---|
-| session_logs | 203 |
-| exercise_logs | 1218 |
-| set_logs | 4846 |
+| session_logs | 206 |
+| exercise_logs | 1236 |
+| set_logs | 4952 |
 | wellness_logs | 360 |
 | nutrition_logs | 360 |
-| check_ins | 44 |
-| daily_habit_logs | 1800 |
-| client_measurements | 353 |
+| check_ins | 51 |
+| client_habit_logs | 1800 |
+| client_measurements | 712 |
 | client_phases (journey blocks) | 4 |
 
 Reproduce: `npx tsx scripts/seed-scale-client.ts` then `npx tsx scripts/perf-baseline.ts`.
@@ -29,20 +29,20 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 
 | run | wall ms | total rows fetched | payload bytes |
 |-----|--------:|-------------------:|--------------:|
-| cold | 208.6 | 6 | 1025 |
-| warm-1 | 102.0 | 6 | 1025 |
-| warm-2 | 82.9 | 6 | 1025 |
-| warm-3 | 82.9 | 6 | 1025 |
-| warm-4 | 87.4 | 6 | 1025 |
-| warm-5 | 76.6 | 6 | 1025 |
+| cold | 680.0 | 6 | 1025 |
+| warm-1 | 336.4 | 6 | 1025 |
+| warm-2 | 329.8 | 6 | 1025 |
+| warm-3 | 328.1 | 6 | 1025 |
+| warm-4 | 342.7 | 6 | 1025 |
+| warm-5 | 312.0 | 6 | 1025 |
 
-**Warm p50:** 82.9 ms · **Warm p95 (max of 5):** 102.0 ms
+**Warm p50:** 329.8 ms · **Warm p95 (max of 5):** 342.7 ms
 
 **Query breakdown** (warm run 5):
 
 | query | table | rows | bytes | ms |
 |------:|-------|-----:|------:|---:|
-| 1 | rpc:get_client_exercise_list | 6 | 1055 | 76.4 |
+| 1 | rpc:get_client_exercise_list | 6 | 1055 | 311.8 |
 
 ## getExerciseProgressionSeries (sessionCount=12)
 
@@ -50,21 +50,21 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 
 | run | wall ms | total rows fetched | payload bytes |
 |-----|--------:|-------------------:|--------------:|
-| cold | 184.9 | 61 | 10536 |
-| warm-1 | 154.5 | 61 | 10536 |
-| warm-2 | 130.3 | 61 | 10536 |
-| warm-3 | 116.5 | 61 | 10536 |
-| warm-4 | 108.6 | 61 | 10536 |
-| warm-5 | 111.3 | 61 | 10536 |
+| cold | 681.4 | 58 | 10312 |
+| warm-1 | 532.0 | 58 | 10312 |
+| warm-2 | 546.9 | 58 | 10312 |
+| warm-3 | 483.8 | 58 | 10312 |
+| warm-4 | 585.4 | 58 | 10312 |
+| warm-5 | 518.1 | 58 | 10312 |
 
-**Warm p50:** 116.5 ms · **Warm p95 (max of 5):** 154.5 ms
+**Warm p50:** 532.0 ms · **Warm p95 (max of 5):** 585.4 ms
 
 **Query breakdown** (warm run 5):
 
 | query | table | rows | bytes | ms |
 |------:|-------|-----:|------:|---:|
-| 1 | rpc:get_exercise_progression_window | 49 | 33167 | 62.6 |
-| 2 | session_logs | 12 | 853 | 48.0 |
+| 1 | rpc:get_exercise_progression_window | 46 | 31143 | 267.7 |
+| 2 | session_logs | 12 | 853 | 249.3 |
 
 ## getExerciseProgressionSeries (sessionCount=500)
 
@@ -72,23 +72,23 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 
 | run | wall ms | total rows fetched | payload bytes |
 |-----|--------:|-------------------:|--------------:|
-| cold | 468.1 | 1011 | 176031 |
-| warm-1 | 291.5 | 1011 | 176031 |
-| warm-2 | 293.6 | 1011 | 176031 |
-| warm-3 | 275.7 | 1011 | 176031 |
-| warm-4 | 263.6 | 1011 | 176031 |
-| warm-5 | 246.4 | 1011 | 176031 |
+| cold | 1777.2 | 1027 | 178454 |
+| warm-1 | 1565.8 | 1027 | 178454 |
+| warm-2 | 1462.1 | 1027 | 178454 |
+| warm-3 | 1535.2 | 1027 | 178454 |
+| warm-4 | 1635.6 | 1027 | 178454 |
+| warm-5 | 1534.9 | 1027 | 178454 |
 
-**Warm p50:** 275.7 ms · **Warm p95 (max of 5):** 293.6 ms
+**Warm p50:** 1535.2 ms · **Warm p95 (max of 5):** 1635.6 ms
 
 **Query breakdown** (warm run 5):
 
 | query | table | rows | bytes | ms |
 |------:|-------|-----:|------:|---:|
-| 1 | rpc:get_exercise_progression_window | 808 | 546506 | 78.5 |
-| 2 | session_logs | 100 | 7101 | 60.7 |
-| 3 | session_logs | 100 | 7101 | 59.3 |
-| 4 | session_logs | 3 | 214 | 42.5 |
+| 1 | rpc:get_exercise_progression_window | 821 | 555113 | 695.6 |
+| 2 | session_logs | 100 | 7101 | 319.9 |
+| 3 | session_logs | 100 | 7101 | 257.4 |
+| 4 | session_logs | 6 | 427 | 255.8 |
 
 ## getExercisePRs
 
@@ -96,20 +96,20 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 
 | run | wall ms | total rows fetched | payload bytes |
 |-----|--------:|-------------------:|--------------:|
-| cold | 68.5 | 5 | 737 |
-| warm-1 | 59.7 | 5 | 737 |
-| warm-2 | 64.3 | 5 | 737 |
-| warm-3 | 65.8 | 5 | 737 |
-| warm-4 | 61.1 | 5 | 737 |
-| warm-5 | 74.6 | 5 | 737 |
+| cold | 297.5 | 5 | 740 |
+| warm-1 | 320.4 | 5 | 740 |
+| warm-2 | 255.8 | 5 | 740 |
+| warm-3 | 255.6 | 5 | 740 |
+| warm-4 | 256.3 | 5 | 740 |
+| warm-5 | 353.3 | 5 | 740 |
 
-**Warm p50:** 64.3 ms · **Warm p95 (max of 5):** 74.6 ms
+**Warm p50:** 256.3 ms · **Warm p95 (max of 5):** 353.3 ms
 
 **Query breakdown** (warm run 5):
 
 | query | table | rows | bytes | ms |
 |------:|-------|-----:|------:|---:|
-| 1 | rpc:get_exercise_prs | 5 | 957 | 74.5 |
+| 1 | rpc:get_exercise_prs | 5 | 963 | 353.1 |
 
 ## getClientProgressData
 
@@ -117,30 +117,30 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 
 | run | wall ms | total rows fetched | payload bytes |
 |-----|--------:|-------------------:|--------------:|
-| cold | 278.9 | 90 | 11919 |
-| warm-1 | 175.6 | 90 | 11919 |
-| warm-2 | 187.3 | 90 | 11919 |
-| warm-3 | 192.8 | 90 | 11919 |
-| warm-4 | 193.7 | 90 | 11919 |
-| warm-5 | 169.4 | 90 | 11919 |
+| cold | 1259.3 | 212 | 24635 |
+| warm-1 | 1076.1 | 212 | 24635 |
+| warm-2 | 742.7 | 212 | 24635 |
+| warm-3 | 743.7 | 212 | 24635 |
+| warm-4 | 760.7 | 212 | 24635 |
+| warm-5 | 711.2 | 212 | 24635 |
 
-**Warm p50:** 187.3 ms · **Warm p95 (max of 5):** 193.7 ms
+**Warm p50:** 743.7 ms · **Warm p95 (max of 5):** 1076.1 ms
 
 **Query breakdown** (warm run 5):
 
 | query | table | rows | bytes | ms |
 |------:|-------|-----:|------:|---:|
-| 1 | clients | 1 | 67 | 54.5 |
-| 2 | client_goals | 1 | 450 | 46.3 |
-| 3 | check_ins | 0 | 0 | 51.0 |
-| 4 | wellness_logs | 48 | 8065 | 56.4 |
-| 5 | client_measurements_live | 36 | 11303 | 56.6 |
-| 6 | clients | 1 | 2066 | 62.0 |
-| 7 | clients | 1 | 67 | 64.8 |
-| 8 | client_measurements_live | 1 | 318 | 38.8 |
-| 9 | client_measurements_live | 0 | 2 | 45.5 |
-| 10 | client_measurements_live | 1 | 317 | 46.3 |
-| 11 | client_measurements_live | 0 | 2 | 47.5 |
+| 1 | clients | 1 | 67 | 227.5 |
+| 2 | check_ins | 0 | 0 | 233.6 |
+| 3 | wellness_logs | 91 | 15289 | 241.7 |
+| 4 | clients | 1 | 67 | 241.8 |
+| 5 | clients | 1 | 2068 | 244.7 |
+| 6 | client_goals | 1 | 518 | 244.8 |
+| 7 | client_measurements_live | 113 | 35737 | 248.7 |
+| 8 | client_measurements_live | 1 | 317 | 236.2 |
+| 9 | client_measurements_live | 1 | 316 | 236.4 |
+| 10 | client_measurements_live | 1 | 257 | 236.5 |
+| 11 | client_measurements_live | 1 | 258 | 236.7 |
 
 ## getBlockFacts (3-way fan-out)
 
@@ -150,22 +150,22 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 
 | run | wall ms | total rows fetched | payload bytes |
 |-----|--------:|-------------------:|--------------:|
-| cold | 203.6 | 7 | 1659 |
-| warm-1 | 107.5 | 7 | 1659 |
-| warm-2 | 99.9 | 7 | 1659 |
-| warm-3 | 110.1 | 7 | 1659 |
-| warm-4 | 108.5 | 7 | 1659 |
-| warm-5 | 97.8 | 7 | 1659 |
+| cold | 508.4 | 7 | 1593 |
+| warm-1 | 471.0 | 7 | 1593 |
+| warm-2 | 474.4 | 7 | 1593 |
+| warm-3 | 484.6 | 7 | 1593 |
+| warm-4 | 474.5 | 7 | 1593 |
+| warm-5 | 471.1 | 7 | 1593 |
 
-**Warm p50:** 107.5 ms · **Warm p95 (max of 5):** 110.1 ms
+**Warm p50:** 474.4 ms · **Warm p95 (max of 5):** 484.6 ms
 
 **Query breakdown** (warm run 5):
 
 | query | table | rows | bytes | ms |
 |------:|-------|-----:|------:|---:|
-| 1 | client_phases | 4 | 694 | 49.2 |
-| 2 | training_plans | 1 | 132 | 41.7 |
-| 3 | nutrition_plans | 2 | 603 | 48.0 |
+| 1 | client_phases | 4 | 694 | 231.5 |
+| 2 | nutrition_plans | 2 | 584 | 238.7 |
+| 3 | training_plans | 1 | 132 | 238.9 |
 
 ## getClientJourney
 
@@ -175,48 +175,49 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 
 | run | wall ms | total rows fetched | payload bytes |
 |-----|--------:|-------------------:|--------------:|
-| cold | 114.1 | 66 | 1106 |
-| warm-1 | 102.6 | 66 | 1106 |
-| warm-2 | 106.6 | 66 | 1106 |
-| warm-3 | 159.0 | 66 | 1106 |
-| warm-4 | 117.7 | 66 | 1106 |
-| warm-5 | 103.0 | 66 | 1106 |
+| cold | 505.2 | 121 | 1352 |
+| warm-1 | 497.7 | 121 | 1352 |
+| warm-2 | 504.0 | 121 | 1352 |
+| warm-3 | 490.7 | 121 | 1352 |
+| warm-4 | 484.3 | 121 | 1352 |
+| warm-5 | 503.3 | 121 | 1352 |
 
-**Warm p50:** 106.6 ms · **Warm p95 (max of 5):** 159.0 ms
+**Warm p50:** 497.7 ms · **Warm p95 (max of 5):** 504.0 ms
 
 **Query breakdown** (warm run 5):
 
 | query | table | rows | bytes | ms |
 |------:|-------|-----:|------:|---:|
-| 1 | client_phases | 4 | 694 | 41.5 |
-| 2 | client_goals | 1 | 450 | 41.7 |
-| 3 | client_measurements_live | 1 | 318 | 46.6 |
-| 4 | client_measurements_live | 0 | 2 | 50.9 |
-| 5 | client_measurements_live | 52 | 16329 | 51.7 |
-| 6 | client_current_measurements | 7 | 2206 | 53.7 |
-| 7 | client_measurements_live | 1 | 317 | 58.5 |
-| 8 | client_measurements_live | 0 | 2 | 60.7 |
+| 1 | client_goals | 1 | 518 | 226.3 |
+| 2 | client_phases | 4 | 694 | 241.8 |
+| 3 | client_measurements_live | 1 | 316 | 234.7 |
+| 4 | client_measurements_live | 1 | 317 | 234.8 |
+| 5 | client_measurements_live | 1 | 257 | 240.2 |
+| 6 | client_current_measurements | 7 | 2208 | 240.4 |
+| 7 | nutrition_plans | 1 | 178 | 240.1 |
+| 8 | client_measurements_live | 104 | 32987 | 253.3 |
+| 9 | client_measurements_live | 1 | 258 | 260.7 |
 
-## getHabitLogs
+## listHabitEntries
 
-**File:** `services/daily-habits-service.ts:273` · **Call:** `getHabitLogs(PERF_CLIENT_ID, today-90d, today)`
+**File:** `services/client-habits-service.ts:155` · **Call:** `listHabitEntries(PERF_CLIENT_ID, { from: today-90d, to: today })`
 
 | run | wall ms | total rows fetched | payload bytes |
 |-----|--------:|-------------------:|--------------:|
-| cold | 123.7 | 240 | 103130 |
-| warm-1 | 76.7 | 240 | 103130 |
-| warm-2 | 66.8 | 240 | 103130 |
-| warm-3 | 76.2 | 240 | 103130 |
-| warm-4 | 66.5 | 240 | 103130 |
-| warm-5 | 64.5 | 240 | 103130 |
+| cold | 266.3 | 455 | 48620 |
+| warm-1 | 316.7 | 455 | 48620 |
+| warm-2 | 251.3 | 455 | 48620 |
+| warm-3 | 251.4 | 455 | 48620 |
+| warm-4 | 252.9 | 455 | 48620 |
+| warm-5 | 251.3 | 455 | 48620 |
 
-**Warm p50:** 66.8 ms · **Warm p95 (max of 5):** 76.7 ms
+**Warm p50:** 251.4 ms · **Warm p95 (max of 5):** 316.7 ms
 
 **Query breakdown** (warm run 5):
 
 | query | table | rows | bytes | ms |
 |------:|-------|-----:|------:|---:|
-| 1 | daily_habit_logs | 240 | 116330 | 64.1 |
+| 1 | client_habit_logs | 455 | 52260 | 250.8 |
 
 
 ## Followups (out of 3.5 scope)

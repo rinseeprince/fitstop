@@ -24,7 +24,7 @@ You are a convention enforcer for a **Supabase + Next.js App Router** fitness co
 components/
   client-portal/        # Client-facing post-activation portal (home, detail pages, nav, settings)
   clients/              # Coach-side components
-    habits/             # Coach habit analytics
+    habits/             # Coach Habits tab
     training/           # Training plan management
     nutrition/          # Nutrition management
     metrics/            # Client metrics
@@ -65,12 +65,12 @@ Coach-side components go in `components/clients/`. Client-side go in `components
 - Use `isLoading` for skeletons, never `isValidating`
 - No `useState` for server data — use SWR's cache
 
-Reference pattern from `hooks/use-client-habits.ts`:
+Reference pattern from `hooks/use-client-habits.ts` (the key from its exported builder, never built inline):
 ```typescript
-const { data, error, isLoading, mutate } = useSWR<Type>(
-  clientId ? `/api/clients/${clientId}/endpoint` : null,
-  fetcher,
-  { revalidateOnFocus: false, revalidateOnReconnect: false }
+const { data, error, isLoading, mutate } = useSWR<{ success: boolean; data: CoachHabitList }>(
+  clientId ? clientHabitsKey(clientId) : null,
+  swrFetcher,
+  { revalidateOnFocus: false, errorRetryCount: 3, errorRetryInterval: 1000 }
 );
 ```
 
@@ -115,8 +115,8 @@ const { data } = useSWR(eventId ? `/api/client/training/events/${eventId}` : nul
 
 - **Files:** kebab-case (`use-client-habits.ts`, `training-service.ts`, `add-client-dialog.tsx`)
 - **Functions/variables:** camelCase (`getClientsForCoach`, `isLoading`)
-- **Components:** PascalCase (`HabitsGrid`, `ClientOverviewTab`)
-- **Types/interfaces:** PascalCase (`DailyHabit`, `TrainingSession`)
+- **Components:** PascalCase (`HabitsWeekTracker`, `ClientOverviewTab`)
+- **Types/interfaces:** PascalCase (`ClientHabit`, `TrainingSession`)
 - **Constants:** UPPER_SNAKE_CASE for true constants (`MAX_FILE_SIZE`, `API_TIMEOUT`)
 - **No em dashes** (—) anywhere in code, comments, or UI copy. Use hyphens (-) or "to" instead
 
@@ -193,9 +193,9 @@ Fix: One-sentence remediation
 
 Example:
 ```
-[DATA FETCHING] components/clients/habits/habits-grid.tsx:45
+[DATA FETCHING] components/clients/example/example-card.tsx:45
 Rule: Coach-side must use SWR, not fetch
-Issue: Uses raw `fetch` in useEffect to load habit data instead of useSWR
+Issue: Uses raw `fetch` in useEffect to load its data instead of useSWR
 Fix: Replace with useSWR hook following the pattern in hooks/use-client-habits.ts
 
 [FILE SIZE] services/check-in-service.ts

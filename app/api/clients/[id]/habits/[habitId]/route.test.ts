@@ -17,6 +17,7 @@ vi.mock("@/services/client-habit-writes-service", () => {
   return { HabitWriteError, renameHabit: vi.fn(), deleteHabit: vi.fn() };
 });
 vi.mock("@/services/client-habit-figures-service", () => ({ getCoachHabitList: vi.fn() }));
+vi.mock("@/services/today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("@/services/audit-log-service", () => ({ recordAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -24,10 +25,13 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { deleteHabit, HabitWriteError, renameHabit } from "@/services/client-habit-writes-service";
 import { getCoachHabitList } from "@/services/client-habit-figures-service";
+import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 
 const HABIT = "7c1a4d8e-2f3b-4c5d-8e9f-0a1b2c3d4e5f";
-const LIST = { clientToday: "2026-09-30", habits: [] };
+// The client's today, a day ahead of the server's: the delete must take the client's.
+const CLIENT_TODAY = "2026-10-01";
+const LIST = { clientToday: CLIENT_TODAY, habits: [] };
 const params = (habitId = HABIT) => ({ params: Promise.resolve({ id: "client-2", habitId }) });
 
 function request(method: "PATCH" | "DELETE", body?: unknown) {
@@ -41,6 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
   vi.mocked(getCoachHabitList).mockResolvedValue(LIST);
+  vi.mocked(getClientTodayString).mockResolvedValue(CLIENT_TODAY);
 });
 
 const foreign = () =>
@@ -110,7 +115,7 @@ describe("PATCH /api/clients/[id]/habits/[habitId]", () => {
 });
 
 describe("DELETE /api/clients/[id]/habits/[habitId]", () => {
-  it("deletes a habit with no entries, audits it, and answers with the habits as they now stand", async () => {
+  it("deletes the habit from the client's today, audits it, and answers with the habits as they now stand", async () => {
     vi.mocked(deleteHabit).mockResolvedValue(undefined);
     const req = request("DELETE");
     const response = await DELETE(req, params());
@@ -118,23 +123,18 @@ describe("DELETE /api/clients/[id]/habits/[habitId]", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: LIST } });
     expect(requireCoachOwnsClient).toHaveBeenCalledWith("client-2", req);
-    expect(deleteHabit).toHaveBeenCalledWith({ habitId: HABIT, clientId: "client-2" });
+    expect(getClientTodayString).toHaveBeenCalledWith("client-2");
+    expect(deleteHabit).toHaveBeenCalledWith({ habitId: HABIT, clientId: "client-2", today: CLIENT_TODAY });
     expect(recordAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ action: "habit.delete", targetTable: "client_habits", targetId: HABIT, clientId: "client-2" })
     );
+    expect(getCoachHabitList).toHaveBeenCalledWith("client-2", CLIENT_TODAY);
   });
 
-  it("refuses a habit with entries: it can only be stopped", async () => {
-    vi.mocked(deleteHabit).mockRejectedValue(new HabitWriteError("has_entries", "x"));
-    const response = await DELETE(request("DELETE"), params());
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: "has_entries", error: "This habit has entries, so it can only be stopped." });
-    expect(recordAuditEvent).not.toHaveBeenCalled();
-  });
-
-  it("answers another client's habit, or no habit at all, as not found", async () => {
+  it("answers another client's habit, a deleted one, or no habit at all, as not found, and audits nothing", async () => {
     vi.mocked(deleteHabit).mockRejectedValue(new HabitWriteError("not_found", "x"));
     expect((await DELETE(request("DELETE"), params())).status).toBe(404);
+    expect(recordAuditEvent).not.toHaveBeenCalled();
     vi.mocked(deleteHabit).mockClear();
     expect((await DELETE(request("DELETE"), params("not-a-habit"))).status).toBe(404);
     expect(deleteHabit).not.toHaveBeenCalled();

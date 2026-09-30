@@ -57,9 +57,9 @@ const water: ClientHabit = {
 
 describe("toHabitWriteError", () => {
   it("reads a function's code and message", () => {
-    const error = toHabitWriteError({ message: "has_entries: a habit with entries can only be stopped" });
+    const error = toHabitWriteError({ message: "stops_in_past: a habit stops today or later" });
     expect(error).toBeInstanceOf(HabitWriteError);
-    expect(error).toMatchObject({ code: "has_entries", message: "a habit with entries can only be stopped" });
+    expect(error).toMatchObject({ code: "stops_in_past", message: "a habit stops today or later" });
   });
 
   it("leaves anything that is not a refusal a plain error", () => {
@@ -139,13 +139,13 @@ describe("the prescription writes", () => {
     expect(await resetHabitDay({ habitId: "habit-1", clientId: "client-3", today: TODAY, date: "2026-10-02" })).toBe(false);
     expect(rpc).toHaveBeenLastCalledWith("reset_client_habit_day", { p_habit_id: "habit-1", p_client_id: "client-3", p_today: TODAY, p_date: "2026-10-02" });
     rpcReturns(null);
-    await deleteHabit({ habitId: "habit-1", clientId: "client-3" });
-    expect(rpc).toHaveBeenLastCalledWith("delete_client_habit", { p_habit_id: "habit-1", p_client_id: "client-3" });
+    await deleteHabit({ habitId: "habit-1", clientId: "client-3", today: TODAY });
+    expect(rpc).toHaveBeenLastCalledWith("delete_client_habit", { p_habit_id: "habit-1", p_client_id: "client-3", p_today: TODAY });
   });
 
   it("throws a function's refusal as a HabitWriteError", async () => {
-    rpcReturns(null, { message: "has_entries: a habit with entries can only be stopped" });
-    await expect(deleteHabit({ habitId: "habit-1", clientId: "client-3" })).rejects.toMatchObject({ code: "has_entries" });
+    rpcReturns(null, { message: "not_found: habit habit-1 is not this client's" });
+    await expect(deleteHabit({ habitId: "habit-1", clientId: "client-3", today: TODAY })).rejects.toMatchObject({ code: "not_found" });
   });
 });
 

@@ -97,7 +97,7 @@ export const HabitListItem = ({
           onStop={stopped ? undefined : onStop}
           // Every stopped habit starts again, a version left or not: the drawer's `startAgain` decides how.
           onStartAgain={stopped ? () => void startAgain() : undefined}
-          onDelete={habit.hasEntries ? undefined : onDelete}
+          onDelete={onDelete}
           onMoveUp={stopped ? undefined : onMoveUp}
           onMoveDown={stopped ? undefined : onMoveDown}
         />

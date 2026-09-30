@@ -67,6 +67,18 @@ describe("HabitConfirmDialog", () => {
     expect(screen.getByRole("button", { name: "Delete habit" })).toBeEnabled();
   });
 
+  it("asks to delete a habit the client logged, saying it leaves the list from today and what they logged stays", () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    const logged: HabitConfirmSubject = { kind: "delete", habit: WATER };
+    render(<HabitConfirmDialog open subject={logged} onOpenChange={vi.fn()} onConfirm={onConfirm} />);
+
+    expect(screen.getByRole("heading").textContent).toBe("Delete Water?");
+    expect(screen.getByText("It leaves the list from today. Everything the client logged stays.")).toBeInTheDocument();
+    expect(screen.queryByText(/for good/)).toBeNull();
+    screen.getByRole("button", { name: "Delete habit" }).click();
+    expect(onConfirm).toHaveBeenCalledWith(logged);
+  });
+
   it("cannot be dismissed while its write is in flight", async () => {
     let settle: () => void = () => {};
     const write = new Promise<void>((resolve) => (settle = resolve));
@@ -86,13 +98,13 @@ describe("HabitConfirmDialog", () => {
   });
 
   it("says why a refused write failed and can be tried again", async () => {
-    const onConfirm = vi.fn().mockRejectedValue(new Error("This habit has entries, so it can only be stopped."));
+    const onConfirm = vi.fn().mockRejectedValue(new Error("Habit not found."));
     render(<HabitConfirmDialog open subject={DELETE} onOpenChange={vi.fn()} onConfirm={onConfirm} />);
 
     screen.getByRole("button", { name: "Delete habit" }).click();
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Delete failed", {
-        description: "This habit has entries, so it can only be stopped.",
+        description: "Habit not found.",
       })
     );
     // The toast is sent a beat before React commits the idle button: wait for it.

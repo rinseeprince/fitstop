@@ -97,10 +97,11 @@ function clientHabitsQuery<Select extends string>(clientId: string, edits: EditR
 }
 
 /**
- * Every habit the client has — running, planned and stopped — in their order,
- * each with every version and the one-date edits over `edits`. A client's
- * habits are a coaching record, tens of rows over years, so one unpaged read
- * is the whole of it.
+ * Every habit the client has — running, planned and stopped, and deleted too,
+ * since every read of the past keeps a deleted habit for the days it ran — in
+ * their order, each with every version and the one-date edits over `edits`. A
+ * client's habits are a coaching record, tens of rows over years, so one
+ * unpaged read is the whole of it.
  */
 export async function listClientHabits(clientId: string, edits: EditRange): Promise<ClientHabit[]> {
   const { data, error } = await clientHabitsQuery(clientId, edits, HABIT_SELECT);
@@ -109,19 +110,19 @@ export async function listClientHabits(clientId: string, edits: EditRange): Prom
 }
 
 /**
- * The client's habits as `listClientHabits` reads them, each with whether the
- * client has made any entry for it: one of its entries at most, found in the
- * same read on the habit's own `(client_habit_id, date)` key — a yes or no,
- * never a count of every entry the habit has had.
+ * The client's habits as `listClientHabits` reads them, less the ones the
+ * coach deleted — the habits the coach manages — each with whether the client
+ * has made any entry for it: one of its entries at most, found in the same
+ * read on the habit's own `(client_habit_id, date)` key — a yes or no, never a
+ * count of every entry the habit has had.
  */
 export async function listClientHabitsWithEntryCheck(
   clientId: string,
   edits: EditRange
 ): Promise<(ClientHabit & { hasEntries: boolean })[]> {
-  const { data, error } = await clientHabitsQuery(clientId, edits, `${HABIT_SELECT}, client_habit_logs(id)`).limit(
-    1,
-    { referencedTable: "client_habit_logs" }
-  );
+  const { data, error } = await clientHabitsQuery(clientId, edits, `${HABIT_SELECT}, client_habit_logs(id)`)
+    .is("deleted_at", null)
+    .limit(1, { referencedTable: "client_habit_logs" });
   if (error) throw new Error(`Failed to read habits: ${error.message}`);
   return (data ?? []).map((row) => ({
     ...mapHabit(row),
@@ -179,8 +180,12 @@ export async function listHabitEntries(
   }));
 }
 
-/** A habit of one of the roster's clients, as the attention feed reads it. */
-export type RosterHabit = ClientHabit & { clientId: string };
+/**
+ * A habit of one of the roster's clients, as the attention feed reads it, and
+ * whether the coach deleted it: its past days stay prescribed work, while no
+ * missed-habit line names it.
+ */
+export type RosterHabit = ClientHabit & { clientId: string; deleted: boolean };
 
 /** An entry of one of the roster's clients, without its note: the feed judges entries and never shows one. */
 export type RosterHabitEntry = Omit<HabitEntry, "note"> & { clientId: string };
@@ -198,7 +203,7 @@ export async function listHabitsForClients(clientIds: string[], range: DayRange)
       supabaseAdmin
         .from("client_habits")
         .select(
-          "client_id, id, name, how_to, measure, unit, direction, position, client_habit_versions!inner(id, starts_on, ends_on, target, times_per_week, client_habit_version_days(weekday)), client_habit_day_edits(date, planned, target)"
+          "client_id, id, name, how_to, measure, unit, direction, position, deleted_at, client_habit_versions!inner(id, starts_on, ends_on, target, times_per_week, client_habit_version_days(weekday)), client_habit_day_edits(date, planned, target)"
         )
         .in("client_id", chunk)
         .lte("client_habit_versions.starts_on", range.to)
@@ -210,7 +215,7 @@ export async function listHabitsForClients(clientIds: string[], range: DayRange)
         .range(from, to),
     { errorLabel: "habits" }
   );
-  return rows.map((row) => ({ ...mapHabit(row), clientId: row.client_id }));
+  return rows.map((row) => ({ ...mapHabit(row), clientId: row.client_id, deleted: row.deleted_at !== null }));
 }
 
 /**

@@ -308,6 +308,7 @@ describe("attention-feed-service", () => {
       position: 1,
       versions: [{ id: `${id}-v`, startsOn: "2024-03-01", endsOn: null, target: null, timesPerWeek: null, weekdays: [...everyDay] }],
       dayEdits: [],
+      deleted: false,
     })
 
     describe("missed habits (D4): one line per habit, under the client's row", () => {
@@ -373,6 +374,23 @@ describe("attention-feed-service", () => {
         const types = evaluateAndSortTriggers(map, dateRange).find((c) => c.clientId === "c1")?.alerts.map((a) => a.type)
         expect(types).toContain("no_engagement")
         expect(types).toContain("habit_missed")
+      })
+
+      it("names no habit the coach deleted, while the days it ran stay prescribed work", () => {
+        const clients = [{ ...baseClient, start_date: "2024-01-01" }]
+        // Read, deleted on the 25th: planned every day to the 24th and never done.
+        const read = rosterHabit("h-read", "Read")
+        const deleted = { ...read, deleted: true, versions: [{ ...read.versions[0], endsOn: "2024-03-24" }] }
+
+        const both = groupClientData(clients, null, [rosterHabit("h-water", "Water"), deleted], [], null, null)
+        const lines = (evaluateAndSortTriggers(both, dateRange).find((c) => c.clientId === "c1")?.alerts ?? [])
+          .filter((alert) => alert.type === "habit_missed")
+        expect(lines.map((alert) => alert.habitId)).toEqual(["h-water"])
+
+        const onlyDeleted = groupClientData(clients, null, [deleted], [], null, null)
+        const types = evaluateAndSortTriggers(onlyDeleted, dateRange).find((c) => c.clientId === "c1")?.alerts.map((a) => a.type)
+        expect(types).toContain("no_engagement")
+        expect(types).not.toContain("habit_missed")
       })
     })
 
