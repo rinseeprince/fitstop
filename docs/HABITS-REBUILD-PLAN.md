@@ -211,7 +211,7 @@ Planned days are marked; every day a version covered is open while the day rule 
 | D3 | Moving today's habits across | **ANSWERED 2026-09-30 (owner): nothing is moved** — every existing habit and entry is test data. Commit 2's migration drops the old tables; the seeds create fresh habits through the new functions. Sent check-ins keep their frozen copies, which still read (rule 9). | — |
 | D4 | The habit alert | **ANSWERED 2026-09-30 (owner): missed habits, one line each.** A habit is listed when the client missed 3 or more of its planned days in the last 7 days, in a row or not — "Missed Water 4 days". A missed day is a planned day gone by without the habit done on it; a number short of its target counts as missed. Several habits are several lines under the client's row, which the coach expands to see them all, as with every other alert today (`components/dashboard/needs-attention-feed.tsx`); each line is dismissed on its own — its dismissal keyed by the habit (`attention_dismissals.alert_type` is free text, unique per coach, client and type) — and comes back when the habit is missed again on a later day. A times-a-week habit has no planned days, so it is not in this alert. `HABIT_MISSED_DAYS` (3) and `HABIT_MISSED_WINDOW_DAYS` (7) join `lib/constants.ts`; `HABIT_DROPOFF_DAYS_IN_WEEK` goes; `HABIT_DROPOFF_THRESHOLD_PERCENT` stays for the Overview's "days below 50%". | The owner's words: "if a habit is missed more than 3 days in a row, more than 3 days in a week, it is listed on the attention feed … so samuel has missed X habit for 3+ days, has missed Y habit for 3+ days. and the coach has to expand the needs attention feed row for that client to see." Read as their "3+" — 3 or more — over the last 7 days, which holds three in a row. |
 | D5 | A habit library | **ANSWERED 2026-09-30 (owner): no library page** — "Habits can be created and re-used on a clients page" (rule 11). | — |
-| D6 | Deleting | **ANSWERED 2026-09-30 (owner): yes.** **A habit with no entries can be deleted; one with entries can only be stopped.** CONVENTIONS §8's soft-delete exceptions gain the never-logged habit (nothing references it — a sent check-in keeps its own copy, as with a goal). | Deleting a habit with entries would delete the client's history. |
+| D6 | Deleting | **REVISED 2026-09-30 (owner), built in commit 3: every habit can be deleted, and nothing logged is lost.** A habit the client never logged is removed completely (CONVENTIONS §8's hard-delete exceptions gain it: nothing references it). A logged habit is soft-deleted: it leaves the coach's list and the client's habits page from the day it is deleted (it runs no day from then, and cannot be started again), and everything already logged stays exactly where it is: the Habits tab's past weeks, the Overview's past days, the client's Journey, sent check-ins. Commit 2 shipped the first answer (a logged habit could only be stopped); the owner, at commit 2's smoke: "IT'S A FUCKING HABIT. WHAT IS WRONG WITH DELETION?" and "logged data and prescription would be frozen in time no matter what". | Erasing a logged habit would erase its entries with it (each entry belongs to its habit), so a delete keeps the row and marks it. |
 | D8 | The Overview's habit dots | **ANSWERED 2026-09-30 (owner): as it is today** — "because a client can go back and log Monday even if they did it on tuesday". Each day's dot is that day's planned habits done on that day; the figure beside the dots and its "days below 50%" line count the same way, with no credit for a habit done on another day. A day with nothing planned is a dash (today a "no log" dot is drawn on days before any habit existed). | — |
 
 **Owner's answers (2026-09-30), every decision answered:** D1 — no streaks · D2 — yes · D3 — nothing is moved, the old habits are test data · D4 — missed-habit lines · D5 — no library page, habits are reused on the client's page · D6 — yes · D8 — as today. D7 and D9 were withdrawn: habit units stay as they work today, and the mislabel on the client's sent check-in card was fixed on its own (`b7389cf8`).
@@ -338,7 +338,7 @@ smoke for this commit: the proofs are the evidence.
 
 ### Commit 2 — `feat(habits): every reader, writer and screen switches to the new habits, the old tables go, and the history stops moving`
 
-**STATUS: not started.**
+**STATUS: SHIPPED `500bea7e` 2026-09-30.** Migration 205 on DEV; PROD at 184 owes 185–205, and 205 must not reach PROD before this code is live there. The owner's smoke passed; decisions the plan left open are in the commit body. The delete for a logged habit moved to commit 3 (D6 revised).
 
 - Migration (the next free number): drops `daily_habit_logs` and `daily_habits`, their indexes and triggers with them. Nothing is moved — every existing habit is test data (D3) — so it runs after the §5 probe and copies nothing; the seeds (§4) create fresh habits through the new functions.
 - The four routes marked 2 in §2.4, built on commit 1's services; every old habit route deleted (§2.4).
@@ -405,10 +405,11 @@ the smoke list. The browser smoke is mine: write the list to my smoke standard,
 words, no database edits and no faked dates.
 ```
 
-### Commit 3 — `docs(habits): the docs describe the new habit model`
+### Commit 3 — `feat(habits): any habit can be deleted and its past stays; the docs describe the new habit model`
 
 **STATUS: not started.**
 
+- **Delete for every habit (D6 as revised, owner 2026-09-30; added here at commit 2's close).** A migration (206 at planning) gives `client_habits` a deleted marker and changes `delete_client_habit` to take the client's today: a habit with no entries is removed as now; a habit with entries is stopped from today (the stop's own rules: the running version ends the day before, queued versions and one-date edits from today go) and marked deleted, never erased, its versions and entries untouched. A deleted habit leaves the coach's habit list, the order (`order_client_habits` counts the client's habits without it), `coach_habit_choices`, and the missed-habit alert; every write to it but an entry answers `not_found`. Every read of the past keeps it for the days it ran: the Habits tab's weeks, the Overview's row, the client's day and Journey, the check-in's frozen week. The drawer's ⋯ menu offers Delete on every habit; its confirm names what happens ("Removes it and its schedule for good; the client never logged it." for a never-logged habit; for a logged one, that it leaves the list from today and everything logged stays). Proofs: `scripts/habit-functions-proof.ts` and `scripts/habit-routes-proof.ts` updated (a logged habit's delete keeps its entries and leaves the list); a browser smoke for the delete.
 - Docs to the current shape (§4's doc table marked 3): ARCHITECTURE's Data Hierarchy, Daily logs, Client Portal, Coach-side and Check-in lines, and its new **"Habits"** section (the model of §2 — tables, rules, the kernel, the functions, the entry, the figures, the frozen week, what each screen reads); CONVENTIONS (the `is_active` bullet, the lifecycle list, the hard-delete exceptions per D6, the §10 example, §20 per rule 10); `docs/perf-baseline.md`; the `.claude/agents/*.md` mentions.
 - The PROD checklist of §5 handed to the owner, not run.
 
@@ -416,12 +417,15 @@ words, no database edits and no faked dates.
 Read CONVENTIONS.md (whole) and docs/HABITS-REBUILD-PLAN.md (whole), then every
 docs/ARCHITECTURE.md passage that §4's doc table marks 3.
 
-Job: Commit 3 of docs/HABITS-REBUILD-PLAN.md §6 — `docs(habits): the docs
-describe the new habit model`. Rewrite every line §4's doc table marks 3 to the
-current shape only (no "used to"; a removal leaves no sentence), and add
-ARCHITECTURE's "Habits" section. Rewrite a CONVENTIONS or ARCHITECTURE rule only
-as §2 and §3 say, and list each change in the commit body. No code change beyond
-what a doc correction needs, and never run anything against PROD.
+Job: Commit 3 of docs/HABITS-REBUILD-PLAN.md §6 — `feat(habits): any habit can
+be deleted and its past stays; the docs describe the new habit model`. First
+build the delete for every habit exactly as that section's first bullet and D6
+say (the migration, the function, the reads, the drawer's menu and confirm, the
+proofs). Then rewrite every line §4's doc table marks 3 to the current shape
+only (no "used to"; a removal leaves no sentence), and add ARCHITECTURE's
+"Habits" section, describing the delete as built. Rewrite a CONVENTIONS or
+ARCHITECTURE rule only as §2 and §3 say, and list each change in the commit
+body. Never run anything against PROD.
 
 You have my go: don't show me a plan and don't wait for my review. Plan for
 yourself, build it, and hand over when it is done. Stop and ask me only if a §3
@@ -436,19 +440,22 @@ Done when: everything that section lists is built; an independent review of the
 whole diff, docs included, has run and every finding is fixed at the root; and
 every gate passes after the build and again after the review's fixes: npx tsc
 --noEmit, npx eslint ., npx vitest run, npm run check:labels, npx knip, npm run
-check:service-key. Never skip, weaken or delete a test to make a gate pass.
-Report the security, load and performance review (CONVENTIONS §2).
+check:service-key, npm run check:rls; and the two habit proofs pass on DEV.
+Never skip, weaken or delete a test to make a gate pass. Report the security,
+load and performance review (CONVENTIONS §2).
 
 Working method: the Edit tool, not shell edit scripts; grep at execution time
 for every dependant (§4 is a map, not a promise); a test and a mutation for
 every new rule, each mutation from a cp backup in the scratchpad, never git
-stash or git checkout --.
+stash or git checkout --; supabase db push --dry-run immediately before the push
+(from the Bash tool the push confirms itself; if it is classifier-blocked, hand
+it to me with !), then gen types and a diff.
 
 Then commit directly to main, replace this commit's STATUS line in §6 with
 SHIPPED, the hash and the date, and hand over: what shipped; anything you
 decided that the plan did not say; every coach- or client-visible rule you
-built, one plain sentence each; and §5's PROD checklist for me to run, not run
-by you. There is no browser smoke for this commit: nothing on screen changes.
+built, one plain sentence each; §5's PROD checklist for me to run, not run by
+you; and a browser smoke for the delete, to my smoke standard.
 ```
 
 ### Commit 4 — `feat(habits): the coach sets a habit's days and changes it from a day — one-date edits, History, reuse from other clients, and the week as it happened`
