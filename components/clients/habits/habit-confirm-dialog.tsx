@@ -21,17 +21,13 @@ export type HabitConfirmSubject = { kind: "stop" | "delete"; habit: CoachHabit }
 const COPY = {
   stop: {
     title: (name: string) => `Stop ${name}?`,
-    body: () => "It stops from today. Its past stays.",
+    body: "It stops from today. Its past stays.",
     action: "Stop habit",
     failed: "Could not stop the habit",
   },
   delete: {
     title: (name: string) => `Delete ${name}?`,
-    // A habit the client logged is kept for its past; one they never logged goes.
-    body: (habit: CoachHabit) =>
-      habit.hasEntries
-        ? "It leaves the list from today. Everything the client logged stays."
-        : "Removes it and its schedule for good; the client never logged it.",
+    body: "Everything the client has logged against this habit will stay.",
     action: "Delete habit",
     failed: "Delete failed",
   },
@@ -98,7 +94,7 @@ export function HabitConfirmDialog({
           </div>
         </DialogHeader>
 
-        <p className="text-sm text-[#5a7d82]">{subject ? copy.body(subject.habit) : null}</p>
+        <p className="text-sm text-[#5a7d82]">{copy.body}</p>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>

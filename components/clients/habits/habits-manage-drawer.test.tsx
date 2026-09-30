@@ -444,7 +444,7 @@ describe("stopping and deleting", () => {
     const user = renderDrawer();
 
     await choose(user, "Walk", "Delete");
-    expect(within(confirmDialog()).getByText("Removes it and its schedule for good; the client never logged it.")).toBeInTheDocument();
+    expect(within(confirmDialog()).getByText("Everything the client has logged against this habit will stay.")).toBeInTheDocument();
     await user.click(within(confirmDialog()).getByRole("button", { name: "Delete habit" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: /^Delete / })).toBeNull());
@@ -453,13 +453,12 @@ describe("stopping and deleting", () => {
     expect(toast.success).toHaveBeenCalledWith('"Walk" deleted');
   });
 
-  it("deletes a habit the client logged: the confirm says it leaves the list from today and everything logged stays", async () => {
+  it("deletes a habit the client logged, its confirm the same sentence", async () => {
     writes.remove.mockResolvedValue({ changed: true, habits: { ...LIST, habits: [WALK, SAUNA, STRETCH] } });
     const user = renderDrawer();
 
     await choose(user, "Water", "Delete");
-    expect(within(confirmDialog()).getByText("It leaves the list from today. Everything the client logged stays.")).toBeInTheDocument();
-    expect(within(confirmDialog()).queryByText(/for good/)).toBeNull();
+    expect(within(confirmDialog()).getByText("Everything the client has logged against this habit will stay.")).toBeInTheDocument();
     await user.click(within(confirmDialog()).getByRole("button", { name: "Delete habit" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: /^Delete / })).toBeNull());

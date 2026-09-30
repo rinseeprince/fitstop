@@ -60,21 +60,17 @@ describe("HabitConfirmDialog", () => {
     expect(onConfirm).toHaveBeenCalledWith(STOP);
   });
 
-  it("asks to delete a habit the client never logged, for good", () => {
-    render(<HabitConfirmDialog open subject={DELETE} onOpenChange={vi.fn()} onConfirm={vi.fn()} />);
-    expect(screen.getByRole("heading").textContent).toBe("Delete Water?");
-    expect(screen.getByText("Removes it and its schedule for good; the client never logged it.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete habit" })).toBeEnabled();
-  });
-
-  it("asks to delete a habit the client logged, saying it leaves the list from today and what they logged stays", () => {
+  it("asks to delete a habit in one sentence, whether or not the client ever logged it", () => {
     const onConfirm = vi.fn().mockResolvedValue(undefined);
     const logged: HabitConfirmSubject = { kind: "delete", habit: WATER };
-    render(<HabitConfirmDialog open subject={logged} onOpenChange={vi.fn()} onConfirm={onConfirm} />);
-
+    const { rerender } = render(<HabitConfirmDialog open subject={DELETE} onOpenChange={vi.fn()} onConfirm={vi.fn()} />);
     expect(screen.getByRole("heading").textContent).toBe("Delete Water?");
-    expect(screen.getByText("It leaves the list from today. Everything the client logged stays.")).toBeInTheDocument();
-    expect(screen.queryByText(/for good/)).toBeNull();
+    expect(screen.getByText("Everything the client has logged against this habit will stay.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete habit" })).toBeEnabled();
+
+    rerender(<HabitConfirmDialog open subject={logged} onOpenChange={vi.fn()} onConfirm={onConfirm} />);
+    expect(screen.getByRole("heading").textContent).toBe("Delete Water?");
+    expect(screen.getByText("Everything the client has logged against this habit will stay.")).toBeInTheDocument();
     screen.getByRole("button", { name: "Delete habit" }).click();
     expect(onConfirm).toHaveBeenCalledWith(logged);
   });
