@@ -4,7 +4,7 @@ import type {
   GetCheckInComparisonResponse,
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
-import type { HabitBreakdown } from "@/types/coach-overview";
+import type { SentHabitWeek } from "@/lib/check-in/sent-snapshot";
 import type { NutritionDay } from "@/types/schedule";
 import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import type { UnitSystem } from "@/utils/unit-conversions";
@@ -37,8 +37,12 @@ export type CheckInReviewInput = {
   exerciseLines: Map<string, string[]>;
   /** The nutrition rows the check-in froze at send (live for a legacy row), and the kernel over them. */
   nutrition: { days: NutritionDay[]; summary: NutritionPeriodSummary };
-  /** The habit figures as the page shows them: built from the habit list, one rail per habit over `dates`. */
-  habits: HabitBreakdown[];
+  /**
+   * The habit week the check-in froze, as the page shows it: every habit a
+   * version covered that week, each day as it happened and the week's
+   * figures. Null when a legacy row's period cannot be resolved.
+   */
+  habitWeek: SentHabitWeek | null;
   /** The day-form rows: each day's wellness scores. */
   dailyLogs: DailyLog[];
   /** The comparison and goal strip as the page shows them; null when that read failed. */

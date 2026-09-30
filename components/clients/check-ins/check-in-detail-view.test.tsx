@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { CheckInDetailView } from "./check-in-detail-view";
 import type { Client } from "@/types/check-in";
 
-const { mockDetailData } = vi.hoisted(() => ({ mockDetailData: vi.fn() }));
+const { mockDetailData, habitsSectionProps } = vi.hoisted(() => ({ mockDetailData: vi.fn(), habitsSectionProps: vi.fn() }));
 vi.mock("@/hooks/use-check-in-detail-data", () => ({
   useCheckInDetailData: mockDetailData,
 }));
@@ -28,7 +28,12 @@ vi.mock("@/components/check-in/kpi-ribbon", () => ({
 vi.mock("@/components/check-in/wellness-section", () => ({ WellnessSection: () => null }));
 vi.mock("@/components/check-in/week-grid", () => ({ WeekGrid: () => null }));
 vi.mock("@/components/check-in/client-notes-section", () => ({ ClientNotesSection: () => null }));
-vi.mock("@/components/check-in/habits-section", () => ({ HabitsSection: () => null }));
+vi.mock("@/components/check-in/habits-section", () => ({
+  HabitsSection: (props: unknown) => {
+    habitsSectionProps(props);
+    return null;
+  },
+}));
 vi.mock("./check-in-goal-strip", () => ({
   CheckInGoalStrip: ({ onSetNewGoals }: { onSetNewGoals?: () => void }) => (
     <div data-testid="goals">
@@ -65,7 +70,6 @@ const loaded = {
   // One day-form row only: the header's count must NOT come from here, since a
   // day the client only trained or only ticked a habit has no such row.
   dailyLogs: [{ date: "2026-08-22" }],
-  habitLogs: [],
   // The server's own date lists (lib/logged-days.ts through the adherence
   // kernel): the 24th and 27th are logged days, over a seven-day period.
   periodAdherence: {
@@ -75,7 +79,7 @@ const loaded = {
     ],
     loggedDates: ["2026-08-24", "2026-08-27"],
     nutrition: { rail: [], days: [], onTarget: 0, loggedDays: 0, pct: null },
-    habits: { rail: [], avgPct: null, daysBelow50: 0, perHabit: [] },
+    habitWeek: { habits: [], totals: { planned: 0, done: 0, met: 0 } },
   },
   dailyContextLoading: false,
   contextStartDate: new Date("2026-08-22T00:00:00"),
@@ -145,6 +149,16 @@ describe("CheckInDetailView", () => {
     expect(screen.getByTestId("goals")).toBeInTheDocument();
     expect(screen.getByText(/2\/7 days logged/)).toBeInTheDocument();
     expect(screen.getByText(/Week of Aug 22 – 28, 2026/)).toBeInTheDocument();
+  });
+
+  it("hands the Habits section the habit week the check-in froze, and none for an unresolved week", () => {
+    mockDetailData.mockReturnValue(loaded);
+    renderView();
+    expect(habitsSectionProps).toHaveBeenLastCalledWith({ habitWeek: loaded.periodAdherence.habitWeek });
+
+    mockDetailData.mockReturnValue({ ...loaded, periodAdherence: null });
+    renderView();
+    expect(habitsSectionProps).toHaveBeenLastCalledWith({ habitWeek: null });
   });
 
   it("omits the days-logged chip on a legacy row whose period cannot be resolved", () => {

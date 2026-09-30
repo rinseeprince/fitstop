@@ -66,6 +66,13 @@ export type HabitEntry = {
   note: string | null;
 };
 
+/**
+ * An entry as the kernel judges it. Its note is shown when the read carried
+ * one and judges nothing, so a read that has no use for it (the feed's
+ * cross-client read) leaves it out.
+ */
+export type HabitEntryRead = Omit<HabitEntry, "note"> & { note?: string | null };
+
 /** The client's answer for a day: a tick habit's done or not, a number habit's number. */
 export type HabitAnswer = { done: boolean } | { value: number };
 
@@ -172,12 +179,72 @@ export type HabitProgressRow = {
   words: HabitWords;
   /** The client weeks, oldest first, the last holding today. */
   weeks: HabitWeekSpan[];
+  /** Those weeks' figures added together: the span the Journey shows, so no app adds them up. */
+  span: HabitWeekFigures;
   /** The days ending today, oldest first. */
   days: HabitDayFacts[];
 };
 
 /** `GET /api/client/habits/progress`. */
 export type ClientHabitProgress = { clientToday: string; habits: HabitProgressRow[] };
+
+/**
+ * Where a habit stands on the client's today: a version covers the day
+ * (running), none does but one starts later (upcoming), or neither (stopped).
+ */
+export type HabitStatus = "running" | "upcoming" | "stopped";
+
+/** One of the client's habits as the coach's Habits tab lists it: the identity, the history and where it stands. */
+export type CoachHabit = HabitIdentity & {
+  position: number;
+  /** Every version, oldest first: the habit's history. */
+  versions: HabitVersion[];
+  /** The one-date edits from the client's today on. */
+  dayEdits: HabitDayEdit[];
+  /** The client has made an entry for it: it can be stopped, never deleted. */
+  hasEntries: boolean;
+  status: HabitStatus;
+  /** Its words from the version running today, else its last before today, else its first. */
+  words: HabitWords;
+};
+
+/** `GET /api/clients/[id]/habits`, and what every coach habit write answers with once it has landed. */
+export type CoachHabitList = { clientToday: string; habits: CoachHabit[] };
+
+/**
+ * A coach habit write's answer: whether anything changed, and the client's
+ * habits as they now stand — null when the write is saved but the habits could
+ * not be read back, so the screen reads them again rather than calling the
+ * save a failure.
+ */
+export type CoachHabitWriteResult = { changed: boolean; habits: CoachHabitList | null };
+
+/** `POST /api/clients/[id]/habits`: the new habits' ids, in order, and the client's habits as they now stand (null as above). */
+export type CoachHabitAddResult = { habitIds: string[]; habits: CoachHabitList | null };
+
+/**
+ * One habit's week over a check-in's period, as the check-in freezes it at
+ * Send: the habit, its versions overlapping the period, each day as it
+ * happened and the week's figures.
+ */
+export type HabitPeriodRow = {
+  habit: HabitIdentity;
+  /**
+   * The day the habit first started, before the period or in it: a day before
+   * it had no habit yet ("not yet added"); an uncovered day after it is a gap
+   * or a stop ("not running"), however few versions reach into the period.
+   */
+  firstStartsOn: string;
+  versions: HabitVersion[];
+  days: HabitDayFacts[];
+  figures: HabitWeekFigures;
+};
+
+/** Every habit a version covered during the period, in the client's order, and the week's totals. */
+export type HabitPeriodWeek = { habits: HabitPeriodRow[]; totals: HabitWeekFigures };
+
+/** The home card's habits: how many are running on the day, how many were planned, how many of those were done that day. */
+export type HabitDaySummary = { plannedToday: number; doneToday: number; running: number };
 
 /** A habit the coach has given a client, offered for reuse (`coach_habit_choices`), with its newest version's defaults. */
 export type HabitChoice = {

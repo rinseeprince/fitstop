@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { fetchAllPages } from "@/lib/paged-fetch";
+import { fetchAllByChunkedIds, fetchAllPages } from "@/lib/paged-fetch";
 import { isHabitDirection, isHabitMeasure } from "@/lib/habits/habit-entry";
 import { habitWords } from "@/lib/habits/habit-words";
 import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
@@ -12,8 +12,9 @@ import type { ClientHabit, HabitChoice, HabitDirection, HabitEntry } from "@/typ
  * The app reads the four prescription tables and never writes them — every
  * write is one of the habit functions, driven by
  * `services/client-habit-writes-service.ts` — and reads the client's entries
- * by `(client_id, date)`. Every read is scoped to the route-verified client.
- * What a day or a week holds is the kernel's to decide (`lib/habits/`).
+ * by `(client_id, date)`. Every read is scoped to the route-verified client,
+ * or, for the attention feed, to the coach's roster. What a day or a week
+ * holds is the kernel's to decide (`lib/habits/`).
  */
 
 type Tables = Database["public"]["Tables"];
@@ -74,8 +75,26 @@ function mapHabit(row: HabitRow): ClientHabit {
   };
 }
 
-/** The one-date edits a read carries: those on the days from..to. */
-type EditRange = { from: string; to: string };
+/**
+ * The one-date edits a read carries: those on the days from..to, either end
+ * open when left out — every edit the habit has when both are.
+ */
+type EditRange = { from?: string; to?: string };
+
+/** A range of days, both ends included. */
+type DayRange = { from: string; to: string };
+
+/**
+ * The one query both list reads make: every habit the client has, in their
+ * order, with the one-date edits over `edits`, selecting `select` —
+ * `HABIT_SELECT`, or that with the entry check.
+ */
+function clientHabitsQuery<Select extends string>(clientId: string, edits: EditRange, select: Select) {
+  let query = supabaseAdmin.from("client_habits").select(select).eq("client_id", clientId);
+  if (edits.from !== undefined) query = query.gte("client_habit_day_edits.date", edits.from);
+  if (edits.to !== undefined) query = query.lte("client_habit_day_edits.date", edits.to);
+  return query.order("position").order("created_at").order("id");
+}
 
 /**
  * Every habit the client has — running, planned and stopped — in their order,
@@ -84,25 +103,37 @@ type EditRange = { from: string; to: string };
  * is the whole of it.
  */
 export async function listClientHabits(clientId: string, edits: EditRange): Promise<ClientHabit[]> {
-  const { data, error } = await supabaseAdmin
-    .from("client_habits")
-    .select(HABIT_SELECT)
-    .eq("client_id", clientId)
-    .gte("client_habit_day_edits.date", edits.from)
-    .lte("client_habit_day_edits.date", edits.to)
-    .order("position")
-    .order("created_at")
-    .order("id");
-
+  const { data, error } = await clientHabitsQuery(clientId, edits, HABIT_SELECT);
   if (error) throw new Error(`Failed to read habits: ${error.message}`);
   return (data ?? []).map(mapHabit);
+}
+
+/**
+ * The client's habits as `listClientHabits` reads them, each with whether the
+ * client has made any entry for it: one of its entries at most, found in the
+ * same read on the habit's own `(client_habit_id, date)` key — a yes or no,
+ * never a count of every entry the habit has had.
+ */
+export async function listClientHabitsWithEntryCheck(
+  clientId: string,
+  edits: EditRange
+): Promise<(ClientHabit & { hasEntries: boolean })[]> {
+  const { data, error } = await clientHabitsQuery(clientId, edits, `${HABIT_SELECT}, client_habit_logs(id)`).limit(
+    1,
+    { referencedTable: "client_habit_logs" }
+  );
+  if (error) throw new Error(`Failed to read habits: ${error.message}`);
+  return (data ?? []).map((row) => ({
+    ...mapHabit(row),
+    hasEntries: (row.client_habit_logs ?? []).length > 0,
+  }));
 }
 
 /** One of the client's habits, as `listClientHabits` reads it; null when it is not theirs. */
 export async function getClientHabit(
   clientId: string,
   habitId: string,
-  edits: EditRange
+  edits: DayRange
 ): Promise<ClientHabit | null> {
   const { data, error } = await supabaseAdmin
     .from("client_habits")
@@ -123,7 +154,7 @@ export async function getClientHabit(
  */
 export async function listHabitEntries(
   clientId: string,
-  range: EditRange,
+  range: DayRange,
   habitId?: string
 ): Promise<HabitEntry[]> {
   const rows = await fetchAllPages(
@@ -145,6 +176,71 @@ export async function listHabitEntries(
     done: row.done,
     value: amount(row.value),
     note: row.note,
+  }));
+}
+
+/** A habit of one of the roster's clients, as the attention feed reads it. */
+export type RosterHabit = ClientHabit & { clientId: string };
+
+/** An entry of one of the roster's clients, without its note: the feed judges entries and never shows one. */
+export type RosterHabitEntry = Omit<HabitEntry, "note"> & { clientId: string };
+
+/**
+ * Every habit of the given clients that a version covers on a day of
+ * from..to, with the versions over those days and the one-date edits inside
+ * them — the attention feed's read, across a coach's roster. Chunked by client
+ * and paged, so neither the request line nor the row cap can drop a client.
+ */
+export async function listHabitsForClients(clientIds: string[], range: DayRange): Promise<RosterHabit[]> {
+  const rows = await fetchAllByChunkedIds(
+    clientIds,
+    (chunk, from, to) =>
+      supabaseAdmin
+        .from("client_habits")
+        .select(
+          "client_id, id, name, how_to, measure, unit, direction, position, client_habit_versions!inner(id, starts_on, ends_on, target, times_per_week, client_habit_version_days(weekday)), client_habit_day_edits(date, planned, target)"
+        )
+        .in("client_id", chunk)
+        .lte("client_habit_versions.starts_on", range.to)
+        .or(`ends_on.is.null,ends_on.gte.${range.from}`, { referencedTable: "client_habit_versions" })
+        .gte("client_habit_day_edits.date", range.from)
+        .lte("client_habit_day_edits.date", range.to)
+        .order("client_id")
+        .order("id")
+        .range(from, to),
+    { errorLabel: "habits" }
+  );
+  return rows.map((row) => ({ ...mapHabit(row), clientId: row.client_id }));
+}
+
+/**
+ * The given clients' entries on the days from..to, without their notes —
+ * chunked by client and paged in the order the `(client_id, date)` index
+ * serves the filter, with the habit last to make it unique, so no page
+ * repeats or skips an entry.
+ */
+export async function listHabitEntriesForClients(clientIds: string[], range: DayRange): Promise<RosterHabitEntry[]> {
+  const rows = await fetchAllByChunkedIds(
+    clientIds,
+    (chunk, from, to) =>
+      supabaseAdmin
+        .from("client_habit_logs")
+        .select("client_id, client_habit_id, date, done, value")
+        .in("client_id", chunk)
+        .gte("date", range.from)
+        .lte("date", range.to)
+        .order("client_id")
+        .order("date")
+        .order("client_habit_id")
+        .range(from, to),
+    { errorLabel: "habit entries" }
+  );
+  return rows.map((row) => ({
+    clientId: row.client_id,
+    habitId: row.client_habit_id,
+    date: row.date,
+    done: row.done,
+    value: amount(row.value),
   }));
 }
 

@@ -80,7 +80,7 @@ const goalNow: ClientGoal = {
 /** The copy the check-in saved when it was sent (lib/check-in/sent-snapshot.ts). */
 function sentCopy(overrides: Partial<SentSnapshot> = {}): SentSnapshot {
   return parseSentSnapshot({
-    version: 2,
+    version: 3,
     day: '2026-05-31',
     readings: { weight: 80.2, bodyFat: 17.1, waist: null, hips: null, chest: null, arms: null, thighs: null },
     standing: { weight: 80.2, bodyFat: 17.1 },

@@ -76,12 +76,12 @@ export async function GET(
     // the check-in rather than on it, like `periodAdherence`: both describe
     // the PERIOD the check-in reported on.
     //
-    // `periodAdherence` carries the nutrition + habit figures for the check-in's
-    // OWN period as they stood when it was sent — from its saved copy, through
-    // the Overview kernel's rules. It is here rather than in the renderer
-    // because the denominators are the point: the page cannot see which days
-    // were eligible for a habit, or which had a target, without the rows the
-    // copy froze. `null` for a legacy row whose period cannot be resolved — the
+    // `periodAdherence` carries the nutrition figures and the habit week for
+    // the check-in's OWN period as they stood when it was sent — from its saved
+    // copy, the food through the Overview kernel's rules. It is here rather
+    // than in the renderer because the denominators are the point: the page
+    // cannot see which days a habit was planned on, or which had a target,
+    // without the rows the copy froze. `null` for a legacy row whose period cannot be resolved — the
     // renderers show their empty states rather than fall back to a second,
     // client-side definition.
     const periodAdherence = getCheckInPeriodAdherence(checkIn);

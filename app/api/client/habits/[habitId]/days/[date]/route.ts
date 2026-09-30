@@ -47,22 +47,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
   const body = validation.data;
 
-  try {
-    // The week's anchor does not depend on the write, so it is read alongside it.
-    const [anchor] = await Promise.all([
-      getClientWeekAnchor(auth.clientId),
-      saveHabitEntry({
-        clientId: auth.clientId,
-        habitId: path.habitId,
-        date: path.date,
-        answer: "done" in body ? { done: body.done } : { value: body.value },
-        note: body.note,
-      }),
-    ]);
-    return await answerAfterWrite(auth.clientId, path.habitId, path.date, anchor);
-  } catch (error) {
-    return habitWriteErrorResponse(error);
-  }
+  // The week's anchor does not depend on the write, so it is read alongside
+  // it — settled apart, so the anchor can never speak for the write.
+  const [anchor, written] = await Promise.allSettled([
+    getClientWeekAnchor(auth.clientId),
+    saveHabitEntry({
+      clientId: auth.clientId,
+      habitId: path.habitId,
+      date: path.date,
+      answer: "done" in body ? { done: body.done } : { value: body.value },
+      note: body.note,
+    }),
+  ]);
+  if (written.status === "rejected") return habitWriteErrorResponse(written.reason);
+  return answerAfterWrite(auth.clientId, path.habitId, path.date, anchor);
 }
 
 /** The client's entry for a habit on a day, cleared while the day is open. Answers like PUT. */
@@ -73,36 +71,32 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   const path = await readPath(params);
   if (!path.ok) return path.response;
 
-  try {
-    const [anchor] = await Promise.all([
-      getClientWeekAnchor(auth.clientId),
-      clearHabitEntry({ clientId: auth.clientId, habitId: path.habitId, date: path.date }),
-    ]);
-    return await answerAfterWrite(auth.clientId, path.habitId, path.date, anchor);
-  } catch (error) {
-    return habitWriteErrorResponse(error);
-  }
+  const [anchor, written] = await Promise.allSettled([
+    getClientWeekAnchor(auth.clientId),
+    clearHabitEntry({ clientId: auth.clientId, habitId: path.habitId, date: path.date }),
+  ]);
+  if (written.status === "rejected") return habitWriteErrorResponse(written.reason);
+  return answerAfterWrite(auth.clientId, path.habitId, path.date, anchor);
 }
 
 /**
  * The answer to a write that committed: the habit's day and week as they now
- * stand. Should reading them fail, the write still stands and the answer says
- * so rather than calling the save a failure; sending it again is harmless.
+ * stand. Should reading them fail — the week's anchor or the week — the write
+ * still stands and the answer says so: a success with no data, so the screen
+ * reads the week again rather than calling the save a failure.
  */
 async function answerAfterWrite(
   clientId: string,
   habitId: string,
   date: string,
-  anchor: { weekday: DayOfWeek }
+  anchor: PromiseSettledResult<{ weekday: DayOfWeek }>
 ): Promise<NextResponse> {
   try {
-    const result = await getHabitEntryResult(clientId, habitId, date, anchor);
+    if (anchor.status === "rejected") throw anchor.reason;
+    const result = await getHabitEntryResult(clientId, habitId, date, anchor.value);
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     console.error("Habit entry written, reading it back failed:", error);
-    return NextResponse.json(
-      { success: false, error: "Your change is saved. Refresh to see the week." },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: true, data: null });
   }
 }

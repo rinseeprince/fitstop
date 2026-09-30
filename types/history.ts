@@ -48,38 +48,3 @@ export type TrainingWeekSummary = {
   plannedUpToToday: number;
   missed: number;
 };
-
-// Weekly habits tracker types
-
-export type WeeklyHabitDayStatus = 'completed' | 'missed' | 'pending' | 'future' | 'not-tracked';
-
-export type WeeklyHabitDay = {
-  date: string;
-  completed: boolean;
-  value: number | null;
-  status: WeeklyHabitDayStatus;
-};
-
-export type WeeklyHabitRow = {
-  habitId: string;
-  habitName: string;
-  isBoolean: boolean;
-  targetValue: number | null;
-  targetUnit: string | null;
-  days: WeeklyHabitDay[];
-  weeklyRate: number;
-};
-
-export type WeekSummary = {
-  todayCompleted: number;
-  todayTotal: number;
-  weeklyRate: number;
-  activeCount: number;
-  allHabitsStreak: number;
-};
-
-export type WeeklyHabitsResponse = {
-  habits: WeeklyHabitRow[];
-  summary: WeekSummary;
-  weekDays: string[];
-};

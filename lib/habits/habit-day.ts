@@ -1,5 +1,5 @@
 import { weekdayOf } from "@/lib/date-helpers";
-import type { ClientHabit, HabitDay, HabitVersion } from "@/types/habits";
+import type { ClientHabit, HabitDay, HabitStatus, HabitVersion } from "@/types/habits";
 
 /**
  * A habit on one date (docs/HABITS-REBUILD-PLAN.md §2.2, rules 2 and 3) —
@@ -17,6 +17,11 @@ import type { ClientHabit, HabitDay, HabitVersion } from "@/types/habits";
 /** Whether a version runs over `date`: on or after its first day, on or before its last. */
 export function versionCovers(version: Pick<HabitVersion, "startsOn" | "endsOn">, date: string): boolean {
   return version.startsOn <= date && (version.endsOn === null || version.endsOn >= date);
+}
+
+/** The habit's versions running on any day of from..to, oldest first: the prescription those days had. */
+export function versionsOver(habit: Pick<ClientHabit, "versions">, from: string, to: string): HabitVersion[] {
+  return habit.versions.filter((version) => version.startsOn <= to && (version.endsOn === null || version.endsOn >= from));
 }
 
 /** The version covering `date`, or null. A habit's versions never overlap, so there is at most one. */
@@ -56,6 +61,17 @@ export function habitDay(habit: Pick<ClientHabit, "versions" | "dayEdits">, date
     versionId: version.id,
     timesPerWeek: null,
   };
+}
+
+/**
+ * Where the habit stands on `today`: running when a version covers the day,
+ * upcoming when none does but one starts later — a habit queued to start, or
+ * one stopped with a start again queued — else stopped.
+ */
+export function habitStatus(habit: Pick<ClientHabit, "versions">, today: string): HabitStatus {
+  if (versionOn(habit, today)) return "running";
+  if (habit.versions.some((version) => version.startsOn > today)) return "upcoming";
+  return "stopped";
 }
 
 /**

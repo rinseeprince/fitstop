@@ -4,51 +4,40 @@ import { Check } from "lucide-react";
 
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import type { DailyHabit } from "@/types/daily-habit";
+import type { ClientHabitDayItem } from "@/types/habits";
 
 interface HabitToggleRowProps {
-  habit: DailyHabit;
-  /** Whether this habit is recorded as completed for the selected date. */
-  completed: boolean;
+  /** A tick habit on the day: its entry says done or not. */
+  item: ClientHabitDayItem;
   /** A write for this habit is in flight. */
   isSaving: boolean;
-  /** Per-row lock: this habit is already recorded on a past day (display-only). */
+  /** The day is locked: the row is display-only. */
   disabled?: boolean;
   onToggle: (checked: boolean) => void;
 }
 
 /**
- * Presentational habit row for the client-portal habits page (controlled — "props down,
- * callbacks up" per CONVENTIONS).
+ * A tick habit's row on the client-portal habits page (controlled — "props
+ * down, callbacks up" per CONVENTIONS): its name, a check when the day is
+ * done, and the switch.
  */
-export function HabitToggleRow({
-  habit,
-  completed,
-  isSaving,
-  disabled,
-  onToggle,
-}: HabitToggleRowProps) {
-  const isDisabled = isSaving || disabled;
+export function HabitToggleRow({ item, isSaving, disabled, onToggle }: HabitToggleRowProps) {
+  const { habit, day } = item;
+  const checked = day.entry?.done === true;
 
   return (
     <div className={`flex items-center justify-between ${disabled ? "opacity-40" : ""}`}>
       <div className="flex items-center gap-2">
         <Label htmlFor={`habit-${habit.id}`} className="text-sm font-normal">
           {habit.name}
-          {habit.targetValue ? (
-            <span className="text-muted-foreground">
-              {" · "}
-              {habit.targetValue} {habit.targetUnit || ""}
-            </span>
-          ) : null}
         </Label>
-        {completed ? <Check className="h-4 w-4 text-success" /> : null}
+        {day.met ? <Check className="h-4 w-4 text-success" aria-label="Done" /> : null}
       </div>
       <Switch
         id={`habit-${habit.id}`}
-        checked={completed}
+        checked={checked}
         onCheckedChange={onToggle}
-        disabled={isDisabled}
+        disabled={isSaving || disabled}
       />
     </div>
   );

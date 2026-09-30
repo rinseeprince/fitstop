@@ -137,7 +137,7 @@ describe("NeedsAttentionSection", () => {
         onTabChange={onTabChange}
         attentionAlerts={[
           alert("training_missed", "high", "Missed 3 training sessions this week"),
-          alert("habit_dropoff", "medium", "Habits at 2 of 7 days below 50%"),
+          alert("habit_missed", "medium", "Missed Water 4 days"),
         ]}
       />
     );
@@ -154,14 +154,14 @@ describe("NeedsAttentionSection", () => {
       <NeedsAttentionSection
         {...PROPS}
         attentionAlerts={[
-          alert("habit_dropoff", "low", "Habits at 2 of 7 days below 50%"),
+          alert("habit_missed", "low", "Missed Water 4 days"),
           alert("training_missed", "high", "Missed 3 training sessions this week"),
         ]}
       />
     );
 
     const titles = screen
-      .getAllByText(/sessions missed|Low habits/)
+      .getAllByText(/sessions missed|Missed Water/)
       .map((el) => el.textContent);
     expect(titles[0]).toBe("3 sessions missed");
   });
@@ -174,7 +174,7 @@ describe("NeedsAttentionSection", () => {
         blockEnding={{ blockName: "Build", endsOn: "2026-06-07", nextBlockName: "Cut" }}
         attentionAlerts={[
           alert("training_missed", "high", "Missed 3 training sessions this week"),
-          alert("habit_dropoff", "low", "Habits at 2 of 7 days below 50%"),
+          alert("habit_missed", "low", "Missed Water 4 days"),
         ]}
       />
     );
@@ -185,7 +185,7 @@ describe("NeedsAttentionSection", () => {
     expect(screen.getByText("Check-in awaiting review")).toBeInTheDocument();
     expect(screen.getByText(/Build ends/)).toBeInTheDocument();
     expect(screen.getByText("3 sessions missed")).toBeInTheDocument();
-    expect(screen.queryByText(/Low habits/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Missed Water/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument();
   });
 
@@ -198,16 +198,16 @@ describe("NeedsAttentionSection", () => {
         blockEnding={{ blockName: "Build", endsOn: "2026-06-07", nextBlockName: "Cut" }}
         attentionAlerts={[
           alert("training_missed", "high", "Missed 3 training sessions this week"),
-          alert("habit_dropoff", "low", "Habits at 2 of 7 days below 50%"),
+          alert("habit_missed", "low", "Missed Water 4 days"),
         ]}
       />
     );
 
     await user.click(screen.getByRole("button", { name: "Show 1 more" }));
-    expect(screen.getByText(/Low habits/)).toBeInTheDocument();
+    expect(screen.getByText(/Missed Water/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Show less" }));
-    expect(screen.queryByText(/Low habits/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Missed Water/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument();
   });
 
@@ -242,5 +242,27 @@ describe("NeedsAttentionSection", () => {
 
     await user.click(dismissals[0]);
     expect(onDismissAlert).toHaveBeenCalledWith("mood_drop");
+  });
+
+  it("gives each missed habit its own row, each dismissed by its habit", async () => {
+    const user = userEvent.setup();
+    const onDismissAlert = vi.fn();
+
+    render(
+      <NeedsAttentionSection
+        {...PROPS}
+        onDismissAlert={onDismissAlert}
+        attentionAlerts={[
+          { ...alert("habit_missed", "medium", "Missed Water 4 days"), habitId: "h-water" },
+          { ...alert("habit_missed", "medium", "Missed Walk 3 days"), habitId: "h-walk" },
+        ]}
+      />
+    );
+
+    expect(screen.getByText("Missed Water 4 days")).toBeInTheDocument();
+    expect(screen.getByText("Missed Walk 3 days")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Dismiss: Missed Walk 3 days" }));
+    expect(onDismissAlert).toHaveBeenCalledWith("habit_missed:h-walk");
   });
 });

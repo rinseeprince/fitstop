@@ -226,7 +226,7 @@ export function AdherenceCard({
             name="Habits"
             subline={
               habits.avgPct === null
-                ? "No habits active in this window"
+                ? "No habits planned in this window"
                 : habits.daysBelow50 === 0
                   ? `Every day at or above ${HABIT_DROPOFF_THRESHOLD_PERCENT}%`
                   : `${pluralize(habits.daysBelow50, "day")} below ${HABIT_DROPOFF_THRESHOLD_PERCENT}%`

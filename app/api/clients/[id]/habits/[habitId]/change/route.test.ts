@@ -18,6 +18,7 @@ vi.mock("@/services/client-habit-writes-service", () => {
 });
 vi.mock("@/services/today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("@/services/audit-log-service", () => ({ recordAuditEvent: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/services/client-habit-figures-service", () => ({ getCoachHabitList: vi.fn() }));
 
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -25,6 +26,9 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { changeHabit, HabitWriteError } from "@/services/client-habit-writes-service";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
+import { getCoachHabitList } from "@/services/client-habit-figures-service";
+
+const LIST = { clientToday: "2026-09-30", habits: [] };
 
 const HABIT = "7c1a4d8e-2f3b-4c5d-8e9f-0a1b2c3d4e5f";
 const params = (habitId = HABIT) => ({ params: Promise.resolve({ id: "client-2", habitId }) });
@@ -42,15 +46,17 @@ describe("POST /api/clients/[id]/habits/[habitId]/change", () => {
     vi.clearAllMocks();
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
     vi.mocked(getClientTodayString).mockResolvedValue("2026-09-30");
+    vi.mocked(getCoachHabitList).mockResolvedValue(LIST);
   });
 
-  it("changes the target and days from the client's today, and audits the change", async () => {
+  it("changes the target and days from the client's today, audits the change, and answers with the habits as they now stand", async () => {
     vi.mocked(changeHabit).mockResolvedValue(true);
     const req = request({ target: 3.5, weekdays: ["monday", "friday"] });
     const response = await POST(req, params());
     expect(response.status).toBe(200);
     expect(requireCoachOwnsClient).toHaveBeenCalledWith("client-2", req);
-    expect(await response.json()).toEqual({ success: true, data: { changed: true } });
+    expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: LIST } });
+    expect(getCoachHabitList).toHaveBeenCalledWith("client-2", "2026-09-30");
     expect(changeHabit).toHaveBeenCalledWith({
       habitId: HABIT,
       clientId: "client-2",

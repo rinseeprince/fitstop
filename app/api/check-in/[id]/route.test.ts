@@ -120,7 +120,7 @@ describe("GET /api/check-in/[id] (coach)", () => {
         ],
         onTarget: 1, loggedDays: 1, targetedDays: 2, daysOnTargetPct: 50,
       },
-      habits: { rail: [], avgPct: 50, daysBelow50: 0, perHabit: [] },
+      habitWeek: { habits: [], totals: { planned: 0, done: 0, met: 0 } },
     };
     vi.mocked(getCheckInPeriodAdherence).mockReturnValue(periodAdherence as never);
     mockCheckInRow({ data: fetchedRow(), error: null });

@@ -16,9 +16,9 @@
  * followed with no edit. `getTrainingWeekStart/End/Days` keep their maths; they
  * were never wrong, the sourcing was.
  *
- * Pure, and it stays pure: `components/clients/habits/habits-tab-content.tsx`
- * derives its week in the BROWSER off the `Client` object, so this module must
- * never reach `services/supabase-admin.ts` (`npm run check:service-key`). The
+ * Pure, and it stays pure: the day rule (`lib/daily-log-permissions.ts`) runs it
+ * in the BROWSER on every client log page, so this module must never reach
+ * `services/supabase-admin.ts` (`npm run check:service-key`). The
  * database-fetching twin is `getClientWeekAnchor`
  * (`services/check-in-week-service.ts`) — the same split as
  * `lib/date-helpers.ts` / `services/today-service.ts`.

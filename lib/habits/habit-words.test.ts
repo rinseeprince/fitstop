@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { habitNumber, habitWords, scheduleWords, targetWords, weekFigureWords } from "./habit-words";
+import { habitNumber, habitWords, scheduleWords, targetWords, weekFigurePercent, weekFigureWords } from "./habit-words";
 
 describe("scheduleWords", () => {
   it("says every day for all seven, and the chosen days Monday first otherwise", () => {
@@ -45,6 +45,13 @@ describe("habitNumber and weekFigureWords", () => {
     expect(weekFigureWords({ planned: 3, done: 4, met: 3 })).toBe("3 of 3");
     expect(weekFigureWords({ planned: 7, done: 4, met: 4 })).toBe("4 of 7");
     expect(weekFigureWords({ planned: 0, done: 1, met: 0 })).toBe("Nothing planned");
+  });
+
+  it("reads a week as a whole percentage of met over planned, and none with nothing planned", () => {
+    expect(weekFigurePercent({ planned: 13, done: 8, met: 8 })).toBe(62);
+    expect(weekFigurePercent({ planned: 3, done: 7, met: 3 })).toBe(100);
+    expect(weekFigurePercent({ planned: 3, done: 0, met: 0 })).toBe(0);
+    expect(weekFigurePercent({ planned: 0, done: 2, met: 0 })).toBeNull();
   });
 });
 

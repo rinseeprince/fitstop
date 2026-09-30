@@ -12,14 +12,14 @@ import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
 import { toast } from "sonner"
-import useSWR, { useSWRConfig } from "swr"
-import { swrFetcher } from "@/lib/swr-fetcher"
-import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
+import { useSWRConfig } from "swr"
+import { REQUIRED_ITEMS } from "@/lib/activation-readiness-items"
 import { hasStartWeight } from "@/lib/client-profile-completeness"
 import { postIntakeAction } from "@/lib/intake-actions"
 import { useClient } from "@/hooks/use-check-in-data"
 import { useClearClientGoalHistory, useInvalidateClientGoals } from "@/hooks/use-client-goals"
 import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal"
+import { activationReadinessKey, useActivationReadiness } from "@/hooks/use-activation-readiness"
 
 const NARROW_BREAKPOINT = 1024
 
@@ -38,12 +38,7 @@ export function FloatingIntakePanel() {
   const router = useRouter()
 
   // Always fetch activation readiness when panel is open
-  const { data: readinessData, mutate: refetchReadiness } = useSWR<{ success: boolean; data: Readiness }>(
-    panel ? `/api/clients/${panel.clientId}/activation-readiness` : null,
-    swrFetcher,
-    { revalidateOnFocus: false }
-  )
-  const readiness = readinessData?.data ?? null
+  const { readiness, refresh: refetchReadiness } = useActivationReadiness(panel?.clientId ?? "", panel !== null)
 
   // The client record, for one question: has a start weight landed on the
   // profile? Reviewing before it has is what left a coach on the Journey page
@@ -65,7 +60,7 @@ export function FloatingIntakePanel() {
         ].join(" "),
       })
       void mutate(`/api/clients/${panel.clientId}`)
-      void mutate(`/api/clients/${panel.clientId}/activation-readiness`)
+      void mutate(activationReadinessKey(panel.clientId))
       // The sync may set the client's first goal, readings and profile, which
       // the page under the panel reads through the goals area and the
       // nutrition drawer prices; the goals table is cleared, a definite list.
@@ -85,7 +80,7 @@ export function FloatingIntakePanel() {
   // Refetch readiness data when panel is expanded
   useEffect(() => {
     if (isExpanded && panel) {
-      void refetchReadiness()
+      refetchReadiness()
     }
   }, [isExpanded, panel, refetchReadiness])
 

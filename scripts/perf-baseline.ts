@@ -29,7 +29,7 @@ import {
   getExerciseProgressionSeries,
   getExercisePRs,
 } from "@/services/exercise-analytics-service";
-import { getHabitLogs } from "@/services/daily-habits-service";
+import { listHabitEntries } from "@/services/client-habits-service";
 import { getClientProgressData } from "@/services/client-portal-progress";
 
 import { getDateDaysAgo, getTodayDateString } from "@/lib/date-helpers";
@@ -133,10 +133,10 @@ async function main() {
   ));
 
   baselines.push(await measure(
-    "getHabitLogs",
-    "services/daily-habits-service.ts:273",
-    `getHabitLogs(PERF_CLIENT_ID, today-90d, today)`,
-    () => getHabitLogs(PERF_CLIENT_ID, getDateDaysAgo(90), getTodayDateString()),
+    "listHabitEntries",
+    "services/client-habits-service.ts:150",
+    `listHabitEntries(PERF_CLIENT_ID, { from: today-90d, to: today })`,
+    () => listHabitEntries(PERF_CLIENT_ID, { from: getDateDaysAgo(90), to: getTodayDateString() }),
   ));
 
   const fixtureCounts = await fetchFixtureCounts();
@@ -209,7 +209,7 @@ type FixtureCounts = {
   wellness_logs: number;
   nutrition_logs: number;
   check_ins: number;
-  daily_habit_logs: number;
+  client_habit_logs: number;
   client_measurements: number;
   client_phases: number;
 };
@@ -223,7 +223,7 @@ async function fetchFixtureCounts(): Promise<FixtureCounts> {
     wellness_logs: 0,
     nutrition_logs: 0,
     check_ins: 0,
-    daily_habit_logs: 0,
+    client_habit_logs: 0,
     client_measurements: 0,
     client_phases: 0,
   };
@@ -236,7 +236,7 @@ async function fetchFixtureCounts(): Promise<FixtureCounts> {
     ["wellness_logs", supabaseAdmin.from("wellness_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["nutrition_logs", supabaseAdmin.from("nutrition_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["check_ins", supabaseAdmin.from("check_ins").select("id", { count: "exact", head: true }).eq("client_id", c)],
-    ["daily_habit_logs", supabaseAdmin.from("daily_habit_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
+    ["client_habit_logs", supabaseAdmin.from("client_habit_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["client_measurements", supabaseAdmin.from("client_measurements_live").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["client_phases", supabaseAdmin.from("client_phases").select("id", { count: "exact", head: true }).eq("client_id", c)],
   ] as const;
@@ -287,7 +287,7 @@ function buildMarkdown(baselines: FunctionBaseline[], fixtures: FixtureCounts): 
   lines.push(`| wellness_logs | ${fixtures.wellness_logs} |`);
   lines.push(`| nutrition_logs | ${fixtures.nutrition_logs} |`);
   lines.push(`| check_ins | ${fixtures.check_ins} |`);
-  lines.push(`| daily_habit_logs | ${fixtures.daily_habit_logs} |`);
+  lines.push(`| client_habit_logs | ${fixtures.client_habit_logs} |`);
   lines.push(`| client_measurements | ${fixtures.client_measurements} |`);
   lines.push(`| client_phases (journey blocks) | ${fixtures.client_phases} |`);
   lines.push("");

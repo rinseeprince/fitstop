@@ -3,22 +3,28 @@
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
-import type { HabitBreakdown } from "@/types/coach-overview";
+import { habitSectionRows, type HabitRailMark } from "@/lib/check-in/habit-section-rows";
+import type { SentHabitWeek } from "@/lib/check-in/sent-snapshot";
 
 type HabitsSectionProps = {
   /**
-   * One entry per ACTIVE habit, from the server. Built from the habit list, not
-   * from the logs: `logHabit` writes a row only when the client acts, so a
-   * logs-derived grid dropped a habit ignored all week — the one a coach most
-   * needs to see. That habit now reads 0/7 instead of vanishing.
+   * The habit week the check-in froze when it was sent: every habit a version
+   * covered that week, the one the client ignored all week included, so it
+   * reads 0 of its planned days instead of vanishing. Null for a check-in
+   * whose week could not be resolved.
    */
-  perHabit: HabitBreakdown[];
+  habitWeek: SentHabitWeek | null;
 };
 
-export const HabitsSection = ({ perHabit }: HabitsSectionProps) => {
-  // A habit that was never eligible in this period (created after it ended)
-  // says nothing about the week and is not a miss.
-  const habits = perHabit.filter((habit) => habit.eligibleDays > 0);
+/** A dash's words: why the day holds nothing to judge. */
+const DASH_TITLE: Partial<Record<HabitRailMark, string>> = {
+  not_planned: "Not planned",
+  not_yet_added: "Not yet added",
+  not_running: "Not running",
+};
+
+export const HabitsSection = ({ habitWeek }: HabitsSectionProps) => {
+  const habits = habitSectionRows(habitWeek);
   if (habits.length === 0) return null;
 
   return (
@@ -34,26 +40,23 @@ export const HabitsSection = ({ perHabit }: HabitsSectionProps) => {
               {habit.name}
             </span>
             <span className={cn("shrink-0 text-xs font-semibold", MONO, "text-[#0d9488]")}>
-              {habit.completedDays}/{habit.eligibleDays}
+              {habit.figure}
             </span>
             <span className="flex shrink-0 items-center gap-0.5">
-              {habit.rail.map((day, i) =>
-                // Before the habit existed: a dash, not an empty dot. A habit
-                // added on Wednesday has not missed Monday, and an unfilled dot
-                // would say it had.
-                day === null ? (
-                  <span
-                    key={i}
-                    className="w-2 h-px bg-[rgba(13,148,136,0.25)]"
-                    title="Not yet added"
-                  />
-                ) : (
+              {habit.rail.map((mark, i) =>
+                // A day with nothing to judge is a dash, not an empty dot: a
+                // habit added on Wednesday has not missed Monday, and a Mon,
+                // Wed, Fri habit has not missed Tuesday. An unfilled dot would
+                // say it had.
+                mark === "done" || mark === "missed" ? (
                   <span
                     key={i}
                     className={`w-2 h-2 rounded-full ${
-                      day ? "bg-[#0d9488]" : "bg-[rgba(13,148,136,0.12)]"
+                      mark === "done" ? "bg-[#0d9488]" : "bg-[rgba(13,148,136,0.12)]"
                     }`}
                   />
+                ) : (
+                  <span key={i} className="w-2 h-px bg-[rgba(13,148,136,0.25)]" title={DASH_TITLE[mark]} />
                 )
               )}
             </span>

@@ -8,6 +8,7 @@ import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SEED_ID_LO, SEED_ID_HI } from "./ids";
+import type { HabitStep } from "./generate";
 
 /** Chunk size for inserts. Below the ~1000-row PostgREST response cap, and small
  *  enough that a jsonb-bearing table doesn't build a multi-MB request body. */
@@ -97,6 +98,54 @@ export async function insertInBatches(
   } else {
     ledger.set(table, (ledger.get(table) ?? 0) + rows.length);
   }
+}
+
+/** The weekday rows a call's habits' first versions carry: each habit's chosen days. */
+function versionDays(habitsArg: unknown): number {
+  if (!Array.isArray(habitsArg)) return 0;
+  return habitsArg.reduce<number>((sum, habit) => {
+    const weekdays = (habit as { weekdays?: unknown }).weekdays;
+    return sum + (Array.isArray(weekdays) ? weekdays.length : 0);
+  }, 0);
+}
+
+/**
+ * Write a coach's habits and their entries (generate.ts → HabitStep). The habit
+ * tables take no INSERT from this role (migration 203), so each client's
+ * habits are one `add_client_habits` call, which mints their ids and returns
+ * them in the order given; the client's entries are then keyed to those ids
+ * and inserted in batches like any other table's rows. Returns the rows
+ * written, for the progress line.
+ */
+export async function writeHabits(db: SupabaseClient, step: HabitStep, ledger: WriteLedger): Promise<number> {
+  const entries: Record<string, unknown>[] = [];
+  let habits = 0;
+  let days = 0;
+  for (const call of step.habits) {
+    const { data, error } = await db.rpc("add_client_habits", call.args);
+    if (error) throw new Error(`add_client_habits for client ${call.args.p_client_id}: ${error.message}`);
+    const ids = (data ?? []) as string[];
+    const asked = Array.isArray(call.args.p_habits) ? call.args.p_habits.length : 0;
+    if (ids.length !== asked) {
+      throw new Error(`add_client_habits for client ${call.args.p_client_id}: asked for ${asked} habits, got ${ids.length} ids`);
+    }
+    habits += ids.length;
+    days += versionDays(call.args.p_habits);
+    for (const { habitIndex, ...entry } of call.entries) {
+      entries.push({ ...entry, client_habit_id: ids[habitIndex] });
+    }
+  }
+  // Each habit is one row with one version running from the client's first
+  // day, and that version's weekdays.
+  for (const [table, rows] of [
+    ["client_habits", habits],
+    ["client_habit_versions", habits],
+    ["client_habit_version_days", days],
+  ] as const) {
+    ledger.set(table, (ledger.get(table) ?? 0) + rows);
+  }
+  await insertInBatches(db, "client_habit_logs", entries, ledger);
+  return habits + entries.length;
 }
 
 /** Exact row counts, split by whether the row is inside the seed namespace. */

@@ -22,7 +22,9 @@ import { computeEnergyPair } from "@/services/client-energy-calc";
 import { generateTrainingEvents } from "@/services/training-event-service";
 import { listClientGoals } from "@/services/client-goals-service";
 import { addGoal, deleteGoal } from "@/services/client-goal-writes-service";
+import { addHabits, deleteHabit } from "@/services/client-habit-writes-service";
 import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
+import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import { fillSentSnapshots } from "@/services/check-in-sent-snapshot-fill";
 import {
   getTodayDateString,
@@ -36,7 +38,6 @@ import {
   PERF_PLAN_ID,
   PERF_NUTRITION_PLAN_ID,
   PERF_NUTRITION_PLAN_V1_ID,
-  PERF_HABIT_IDS,
   PERF_COACH_EMAIL,
   PERF_COACH_NAME,
   PERF_CLIENT_EMAIL,
@@ -142,13 +143,13 @@ const DAY_NAME_TO_INDEX: Record<string, number> = {
   sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
 };
 
-// 5 habits: 3 boolean, 2 quantitative
+// 5 habits, every day: 3 ticked, 2 counted against a target
 const HABIT_TEMPLATES = [
-  { name: "Hit step goal", isBoolean: true, target: null as number | null, unit: null as string | null },
-  { name: "Drink 3L water", isBoolean: true, target: null, unit: null },
-  { name: "10-min mobility", isBoolean: true, target: null, unit: null },
-  { name: "Water intake", isBoolean: false, target: 3, unit: "L" },
-  { name: "Sleep hours", isBoolean: false, target: 8, unit: "h" },
+  { name: "Hit step goal", measure: "tick", unit: null, direction: null, target: null },
+  { name: "Drink 3L water", measure: "tick", unit: null, direction: null, target: null },
+  { name: "10-min mobility", measure: "tick", unit: null, direction: null, target: null },
+  { name: "Water intake", measure: "number", unit: "L", direction: "at_least", target: 3 },
+  { name: "Sleep hours", measure: "number", unit: "h", direction: "at_least", target: 8 },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -180,10 +181,10 @@ async function main() {
   await insertClientGoal(startDate);
   await insertNutritionPlan();
   const { sessionIds, exerciseRowsBySession, hotExerciseId } = await insertTrainingPlan(exerciseIds, rng);
-  await insertHabits();
+  const habitIds = await insertHabits(startDate);
   await insertDailyChildren(args.months, rng);
   await insertSessionLogsAndCompletions(sessionIds, exerciseRowsBySession, args, rng);
-  await insertHabitLogs(args.months, rng);
+  await insertHabitEntries(habitIds, args.months, rng);
   const checkInRows = await insertCheckIns(args.months, rng);
   await insertMeasurements(checkInRows, startDate);
   await insertTrainingEvents(sessionIds, args.months);
@@ -218,8 +219,20 @@ async function cleanExistingFixtures(fullReset: boolean) {
   // re-seed leaves them standing; only a --full-reset (the client row's
   // delete, cascading) removes them.
   await del("check_ins", supabaseAdmin.from("check_ins").delete().eq("client_id", String(c)));
-  await del("daily_habit_logs", supabaseAdmin.from("daily_habit_logs").delete().eq("client_id", c));
-  await del("daily_habits", supabaseAdmin.from("daily_habits").delete().eq("client_id", c));
+  // The habit tables take no DELETE from the app role (migration 203): each
+  // habit goes through delete_client_habit, taking its versions and one-date
+  // edits with it — and only once its entries are gone, since a habit with
+  // entries can only be stopped.
+  await del("client_habit_logs", supabaseAdmin.from("client_habit_logs").delete().eq("client_id", c));
+  const { data: habits, error: habitsError } = await supabaseAdmin
+    .from("client_habits")
+    .select("id")
+    .eq("client_id", c);
+  if (habitsError) throw new Error(`Clean failed for client_habits: ${habitsError.message}`);
+  for (const habit of habits ?? []) {
+    await deleteHabit({ habitId: habit.id, clientId: c });
+  }
+  console.log(`  cleared client_habits (${(habits ?? []).length})`);
   await del("session_logs (→ exercise_logs → set_logs)", supabaseAdmin.from("session_logs").delete().eq("client_id", c));
   await del("training_plans (→ sessions, exercises)", supabaseAdmin.from("training_plans").delete().eq("client_id", c));
   await del("wellness_logs", supabaseAdmin.from("wellness_logs").delete().eq("client_id", c));
@@ -627,26 +640,36 @@ async function insertTrainingPlan(
 }
 
 // ---------------------------------------------------------------------------
-// Daily habits (5)
+// Habits (5)
 // ---------------------------------------------------------------------------
 
-async function insertHabits() {
-  console.log("Inserting 5 daily_habits...");
-  const effectiveDate = getDateDaysAgo(365);
-  const rows = HABIT_TEMPLATES.map((h, idx) => ({
-    id: PERF_HABIT_IDS[idx],
-    coach_id: PERF_COACH_ID,
-    client_id: PERF_CLIENT_ID,
-    name: h.name,
-    is_boolean: h.isBoolean,
-    is_active: true,
-    sort_order: idx,
-    target_value: h.target,
-    target_unit: h.unit,
-    effective_date: effectiveDate,
-  }));
-  const { error } = await supabaseAdmin.from("daily_habits").insert(rows);
-  if (error) throw new Error(`daily_habits insert: ${error.message}`);
+/**
+ * The client's five habits, every day from the fixture's first day, through
+ * add_client_habits (migration 203: the app role reads the habit tables and
+ * writes them only through their functions). The function is handed that day
+ * as its today — it refuses a start before the today it is given, and these
+ * habits began in the past — and mints the habits' ids, returned in the order
+ * given, so the entries below are keyed to them.
+ */
+async function insertHabits(startDate: string): Promise<string[]> {
+  console.log("Adding 5 habits...");
+  const ids = await addHabits({
+    clientId: PERF_CLIENT_ID,
+    today: startDate,
+    startsOn: startDate,
+    createdBy: PERF_COACH_ID,
+    habits: HABIT_TEMPLATES.map((h) => ({
+      name: h.name,
+      howTo: null,
+      measure: h.measure,
+      unit: h.unit,
+      direction: h.direction,
+      target: h.target,
+      schedule: { weekdays: [...DAYS_OF_WEEK] },
+    })),
+  });
+  console.log(`  added ${ids.length} habits from ${startDate}`);
+  return ids;
 }
 
 // ---------------------------------------------------------------------------
@@ -823,29 +846,33 @@ async function insertSessionLogsAndCompletions(
 }
 
 // ---------------------------------------------------------------------------
-// daily_habit_logs (5 habits × N days)
+// client_habit_logs (5 habits × N days)
 // ---------------------------------------------------------------------------
 
-async function insertHabitLogs(months: number, rng: Rng) {
-  console.log("Inserting daily_habit_logs...");
+/**
+ * One entry per habit per day: a tick habit's done or not done, a number
+ * habit's number — one answer, never both (the table's CHECK).
+ */
+async function insertHabitEntries(habitIds: string[], months: number, rng: Rng) {
+  console.log("Inserting client_habit_logs...");
   const days = months * 30;
   const rows: Array<Record<string, unknown>> = [];
-  for (const habitId of PERF_HABIT_IDS) {
-    const isBoolean = HABIT_TEMPLATES[PERF_HABIT_IDS.indexOf(habitId)].isBoolean;
+  HABIT_TEMPLATES.forEach((template, index) => {
     for (let i = 0; i < days; i++) {
       const dateStr = getDateDaysAgo(days - 1 - i);
-      const completed = rng.next() < 0.9;
+      // Drawn for every entry, a number habit's included, so every later draw
+      // from `rng` lands where it always did.
+      const done = rng.next() < 0.9;
       rows.push({
-        daily_habit_id: habitId,
+        client_habit_id: habitIds[index],
         client_id: PERF_CLIENT_ID,
         date: dateStr,
-        completed,
-        value: isBoolean ? null : rng.int(1, 4),
+        ...(template.measure === "number" ? { value: rng.int(1, 4) } : { done }),
       });
     }
-  }
-  await insertInBatches("daily_habit_logs", rows, 1000);
-  console.log(`  inserted ${rows.length} daily_habit_logs`);
+  });
+  await insertInBatches("client_habit_logs", rows, 1000);
+  console.log(`  inserted ${rows.length} client_habit_logs`);
 }
 
 // ---------------------------------------------------------------------------

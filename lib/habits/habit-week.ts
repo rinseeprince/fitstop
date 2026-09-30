@@ -4,7 +4,7 @@ import type {
   ClientHabit,
   HabitDayFacts,
   HabitDayTally,
-  HabitEntry,
+  HabitEntryRead,
   HabitWeek,
   HabitWeekFigures,
 } from "@/types/habits";
@@ -32,22 +32,22 @@ import type {
 type Habit = Pick<ClientHabit, "id" | "measure" | "direction" | "versions" | "dayEdits">;
 
 /** The habit's entries by date. */
-function entriesByDate(habitId: string, entries: readonly HabitEntry[]): Map<string, HabitEntry> {
+function entriesByDate(habitId: string, entries: readonly HabitEntryRead[]): Map<string, HabitEntryRead> {
   return new Map(entries.filter((entry) => entry.habitId === habitId).map((entry) => [entry.date, entry]));
 }
 
 /** A day as it happened: the habit's day, its entry, and whether the entry met the day's target. */
-function habitDayFacts(habit: Habit, entry: HabitEntry | null, date: string): HabitDayFacts {
+function habitDayFacts(habit: Habit, entry: HabitEntryRead | null, date: string): HabitDayFacts {
   const day = habitDay(habit, date);
   return {
     ...day,
-    entry: entry ? { done: entry.done, value: entry.value, note: entry.note } : null,
+    entry: entry ? { done: entry.done, value: entry.value, note: entry.note ?? null } : null,
     met: day.covered && entry !== null && entryMet(habit, entry, day.target),
   };
 }
 
 /** Each of `dates` as it happened, for one habit. */
-export function habitDays(habit: Habit, entries: readonly HabitEntry[], dates: readonly string[]): HabitDayFacts[] {
+export function habitDays(habit: Habit, entries: readonly HabitEntryRead[], dates: readonly string[]): HabitDayFacts[] {
   const byDate = entriesByDate(habit.id, entries);
   return dates.map((date) => habitDayFacts(habit, byDate.get(date) ?? null, date));
 }
@@ -73,7 +73,7 @@ function weeklyAsk(habit: Habit, dates: readonly string[]): number {
  * The habit's week over `dates` — any dates inside ONE client week: the whole
  * week, or a check-in period clamped to the client's start day.
  */
-export function habitWeek(habit: Habit, entries: readonly HabitEntry[], dates: readonly string[]): HabitWeek {
+export function habitWeek(habit: Habit, entries: readonly HabitEntryRead[], dates: readonly string[]): HabitWeek {
   const days = habitDays(habit, entries, dates);
   const planned = days.filter((day) => day.planned).length + weeklyAsk(habit, dates);
   const done = days.filter((day) => day.met).length;
@@ -95,7 +95,7 @@ export function sumWeekFigures(figures: readonly HabitWeekFigures[]): HabitWeekF
 /** Each date by its own planned habits: how many were planned, how many of those were done on the day itself. */
 export function habitDayTallies(
   habits: readonly Habit[],
-  entries: readonly HabitEntry[],
+  entries: readonly HabitEntryRead[],
   dates: readonly string[]
 ): HabitDayTally[] {
   const byHabit = habits.map((habit) => habitDays(habit, entries, dates));
@@ -105,7 +105,13 @@ export function habitDayTallies(
   });
 }
 
-/** How many of the habit's planned days among `dates` went without it done on the day (D4). */
-export function missedPlannedDays(habit: Habit, entries: readonly HabitEntry[], dates: readonly string[]): number {
-  return habitDays(habit, entries, dates).filter((day) => day.planned && !day.met).length;
+/**
+ * The habit's planned days among `dates` that went without it done on the day
+ * (D4): a number short of its target is missed, and a day made up on another
+ * day is still missed on its own. A weekly habit plans no day, so it misses none.
+ */
+export function missedPlannedDates(habit: Habit, entries: readonly HabitEntryRead[], dates: readonly string[]): string[] {
+  return habitDays(habit, entries, dates)
+    .filter((day) => day.planned && !day.met)
+    .map((day) => day.date);
 }

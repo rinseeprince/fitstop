@@ -243,7 +243,7 @@ describe("resolveCheckInReportingPeriod", () => {
 /** A check-in's saved copy (lib/check-in/sent-snapshot.ts), with a week or without. */
 function sentCopy(overrides: Partial<SentSnapshot> = {}): SentSnapshot {
   return parseSentSnapshot({
-    version: 2,
+    version: 3,
     day: "2026-05-14",
     readings: { weight: 81.7, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null },
     standing: { weight: 81.7, bodyFat: null },
@@ -276,15 +276,27 @@ const foodDay = (
 });
 
 describe("getCheckInPeriodAdherence — the week as it stood when the check-in was sent", () => {
-  const habits = {
-    rail: ["complete", "no_log", "none"] as ("complete" | "no_log" | "none")[],
-    avgPct: 50,
-    daysBelow50: 1,
-    perHabit: [
-      { id: "h-1", name: "10k steps", eligibleDays: 2, completedDays: 1, pct: 50, rail: [true, false, null] },
+  const habitWeek: NonNullable<SentSnapshot["period"]>["habitWeek"] = {
+    habits: [
+      {
+        id: "h-1",
+        name: "10k steps",
+        measure: "tick",
+        unit: null,
+        direction: null,
+        firstStartsOn: "2026-05-01",
+        versions: [{ startsOn: "2026-05-01", endsOn: "2026-05-13", target: null, timesPerWeek: null, weekdays: ["tuesday", "wednesday"] }],
+        days: [
+          { date: "2026-05-12", covered: true, planned: true, target: null, entry: { done: true, value: null, note: null }, met: true },
+          { date: "2026-05-13", covered: true, planned: true, target: null, entry: null, met: false },
+          { date: "2026-05-14", covered: false, planned: false, target: null, entry: null, met: false },
+        ],
+        figures: { planned: 2, done: 1, met: 1 },
+      },
     ],
+    totals: { planned: 2, done: 1, met: 1 },
   };
-  const week: SentSnapshot["period"] = {
+  const week: NonNullable<SentSnapshot["period"]> = {
     dates: ["2026-05-12", "2026-05-13", "2026-05-14"],
     loggedDates: ["2026-05-12", "2026-05-14"],
     nutrition: [
@@ -292,17 +304,17 @@ describe("getCheckInPeriodAdherence — the week as it stood when the check-in w
       foodDay("2026-05-13", "not_logged", 2050, null),
       foodDay("2026-05-14", "no_target", null, 1930),
     ],
-    habits,
+    habitWeek,
   };
 
   beforeEach(() => vi.clearAllMocks());
 
-  it("reads the copy's week — the food rows through the Overview's rules, the habits and the days verbatim — and nothing live", () => {
+  it("reads the copy's week — the food rows through the Overview's rules, the habit week and the days verbatim — and nothing live", () => {
     const result = getCheckInPeriodAdherence({ id: "ci-11", sentSnapshot: sentCopy({ period: week }) });
 
     expect(result?.dates).toEqual(week.dates);
     expect(result?.loggedDates).toEqual(week.loggedDates);
-    expect(result?.habits).toEqual(habits);
+    expect(result?.habitWeek).toEqual(habitWeek);
     // One dot per day from its frozen standing: hit, a targeted day not logged, no target.
     expect(result?.nutrition.rail).toEqual(["complete", "no_log", "none"]);
     // The kernel over the frozen rows: two targeted days, one on target; the
@@ -330,7 +342,7 @@ describe("getCheckInPeriodAdherence — the week as it stood when the check-in w
 
   it("does NOT carry training — the page derives its own, differently", () => {
     const result = getCheckInPeriodAdherence({ id: "ci-12", sentSnapshot: sentCopy({ period: week }) });
-    expect(Object.keys(result ?? {}).sort()).toEqual(["dates", "habits", "loggedDates", "nutrition"]);
+    expect(Object.keys(result ?? {}).sort()).toEqual(["dates", "habitWeek", "loggedDates", "nutrition"]);
     expect(result).not.toHaveProperty("training");
   });
 

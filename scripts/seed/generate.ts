@@ -20,6 +20,13 @@
  *    function refuses a start before the today it is given, and a seeded goal
  *    began in the past. Its id is the function's, outside the seed namespace;
  *    the goal leaves with its client (ON DELETE CASCADE).
+ *  - Habits are not rows either (migration 203): each client's habits are one
+ *    `add_client_habits` call from the client's first day, handed that day as
+ *    its today, and the function mints their ids and returns them in the order
+ *    given. The client's entries (`client_habit_logs`, which this role does
+ *    write) are generated beside the call, each naming its habit by its place
+ *    in the call, and written once the call has returned the ids. The habits
+ *    leave with their client (ON DELETE CASCADE); the entries carry seed ids.
  *
  * Everything is written in the INITIAL insert wherever possible: 25 tables carry
  * BEFORE UPDATE `updated_at` triggers, so any second pass re-stamps the row to
@@ -28,6 +35,7 @@
 
 import { compactFromSpecs, type SetSpec, type SetType } from "@/utils/exercise-set-specs";
 import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
+import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import { GOAL_TYPE_SETTINGS, goalTypeFromTargets } from "@/lib/goals/goal-types";
 import type { Database } from "@/types/database";
@@ -68,7 +76,23 @@ export type GoalStep = {
   calls: GoalCall[];
 };
 
-export type Step = RowStep | GoalStep;
+/** One client's `add_client_habits` call, and the client's entries against the habits it adds. */
+export type HabitCall = {
+  args: Database["public"]["Functions"]["add_client_habits"]["Args"];
+  /**
+   * The entries' rows less their habit, which is the function's to name:
+   * `habitIndex` is the habit's place in `args.p_habits`, and the writer keys
+   * each entry to the id the call returned in that place.
+   */
+  entries: (Record<string, unknown> & { habitIndex: number })[];
+};
+
+/** Habits and their entries, one function call per client — see the header. */
+export type HabitStep = {
+  habits: HabitCall[];
+};
+
+export type Step = RowStep | GoalStep | HabitStep;
 
 export type SeedContext = {
   seed: number;
@@ -163,7 +187,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   const clients: Record<string, unknown>[] = [];
   const invitations: Record<string, unknown>[] = [];
   const goals: GoalCall[] = [];
-  const habits: Record<string, unknown>[] = [];
+  const habitCalls: HabitCall[] = [];
   const plans: Record<string, unknown>[] = [];
   const sessions: Record<string, unknown>[] = [];
   const exercises: Record<string, unknown>[] = [];
@@ -175,7 +199,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   const nTargets: Record<string, unknown>[] = [];
   const wellness: Record<string, unknown>[] = [];
   const nutritionLogs: Record<string, unknown>[] = [];
-  const habitLogs: Record<string, unknown>[] = [];
   const sessionLogs: Record<string, unknown>[] = [];
   const exerciseLogs: Record<string, unknown>[] = [];
   const setLogs: Record<string, unknown>[] = [];
@@ -346,23 +369,34 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       p_target_body_fat_percentage: goalBodyFat,
     });
 
-    // --- habits. effective_date MUST be backdated: the adherence read filters
-    // effective_date <= date, so leaving the CURRENT_DATE default makes every
-    // historical habit rail compute against zero eligible habits.
+    // --- habits: ticked every day from the client's first day, which the call
+    // is handed as its today — a habit's first day decides which days it is
+    // planned on, so a habit started on the seed's run day would leave every
+    // historical day with nothing planned. Their ids are the function's (see
+    // the header); `habitKeys` stay inside the seed namespace for the entries'
+    // own ids alone.
     const habitCount = idRng.int(2, 4);
-    const clientHabits = idRng.shuffle(HABIT_NAMES).slice(0, habitCount).map((name, i) => ({
-      id: seedUuid("habit", coachIdx, c, i),
-      coach_id: coachId,
-      client_id: clientId,
-      name,
-      is_boolean: true,
-      is_active: true,
-      sort_order: i,
-      effective_date: startIso,
-      created_at: createdAt,
-      updated_at: createdAt,
-    }));
-    habits.push(...clientHabits);
+    const habitNames = idRng.shuffle(HABIT_NAMES).slice(0, habitCount);
+    const habitKeys = habitNames.map((_, i) => seedUuid("habit", coachIdx, c, i));
+    const habitEntries: HabitCall["entries"] = [];
+    habitCalls.push({
+      args: {
+        p_client_id: clientId,
+        p_today: startIso,
+        p_starts_on: startIso,
+        p_habits: habitNames.map((name) => ({
+          name,
+          how_to: null,
+          measure: "tick",
+          unit: null,
+          direction: null,
+          target: null,
+          weekdays: [...DAYS_OF_WEEK],
+        })),
+        p_created_by: coachId,
+      },
+      entries: habitEntries,
+    });
 
     // ---------------------------------------------------------- training
 
@@ -717,14 +751,15 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
           });
         }
 
-        for (const h of clientHabits) {
+        // One entry per habit per day: done, or not done — a tick habit's two answers.
+        for (let habitIndex = 0; habitIndex < habitKeys.length; habitIndex++) {
           if (!logRng.bool(0.75)) continue;
-          habitLogs.push({
-            id: seedUuid("hlog", coachIdx, c, dayIdx, String(h.id)),
-            daily_habit_id: h.id,
+          habitEntries.push({
+            habitIndex,
+            id: seedUuid("hlog", coachIdx, c, dayIdx, habitKeys[habitIndex]),
             client_id: clientId,
             date: iso,
-            completed: logRng.bool(0.72),
+            done: logRng.bool(0.72),
             created_at: timestampAt(iso, wellnessHour(logRng), logRng),
             updated_at: timestampAt(iso, wellnessHour(logRng), logRng),
           });
@@ -920,7 +955,8 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   push("clients", clients);
   push("client_invitations", invitations);
   if (goals.length > 0) steps.push({ rpc: "add_client_goal", calls: goals });
-  push("daily_habits", habits);
+  // The habits, then their entries, once the call has named the habits' ids.
+  if (habitCalls.length > 0) steps.push({ habits: habitCalls });
   push("training_plans", plans);
   push("training_sessions", sessions);
   push("training_exercise_groups", exerciseGroups);
@@ -930,7 +966,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   push("nutrition_plan_daily_targets", nTargets);
   push("wellness_logs", wellness);
   push("nutrition_logs", nutritionLogs);
-  push("daily_habit_logs", habitLogs);
   push("session_logs", sessionLogs);
   // The back-link half of the training_events <-> session_logs cycle. Re-emits
   // the FULL event row rather than {id, session_log_id}: a partial upsert leaves

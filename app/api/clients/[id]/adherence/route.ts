@@ -5,11 +5,12 @@ import { getClientAdherence } from "@/services/client-adherence-service";
 
 const DEFAULT_DAYS = 14;
 const MIN_DAYS = 7;
-// The ceiling is load-bearing, not arbitrary: getClientAdherence runs five
-// UNPAGED selects, and daily_habit_logs scales as habits x days — at "all time"
-// it would eventually truncate at PostgREST's row cap, and a truncated rail
-// reads as a client who stopped logging rather than as missing data. Raise this
-// only alongside paging that read.
+// The ceiling is load-bearing, not arbitrary: getClientAdherence reads the
+// workouts, food, wellness and measurements over the window in UNPAGED
+// selects that grow with it — at "all time" one would eventually truncate at
+// PostgREST's row cap, and a truncated rail reads as a client who stopped
+// logging rather than as missing data. The habit entries, which grow as habits
+// x days, are read paged. Raise this only alongside paging the others.
 //
 // It sits well above the Overview's own 14-day rails deliberately: it was
 // raised from 28 for a selectable 60-day window that has since been removed,

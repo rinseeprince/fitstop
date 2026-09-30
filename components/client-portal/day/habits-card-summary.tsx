@@ -3,14 +3,22 @@ import {
   DsCardSummaryRow,
 } from "@/components/client-portal/ds-card-summary";
 import { getTodayDateString } from "@/lib/date-helpers";
+import type { HabitDaySummary } from "@/types/habits";
 
 type Props = {
-  habits: { totalCount: number; loggedCount: number };
+  /** The habits a version covers on the day, those planned on it, and how many of those were done that day. */
+  habits: HabitDaySummary;
   date: string;
 };
 
+/** The words the row leads with: what the day asks of the client, and how much of it is done. */
+function leading(habits: HabitDaySummary): string {
+  if (habits.plannedToday === 0) return "Nothing planned";
+  return `${habits.doneToday} of ${habits.plannedToday} done`;
+}
+
 export function HabitsCardSummary({ habits, date }: Props) {
-  if (habits.totalCount === 0) {
+  if (habits.running === 0) {
     return (
       <DsCardSummary title="Habits">
         <DsCardSummaryRow leadingText="No habits to track" />
@@ -19,9 +27,9 @@ export function HabitsCardSummary({ habits, date }: Props) {
   }
 
   const isFuture = date > getTodayDateString();
-  const leadingText = `${habits.loggedCount} of ${habits.totalCount} logged`;
-  const hint =
-    habits.loggedCount === habits.totalCount ? "Tap to view" : "Tap to log";
+  const leadingText = leading(habits);
+  const allDone = habits.plannedToday > 0 && habits.doneToday === habits.plannedToday;
+  const hint = allDone || habits.plannedToday === 0 ? "Tap to view" : "Tap to log";
 
   return (
     <DsCardSummary title="Habits">

@@ -44,6 +44,7 @@ vi.mock("./measurements-service", () => ({
 }));
 vi.mock("./nutrition-plan-service", () => ({ getNutritionPlanForDate: vi.fn() }));
 vi.mock("./client-adherence-service", () => ({ getClientAdherenceForRange: vi.fn() }));
+vi.mock("./client-habit-figures-service", () => ({ readHabitRange: vi.fn(), getHabitPeriodWeek: vi.fn() }));
 vi.mock("./nutrition-period-service", () => ({ getNutritionPeriod: vi.fn() }));
 vi.mock("./check-in-details-service", () => ({ resolveCheckInReportingPeriod: vi.fn() }));
 
@@ -52,6 +53,7 @@ import { listClientGoals } from "./client-goals-service";
 import { getMeasurementsForCheckIns, getReadingsAsOf, getReadingsOnDay } from "./measurements-service";
 import { getNutritionPlanForDate } from "./nutrition-plan-service";
 import { getClientAdherenceForRange } from "./client-adherence-service";
+import { getHabitPeriodWeek, readHabitRange } from "./client-habit-figures-service";
 import { getNutritionPeriod } from "./nutrition-period-service";
 import { resolveCheckInReportingPeriod } from "./check-in-details-service";
 import { buildSentSnapshotAsShown, fillSentSnapshots } from "./check-in-sent-snapshot-fill";
@@ -97,13 +99,57 @@ const row = (overrides: Partial<Record<string, unknown>> = {}) =>
     ...overrides,
   }) as unknown as CheckInRow;
 
-const HABITS = {
-  rail: WEEK.map(() => "partial" as const),
-  avgPct: 57,
-  daysBelow50: 3,
-  perHabit: [
-    { id: "habit-sleep", name: "In bed by 11", eligibleDays: 7, completedDays: 4, pct: 57, rail: [true, false, true, false, true, false, true] },
+/** The client's habits and entries over the period, as the figures service reads them — once. */
+const HABIT_RANGE = { habits: [], entries: [] };
+
+/** The habit week the review shows now: one tick habit, done on four of the seven days. */
+const TICKS = [true, false, true, false, true, false, true];
+const HABIT_WEEK = {
+  habits: [
+    {
+      habit: { id: "habit-sleep", name: "In bed by 11", howTo: null, measure: "tick" as const, unit: null, direction: null },
+      firstStartsOn: "2026-09-01",
+      versions: [{ id: "v-sleep", startsOn: "2026-09-01", endsOn: null, target: null, timesPerWeek: null, weekdays: [] }],
+      days: WEEK.map((date, i) => ({
+        date,
+        covered: true,
+        planned: true,
+        target: null,
+        edited: false,
+        versionId: "v-sleep",
+        timesPerWeek: null,
+        entry: TICKS[i] ? { done: true, value: null, note: null } : null,
+        met: TICKS[i],
+      })),
+      figures: { planned: 7, done: 4, met: 4 },
+    },
   ],
+  totals: { planned: 7, done: 4, met: 4 },
+};
+
+/** The same week as the copy freezes it. */
+const FROZEN_HABIT_WEEK = {
+  habits: [
+    {
+      id: "habit-sleep",
+      name: "In bed by 11",
+      measure: "tick",
+      unit: null,
+      direction: null,
+      firstStartsOn: "2026-09-01",
+      versions: [{ startsOn: "2026-09-01", endsOn: null, target: null, timesPerWeek: null, weekdays: [] }],
+      days: WEEK.map((date, i) => ({
+        date,
+        covered: true,
+        planned: true,
+        target: null,
+        entry: TICKS[i] ? { done: true, value: null, note: null } : null,
+        met: TICKS[i],
+      })),
+      figures: { planned: 7, done: 4, met: 4 },
+    },
+  ],
+  totals: { planned: 7, done: 4, met: 4 },
 };
 
 describe("buildSentSnapshotAsShown — what the review shows now", () => {
@@ -157,8 +203,9 @@ describe("buildSentSnapshotAsShown — what the review shows now", () => {
     vi.mocked(getClientAdherenceForRange).mockResolvedValue({
       dates: WEEK,
       loggedDates: ["2026-09-09", "2026-09-14"],
-      habits: HABITS,
     } as never);
+    vi.mocked(readHabitRange).mockResolvedValue(HABIT_RANGE);
+    vi.mocked(getHabitPeriodWeek).mockReturnValue(HABIT_WEEK);
     vi.mocked(getNutritionPeriod).mockResolvedValue({ days: LIVE_FOOD, summary: {} } as never);
   });
 
@@ -199,14 +246,27 @@ describe("buildSentSnapshotAsShown — what the review shows now", () => {
     ]);
   });
 
+  it("reads the week's habits and entries once, and hands that one read to both the days logged and the habit week", async () => {
+    await buildSentSnapshotAsShown(row());
+    expect(vi.mocked(readHabitRange).mock.calls).toEqual([[CLIENT_ID, "2026-09-08", "2026-09-14"]]);
+    const read = vi.mocked(readHabitRange).mock.results[0].value;
+    expect(vi.mocked(getClientAdherenceForRange).mock.calls).toEqual([
+      [CLIENT_ID, "2026-09-08", "2026-09-14", "2026-09-14", read],
+    ]);
+    expect(vi.mocked(getClientAdherenceForRange).mock.calls[0][4]).toBe(read);
+    expect(vi.mocked(getHabitPeriodWeek).mock.calls).toEqual([[HABIT_RANGE, "2026-09-08", "2026-09-14"]]);
+    expect(vi.mocked(getHabitPeriodWeek).mock.calls[0][0]).toBe(HABIT_RANGE);
+  });
+
   it("with no food frozen at Send, the week's food is the targets the review shows now", async () => {
     const copy = await buildSentSnapshotAsShown(row());
     expect(vi.mocked(getNutritionPeriod)).toHaveBeenCalledWith(CLIENT_ID, "2026-09-08", "2026-09-14");
+    // The habit week the review would show for the period, frozen as values.
     expect(copy.period).toEqual({
       dates: WEEK,
       loggedDates: ["2026-09-09", "2026-09-14"],
       nutrition: LIVE_FOOD,
-      habits: HABITS,
+      habitWeek: FROZEN_HABIT_WEEK,
     });
   });
 

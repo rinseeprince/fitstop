@@ -8,6 +8,7 @@ import {
 } from "./measurements-service";
 import { getNutritionPlanForDate } from "./nutrition-plan-service";
 import { getClientAdherenceForRange } from "./client-adherence-service";
+import { getHabitPeriodWeek, readHabitRange } from "./client-habit-figures-service";
 import { goalAsOf, goalOnDay } from "@/lib/goals/goal-timeline";
 import {
   checkInTrend,
@@ -17,6 +18,7 @@ import {
   type TrendCheckIn,
 } from "@/lib/check-in/sent-snapshot-goal";
 import {
+  composeHabitWeek,
   parseSentSnapshot,
   readSentSnapshot,
   SENT_SNAPSHOT_VERSION,
@@ -25,6 +27,7 @@ import {
 import { MEASUREMENT_KEYS, type MeasurementValues } from "@/lib/measurements/keys";
 import type { Client } from "@/types/check-in";
 import type { AdherenceSummary } from "@/types/coach-overview";
+import type { HabitPeriodWeek } from "@/types/habits";
 import type { NutritionDay } from "@/types/schedule";
 
 /**
@@ -70,20 +73,42 @@ async function readQuestionWording(
 }
 
 /**
+ * The week's figures, as they stand: its days and the days the client logged,
+ * and its habit week. The week's habits and their entries are read once and
+ * handed to both — the days logged count the entries, the habit week is
+ * judged from both — while the summary's other reads run alongside. The
+ * week's own last day stands in for "today", as on the review.
+ */
+export async function readPeriodFigures(
+  clientId: string,
+  start: string,
+  end: string
+): Promise<{ adherence: AdherenceSummary; habitWeek: HabitPeriodWeek }> {
+  const habitRange = readHabitRange(clientId, start, end);
+  const [adherence, habits] = await Promise.all([
+    getClientAdherenceForRange(clientId, start, end, end, habitRange),
+    habitRange,
+  ]);
+  return { adherence, habitWeek: getHabitPeriodWeek(habits, start, end) };
+}
+
+/**
  * The week, as it stands: the days, the days the client logged, the food
- * against each day's target and the habits. Null when the week cannot be
- * resolved, as the review has always shown it.
+ * against each day's target and the habit week — each habit as it was
+ * prescribed those days and each day as it happened. Null when the week
+ * cannot be resolved, as the review has always shown it.
  */
 export function composePeriod(
-  adherence: Pick<AdherenceSummary, "dates" | "loggedDates" | "habits"> | null,
-  nutritionDays: NutritionDay[] | null
+  adherence: Pick<AdherenceSummary, "dates" | "loggedDates"> | null,
+  nutritionDays: NutritionDay[] | null,
+  habitWeek: HabitPeriodWeek | null
 ): SentSnapshot["period"] {
-  if (!adherence || !nutritionDays) return null;
+  if (!adherence || !nutritionDays || !habitWeek) return null;
   return {
     dates: adherence.dates,
     loggedDates: adherence.loggedDates,
     nutrition: nutritionDays,
-    habits: adherence.habits,
+    habitWeek: composeHabitWeek(habitWeek),
   };
 }
 
@@ -162,16 +187,13 @@ export async function buildSentSnapshotAtSend(input: {
   const { client, day, reported } = input;
   const at = input.at.toISOString();
 
-  const [goals, asOf, baseline, plan, before, adherence, wording] = await Promise.all([
+  const [goals, asOf, baseline, plan, before, week, wording] = await Promise.all([
     listClientGoals(client.id),
     getReadingsAsOf(client.id, day),
     getBaseline(client.id),
     getNutritionPlanForDate(client.id, day),
     readTrendBefore(client.id, at),
-    input.period
-      ? // The week's own last day stands in for "today", as on the review.
-        getClientAdherenceForRange(client.id, input.period.start, input.period.end, input.period.end)
-      : Promise.resolve(null),
+    input.period ? readPeriodFigures(client.id, input.period.start, input.period.end) : Promise.resolve(null),
     readQuestionWording(input.answeredQuestionIds),
   ]);
 
@@ -219,7 +241,7 @@ export async function buildSentSnapshotAtSend(input: {
     standing: { weight: standing.weight ?? null, bodyFat: standing.bodyFat ?? null },
     ...goalSection,
     nutritionPlan: composeNutritionPlan(plan),
-    period: composePeriod(adherence, input.nutritionDays),
+    period: composePeriod(week?.adherence ?? null, input.nutritionDays, week?.habitWeek ?? null),
     questions: input.answeredQuestionIds.map((questionId) => ({
       questionId,
       prompt: wording.get(questionId) ?? "Question",

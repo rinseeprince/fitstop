@@ -26,7 +26,7 @@
 import "./env-bootstrap";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  makeAdminClient, insertInBatches, countRows, analyzeTables, writeManifest,
+  makeAdminClient, insertInBatches, countRows, analyzeTables, writeManifest, writeHabits,
   type WriteLedger, type Manifest,
 } from "./seed/db";
 import { seedUuid, seedEmail, SEED_ID_LO, SEED_ID_HI, SEED_EMAIL_DOMAIN } from "./seed/ids";
@@ -415,6 +415,12 @@ async function main(): Promise<void> {
     }
 
     for (const step of steps) {
+      if ("habits" in step) {
+        // The habit tables take no INSERT from this role (migration 203): each
+        // client's habits are one call, and their entries follow the ids it returns.
+        progress.add(await writeHabits(db, step, ledger));
+        continue;
+      }
       if ("rpc" in step) {
         // The goal tables take no INSERT from this role (migration 193): each
         // goal is one call of its function.

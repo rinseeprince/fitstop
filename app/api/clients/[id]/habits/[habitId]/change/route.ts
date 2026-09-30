@@ -7,6 +7,7 @@ import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { habitWriteErrorResponse } from "@/lib/habits/habit-write-response";
+import { habitListAfterWrite } from "@/lib/habits/habit-list-after-write";
 import { changeHabitSchema, habitIdParam } from "@/lib/validations/client-habits";
 
 type Params = { params: Promise<{ id: string; habitId: string }> };
@@ -14,7 +15,8 @@ type Params = { params: Promise<{ id: string; habitId: string }> };
 /**
  * A habit's target and days from a day — the client's today when `startsOn` is
  * absent — which also starts a stopped habit again. The version running the
- * day before ends then; a version queued after it stands.
+ * day before ends then; a version queued after it stands. Answers with
+ * whether anything changed and the client's habits as they now stand.
  */
 export async function POST(request: NextRequest, { params }: Params) {
   const rateLimitResult = await coachApiRateLimit(request);
@@ -65,7 +67,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       });
     }
 
-    return NextResponse.json({ success: true, data: { changed } });
+    return await habitListAfterWrite(clientId, today, (habits) => ({ changed, habits }));
   } catch (error) {
     return habitWriteErrorResponse(error);
   }

@@ -35,10 +35,12 @@ export function useAttentionFeed() {
  *
  * CLEARED, not merely revalidated (CONVENTIONS §7): the feed renders a
  * definite answer per client — "No nutrition targets from 16 Feb", or "All
- * clients on track" — and the plan writers on a client page change what it
- * says. The dashboard is not mounted while they run, so the next visit would
- * otherwise open on the stale claim for the length of the refetch. Called
- * beside `useClearClientOverview` from every calendar writer's success path.
+ * clients on track" — and the plan and habit writers on a client page change
+ * what it says. The dashboard is not mounted while they run, so the next visit
+ * would otherwise open on the stale claim for the length of the refetch.
+ * Called beside `useClearClientOverview` from every calendar writer's success
+ * path and from every coach habit write (`useHabitWrites`'s `land`), whose
+ * missed-habit lines the feed lists.
  */
 export function useClearAttentionFeed() {
   const { mutate } = useSWRConfig();

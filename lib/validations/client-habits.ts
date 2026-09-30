@@ -1,11 +1,16 @@
 import { z } from "zod";
 import { isCalendarDay } from "@/lib/date-helpers";
 import {
+  HABIT_ADD_MAX,
   HABIT_AMOUNT_MAX,
+  HABIT_AMOUNT_PATTERN,
+  HABIT_HOW_TO_MAX,
+  HABIT_NAME_MAX,
   HABIT_NOTE_MAX,
   HABIT_ORDER_MAX,
   HABIT_PROGRESS_WEEKS_DEFAULT,
   HABIT_PROGRESS_WEEKS_MAX,
+  HABIT_UNIT_MAX,
 } from "@/lib/constants";
 import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 
@@ -32,9 +37,15 @@ const amount = z
   .number()
   .min(0)
   .max(HABIT_AMOUNT_MAX)
-  .refine((value) => /^\d+(\.\d{1,2})?$/.test(String(value)), { message: "At most two decimal places" });
+  .refine((value) => HABIT_AMOUNT_PATTERN.test(String(value)), { message: "At most two decimal places" });
 
 const unique = (values: readonly string[]) => new Set(values).size === values.length;
+
+/** The weekdays a habit runs on: every day is all seven. */
+const weekdays = z.array(z.enum(DAYS_OF_WEEK)).min(1).max(7).refine(unique, { message: "Each weekday once" });
+
+/** N times a week, on any days. */
+const timesPerWeek = z.number().int().min(1).max(7);
 
 const changeFields = {
   startsOn: habitDate.optional(),
@@ -47,14 +58,51 @@ const changeFields = {
  * other, never both.
  */
 export const changeHabitSchema = z.union([
-  z
-    .object({
-      ...changeFields,
-      weekdays: z.array(z.enum(DAYS_OF_WEEK)).min(1).max(7).refine(unique, { message: "Each weekday once" }),
-    })
-    .strict(),
-  z.object({ ...changeFields, timesPerWeek: z.number().int().min(1).max(7) }).strict(),
+  z.object({ ...changeFields, weekdays }).strict(),
+  z.object({ ...changeFields, timesPerWeek }).strict(),
 ]);
+
+/** A habit's name: trimmed, never empty. */
+const habitName = z.string().trim().min(1).max(HABIT_NAME_MAX);
+
+/** A habit's how-to, shown to the client: trimmed, and an empty one is none. */
+const howTo = z
+  .string()
+  .trim()
+  .max(HABIT_HOW_TO_MAX)
+  .transform((text) => text || null)
+  .nullable();
+
+const newHabitFields = {
+  name: habitName,
+  howTo: howTo.optional(),
+  measure: z.enum(["tick", "number"]),
+  unit: z.string().trim().min(1).max(HABIT_UNIT_MAX).nullable().optional(),
+  direction: z.enum(["at_least", "at_most"]).nullable().optional(),
+  target: amount.nullable().optional(),
+};
+
+/**
+ * One habit to add: what it is — a name, a how-to, a tick or a number with its
+ * unit and direction — its target, and its days: chosen weekdays or N times a
+ * week, one or the other. Whether the target and the unit fit the measure is
+ * the function's to judge, with its own sentence.
+ */
+const newHabitSchema = z.union([
+  z.object({ ...newHabitFields, weekdays }).strict(),
+  z.object({ ...newHabitFields, timesPerWeek }).strict(),
+]);
+
+/** One or more habits added from a day — the client's today when absent — appended in the order given. */
+export const addHabitsSchema = z
+  .object({
+    startsOn: habitDate.optional(),
+    habits: z.array(newHabitSchema).min(1).max(HABIT_ADD_MAX),
+  })
+  .strict();
+
+/** A habit's labels, both of them: its name, and its how-to (null clears it). */
+export const renameHabitSchema = z.object({ name: habitName, howTo }).strict();
 
 /** A habit stopped from a day — the client's today when absent. */
 export const stopHabitSchema = z.object({ stopsOn: habitDate.optional() }).strict();

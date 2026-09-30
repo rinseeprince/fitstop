@@ -12,9 +12,8 @@ vi.mock("./daily-logs-service", () => ({
   getTodayLog: vi.fn(),
 }));
 
-vi.mock("./daily-habits-service", () => ({
-  getClientHabits: vi.fn(),
-  getTodayHabitLogs: vi.fn(),
+vi.mock("./client-habit-figures-service", () => ({
+  getHabitDaySummary: vi.fn(),
 }));
 
 
@@ -22,7 +21,7 @@ import { getDaySummary } from "./client-day-service";
 import { getEventSummariesForDate } from "./training-event-service";
 import { getNutritionForDate } from "./daily-context-service";
 import { getTodayLog } from "./daily-logs-service";
-import { getClientHabits, getTodayHabitLogs } from "./daily-habits-service";
+import { getHabitDaySummary } from "./client-habit-figures-service";
 
 const CLIENT_ID = "client-1";
 const DATE = "2026-05-08";
@@ -30,15 +29,13 @@ const DATE = "2026-05-08";
 const mockTrainingSummaries = vi.mocked(getEventSummariesForDate);
 const mockNutrition = vi.mocked(getNutritionForDate);
 const mockTodayLog = vi.mocked(getTodayLog);
-const mockHabits = vi.mocked(getClientHabits);
-const mockHabitLogs = vi.mocked(getTodayHabitLogs);
+const mockHabitDay = vi.mocked(getHabitDaySummary);
 
 function setDefaults() {
   mockTrainingSummaries.mockResolvedValue([]);
   mockNutrition.mockResolvedValue({ consumed: null, target: null, source: null });
   mockTodayLog.mockResolvedValue(null);
-  mockHabits.mockResolvedValue([]);
-  mockHabitLogs.mockResolvedValue([]);
+  mockHabitDay.mockResolvedValue({ plannedToday: 0, doneToday: 0, running: 0 });
 }
 
 describe("client-day-service", () => {
@@ -56,7 +53,7 @@ describe("client-day-service", () => {
       training: [],
       nutrition: { hasLog: false, caloriesConsumed: null, targetCalories: null, note: null },
       wellness: { hasLog: false },
-      habits: { totalCount: 0, loggedCount: 0 },
+      habits: { plannedToday: 0, doneToday: 0, running: 0 },
     });
   });
 
@@ -294,35 +291,14 @@ describe("client-day-service", () => {
     expect(result.wellness).toEqual({ hasLog: true });
   });
 
-  // ---- Habits: filters for completed only ----
+  // ---- Habits: the habit kernel's day, from the figures service ----
 
-  it("counts only completed habit logs", async () => {
-    mockHabits.mockResolvedValue([
-      { id: "h1", name: "Water", effectiveDate: "2026-01-01" },
-      { id: "h2", name: "Walk", effectiveDate: "2026-01-01" },
-      { id: "h3", name: "Read", effectiveDate: "2026-01-01" },
-    ] as any);
-    mockHabitLogs.mockResolvedValue([
-      { dailyHabitId: "h1", completed: true },
-      { dailyHabitId: "h2", completed: false },
-    ] as any);
+  it("carries the day's habits as the figures service counts them, for the client and the date asked", async () => {
+    mockHabitDay.mockResolvedValue({ plannedToday: 3, doneToday: 1, running: 4 });
 
     const result = await getDaySummary(CLIENT_ID, DATE);
 
-    expect(result.habits).toEqual({ totalCount: 3, loggedCount: 1 });
-  });
-
-  it("excludes habits not yet effective on the date from totalCount", async () => {
-    // h2 became effective after DATE — it can't be logged yet, so the home card's
-    // totalCount must not count it (otherwise it disagrees with the detail page).
-    mockHabits.mockResolvedValue([
-      { id: "h1", name: "Water", effectiveDate: "2026-01-01" },
-      { id: "h2", name: "New Habit", effectiveDate: "2026-06-01" },
-    ] as any);
-    mockHabitLogs.mockResolvedValue([{ dailyHabitId: "h1", completed: true }] as any);
-
-    const result = await getDaySummary(CLIENT_ID, DATE);
-
-    expect(result.habits).toEqual({ totalCount: 1, loggedCount: 1 });
+    expect(mockHabitDay).toHaveBeenCalledWith(CLIENT_ID, DATE);
+    expect(result.habits).toEqual({ plannedToday: 3, doneToday: 1, running: 4 });
   });
 });

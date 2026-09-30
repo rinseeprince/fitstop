@@ -170,15 +170,9 @@ export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDa
     [period]
   );
 
-  // No habit logs: the habit figures come from `periodAdherence`, built from the
-  // HABIT list server-side. A logs-derived grid silently drops a habit the
-  // client ignored all week — `logHabit` writes a row only when they act — which
-  // is the one habit worth showing. `withHabitLogs` already existed for the
-  // Overview's wellness cards, so this drops a request rather than adding a flag.
-  const { logs: dailyLogs, isLoading: logsLoading } = useWellnessData(clientId, {
-    range,
-    withHabitLogs: false,
-  });
+  // The habit figures are not read here: they are the habit week the check-in
+  // froze, on `periodAdherence`.
+  const { logs: dailyLogs, isLoading: logsLoading } = useWellnessData(clientId, { range });
 
   const { mutate: mutateDetail } = detail;
   // After Regenerate the rail asks for the fresh review; the bound mutate

@@ -40,8 +40,7 @@ export const wellnessCardSchema = z
 /**
  * Format-only validation for the `[date]` route param: a real YYYY-MM-DD.
  * No past/future bounds — those are write-side via canEditDay (a day outside the
- * client's open check-in week is viewable read-only). Do NOT use
- * validateDateParameter here.
+ * client's open check-in week is viewable read-only).
  */
 export const isValidDateParam = (s: string): boolean =>
   /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00`));

@@ -1,4 +1,4 @@
-import type { DailyHabit } from "@/types/daily-habit"
+import type { ClientHabit } from "@/types/habits"
 import type { TriggerResult } from "./attention-triggers"
 import type { TrainingEventRow } from "./attention-feed-helpers"
 import {
@@ -14,7 +14,8 @@ interface NoEngagementParams {
    * rows it holds. Any log the client made themselves counts.
    */
   loggedDays: readonly string[]
-  habits: DailyHabit[]
+  /** The client's habits a version covers on a day of the feed's window — prescribed work, like a workout. */
+  habits: readonly Pick<ClientHabit, "id">[]
   trainingEvents: TrainingEventRow[]
   startDate: string | null
   now?: Date

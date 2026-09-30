@@ -45,6 +45,19 @@ function hashIp(request?: NextRequest): string | null {
   return createHash("sha256").update(ip).digest("hex").slice(0, 12);
 }
 
+function auditRow(input: AuditEventInput) {
+  return {
+    actor_id: input.actorId ?? null,
+    actor_role: input.actorRole ?? null,
+    action: input.action,
+    target_table: input.targetTable ?? null,
+    target_id: input.targetId ?? null,
+    client_id: input.clientId ?? null,
+    metadata: input.metadata ?? {},
+    ip_hash: hashIp(input.request),
+  };
+}
+
 /**
  * Append one row to audit_logs. Fire-and-forget friendly: callers may `void` this
  * (it swallows its own errors). Always pass a caller-verified clientId/actorId —
@@ -52,20 +65,28 @@ function hashIp(request?: NextRequest): string | null {
  */
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
   try {
-    const { error } = await supabaseAdmin.from("audit_logs").insert({
-      actor_id: input.actorId ?? null,
-      actor_role: input.actorRole ?? null,
-      action: input.action,
-      target_table: input.targetTable ?? null,
-      target_id: input.targetId ?? null,
-      client_id: input.clientId ?? null,
-      metadata: input.metadata ?? {},
-      ip_hash: hashIp(input.request),
-    });
+    const { error } = await supabaseAdmin.from("audit_logs").insert(auditRow(input));
     if (error) {
       captureApiError(error, { action: "audit-log-write", auditAction: input.action });
     }
   } catch (err) {
     captureApiError(err, { action: "audit-log-write", auditAction: input.action });
+  }
+}
+
+/**
+ * Append several rows to audit_logs in one statement — one action that touched
+ * several records, each its own row. Fire-and-forget like `recordAuditEvent`.
+ */
+export async function recordAuditEvents(inputs: AuditEventInput[]): Promise<void> {
+  if (inputs.length === 0) return;
+  const action = inputs[0].action;
+  try {
+    const { error } = await supabaseAdmin.from("audit_logs").insert(inputs.map(auditRow));
+    if (error) {
+      captureApiError(error, { action: "audit-log-write", auditAction: action });
+    }
+  } catch (err) {
+    captureApiError(err, { action: "audit-log-write", auditAction: action });
   }
 }

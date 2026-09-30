@@ -28,7 +28,7 @@ The client app is a fitness coaching platform where clients can:
 - Monitor nutrition targets and macro intake
 - Submit weekly check-ins with progress photos
 - Track progress over time with analytics
-- Manage daily habits
+- Log the habits their coach sets: a tick, or a number against its target
 - Access educational resources
 
 ### Technology Stack (Web)
@@ -48,7 +48,7 @@ The Daily Pulse is the centerpiece of the client experience, allowing daily logg
 - **Wellness Metrics**: Mood (1-5 emoji scale), Energy (1-10), Sleep (1-10), Stress (1-10), Soreness (1-10, higher = more sore)
 - **Training Completion**: Mark planned sessions complete; on a rest day pick a session from this week (it moves to that day); on a prescribed day swap with another day's session; add unplanned exercises
 - **Nutrition Tracking**: Log calories and macros (protein, carbs, fat) with dynamic targets
-- **Habit Tracking**: Toggle daily habits on/off with auto-save
+- **Habit Tracking**: Tick a habit done, or enter a number against its target, on any day the habit runs; each entry saves on its own
 
 **Key Components**:
 - `components/client-portal/day/` - Day view cards
@@ -92,13 +92,13 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 - Authenticated only. The public token ("magic link") form was removed in
   migration 142 — there is no unauthenticated check-in path.
 
-### 6. Habits Management
-**Integrated in Daily Pulse**
+### 6. Habits
+**Locations**: `/client/habits?date=` (the day's habits), the Journey's Habits pane (`/client/metrics`)
 
-- Daily habit tracking with boolean toggles
-- Auto-saves independently from other Daily Pulse data
-- Historical tracking with date filtering
-- Streak counting and analytics
+- The coach sets each habit: a tick, or a number with a unit and a target it should be at least or at most, on every day, on chosen weekdays, or a number of times a week
+- The day lists every habit running on it, planned that day or not: a habit done on Tuesday instead of Monday is entered on Tuesday and counts toward its week
+- A tick habit's entry is done or not done; a number habit's is the number, as entered; either can carry a note. Each entry saves on its own
+- The Journey shows each habit's figure for this week and for its recent weeks together, and its last 28 days as they happened. Every figure is the server's, on the client's calendar; the app writes each week's figure as "met of planned" and adds no weeks up
 
 ### 7. Push Notifications
 **Location**: In-app dropdown (`components/client/notifications-dropdown.tsx`)
@@ -176,7 +176,7 @@ All client API endpoints require authentication except where noted.
 > **RN contract — a day can hold several sessions.** A day holds its sessions in order, each its own workout (a morning run and an evening lift): each is opened, logged and counted on its own, and every read below lists a day's sessions in the day's order — render them in the order given. Nothing refuses a day for holding a session: a session moved onto a day that holds some joins it, after them. A day's nutrition target adds every session's training surplus.
 
 - `GET /api/client/training-plan` - The active plan, self-describing (`ClientTrainingPlan | null`)
-- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: `training: TrainingEventSummary[]`, nutrition, wellness, habits. `training` lists every session on the day, in the day's order. **`nutrition` is always present** — `hasLog`, `caloriesConsumed`, `targetCalories` (null when no nutrition plan covers the day) and the coach's `note` — because a day with no target still takes a log: only the future and a closed week refuse one. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
+- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: `training: TrainingEventSummary[]`, nutrition, wellness, habits. `training` lists every session on the day, in the day's order. **`nutrition` is always present** — `hasLog`, `caloriesConsumed`, `targetCalories` (null when no nutrition plan covers the day) and the coach's `note` — because a day with no target still takes a log: only the future and a closed week refuse one. **`habits`** is `{ plannedToday, doneToday, running }` (`HabitDaySummary`, `types/habits.ts`): `running` counts the habits running on the day, `plannedToday` those planned on it, and `doneToday` how many of those were done that day, so it is never more than `plannedToday`; `running: 0` means no habits to track, and `plannedToday: 0` with habits running means nothing is planned that day. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
 - `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, groups, sessionLog, exerciseLogs, groupScores }` (`TrainingEventDetail`, below). `groupScores` is the log's timed-group scores, one per scored group (see "RN contract — timed groups"). `session` is the session's header — live, its name, focus and duration with no groups of its own; or the log's `prescribed_session_snapshot` once the session is gone. `groups` is the workout in order, each group with its settings and its exercises in order, each exercise live or read off its log's snapshot: the live session's groups first, then any logged exercise the live session no longer holds (all of them when the session is gone), in the group its snapshot records — a snapshot logged before groups existed reads as a straight-sets group of one whose `id` is the exercise's own. Each `exerciseLogs[].prescribedExerciseSnapshot` records the prescription as logged, including `order_index` (its place in its group) and `group` (`id`, `order_index`, `format` and every setting in snake_case). Render it group by group — see "RN contract — how a group reads" and "RN contract — logging a group"
 - `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `400` the save records nothing, body `"Tick at least one set to log this workout."` (see "RN contract — a save records something"), or a group score its group cannot take, body its sentence (see "RN contract — timed groups") · `403` day locked, body `"This day is locked."` (outside `logsOpenFrom`…today) · `404` not found / not this client, a score naming a group outside the performed session included
 - `DELETE /api/client/training/events/{eventId}/log` - **Clear log**: "I did not do this after all". Deletes the workout's log and everything under it — its exercise logs and their sets — and puts the workout back to `scheduled` with nothing recorded, in one transaction. `200 { cleared: boolean }` — `false` when the workout carried no log, which is **not** an error · `403` day locked, body `"This day is locked."` — allowed exactly where a log write is · `404` not found / not this client. Refresh the day after it: the workout is loggable again
@@ -285,9 +285,27 @@ stale draft is safe. `GET /api/client/check-ins/{id}` returns
 - `/api/client/notifications` is **GET-only**: `read` is computed server-side and is not client-mutable.
 
 ### Habits
-- `GET /api/client/habits` - Get active habits
-- `POST /api/client/habits/log` - Log a habit (the habit id travels in the **body**, not the path)
-- `GET /api/client/habits/logs` · `GET /api/client/habits/logs/today` - Habit log history / today's state
+
+> **RN contract — a habit's week is judged, its days are shown as they happened.** Every
+> figure comes from the server, on the client's own calendar: the app never counts entries,
+> never works out planned or met, and never adds weeks up. A day a habit runs on takes an
+> entry, planned or not. A week's figures are `{ planned, done, met }` (`HabitWeekFigures`):
+> `planned` is the planned days, plus, for a habit done N times a week, N — never more than
+> the days it runs that week; `done` is the days whose entry met the day's target; `met` is
+> `done` up to `planned`, so a day made up on another day counts toward its week and no
+> further. The words come from the server where it sends them: a day's item carries its
+> `schedule`, the day's `target` and the week's figure as `week` ("2 of 3"); the week read's
+> and the Journey's rows carry `schedule` and `target`. A week's figure that comes without
+> words — the entry's answer, the week read's rows and totals, each Journey week and its
+> `span` — the app writes as met of planned ("2 of 3"), or "Nothing planned" when `planned`
+> is 0, as the server writes `week`. Show a day as its facts (`HabitDayFacts`). A number is
+> shown and entered as the coach typed its unit, never converted.
+
+- `GET /api/client/habits/day?date={YYYY-MM-DD}` - Every habit running on the date, planned that day or not, in the coach's order (`ClientHabitDay`): each item carries the habit (`HabitIdentity`), the day (`HabitDayFacts`: `covered`, `planned`, that day's `target`, `edited`, `timesPerWeek` — set on a habit done N times a week, which plans no particular day — the `entry` `{ done, value, note }` or null, and `met`), the client week holding the date with its figures (`week`: `planned`, `done`, `met`, `start`, `end`) and the words (`schedule` "Every day" / "Mon, Wed, Fri" / "3 times a week", `target` "at least 3 L" for the day, `week` "2 of 3"). `400` `"Missing required date parameter"` without `date`, `"Invalid date"` when it is not a real day. `no-store`
+- `PUT /api/client/habits/{habitId}/days/{date}` - The client's entry, one per habit per day: `{ done: boolean }` for a tick habit, or `{ value: number }` for a number habit (zero to 1,000,000, two decimals at most), each with an optional `note` (up to 500 characters; `null` clears it, left out keeps it). `200 { day, week }` (`HabitEntryResult`) — the habit's day and the client week holding it, as they now stand: figures, no words (see the contract above) · `200` with `data: null` when the entry is saved but its day and week could not be read back: keep the change on screen and read the day again · `400` `"Invalid input"` (with `details`) when the body is not exactly one answer — both `done` and `value`, neither, or any other field — or the value is below zero, over 1,000,000 or has more than two decimals, or the note is over 500 characters · `400` `"Invalid date"` when `{date}` is not a real day · `400` an answer that does not fit the habit, body `"This habit is ticked, not counted."` or `"This habit takes a number."` · `403` day locked, body `"This day is locked."` (outside `logsOpenFrom`…today) · `404` not this client's habit, body `"Habit not found."` · `409` a day the habit is not running, body `"That habit isn't running on that day."`
+- `DELETE /api/client/habits/{habitId}/days/{date}` - Clears the entry. Answers as `PUT`, `data: null` included; `400` `"Invalid date"`, `403` and `404` as `PUT`
+- `GET /api/client/habits/week?start={YYYY-MM-DD}&end={YYYY-MM-DD}` - The habit week over dates inside one of the client's weeks (`ClientHabitWeek`): each habit's days as they happened, its figures and its `schedule` and `target`, and the totals. `400` `"Missing required start and end parameters"` when either is missing, `"Invalid date"` when one is not a real day, `"The dates must be inside one week."` when they span two weeks or `end` is before `start`. `no-store`
+- `GET /api/client/habits/progress?weeks={1–26}` - The Journey (`ClientHabitProgress`, default 8 weeks): each habit's `schedule` and `target`, the figures of its last `weeks` client weeks (`weeks`, oldest first, the last holding today), those weeks' figures added together (`span`), and its last 28 days as they happened, ending today. `400` `"Invalid weeks"` when `weeks` is not a whole number from 1 to 26. `no-store`
 
 ---
 
@@ -768,27 +786,14 @@ type CheckIn = {
 }
 ```
 
-### Habit
-```typescript
-type Habit = {
-  id: string
-  clientId: string
-  name: string
-  type: "boolean" | "numeric"
-  targetValue?: number
-  unit?: string
-  isActive: boolean
-  createdAt: string
-}
+### Habits
+The habit types are `types/habits.ts`; the reads above carry them whole. What the app needs of each:
 
-type HabitLog = {
-  id: string
-  habitId: string
-  date: string // YYYY-MM-DD
-  completed: boolean // Always boolean, even for numeric habits
-  value?: number // Actual value for numeric habits
-}
-```
+- **`HabitIdentity`** — `id`, `name`, `howTo` (shown to the client, or null), `measure` (`"tick"` or `"number"`, for life), `unit` (a number habit's, the coach's word, or null) and `direction` (a number habit's `"at_least"` or `"at_most"`; null on a tick habit)
+- **`HabitDayFacts`** — one habit on one date: `covered` (the habit runs that day: it takes an entry), `planned`, `target` (that day's, a number habit's), `edited` (the coach changed that one day), `timesPerWeek`, `entry` (`{ done, value, note }` — `done` on a tick habit, `value` on a number habit — or null) and `met`
+- **`HabitWeekFigures`** — `{ planned, done, met }` (see "RN contract — a habit's week is judged"); `HabitWeekSpan` adds the week's `start` and `end`; a Journey row's `span` is its weeks' figures added together
+- **`HabitWords`** — `{ schedule, target }`, spelled by the server, on every habit the reads list, plus `week` (the week's figure in words) on a day's item alone. The entry's answer carries no words: the app writes a figure sent without words as met of planned (see "RN contract — a habit's week is judged")
+- **`ClientHabitDay`**, **`HabitEntryResult`**, **`ClientHabitWeek`**, **`ClientHabitProgress`** — the reads and the entry's answer, as listed under Habits above
 
 ---
 
@@ -802,13 +807,13 @@ graph LR
     C --> D[Log Wellness]
     D --> E[Mark Training]
     E --> F[Enter Nutrition]
-    F --> G[Toggle Habits]
+    F --> G[Log Habits]
     G --> H[Save Day]
 ```
 
 **Key Points**:
 - Single save for wellness + training + nutrition (except habits)
-- Habits auto-save independently
+- Each habit entry saves on its own, one `PUT` per habit per day: a tick, or a number
 - Can navigate between days without losing unsaved changes
 - Logged days show summary view with edit option
 
@@ -907,14 +912,6 @@ These are **absolute calorie deltas from `lib/constants.ts`, not percentages.**
   after, so a day backfilled later shows on the coach's live surfaces and not on
   it. Check-ins sent before 2026-09-18 carry the older full-only number and were
   not backfilled
-
-### Habit Streaks
-```typescript
-// Streak counts consecutive days completed
-// Resets to 0 on miss
-// Only counts habits that existed on that date
-habits.filter(h => new Date(h.createdAt) <= selectedDate)
-```
 
 ### Progress Photo Requirements
 - Max file size: 5MB
@@ -1112,7 +1109,7 @@ Coaches receive alerts when:
 ├── progress/route.ts        # Progress data
 ├── check-ins/route.ts       # Check-in submissions
 ├── notifications/route.ts   # In-app notifications
-├── habits/route.ts          # Habit management
+├── habits/                  # day/, week/, progress/ (GET); [habitId]/days/[date]/ (the entry, PUT + DELETE)
 └── me/route.ts             # User profile
 ```
 
@@ -1123,7 +1120,7 @@ Coaches receive alerts when:
 ├── training.ts             # TrainingPlan, Session, Exercise
 ├── check-in.ts             # CheckIn, metrics types
 ├── daily-log.ts            # DailyLog, the assembled day
-└── habit.ts               # Habit, HabitLog types
+└── habits.ts              # Habits: the identity, a day's facts, a week's figures, the reads' shapes
 
 /services/
 ├── client-portal-service.ts # Client data fetching

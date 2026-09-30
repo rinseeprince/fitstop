@@ -70,7 +70,6 @@ const EXEMPT: Record<string, string> = {
   "lib/date-helpers.ts": "defines the three functions",
   "lib/check-in-week.test.ts": "this file",
   "lib/tracking-triggers.ts": "takes the anchor as a parameter; attention-feed-helpers resolves it",
-  "services/habits-weekly-service.ts": "takes the anchor as a parameter; the habits/weekly route resolves it",
 };
 
 function sourceFiles(dir: string): string[] {

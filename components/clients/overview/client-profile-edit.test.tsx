@@ -19,6 +19,10 @@ vi.mock("@/contexts/units-context", () => ({
 
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
+// The Habits tab's weeks start on the next check-in's weekday.
+const { clearHabitWeeks } = vi.hoisted(() => ({ clearHabitWeeks: vi.fn() }));
+vi.mock("@/hooks/use-client-habits", () => ({ useClearClientHabitWeeks: () => clearHabitWeeks }));
+
 class ResizeObserverMock {
   observe() {}
   unobserve() {}
@@ -424,6 +428,7 @@ describe("the client details sheet", () => {
     });
 
     it("does not touch the check-in config when neither field changed", async () => {
+      clearHabitWeeks.mockClear();
       const fetchSpy = mockFetchOk();
       const user = await openEditor();
 
@@ -434,6 +439,23 @@ describe("the client details sheet", () => {
       expect(
         fetchSpy.mock.calls.some(([url]) => String(url).endsWith("/check-in-config"))
       ).toBe(false);
+      expect(clearHabitWeeks).not.toHaveBeenCalled();
+    });
+
+    it("clears the Habits tab's weeks once a new next check-in date is saved: the week starts on its weekday", async () => {
+      clearHabitWeeks.mockClear();
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(makeClient({ nextCheckInDue: "2099-01-06" }));
+
+      const due = screen.getByLabelText("Next check-in");
+      await user.clear(due);
+      await user.type(due, "2099-01-08");
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+      await waitFor(() => expect(clearHabitWeeks).toHaveBeenCalledWith("client-1"));
+      const configCall = fetchSpy.mock.calls.findIndex(([url]) => String(url).endsWith("/check-in-config"));
+      expect(configCall).toBeGreaterThan(-1);
+      expect(clearHabitWeeks).toHaveBeenCalledTimes(1);
     });
 
     // `custom` is an interval this sheet has no field for. Hiding it would

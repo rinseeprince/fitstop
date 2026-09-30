@@ -11,7 +11,7 @@ export type AlertType =
   | "training_missed"
   | "high_stress"
   | "high_soreness"
-  | "habit_dropoff"
+  | "habit_missed"
   | "activity_cal_mismatch"
   | "partial_training_pattern"
   | "no_engagement"
@@ -23,6 +23,11 @@ export interface WellnessAlert {
   severity: AlertSeverity
   message: string
   affectedDays: string[] // Array of date strings (YYYY-MM-DD)
+  /**
+   * The habit a `habit_missed` alert is about: one line per habit, each
+   * dismissed on its own (`alertDismissalKey`). Absent on every other type.
+   */
+  habitId?: string
 }
 
 // Extended alert with metric data for visualization

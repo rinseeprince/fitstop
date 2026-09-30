@@ -171,11 +171,18 @@ export function weekFigures(input: CheckInReviewInput): string[] {
     }
   }
 
-  const habits = input.habits.filter((habit) => habit.eligibleDays > 0);
-  if (habits.length > 0) {
-    lines.push(
-      `Habits: ${habits.map((habit) => `${text(habit.name)} ${habit.completedDays}/${habit.eligibleDays} days`).join("; ")}`
-    );
-  }
+  const habits = habitWeekLine(input.habitWeek);
+  if (habits) lines.push(habits);
   return lines;
+}
+
+/**
+ * The week's habits in one line: each habit planned that week, its days met of
+ * its days planned, as the review's Habits section counts them. Null when no
+ * habit was planned.
+ */
+export function habitWeekLine(habitWeek: CheckInReviewInput["habitWeek"]): string | null {
+  const habits = (habitWeek?.habits ?? []).filter((habit) => habit.figures.planned > 0);
+  if (habits.length === 0) return null;
+  return `Habits: ${habits.map((habit) => `${text(habit.name)} ${habit.figures.met}/${habit.figures.planned} days`).join("; ")}`;
 }

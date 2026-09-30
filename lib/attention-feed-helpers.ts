@@ -5,7 +5,7 @@
 
 import type { Database } from "@/types/database"
 import type { DailyLog } from "@/types/daily-log"
-import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit"
+import type { ClientHabit, HabitEntryRead } from "@/types/habits"
 import type { ClientWithAlerts, AttentionAlert } from "@/types/attention-feed"
 import {
   evaluateMoodEnergyDrop,
@@ -15,12 +15,13 @@ import {
   evaluatePartialTrainingPattern,
   evaluateHighStress,
   evaluateHighSoreness,
-  evaluateHabitDropoff,
+  evaluateMissedHabits,
   evaluateActivityCalMismatch,
   evaluateNoEngagement,
   evaluatePrescriptionEnding,
   type TriggerResult
 } from "@/lib/attention-triggers"
+import { alertDismissalKey } from "@/lib/attention-alert-dismissal"
 import type {
   BlockWindow,
   ClientBlockWindow,
@@ -41,6 +42,7 @@ import {
   type WellnessLogRow,
 } from "@/services/daily-logs-service"
 import type { ClientNutritionDayTarget } from "@/services/nutrition-days-service"
+import type { RosterHabit, RosterHabitEntry } from "@/services/client-habits-service"
 import type { DayOfWeek } from "@/types/check-in"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
@@ -74,14 +76,17 @@ export type ClientLogRow = {
   recorded_on: string | null
 }
 
-type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"]
-type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"]
-
 type ClientData = {
   client: ClientInfo
   logs: DailyLog[]
-  habits: DailyHabit[]
-  habitLogs: DailyHabitLog[]
+  /** The client's habits a version covers on a day of the window, with those days' versions and one-date edits. */
+  habits: ClientHabit[]
+  /**
+   * The client's habit entries over the window — either answer is the client
+   * acting. Null when the entries read failed: unknown, never none, so a failed
+   * read cannot list every planned day as missed.
+   */
+  habitEntries: HabitEntryRead[] | null
   trainingEvents: TrainingEventRow[]
   /** Days the client logged a body measurement themselves — the fifth logged-day source. */
   clientLogDates: string[]
@@ -114,8 +119,8 @@ type ClientData = {
 export function groupClientData(
   clients: ClientInfoWithCheckIn[],
   dayRows: DayFormRows | null,
-  allHabits: DailyHabitRow[] | null,
-  allHabitLogs: DailyHabitLogRow[] | null,
+  allHabits: RosterHabit[] | null,
+  allHabitEntries: RosterHabitEntry[] | null,
   eventRows: TrainingEventRow[] | null,
   clientLogRows: ClientLogRow[] | null,
   nutritionWindows: ClientPlanWindow[] | null = null,
@@ -136,7 +141,7 @@ export function groupClientData(
       client,
       logs: [],
       habits: [],
-      habitLogs: [],
+      habitEntries: allHabitEntries === null ? null : [],
       trainingEvents: [],
       clientLogDates: [],
       nutritionWindows: [],
@@ -180,50 +185,12 @@ export function groupClientData(
     }
   }
 
-  // Group habits by client
-  if (allHabits) {
-    allHabits.forEach((habitRow: DailyHabitRow) => {
-      const clientData = clientDataMap.get(habitRow.client_id)
-      if (clientData) {
-        const habit: DailyHabit = {
-          id: habitRow.id,
-          coachId: habitRow.coach_id,
-          clientId: habitRow.client_id,
-          name: habitRow.name,
-          description: habitRow.description ?? undefined,
-          targetValue: habitRow.target_value ?? undefined,
-          targetUnit: habitRow.target_unit ?? undefined,
-          isBoolean: habitRow.is_boolean,
-          isActive: habitRow.is_active,
-          sortOrder: habitRow.sort_order,
-          effectiveDate: habitRow.effective_date,
-          createdAt: habitRow.created_at,
-          updatedAt: habitRow.updated_at,
-        }
-        clientData.habits.push(habit)
-      }
-    })
+  // Group the habits and their entries by client
+  for (const { clientId, ...habit } of allHabits ?? []) {
+    clientDataMap.get(clientId)?.habits.push(habit)
   }
-
-  // Group habit logs by client
-  if (allHabitLogs) {
-    allHabitLogs.forEach((logRow: DailyHabitLogRow) => {
-      const clientData = clientDataMap.get(logRow.client_id)
-      if (clientData) {
-        const log: DailyHabitLog = {
-          id: logRow.id,
-          dailyHabitId: logRow.daily_habit_id,
-          clientId: logRow.client_id,
-          date: logRow.date,
-          completed: logRow.completed,
-          value: logRow.value ?? undefined,
-          notes: logRow.notes ?? undefined,
-          createdAt: logRow.created_at,
-          updatedAt: logRow.updated_at,
-        }
-        clientData.habitLogs.push(log)
-      }
-    })
+  for (const { clientId, ...entry } of allHabitEntries ?? []) {
+    clientDataMap.get(clientId)?.habitEntries?.push(entry)
   }
 
   // Group training events per client
@@ -267,7 +234,8 @@ export function groupClientData(
  * — never a private union. An assembled day carries the wellness scores of its
  * wellness row and the consumed values of its food row, so it counts for each
  * source whose values it carries; a workout counts by its event's status; a
- * habit log counts whether ticked or not, because either is the client acting.
+ * habit entry counts whatever it answers — done or not, or a number — because
+ * any answer is the client acting.
  */
 export function loggedDaysFor(
   data: ClientData,
@@ -277,7 +245,7 @@ export function loggedDaysFor(
     {
       wellness: data.logs.filter(hasWellnessReading).map((log) => log.date),
       nutrition: data.logs.filter(hasNutritionEntry).map((log) => log.date),
-      habits: data.habitLogs.map((log) => log.date),
+      habits: (data.habitEntries ?? []).map((entry) => entry.date),
       training: data.trainingEvents
         .filter((event) => isTrainingLogStatus(event.status))
         .map((event) => event.date),
@@ -300,9 +268,10 @@ export function evaluateAndSortTriggers(
     // Skip only a client with nothing logged and nothing prescribed: the
     // pattern triggers need logs, the absence signal needs prescribed work, and
     // a client with prescribed work but no logs must NOT be skipped. A plan
-    // window counts as prescribed: the client whose every prescription has
-    // ended and who has stopped logging is exactly the one the
-    // prescription-ending trigger exists for.
+    // window counts as prescribed, and so does a habit a version covers on a
+    // day of the window: the client whose every prescription has ended and
+    // who has stopped logging is exactly the one the prescription-ending
+    // trigger exists for.
     const logged = loggedDaysFor(data, dateRange)
     if (
       logged.length === 0 &&
@@ -314,6 +283,13 @@ export function evaluateAndSortTriggers(
       continue
     }
 
+    // The logged days hold every habit entry, so while the entries are unknown
+    // (their read failed) a day the client only ticked a habit would read as a
+    // day they logged nothing: a false gap, or "No activity logged" for a
+    // client who only ticks habits. The two triggers that judge the logged
+    // days are silent for the request then, as the missed-habit lines are.
+    const habitEntriesKnown = data.habitEntries !== null
+
     // Run all trigger evaluations. Day-deciding triggers receive a "now"
     // derived from the feed's window end (the COACH-local today, Session 7.84)
     // so the whole feed judges days on one anchor — a trigger defaulting to
@@ -322,21 +298,27 @@ export function evaluateAndSortTriggers(
     const triggers: (TriggerResult | null)[] = [
       evaluateMoodEnergyDrop(data.logs, "mood"),
       evaluateMoodEnergyDrop(data.logs, "energy"),
-      evaluateLoggingGap(logged, dateRange),
+      habitEntriesKnown ? evaluateLoggingGap(logged, dateRange) : null,
       evaluateNutritionMisses(data.logs),
       evaluateTrainingMisses(data.trainingEvents, windowNow, data.checkInDay),
       evaluatePartialTrainingPattern(data.trainingEvents),
       evaluateHighStress(data.logs),
       evaluateHighSoreness(data.logs),
-      evaluateHabitDropoff(data.habitLogs, data.habits, windowNow),
+      // One line per missed habit, judged over the days gone by before the
+      // window's end, the feed's one anchor. With the entries unknown (their
+      // read failed) nothing can be judged, so the lines are silent for the
+      // request, as a failed target read silences the nutrition triggers.
+      ...(data.habitEntries === null ? [] : evaluateMissedHabits(data.habits, data.habitEntries, dateRange.end)),
       evaluateActivityCalMismatch(data.logs, data.trainingEvents, windowNow),
-      evaluateNoEngagement({
-        loggedDays: logged,
-        habits: data.habits,
-        trainingEvents: data.trainingEvents,
-        startDate: data.startDate,
-        now: windowNow,
-      }),
+      habitEntriesKnown
+        ? evaluateNoEngagement({
+            loggedDays: logged,
+            habits: data.habits,
+            trainingEvents: data.trainingEvents,
+            startDate: data.startDate,
+            now: windowNow,
+          })
+        : null,
       evaluatePrescriptionEnding({ track: "nutrition", windows: data.nutritionWindows, blocks: data.blocks, today: dateRange.end }),
       evaluatePrescriptionEnding({ track: "training", windows: data.trainingWindows, blocks: data.blocks, today: dateRange.end }),
     ]
@@ -349,7 +331,8 @@ export function evaluateAndSortTriggers(
           severity: result.severity,
           message: result.message,
           affectedDays: result.affectedDays,
-          metricData: result.metricData
+          metricData: result.metricData,
+          ...(result.habitId === undefined ? {} : { habitId: result.habitId }),
         })
       }
     })
@@ -396,7 +379,18 @@ export type DismissalRow = {
   dismissed_at: string
 }
 
-/** Filters out alerts that were dismissed before the most recent affected day */
+/**
+ * Filters out alerts that were dismissed on or after their most recent
+ * affected day: an alert comes back when it has a day after the dismissal's.
+ * An alert is matched to its dismissal by its key (`alertDismissalKey`): its
+ * type, and for a missed-habit line its habit too.
+ *
+ * A missed-habit line also comes back for a miss on the dismissal day itself.
+ * The line judges the days gone by and never lists the feed's today, and a
+ * dismissal is stamped with the coach's today, so every day on the line the
+ * coach dismissed is before it: a miss on that day is the habit missed again
+ * on a later day (decision D4).
+ */
 export function filterDismissedAlerts(
   clients: ClientWithAlerts[],
   dismissals: DismissalRow[] | null
@@ -411,10 +405,10 @@ export function filterDismissedAlerts(
   const filtered: ClientWithAlerts[] = []
   for (const client of clients) {
     const remainingAlerts = client.alerts.filter(alert => {
-      const dismissedAt = dismissalMap.get(`${client.clientId}:${alert.type}`)
+      const dismissedAt = dismissalMap.get(`${client.clientId}:${alertDismissalKey(alert)}`)
       if (!dismissedAt) return true
       const maxAffectedDay = alert.affectedDays.reduce((max, day) => day > max ? day : max, "")
-      return maxAffectedDay > dismissedAt
+      return alert.type === "habit_missed" ? maxAffectedDay >= dismissedAt : maxAffectedDay > dismissedAt
     })
     if (remainingAlerts.length > 0) {
       filtered.push({ ...client, alerts: remainingAlerts })

@@ -12,7 +12,7 @@ The daily logs are not the product. They are the feedstock for the two systems t
 2. **Auto-populated weekly check-in** (`services/check-in-context-service.ts`): pre-fills the Sunday check-in form from the week's daily logs, so the client reviews and annotates rather than refilling.
 
 Every design decision in this redesign must preserve or strengthen these two feeds. Concretely:
-- Wellness and nutrition each write their own table by client and date, habits write `daily_habit_logs` by client and date; the attention feed and the check-in context read `wellness_logs` and `nutrition_logs` by client and date.
+- Wellness and nutrition each write their own table by client and date, habits write `client_habit_logs`, one entry per habit per day, found by client and date; the attention feed and the check-in context read `wellness_logs` and `nutrition_logs` by client and date.
 - Training moves to event-keyed writes, which fixes the edited-clone bleed that currently gives the check-in an ambiguous "sessions completed" count.
 - The attention feed's training signals rewire to `training_events.status` directly (no denormalized flag).
 - The check-in's AI summary gets enriched with `exercise_logs` data for richer progression insights.
@@ -35,7 +35,7 @@ Pre-launch, no users. The next milestones are iOS and Android app builds, then l
 - **No workout detail.** `exercise_logs` (migration 027, columns `actual_sets`, `actual_reps`, `actual_weight`, `notes`) has no write path or UI. (Its `weight_unit` column was dropped by migration 141 — loads are canonical kilograms.)
 - **Architecture drift.** `docs/ARCHITECTURE.md` states events are the source of truth. The coach calendar follows this; the client portal does not.
 - **Known date bug** (TECHNICAL-DEBT.md): `saveUnplannedActivities` uses `new Date()` instead of the selected date. Past and future logging is already broken.
-- **Duplicate type definitions** (TECHNICAL-DEBT.md): `TodaysActivity`, `UnplannedActivity`, `HabitLogWithDetails` repeated across 4 to 5 files.
+- **Duplicate type definitions** (TECHNICAL-DEBT.md): `TodaysActivity`, `UnplannedActivity` repeated across 4 to 5 files.
 
 ---
 
@@ -56,7 +56,7 @@ Clicking a card navigates to a dedicated detail page that fetches only its own d
 - `/client/training?date=X&eventId=Y`: per-set exercise tracker.
 - `/client/nutrition?date=X`: calories and macro numeric entry.
 - `/client/wellness?date=X`: mood/energy/sleep/stress inputs.
-- `/client/habits?date=X`: habit checklist.
+- `/client/habits?date=X`: habit checklist: every habit running that day, a tick or a number against its target.
 
 Saves are per-page and independent. There is no shared "Log Day" button. The browser back button returns to the home with the date preserved.
 
@@ -110,17 +110,17 @@ New endpoint: `PATCH /api/client/settings` with zod validation for the supported
   training: TrainingCardSummary[],
   nutrition: NutritionCardSummary,
   wellness: WellnessCardSummary,
-  habits: HabitCardSummary
+  habits: HabitDaySummary   // { plannedToday, doneToday, running }
 }
 ```
-Each summary is minimal: name, logged-state boolean, progress counts. Target under 100ms, under 5KB.
+Each summary is minimal: name, logged-state boolean, progress counts. The habits count the habits running on the day, those planned on it, and how many of those were done that day (`types/habits.ts`). Target under 100ms, under 5KB.
 
 ### Detail endpoints
 
 - `GET /api/client/training/events/[eventId]`: full event plus the resolved session header, its groups of exercises, existing `session_log` + `exercise_logs`.
 - `GET /api/client/daily-logs/[date]/nutrition`: nutrition event target plus any existing log.
 - `GET /api/client/daily-logs/[date]/wellness`: wellness log.
-- `GET /api/client/daily-logs/[date]/habits`: habits plus the day's logs.
+- `GET /api/client/habits/day?date=X`: every habit running on the date, planned that day or not, with the day's target, the client's entry and the week's figures.
 - `GET /api/client/training-plan` + `GET /api/client/nutrition-plan`: the Program tab's plan cards.
 
 ### Coach drill-down
@@ -132,9 +132,9 @@ Each summary is minimal: name, logged-state boolean, progress counts. Target und
 - `POST /api/client/training/events/[eventId]/log`: bulk write of `session_logs` plus `exercise_logs` including `prescribed_session_snapshot` and `prescribed_exercise_snapshot`. Updates `training_events.status`. Cascades nutrition.
 - `PATCH /api/client/daily-logs/[date]/nutrition`: kcal plus macros on `nutrition_logs`.
 - `PATCH /api/client/daily-logs/[date]/wellness`: wellness fields on `wellness_logs`.
-- Habits continue to use existing habit-log endpoints.
+- `PUT` / `DELETE /api/client/habits/[habitId]/days/[date]`: a habit's entry for the day, one per habit per day: `{ done }` for a tick habit or `{ value }` for a number habit, with an optional note. Answers with the habit's day and week as they now stand, or `data: null` when the entry is saved but they could not be read back: the page keeps the change and reads the day again.
 
-All write endpoints populate the child `*_plan_id` links from the authoritative plan for that date. All write endpoints enforce the closed-period lock (see "Date edit rules" below) server-side.
+The nutrition `PATCH` populates the log's `nutrition_plan_id` from the version covering that date (`resolvePlanContextForDate`), the one write endpoint that stamps a plan link. All write endpoints enforce the closed-period lock (see "Date edit rules" below) server-side.
 
 ---
 
@@ -240,11 +240,11 @@ The rule above lives in one file — `lib/daily-log-permissions.ts` — as pure 
 
 Both are imported by every surface that cares (UI detail pages for disabled/notice state; every write endpoint for hard rejection). Neither UI nor server reimplements the date math, so they cannot disagree about whether a day is editable (which matters around client-local midnight).
 
-**Everything on a day locks together.** Nutrition, wellness, habits and training all belong to the same reporting period, so they answer as one. The per-habit narrowing (`habitId`) went with the logged-day rule it served: a habit's own log row decided the lock only while "already logged" was the thing that closed a day.
+**Everything on a day locks together.** Nutrition, wellness, habits and training all belong to the same reporting period, so they answer as one: a habit's entry is refused on a locked day whatever the habit.
 
 **The boundary reaches the app on two wires**, from that one derivation: `GET /api/client/me`, refetched after a submit, and `clientInfo.logsOpenFrom` on `GET /api/client/check-in-context` for the form's training checklist, which never reads the profile.
 
-Same pattern for plan context: `resolvePlanContextForDate(clientId, date): { nutritionPlanId, trainingPlanId }` is the single function every write endpoint calls to populate the `*_plan_id` links. Do not duplicate this query per endpoint.
+Same pattern for plan context: `resolvePlanContextForDate(clientId, date): { nutritionPlanId, trainingPlanId }` is the single function that resolves a date's plan links; the nutrition log's `PATCH` calls it to stamp `nutrition_plan_id`. Do not duplicate this query per endpoint.
 
 ---
 
@@ -278,7 +278,7 @@ of `CLIENT-PORTAL-EXECUTION-PLAN.md` (Sessions 8.1-8.3) is superseded with it.
 
 1. **API contract is what mobile consumes.** Ship the right contract once. Changing it later means coordinating web, iOS, and Android simultaneously (forced updates, dual-write, data migration).
 2. **Day-centric swipe UX is the mobile UX.** Validating it on web before writing it natively saves a rebuild.
-3. **Data is already day-keyed.** `training_events`, `wellness_logs`, `nutrition_logs` and `daily_habit_logs` are all keyed by client and date, and a nutrition day is computed per date from the version covering it (the day table went in migration 170; `docs/ARCHITECTURE.md` → "The window is the row"). The redesign is primarily a UI plus API-shape change. (The weight-unit column anticipated here went the other way: migrations 140 + 141 made storage canonical kg/cm and DROPPED every unit-tag column.)
+3. **Data is already day-keyed.** `training_events`, `wellness_logs` and `nutrition_logs` are keyed by client and date, `client_habit_logs` holds one entry per habit per day found the same way, and a nutrition day is computed per date from the version covering it (the day table went in migration 170; `docs/ARCHITECTURE.md` → "The window is the row"). The redesign is primarily a UI plus API-shape change. (The weight-unit column anticipated here went the other way: migrations 140 + 141 made storage canonical kg/cm and DROPPED every unit-tag column.)
 4. **Detailed workout logging is a mobile-first feature.** Clients log sets on their phone. Shipping empty `exercise_logs` to mobile launch means that surface has no implementation at all.
 
 ---
@@ -332,7 +332,7 @@ No `useClientDay` hook. `useSWR` is called directly in the page. Only create a w
 ## Type consolidation (per TECHNICAL-DEBT.md)
 
 Before Phase 1:
-- Consolidate `TodaysActivity`, `UnplannedActivity`, `HabitLogWithDetails` into single canonical types.
+- Consolidate `TodaysActivity`, `UnplannedActivity` into single canonical types.
 - Fix silent error handlers (`handleSessionCompletion`, `saveUnplannedActivities`) in code paths being replaced; surface errors via toast while the code still exists.
 - Replace all `.split('T')[0]` date handling with `getDateString()`.
 
@@ -386,7 +386,7 @@ Two systems are partially coupled to the old model and get addressed in Phase 6.
 
 **Weekly check-in system**: the context API already reads events for targets but uses session-keyed `session_logs` for completion counts and the day reader (`getDailyLogs`, over `wellness_logs` and `nutrition_logs` by client and date) for 7-day wellness/nutrition history. Wellness and nutrition keep their per-card writes, each to its own table. Training writes move to event-keyed, which fixes the ambiguous "X of Y completed" count for cloned sessions. Phase 6 scope: switch the completion count query from `session_logs` to `training_events.status`, optionally enrich the AI summary with `exercise_logs` data, UX refresh if desired.
 
-**Needs-attention feed**: 7 of 8 signals derive from the wellness and food logs (wellness, nutrition adherence, logging gap, habit dropoff, logging metadata). These survive unchanged. The "training missed" signal already reads `training_events`. The rewire happens as part of Phase 1 (no denormalized flag ever; Phase 7 removed).
+**Needs-attention feed**: most signals derive from the wellness and food logs (wellness, nutrition adherence, logging gap, logging metadata). These survive unchanged. The missed-habit lines read the habit entries against each habit's planned days. The "training missed" signal already reads `training_events`. The rewire happens as part of Phase 1 (no denormalized flag ever; Phase 7 removed).
 
 ---
 
@@ -398,7 +398,7 @@ The data/API layer is where scale work is invested (the web app is a test harnes
 
 Scoped to **paginated, time-ordered "load older" history streams** — not a blanket mandate to bolt a cursor onto every small full-return set. The keyset contract (opaque base64url `{createdAt, id}` via `lib/cursor.ts`, established Session 3.7) is the right tool when a list is genuinely unbounded and deep-paged. Per-endpoint judgment, with the calls actually made:
 
-- `/api/client/habits` — a client's small set of assigned habits. **Full return**; no cursor.
+- `/api/client/habits/day`, `/week`, `/progress` — a client's small set of habits, **in full**, over the days asked: one day, one week, or the Journey's weeks (at most 26). No cursor.
 - `/api/client/training/completions` — a fixed 1-week window. **Bounded by the window**; no cursor.
 - `getClientExerciseList` — a frequency-sorted, distinct `GROUP BY` over a client's logged exercises, bounded by exercise *variety* (not history depth). **Left as a bounded full return.** Convert to keyset only if a genuinely unbounded/deep-paged list appears here; none did.
 - `/api/client/check-ins` — the one genuinely deep history stream: keyset-default, `?offset=` legacy.

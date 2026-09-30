@@ -84,14 +84,34 @@ describe("PUT /api/client/habits/[habitId]/days/[date]", () => {
     expect(getHabitEntryResult).toHaveBeenCalledWith("client-1", HABIT, "2026-09-29", ANCHOR);
   });
 
-  it("says the entry is saved when only reading the week back fails", async () => {
+  it("answers a saved entry as saved, with no data, when only reading the week back fails", async () => {
     vi.mocked(getHabitEntryResult).mockRejectedValue(new Error("read failed"));
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const response = await PUT(request("PUT", { value: 3.1 }), params());
-    expect(response.status).toBe(500);
-    expect((await response.json()).error).toBe("Your change is saved. Refresh to see the week.");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, data: null });
     expect(saveHabitEntry).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith("Habit entry written, reading it back failed:", expect.any(Error));
     spy.mockRestore();
+  });
+
+  it("answers a saved entry as saved, with no data, when the week's anchor — read alongside the write — fails", async () => {
+    vi.mocked(getClientWeekAnchor).mockRejectedValue(new Error("anchor failed"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const response = await PUT(request("PUT", { value: 3.1 }), params());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, data: null });
+    expect(saveHabitEntry).toHaveBeenCalledTimes(1);
+    expect(getHabitEntryResult).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("answers a refused write with its refusal, whatever the anchor read did", async () => {
+    vi.mocked(getClientWeekAnchor).mockRejectedValue(new Error("anchor failed"));
+    vi.mocked(saveHabitEntry).mockRejectedValue(new DayLockedError("2026-09-29", "habit"));
+    const response = await PUT(request("PUT", { done: true }), params());
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe("This day is locked.");
   });
 
   it("saves a tick with its note trimmed, and an empty note as none", async () => {
@@ -150,6 +170,15 @@ describe("DELETE /api/client/habits/[habitId]/days/[date]", () => {
     const response = await DELETE(request("DELETE"), params());
     expect(await response.json()).toEqual({ success: true, data: RESULT });
     expect(clearHabitEntry).toHaveBeenCalledWith({ clientId: "client-1", habitId: HABIT, date: "2026-09-29" });
+  });
+
+  it("answers a cleared entry as saved, with no data, when reading the week back fails", async () => {
+    vi.mocked(getHabitEntryResult).mockRejectedValue(new Error("read failed"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const response = await DELETE(request("DELETE"), params());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, data: null });
+    spy.mockRestore();
   });
 
   it("clears nothing on a locked day or for another client's habit", async () => {

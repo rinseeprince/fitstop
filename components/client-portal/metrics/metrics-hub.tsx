@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { Flame, TrendingUp, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,9 +14,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClientProgressMetrics } from "@/hooks/use-client-progress-metrics";
 import { MetricChartCard } from "@/components/metrics/metric-chart-card";
-import { getDateString, getTodayDateString } from "@/lib/date-helpers";
+import { useClientHabitProgress } from "@/hooks/use-client-portal-habits";
+import { HABIT_PROGRESS_WEEKS_DEFAULT } from "@/lib/constants";
 import type { ProgressData } from "@/services/client-portal-progress";
-import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
 import { GoalsSection } from "./goals-section";
 import { DateRangeSelector } from "./date-range-selector";
 import { HabitsSection } from "./habits-section";
@@ -97,26 +97,11 @@ export function MetricsHub({ initialTab = "physique" }: MetricsHubProps) {
     onError: (err) => console.error("Failed to load progress data:", err),
   });
 
-  const habitWindow = useMemo(() => {
-    const endDate = getTodayDateString();
-    const startDate = getDateString(new Date(Date.now() - 28 * 24 * 60 * 60 * 1000));
-    return { startDate, endDate };
-  }, []);
-
-  const { data: habitsResp } = useSWR<{ data: DailyHabit[] }>(
-    "/api/client/habits",
-    swrFetcher,
-    SWR_CONFIG,
-  );
-  const { data: habitLogsResp } = useSWR<{ data: DailyHabitLog[] }>(
-    `/api/client/habits/logs?startDate=${habitWindow.startDate}&endDate=${habitWindow.endDate}`,
-    swrFetcher,
-    SWR_CONFIG,
-  );
+  // The habits pane: each habit's recent weeks and last days, on the client's
+  // own calendar, from the server.
+  const { progress: habitProgress } = useClientHabitProgress(HABIT_PROGRESS_WEEKS_DEFAULT);
 
   const progressData = progressResp?.data ?? null;
-  const habits = habitsResp?.data ?? [];
-  const habitLogs = habitLogsResp?.data ?? [];
 
   const { bodyMetrics, wellnessMetrics } = useClientProgressMetrics(progressData);
 
@@ -204,7 +189,7 @@ export function MetricsHub({ initialTab = "physique" }: MetricsHubProps) {
           </CarouselItem>
 
           <CarouselItem>
-            <HabitsSection habits={habits} habitLogs={habitLogs} />
+            <HabitsSection habits={habitProgress?.habits ?? []} />
           </CarouselItem>
         </CarouselContent>
       </Carousel>

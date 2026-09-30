@@ -1,71 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { dailyHabitSchema } from "@/lib/validations/daily-habit";
-import { getClientHabits, createHabit } from "@/services/daily-habits-service";
-import { getClientById } from "@/services/client-service";
+import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
+import { addHabits } from "@/services/client-habit-writes-service";
+import { getCoachHabitList } from "@/services/client-habit-figures-service";
+import { getClientTodayString } from "@/services/today-service";
+import { recordAuditEvents } from "@/services/audit-log-service";
+import { AUDIT_ACTIONS } from "@/lib/constants";
+import { habitWriteErrorResponse } from "@/lib/habits/habit-write-response";
+import { habitListAfterWrite } from "@/lib/habits/habit-list-after-write";
+import { addHabitsSchema } from "@/lib/validations/client-habits";
 
-async function verifyClientOwnership(
-  clientId: string,
-  coachId: string
-): Promise<boolean> {
-  const client = await getClientById(clientId);
-  return client !== null && client.coachId === coachId;
-}
+type Params = { params: Promise<{ id: string }> };
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const rateLimitResult = await apiRateLimit(request);
+/**
+ * The client's habits in their order — running, upcoming and stopped — each
+ * with its versions (the history), its one-date edits from the client's today
+ * on, whether the client has made any entry for it, where it stands today and
+ * its words; and the client's today.
+ */
+export async function GET(request: NextRequest, { params }: Params) {
+  const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
     const { id: clientId } = await params;
-    const coachId = await getAuthenticatedCoachId();
+    const auth = await requireCoachOwnsClient(clientId, request);
+    if (!auth.authorized) return auth.response;
 
-    if (!coachId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const hasAccess = await verifyClientOwnership(clientId, coachId);
-    if (!hasAccess) {
-      return NextResponse.json(
-        { success: false, error: "Client not found or access denied" },
-        { status: 404 }
-      );
-    }
-
-    const { searchParams } = new URL(request.url);
-    const includeInactive = searchParams.get("includeInactive") === "true";
-
-    const habits = await getClientHabits(clientId, includeInactive);
-
-    return NextResponse.json({
-      success: true,
-      data: habits,
-    });
-  } catch (error) {
-    console.error("Error fetching client habits:", error);
+    const list = await getCoachHabitList(clientId);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch client habits",
-      },
-      { status: 500 }
+      { success: true, data: list },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
+  } catch (error) {
+    console.error("Error fetching habits:", error);
+    return NextResponse.json({ success: false, error: "Failed to fetch habits" }, { status: 500 });
   }
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const rateLimitResult = await apiRateLimit(request);
+/**
+ * One or more habits added from a day — the client's today when `startsOn` is
+ * absent — appended to the client's list in the order given. Answers with the
+ * new habits' ids and the client's habits as they now stand.
+ */
+export async function POST(request: NextRequest, { params }: Params) {
+  const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
@@ -73,60 +53,51 @@ export async function POST(
 
   try {
     const { id: clientId } = await params;
-    const coachId = await getAuthenticatedCoachId();
+    const auth = await requireCoachOwnsClient(clientId, request);
+    if (!auth.authorized) return auth.response;
 
-    if (!coachId) {
+    const validation = addHabitsSchema.safeParse(await request.json().catch(() => null));
+    if (!validation.success) {
       return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const hasAccess = await verifyClientOwnership(clientId, coachId);
-    if (!hasAccess) {
-      return NextResponse.json(
-        { success: false, error: "Client not found or access denied" },
-        { status: 404 }
-      );
-    }
-
-    const rawBody = await request.json();
-    
-    // Convert snake_case to camelCase for compatibility
-    const normalizedBody = {
-      ...rawBody,
-      targetValue: rawBody.targetValue ?? rawBody.target_value,
-      targetUnit: rawBody.targetUnit ?? rawBody.target_unit,
-      isBoolean: rawBody.isBoolean ?? rawBody.is_boolean,
-    };
-    
-    const validationResult = dailyHabitSchema.safeParse(normalizedBody);
-
-    if (!validationResult.success) {
-      console.error("Validation error:", validationResult.error.format());
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid input data",
-        },
+        { success: false, error: "Invalid input", details: validation.error.errors },
         { status: 400 }
       );
     }
+    const body = validation.data;
 
-    const habit = await createHabit(coachId, clientId, validationResult.data);
-
-    return NextResponse.json({
-      success: true,
-      data: habit,
+    const today = await getClientTodayString(clientId);
+    const startsOn = body.startsOn ?? today;
+    const habitIds = await addHabits({
+      clientId,
+      today,
+      startsOn,
+      createdBy: auth.coachId,
+      habits: body.habits.map((habit) => ({
+        name: habit.name,
+        howTo: habit.howTo ?? null,
+        measure: habit.measure,
+        unit: habit.unit ?? null,
+        direction: habit.direction ?? null,
+        target: habit.target ?? null,
+        schedule: "weekdays" in habit ? { weekdays: habit.weekdays } : { timesPerWeek: habit.timesPerWeek },
+      })),
     });
-  } catch (error) {
-    console.error("Error creating habit:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to create habit",
-      },
-      { status: 500 }
+
+    void recordAuditEvents(
+      habitIds.map((habitId) => ({
+        actorId: auth.coachId,
+        actorRole: "trainer" as const,
+        action: AUDIT_ACTIONS.HABIT_CREATE,
+        targetTable: "client_habits",
+        targetId: habitId,
+        clientId,
+        metadata: { startsOn },
+        request,
+      }))
     );
+
+    return await habitListAfterWrite(clientId, today, (habits) => ({ habitIds, habits }));
+  } catch (error) {
+    return habitWriteErrorResponse(error);
   }
 }

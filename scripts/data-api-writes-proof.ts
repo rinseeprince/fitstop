@@ -14,14 +14,15 @@
  * habit, check-ins, reading and invitation cascade) and the login (its profile
  * cascades). Every fixture number is distinct.
  *
- *   1  the client, through the side door: inserts wellness and a habit log on
- *      one day, wellness and a food log on another, and a check-in; rewrites a
- *      seeded day's wellness, food log and habit log
+ *   1  the client, through the side door: inserts wellness and a habit entry
+ *      on one day, wellness and a food log on another, and a check-in;
+ *      rewrites a seeded day's wellness, food log and habit entry
  *   2  the coach, through the side door: inserts a check-in for the client,
  *      then deletes the client — before the push it is gone, and the proof
  *      recreates it
  *   3  the app still writes: the coach activates the pending client, through
- *      the one write rule kept; the client saves wellness and ticks the habit
+ *      the one write rule kept; the client saves wellness and ticks the habit,
+ *      through its entry route
  *   4  the catalog: 56 write rules in public before the push, one after it —
  *      activation's
  *
@@ -34,8 +35,10 @@ import "./env-bootstrap";
 import { execFileSync } from "node:child_process";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { appendMeasurements } from "@/services/measurements-service";
+import { addHabits } from "@/services/client-habit-writes-service";
 import { getClientTodayString } from "@/services/today-service";
 import { addDaysToDateString } from "@/lib/date-helpers";
+import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import { mintSession, send, type ProofSession } from "./proof-session";
 
 const COACH_EMAIL = "samuel.k@taboola.com";
@@ -147,19 +150,35 @@ async function makeClient(coachId: string, email: string, userId: string | null,
   return data.id;
 }
 
-/** Activation needs a weight reading; the habit tick needs a habit. */
-async function giveWeightAndHabit(clientId: string, coachId: string, today: string): Promise<string> {
+/**
+ * Activation needs a weight reading; the habit tick needs a habit, running on
+ * every day the proof writes an entry on — added from `habitStart`, which the
+ * function is handed as its today (it refuses a start before the today it is
+ * given), through add_client_habits, the only way a habit is written.
+ */
+async function giveWeightAndHabit(clientId: string, coachId: string, today: string, habitStart: string): Promise<string> {
   await appendMeasurements({ clientId, source: "intake", recordedOn: today, values: { weight: 76.4 } });
-  const { data, error } = await supabaseAdmin
-    .from("daily_habits")
-    .insert({ coach_id: coachId, client_id: clientId, name: "Data API proof habit", is_boolean: true })
-    .select("id")
-    .single();
-  if (error || !data) throw new Error(`habit insert: ${error?.message}`);
-  return data.id;
+  const [habitId] = await addHabits({
+    clientId,
+    today: habitStart,
+    startsOn: habitStart,
+    createdBy: coachId,
+    habits: [
+      {
+        name: "Data API proof habit",
+        howTo: null,
+        measure: "tick",
+        unit: null,
+        direction: null,
+        target: null,
+        schedule: { weekdays: [...DAYS_OF_WEEK] },
+      },
+    ],
+  });
+  return habitId;
 }
 
-async function countOf(table: "wellness_logs" | "check_ins" | "daily_habits", clientId: string): Promise<number> {
+async function countOf(table: "wellness_logs" | "check_ins" | "client_habits", clientId: string): Promise<number> {
   const { count, error } = await supabaseAdmin
     .from(table)
     .select("id", { count: "exact", head: true })
@@ -209,11 +228,11 @@ async function main(): Promise<void> {
 
     const T = await getClientTodayString(A);
     const day = (n: number) => addDaysToDateString(T, n);
-    const D1 = day(-3); // the side door's own day: wellness and a habit log
+    const D1 = day(-3); // the side door's own day: wellness and a habit entry
     const D2 = day(-4); // a seeded day the side door rewrites
     const D3 = day(-5); // a day the side door writes wellness and food on
-    const START = day(-6); // the start date activation sends
-    let H = await giveWeightAndHabit(A, coach.id, T);
+    const START = day(-6); // the start date activation sends, and the habit's first day
+    let H = await giveWeightAndHabit(A, coach.id, T, START);
 
     const seeded = async <T extends { id: string }>(
       query: PromiseLike<{ data: T | null; error: { message: string } | null }>,
@@ -236,8 +255,12 @@ async function main(): Promise<void> {
       "food log"
     );
     const HL2 = await seeded(
-      supabaseAdmin.from("daily_habit_logs").insert({ daily_habit_id: H, client_id: A, date: D2, completed: false }).select("id").single(),
-      "habit log"
+      supabaseAdmin
+        .from("client_habit_logs")
+        .insert({ client_habit_id: H, client_id: A, date: D2, done: false })
+        .select("id")
+        .single(),
+      "habit entry"
     );
 
     const client = await mintSession(email, "client");
@@ -266,14 +289,14 @@ async function main(): Promise<void> {
       .maybeSingle();
     insertCheck("a food log", food, foodRow?.calories_consumed === 2465 && foodRow.protein_g === 171);
 
-    const habitLog = await sideDoor(client, "POST", "daily_habit_logs", { daily_habit_id: H, client_id: A, date: D1, completed: true });
-    const { data: habitLogRow } = await supabaseAdmin
-      .from("daily_habit_logs")
-      .select("completed")
-      .eq("daily_habit_id", H)
+    const habitEntry = await sideDoor(client, "POST", "client_habit_logs", { client_habit_id: H, client_id: A, date: D1, done: true });
+    const { data: habitEntryRow } = await supabaseAdmin
+      .from("client_habit_logs")
+      .select("done")
+      .eq("client_habit_id", H)
       .eq("date", D1)
       .maybeSingle();
-    insertCheck("a habit log", habitLog, habitLogRow?.completed === true);
+    insertCheck("a habit entry", habitEntry, habitEntryRow?.done === true);
 
     const clientCheckIn = await sideDoor(client, "POST", "check_ins", { client_id: A, notes: "side-door check-in from the client" });
     const { count: clientCheckIns } = await supabaseAdmin
@@ -291,9 +314,9 @@ async function main(): Promise<void> {
     const { data: foodAfter } = await supabaseAdmin.from("nutrition_logs").select("calories_consumed").eq("id", N2).maybeSingle();
     changeCheck("its food log", rewriteFood, foodAfter?.calories_consumed === 3120, foodAfter?.calories_consumed === 1810);
 
-    const rewriteHabit = await sideDoor(client, "PATCH", `daily_habit_logs?id=eq.${HL2}`, { completed: true });
-    const { data: habitAfter } = await supabaseAdmin.from("daily_habit_logs").select("completed").eq("id", HL2).maybeSingle();
-    changeCheck("its habit log", rewriteHabit, habitAfter?.completed === true, habitAfter?.completed === false);
+    const rewriteHabit = await sideDoor(client, "PATCH", `client_habit_logs?id=eq.${HL2}`, { done: true });
+    const { data: habitAfter } = await supabaseAdmin.from("client_habit_logs").select("done").eq("id", HL2).maybeSingle();
+    changeCheck("its habit entry", rewriteHabit, habitAfter?.done === true, habitAfter?.done === false);
 
     console.info(`2. The coach, through the side door (${mode} the push)`);
     const coachCheckIn = await sideDoor(coachSession, "POST", "check_ins", { client_id: A, notes: "side-door check-in from the coach" });
@@ -318,8 +341,8 @@ async function main(): Promise<void> {
       // Recreated under the same id and login, so the session and the auth
       // cache still resolve to it for the app's writes below.
       await makeClient(coach.id, email, userId, A);
-      H = await giveWeightAndHabit(A, coach.id, T);
-      check("the proof recreates the client", (await countOf("daily_habits", A)) === 1);
+      H = await giveWeightAndHabit(A, coach.id, T, START);
+      check("the proof recreates the client", (await countOf("client_habits", A)) === 1);
     }
 
     console.info("3. The app still writes");
@@ -364,14 +387,14 @@ async function main(): Promise<void> {
       savedRow,
     });
 
-    const ticked = await send(client, "POST", "/api/client/habits/log", { dailyHabitId: H, date: T, completed: true });
+    const ticked = await send(client, "PUT", `/api/client/habits/${H}/days/${T}`, { done: true });
     const { data: tickRow } = await supabaseAdmin
-      .from("daily_habit_logs")
-      .select("completed")
-      .eq("daily_habit_id", H)
+      .from("client_habit_logs")
+      .select("done")
+      .eq("client_habit_id", H)
       .eq("date", T)
       .maybeSingle();
-    check("the client ticks the habit → 200, on the day", ticked.status === 200 && tickRow?.completed === true, {
+    check("the client ticks the habit → 200, on the day", ticked.status === 200 && tickRow?.done === true, {
       status: ticked.status,
       tickRow,
     });
@@ -397,7 +420,7 @@ async function main(): Promise<void> {
       if (userDeleteError) console.error(`  login not deleted: ${userDeleteError.message}`);
     }
     if (clientId) {
-      const left = (await countOf("wellness_logs", clientId)) + (await countOf("check_ins", clientId)) + (await countOf("daily_habits", clientId));
+      const left = (await countOf("wellness_logs", clientId)) + (await countOf("check_ins", clientId)) + (await countOf("client_habits", clientId));
       const { data: clientLeft } = await supabaseAdmin.from("clients").select("id").eq("id", clientId).maybeSingle();
       check("cleanup: the client is gone, and its logs, check-ins and habit with it", clientLeft === null && left === 0, { clientLeft, left });
     }

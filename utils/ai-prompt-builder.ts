@@ -2,7 +2,7 @@ import { format } from "date-fns";
 import type { CheckInReviewInput } from "@/types/check-in-review-input";
 import type { CheckInExerciseHighlight } from "@/types/check-in";
 import { sanitizeForAIPrompt } from "./ai-prompt-sanitizer";
-import { describeDay, type ReviewDay } from "./ai-prompt-day";
+import { describeDay, habitsOnDay, type ReviewDay } from "./ai-prompt-day";
 import { weekFigures, weightAndGoal } from "./ai-prompt-week";
 import { describeReviewShape } from "./ai-analysis-format";
 import { formatLoad, type UnitSystem } from "./unit-conversions";
@@ -46,7 +46,7 @@ function dayByDay(input: CheckInReviewInput): string[] {
   const logsByDate = new Map(input.dailyLogs.map((log) => [log.date, log]));
   const logged = input.loggedDates ? new Set(input.loggedDates) : null;
 
-  const blocks = input.dates.map((date, index) => {
+  const blocks = input.dates.map((date) => {
     const day: ReviewDay = {
       date,
       logged: logged ? logged.has(date) : null,
@@ -54,11 +54,7 @@ function dayByDay(input: CheckInReviewInput): string[] {
       exerciseLines: input.exerciseLines,
       nutrition: nutritionByDate.get(date) ?? null,
       dailyLog: logsByDate.get(date) ?? null,
-      // Before its effective date the habit did not exist: null, never a miss.
-      habits: input.habits.flatMap((habit) => {
-        const ticked = habit.rail[index];
-        return ticked == null ? [] : [{ name: habit.name, ticked }];
-      }),
+      habits: habitsOnDay(input.habitWeek, date),
     };
     return describeDay(day);
   });

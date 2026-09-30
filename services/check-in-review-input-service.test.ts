@@ -43,6 +43,26 @@ const checkIn = {
 // East of UTC: the check-in's instant is 18 Sep on the client's calendar.
 const client = { id: "client-1", coachId: "coach-9", name: "Jane Doe", timezone: "Europe/London" };
 const nutrition = { days: [], summary: { periodDays: 7 } };
+/** The habit week the check-in froze: one tick habit, done on the first day. */
+const HABIT_WEEK = {
+  habits: [
+    {
+      id: "h-1",
+      name: "Walk",
+      measure: "tick" as const,
+      unit: null,
+      direction: null,
+      firstStartsOn: "2026-09-01",
+      versions: [],
+      days: [
+        { date: "2026-09-11", covered: true, planned: true, target: null, entry: { done: true, value: null, note: null }, met: true },
+        { date: "2026-09-12", covered: true, planned: true, target: null, entry: null, met: false },
+      ],
+      figures: { planned: 2, done: 1, met: 1 },
+    },
+  ],
+  totals: { planned: 2, done: 1, met: 1 },
+};
 const comparison = { comparison: { previous: null, changes: {} }, goalProgress: { goal: null, goalIsCurrent: false } };
 
 beforeEach(() => {
@@ -56,7 +76,7 @@ beforeEach(() => {
     dates: ["2026-09-11", "2026-09-12"],
     loggedDates: ["2026-09-11"],
     nutrition: {} as never,
-    habits: { rail: [], avgPct: null, daysBelow50: 0, perHabit: [{ id: "h-1", name: "Walk", eligibleDays: 2, completedDays: 1, pct: 50, rail: [true, false] }] },
+    habitWeek: HABIT_WEEK,
   });
   vi.mocked(getDailyLogs).mockResolvedValue([]);
   vi.mocked(getCheckInNutritionPeriod).mockReturnValue(nutrition as never);
@@ -95,7 +115,7 @@ describe("getCheckInReviewInput — one input for both paths", () => {
       clientName: "Jane Doe",
       dates: ["2026-09-11", "2026-09-12"],
       loggedDates: ["2026-09-11"],
-      habits: [{ id: "h-1", name: "Walk" }],
+      habitWeek: HABIT_WEEK,
       nutrition,
       comparison,
     });
@@ -142,7 +162,7 @@ describe("getCheckInReviewInput — one input for both paths", () => {
       dates: ["2026-09-12", "2026-09-13", "2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18"],
       loggedDates: null,
       workouts: [],
-      habits: [],
+      habitWeek: null,
       nutrition: noFood,
     });
   });

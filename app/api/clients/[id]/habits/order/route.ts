@@ -4,6 +4,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { orderHabits } from "@/services/client-habit-writes-service";
 import { habitWriteErrorResponse } from "@/lib/habits/habit-write-response";
+import { habitListAfterWrite } from "@/lib/habits/habit-list-after-write";
 import { orderHabitsSchema } from "@/lib/validations/client-habits";
 
 type Params = { params: Promise<{ id: string }> };
@@ -11,7 +12,8 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * The client's habits in their new order. The list names every one of the
  * client's habits, stopped ones included, once; a list that does not is
- * refused, since it was read before a habit came or went.
+ * refused, since it was read before a habit came or went. Answers with
+ * whether the order changed and the client's habits as they now stand.
  */
 export async function PUT(request: NextRequest, { params }: Params) {
   const rateLimitResult = await coachApiRateLimit(request);
@@ -34,7 +36,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     const changed = await orderHabits({ clientId, habitIds: validation.data.habitIds });
-    return NextResponse.json({ success: true, data: { changed } });
+    return await habitListAfterWrite(clientId, undefined, (habits) => ({ changed, habits }));
   } catch (error) {
     return habitWriteErrorResponse(error);
   }

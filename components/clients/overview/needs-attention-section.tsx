@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { alertDestination } from "@/lib/attention-alert-destinations";
 import { alertLines, visibleAlerts } from "@/lib/attention-alert-copy";
+import { alertDismissalKey } from "@/lib/attention-alert-dismissal";
 import { sortAlertsBySeverity } from "@/lib/attention-alert-severity";
 import {
   LABEL_CLASS,
@@ -28,7 +29,7 @@ import {
 } from "./overview-primitives";
 import { relativeDayPhrase } from "./overview-format";
 import type { ClientTab } from "@/lib/client-tabs";
-import type { AlertSeverity, AlertType, AttentionAlert } from "@/types/attention-feed";
+import type { AlertSeverity, AttentionAlert } from "@/types/attention-feed";
 import type { BlockEnding, UnreviewedCheckIn } from "@/types/coach-brief";
 
 type NeedsAttentionSectionProps = {
@@ -40,11 +41,12 @@ type NeedsAttentionSectionProps = {
   blockEnding: BlockEnding;
   onTabChange: (tab: ClientTab, extraParams?: Record<string, string>) => void;
   /**
-   * Dismisses one alert type for this client. Dismissal is shared with the coach
+   * Dismisses one alert for this client, by its key (`alertDismissalKey`): its
+   * type, and a missed-habit line's habit. Dismissal is shared with the coach
    * dashboard's feed — the same `attention_dismissals` row drives both — and it
    * lapses when a newer day trips the same trigger again.
    */
-  onDismissAlert: (alertType: AlertType) => void;
+  onDismissAlert: (dismissalKey: string) => void;
 };
 
 /**
@@ -218,23 +220,25 @@ export function NeedsAttentionSection({
     );
   }
 
-  for (const [i, alert] of sortedAlerts.entries()) {
+  for (const alert of sortedAlerts) {
     const destination = alertDestination(alert.type);
     // Title and sub come from the dashboard's own copy functions, so the two
     // surfaces cannot describe one alert differently. `sub` is null when the
     // fuller sentence would only repeat the headline — a row printing the same
     // string twice reads as a bug.
     const { title, sub } = alertLines(alert);
+    // One alert per key: several missed habits are several rows, each its own.
+    const key = alertDismissalKey(alert);
     rows.push(
       <AttentionRow
-        key={`${alert.type}-${i}`}
+        key={key}
         thumb={SEVERITY_THUMB[alert.severity] ?? SEVERITY_THUMB.low}
         icon={DESTINATION_ICON[destination.tab]}
         title={title}
         sub={sub}
         action={destination.label}
         onOpen={() => onTabChange(destination.tab)}
-        onDismiss={() => onDismissAlert(alert.type)}
+        onDismiss={() => onDismissAlert(key)}
         dismissLabel={`Dismiss: ${title}`}
       />
     );

@@ -7,13 +7,13 @@ import {
   getReadingsOnDay,
 } from "./measurements-service";
 import { getNutritionPlanForDate } from "./nutrition-plan-service";
-import { getClientAdherenceForRange } from "./client-adherence-service";
 import { getNutritionPeriod } from "./nutrition-period-service";
 import { resolveCheckInReportingPeriod } from "./check-in-details-service";
 import {
   composeNutritionPlan,
   composePeriod,
   composeReadings,
+  readPeriodFigures,
 } from "./check-in-sent-snapshot-service";
 import { checkInTrend, composeGoalSection } from "@/lib/check-in/sent-snapshot-goal";
 import {
@@ -77,11 +77,12 @@ async function readTrendUpTo(
  * The copy of a check-in sent before copies existed: what its review shows
  * now. Its readings are its own rows in the client's log as they stand today;
  * its goal section is the review's computation on its day; its week is the
- * review's figures for the period — the habits as they stand, the days logged,
- * and the food against each day's target: the rows the check-in froze at Send
- * when they cover exactly its week (a check-in as it was sent is the whole
- * point, and those rows are that week's targets as they stood), else the
- * targets the review shows now; its questions keep the wording they have today.
+ * review's figures for the period — the habit week as the client's habits
+ * stand, the days logged, and the food against each day's target: the rows
+ * the check-in froze at Send when they cover exactly its week (a check-in as
+ * it was sent is the whole point, and those rows are that week's targets as
+ * they stood), else the targets the review shows now; its questions keep the
+ * wording they have today.
  */
 export async function buildSentSnapshotAsShown(row: CheckInRow): Promise<SentSnapshot> {
   const checkIn = mapCheckInRow(row);
@@ -113,12 +114,10 @@ export async function buildSentSnapshotAsShown(row: CheckInRow): Promise<SentSna
     sentFood.every((foodDay, i) => foodDay.date === weekDays[i])
       ? sentFood
       : null;
-  const [goalStartRead, trendReadings, adherence, nutrition] = await Promise.all([
+  const [goalStartRead, trendReadings, week, nutrition] = await Promise.all([
     judged ? getReadingsOnDay(row.client_id, judged.startsOn) : Promise.resolve(noReadings),
     getMeasurementsForCheckIns(trendCheckIns.map((trendCheckIn) => trendCheckIn.id)),
-    period
-      ? getClientAdherenceForRange(row.client_id, period.periodStart, period.periodEnd, period.periodEnd)
-      : Promise.resolve(null),
+    period ? readPeriodFigures(row.client_id, period.periodStart, period.periodEnd) : Promise.resolve(null),
     period && !frozenFood
       ? getNutritionPeriod(row.client_id, period.periodStart, period.periodEnd)
       : Promise.resolve(null),
@@ -148,7 +147,7 @@ export async function buildSentSnapshotAsShown(row: CheckInRow): Promise<SentSna
     standing: { weight: standing.weight ?? null, bodyFat: standing.bodyFat ?? null },
     ...goalSection,
     nutritionPlan: composeNutritionPlan(plan),
-    period: composePeriod(adherence, frozenFood ?? nutrition?.days ?? null),
+    period: composePeriod(week?.adherence ?? null, frozenFood ?? nutrition?.days ?? null, week?.habitWeek ?? null),
     questions,
   });
 }

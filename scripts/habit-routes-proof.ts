@@ -1,5 +1,5 @@
 /**
- * Request-level proof of the habit routes commit 1 builds
+ * Request-level proof of the habit routes commits 1 and 2 build
  * (docs/HABITS-REBUILD-PLAN.md §2.4 and §5) against the linked DEV database
  * through a running `next dev`: the full chain, every write and its audit row,
  * and each refusal's status and sentence.
@@ -27,7 +27,12 @@
  *   9  the entry's four refusals: another client's habit 404, a day no version covers 409,
  *      an answer that does not fit 400, a locked day 403
  *  10  the client's week inside one of their weeks, and the Journey's weeks
- *  11  the audit trail once every row has landed: one per write that changed something, none for a repeat or a refusal
+ *  11  the coach's habit list, and habits added, renamed and deleted (commit 2): the chain, another coach's client
+ *      and another client's habit 404, strict bodies, a habit with entries only stopped, a repeat rename writes nothing
+ *  12  the audit trail once every row has landed: one per write that changed something, none for a repeat or a refusal
+ *
+ * The fixture client may hold habits of its own (the scale seed gives it some),
+ * so every check on its day and week reads the proof's habits alone.
  *
  * The cleanup counts what is left and fails the run on anything it could not remove.
  */
@@ -43,7 +48,10 @@ import type {
   ClientHabitDay,
   ClientHabitProgress,
   ClientHabitWeek,
+  CoachHabitAddResult,
+  CoachHabitList,
   CoachHabitWeek,
+  CoachHabitWriteResult,
   HabitChoice,
   HabitEntryResult,
 } from "@/types/habits";
@@ -102,7 +110,7 @@ function nextWeekday(from: string, weekday: string): string {
   return day;
 }
 
-async function call<T>(session: ProofSession, method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown) {
+async function call<T>(session: ProofSession, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown) {
   const res = await send(session, method, path, body);
   return { status: res.status, body: res.json as Body<T> };
 }
@@ -333,12 +341,13 @@ async function main(): Promise<void> {
     check("no session is sent to /login", clientNoSession.status === 307, clientNoSession.status);
     const dayRead = await send(client, "GET", `/api/client/habits/day?date=${pToday}`);
     const dayBody = dayRead.json as Body<ClientHabitDay>;
-    const stepsItem = dayBody.data?.habits.find((item) => item.habit.id === steps);
+    const ownDay = (dayBody.data?.habits ?? []).filter((item) => perfHabits.includes(item.habit.id));
+    const stepsItem = ownDay.find((item) => item.habit.id === steps);
     check(
       "the day lists every habit running on it, with its how-to and the day's target in words",
-      dayRead.status === 200 && dayBody.data.habits.length === 2 && stepsItem?.words.target === "at least 6,000 steps" &&
+      dayRead.status === 200 && ownDay.length === 2 && stepsItem?.words.target === "at least 6,000 steps" &&
         stepsItem.day.planned && stepsItem.habit.howTo === "Any walking counts",
-      dayBody
+      ownDay
     );
 
     const short = await call<HabitEntryResult>(client, "PUT", entryPath(steps, pToday), { value: 5400 });
@@ -390,10 +399,13 @@ async function main(): Promise<void> {
     const anchor = await getClientWeekAnchor(PERF_CLIENT_ID);
     const pWeek = getTrainingWeekDays(pToday, anchor.weekday);
     const clientWeek = await call<ClientHabitWeek>(client, "GET", `/api/client/habits/week?start=${pWeek[0]}&end=${pWeek[6]}`);
+    const ownWeek = (clientWeek.body.data?.habits ?? []).filter((row) => perfHabits.includes(row.habit.id));
     check(
-      "the week over the client's own week: both habits, the tick counted",
-      clientWeek.status === 200 && clientWeek.body.data.habits.length === 2 && clientWeek.body.data.totals.done === 1,
-      clientWeek.body
+      "the week over the client's own week: both habits, the tick counted and the cleared number not",
+      clientWeek.status === 200 && ownWeek.length === 2 &&
+        ownWeek.find((row) => row.habit.id === stretch)?.figures.done === 1 &&
+        ownWeek.find((row) => row.habit.id === steps)?.figures.done === 0,
+      ownWeek
     );
     const twoWeeks = await call(client, "GET", `/api/client/habits/week?start=${pWeek[0]}&end=${addDaysToDateString(pWeek[6], 1)}`);
     check("dates over two of the client's weeks: 400, and why", twoWeeks.status === 400 && twoWeeks.body.error === "The dates must be inside one week.", twoWeeks);
@@ -406,22 +418,204 @@ async function main(): Promise<void> {
       stretchRow
     );
 
-    console.info("11. The audit trail, once every row has landed");
+    console.info("11. The coach's habit list, and habits added, renamed and deleted");
+    const listed = await call<CoachHabitList>(coachSession, "GET", habitsOf(A));
+    const listedHabits = listed.body.data?.habits ?? [];
+    check(
+      "the list: every habit in the client's order, where each stands today, whether it has entries, its words and its history",
+      listed.status === 200 && listed.body.data.clientToday === today &&
+        JSON.stringify(listedHabits.map((h) => [h.id, h.status, h.hasEntries])) ===
+          JSON.stringify([[sauna, "running", false], [mobility, "running", false], [water, "running", false]]) &&
+        listedHabits[2]?.words.target === "at least 3 L" && listedHabits[2]?.versions.length === 2,
+      listedHabits.map((h) => [h.name, h.status, h.hasEntries, h.words, h.versions.length])
+    );
+    const listNoSession = await fetch(`${PROOF_BASE}${habitsOf(A)}`, { redirect: "manual" });
+    check(
+      "no session is sent to /login",
+      listNoSession.status === 307 && (listNoSession.headers.get("location") ?? "").endsWith("/login"),
+      listNoSession.status
+    );
+    const journalInput = {
+      name: "Proof journal",
+      howTo: "Three lines before bed",
+      measure: "tick",
+      unit: null,
+      direction: null,
+      target: null,
+      weekdays: [...EVERY_DAY],
+    };
+    const drinksInput = {
+      name: "Proof drinks",
+      howTo: null,
+      measure: "number",
+      unit: "drinks",
+      direction: "at_most",
+      target: 2,
+      weekdays: ["friday", "saturday"],
+    };
+    const withoutOrigin = (method: string, path: string, body?: unknown) =>
+      fetch(`${PROOF_BASE}${path}`, {
+        method,
+        headers: { Cookie: coachSession.cookie, "Content-Type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    const noOriginWrites = await Promise.all([
+      withoutOrigin("POST", habitsOf(A), { habits: [journalInput] }),
+      withoutOrigin("PATCH", `${habitsOf(A)}/${water}`, { name: "Proof water", howTo: null }),
+      withoutOrigin("DELETE", `${habitsOf(A)}/${water}`),
+    ]);
+    check("the add, the rename and the delete without the Origin are refused", noOriginWrites.every((r) => r.status === 403), noOriginWrites.map((r) => r.status));
+
+    const foreignNew = await Promise.all([
+      call(coachSession, "GET", habitsOf(F)),
+      call(coachSession, "POST", habitsOf(F), { habits: [journalInput] }),
+      call(coachSession, "PATCH", `${habitsOf(F)}/${foreignHabit}`, { name: "Proof renamed", howTo: null }),
+      call(coachSession, "DELETE", `${habitsOf(F)}/${foreignHabit}`),
+    ]);
+    const { data: foreignRow } = await supabaseAdmin.from("client_habits").select("name").eq("id", foreignHabit).maybeSingle();
+    const { count: foreignHabitCount } = await supabaseAdmin
+      .from("client_habits")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", F);
+    check(
+      "another coach's client is 404 on the list, the add, the rename and the delete; its habit stays and nothing is added",
+      foreignNew.every((r) => r.status === 404) && foreignRow?.name === "Proof foreign" && foreignHabitCount === 1,
+      foreignNew.map((r) => r.status)
+    );
+    const crossedRename = await call(coachSession, "PATCH", `${habitsOf(A)}/${reading}`, { name: "Proof renamed", howTo: null });
+    const crossedDelete = await call(coachSession, "DELETE", `${habitsOf(A)}/${reading}`);
+    const notAnId = await call(coachSession, "DELETE", `${habitsOf(A)}/not-a-habit`);
+    const { data: readingRow } = await supabaseAdmin.from("client_habits").select("name").eq("id", reading).maybeSingle();
+    check(
+      "another client's habit through this URL is 404 on the rename and the delete and stays; a malformed id is 404",
+      crossedRename.status === 404 && crossedDelete.status === 404 && notAnId.status === 404 && readingRow?.name === "Proof reading",
+      { crossedRename, crossedDelete, notAnId }
+    );
+
+    const added = await call<CoachHabitAddResult>(coachSession, "POST", habitsOf(A), { habits: [journalInput, drinksInput] });
+    const [journal, drinks] = added.body.data?.habitIds ?? [];
+    // A write answers with the list read back; no list (saved, not read back) fails these checks.
+    const addedList = added.body.data?.habits?.habits ?? [];
+    check(
+      "200: the new habits' ids in order, appended to the list the answer carries, running from today",
+      added.status === 200 && added.body.data.habitIds.length === 2 &&
+        JSON.stringify(addedList.map((h) => h.id)) === JSON.stringify([sauna, mobility, water, journal, drinks]) &&
+        JSON.stringify(await versionsOf(journal)) === JSON.stringify([[today, null, null]]) &&
+        JSON.stringify(await versionsOf(drinks)) === JSON.stringify([[today, null, 2]]) &&
+        addedList[4]?.words.target === "at most 2 drinks" && addedList[4]?.words.schedule === "Fri, Sat",
+      added.body
+    );
+    check("audited once per habit, as habit.create", await auditedTimes(A, "habit.create", 2));
+    const queued = await call<CoachHabitAddResult>(coachSession, "POST", habitsOf(A), {
+      startsOn: day(3),
+      habits: [{ ...journalInput, name: "Proof later" }],
+    });
+    const [later] = queued.body.data?.habitIds ?? [];
+    check(
+      "a habit added from a later day is upcoming until then",
+      queued.status === 200 && queued.body.data.habits?.habits.find((h) => h.id === later)?.status === "upcoming" &&
+        JSON.stringify(await versionsOf(later)) === JSON.stringify([[day(3), null, null]]) &&
+        (await auditedTimes(A, "habit.create", 3)),
+      queued.body
+    );
+    const unknownField = await call(coachSession, "POST", habitsOf(A), { habits: [{ ...journalInput, streak: 3 }] });
+    const noTargetAdd = await call(coachSession, "POST", habitsOf(A), { habits: [journalInput, { ...drinksInput, target: null }] });
+    const tickTarget = await call(coachSession, "POST", habitsOf(A), { habits: [{ ...journalInput, target: 1 }] });
+    const pastStart = await call(coachSession, "POST", habitsOf(A), { startsOn: day(-1), habits: [journalInput] });
+    const { count: habitsOfA } = await supabaseAdmin.from("client_habits").select("id", { count: "exact", head: true }).eq("client_id", A);
+    check(
+      "refused, and nothing added — not even the batch's valid habit: an unknown field 400, a number habit without a target 400, a tick with one 400, a start before today 409",
+      unknownField.status === 400 &&
+        noTargetAdd.status === 400 && noTargetAdd.body.error === "A number habit needs a target." &&
+        tickTarget.status === 400 && tickTarget.body.error === "A tick habit has no target." &&
+        pastStart.status === 409 && pastStart.body.error === "Pick today or a later day to start from." &&
+        habitsOfA === 6,
+      { unknownField: unknownField.status, noTargetAdd, tickTarget, pastStart, habitsOfA }
+    );
+
+    const renamed = await call<CoachHabitWriteResult>(coachSession, "PATCH", `${habitsOf(A)}/${water}`, {
+      name: "Proof water intake",
+      howTo: "A glass with each meal",
+    });
+    const { data: waterRow } = await supabaseAdmin.from("client_habits").select("name, how_to").eq("id", water).single();
+    check(
+      "200: both labels changed, and the answer's list carries them",
+      renamed.status === 200 && renamed.body.data.changed && waterRow?.name === "Proof water intake" &&
+        waterRow.how_to === "A glass with each meal" &&
+        renamed.body.data.habits?.habits.find((h) => h.id === water)?.name === "Proof water intake",
+      { renamed: renamed.body, waterRow }
+    );
+    check("audited as habit.rename", await auditedTimes(A, "habit.rename", 1));
+    const renamedAgain = await call<CoachHabitWriteResult>(coachSession, "PATCH", `${habitsOf(A)}/${water}`, {
+      name: "Proof water intake",
+      howTo: "A glass with each meal",
+    });
+    check(
+      "the same labels again write nothing and are not audited",
+      renamedAgain.status === 200 && !renamedAgain.body.data.changed && (await auditedTimes(A, "habit.rename", 1)),
+      renamedAgain.body
+    );
+    const oneLabel = await call(coachSession, "PATCH", `${habitsOf(A)}/${water}`, { name: "Proof water" });
+    const blankName = await call(coachSession, "PATCH", `${habitsOf(A)}/${water}`, { name: "   ", howTo: null });
+    const { data: waterAfter } = await supabaseAdmin.from("client_habits").select("name").eq("id", water).single();
+    check(
+      "a rename naming one label, or a blank name: 400, the labels as they were",
+      oneLabel.status === 400 && blankName.status === 400 && waterAfter?.name === "Proof water intake",
+      { oneLabel: oneLabel.status, blankName: blankName.status }
+    );
+
+    // An entry on the sauna, as the client would make one: a habit with entries is stopped, never deleted.
+    const { error: entryError } = await supabaseAdmin
+      .from("client_habit_logs")
+      .insert({ client_id: A, client_habit_id: sauna, date: today, done: true });
+    if (entryError) throw new Error(`Setup: the sauna's entry: ${entryError.message}`);
+    const kept = await call(coachSession, "DELETE", `${habitsOf(A)}/${sauna}`);
+    const listedWithEntry = await call<CoachHabitList>(coachSession, "GET", habitsOf(A));
+    check(
+      "a habit with entries: 409 and its sentence, it stays, and the list says it has entries",
+      kept.status === 409 && kept.body.error === "This habit has entries, so it can only be stopped." &&
+        (await versionsOf(sauna)).length === 1 &&
+        listedWithEntry.body.data?.habits.find((h) => h.id === sauna)?.hasEntries === true,
+      kept
+    );
+    const deleted = await call<CoachHabitWriteResult>(coachSession, "DELETE", `${habitsOf(A)}/${journal}`);
+    const { count: journalLeft } = await supabaseAdmin.from("client_habits").select("id", { count: "exact", head: true }).eq("id", journal);
+    const { count: journalVersions } = await supabaseAdmin
+      .from("client_habit_versions")
+      .select("id", { count: "exact", head: true })
+      .eq("client_habit_id", journal);
+    check(
+      "a habit never logged is deleted with its schedule, and the answer's list no longer has it",
+      deleted.status === 200 && deleted.body.data.changed && journalLeft === 0 && journalVersions === 0 &&
+        deleted.body.data.habits !== null && !deleted.body.data.habits.habits.some((h) => h.id === journal),
+      deleted.body
+    );
+    check("audited as habit.delete", await auditedTimes(A, "habit.delete", 1));
+    const deletedAgain = await call(coachSession, "DELETE", `${habitsOf(A)}/${journal}`);
+    check("a habit already deleted: 404", deletedAgain.status === 404 && deletedAgain.body.error === "Habit not found.", deletedAgain);
+
+    console.info("12. The audit trail, once every row has landed");
     // Audit rows are written after the response. By now any a repeated or a
     // refused write had wrongly recorded would be there too.
     const trail = await Promise.all([
       auditedTimes(A, "habit.change", 1),
       auditedTimes(A, "habit.day_edit", 2),
       auditedTimes(A, "habit.stop", 1),
+      auditedTimes(A, "habit.create", 3),
+      auditedTimes(A, "habit.rename", 1),
+      auditedTimes(A, "habit.delete", 1),
     ]);
-    const { count: foreignAudits } = await supabaseAdmin
-      .from("audit_logs")
-      .select("id", { count: "exact", head: true })
-      .eq("client_id", F);
+    const auditsOn = async (clientId: string) => {
+      const { count, error } = await supabaseAdmin.from("audit_logs").select("id", { count: "exact", head: true }).eq("client_id", clientId);
+      if (error) throw new Error(error.message);
+      return count ?? 0;
+    };
+    const foreignAudits = await auditsOn(F);
+    const crossedAudits = await auditsOn(B);
     check(
-      "each write that changed something recorded once; the repeated change and the refused writes never",
-      trail.every(Boolean) && foreignAudits === 0,
-      { trail, foreignAudits }
+      "each write that changed something recorded once; the repeats, the refusals and the writes to other clients never",
+      trail.every(Boolean) && foreignAudits === 0 && crossedAudits === 0,
+      { trail, foreignAudits, crossedAudits }
     );
   } finally {
     const cleanupErrors: string[] = [];

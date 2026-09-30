@@ -18,6 +18,7 @@ vi.mock("@/services/client-habit-writes-service", () => {
 });
 vi.mock("@/services/today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("@/services/audit-log-service", () => ({ recordAuditEvent: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/services/client-habit-figures-service", () => ({ getCoachHabitList: vi.fn() }));
 
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -25,6 +26,9 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { HabitWriteError, stopHabit } from "@/services/client-habit-writes-service";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
+import { getCoachHabitList } from "@/services/client-habit-figures-service";
+
+const LIST = { clientToday: "2026-09-30", habits: [] };
 
 const HABIT = "7c1a4d8e-2f3b-4c5d-8e9f-0a1b2c3d4e5f";
 const params = { params: Promise.resolve({ id: "client-2", habitId: HABIT }) };
@@ -40,14 +44,16 @@ describe("POST /api/clients/[id]/habits/[habitId]/stop", () => {
     vi.clearAllMocks();
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
     vi.mocked(getClientTodayString).mockResolvedValue("2026-09-30");
+    vi.mocked(getCoachHabitList).mockResolvedValue(LIST);
   });
 
-  it("stops from the client's today when no day is given, and audits it", async () => {
+  it("stops from the client's today when no day is given, audits it, and answers with the habits as they now stand", async () => {
     vi.mocked(stopHabit).mockResolvedValue(true);
     const req = request({});
     const response = await POST(req, params);
     expect(requireCoachOwnsClient).toHaveBeenCalledWith("client-2", req);
-    expect(await response.json()).toEqual({ success: true, data: { changed: true } });
+    expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: LIST } });
+    expect(getCoachHabitList).toHaveBeenCalledWith("client-2", "2026-09-30");
     expect(stopHabit).toHaveBeenCalledWith({ habitId: HABIT, clientId: "client-2", today: "2026-09-30", stopsOn: "2026-09-30" });
     expect(recordAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ action: "habit.stop", targetId: HABIT, metadata: { stopsOn: "2026-09-30" } })

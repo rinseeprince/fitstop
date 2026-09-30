@@ -126,7 +126,7 @@ describe("ClientHomePage", () => {
           training: [],
           nutrition: { hasLog: false, caloriesConsumed: null, targetCalories: null, note: null },
           wellness: { hasLog: false },
-          habits: { totalCount: 0, loggedCount: 0 },
+          habits: { plannedToday: 0, doneToday: 0, running: 0 },
         },
       },
     });

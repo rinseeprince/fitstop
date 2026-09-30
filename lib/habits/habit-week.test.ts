@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { habitDays, habitDayTallies, habitWeek, missedPlannedDays, sumWeekFigures } from "./habit-week";
+import { habitDays, habitDayTallies, habitWeek, missedPlannedDates, sumWeekFigures } from "./habit-week";
 import type { ClientHabit, HabitEntry, HabitVersion } from "@/types/habits";
 
 // The plan's week (docs/HABITS-REBUILD-PLAN.md §2.5): a client whose week runs
@@ -210,10 +210,24 @@ describe("a range read day by day", () => {
     expect(tallies.find((tally) => tally.date === "2026-09-30")).toEqual({ date: "2026-09-30", planned: 2, done: 0 });
   });
 
-  it("counts a habit's planned days gone without it done on the day, a short number included (D4)", () => {
-    expect(missedPlannedDays(mobility, WEDNESDAY_MORNING, WEEK)).toBe(2);
-    expect(missedPlannedDays(water, WEDNESDAY_MORNING, WEEK)).toBe(3);
-    expect(missedPlannedDays(sauna, [], WEEK)).toBe(0);
+  it("lists a habit's planned days gone without it done on the day, a short number included (D4)", () => {
+    // Mobility's Monday was made up on the Tuesday: the week counts it, the day stays missed.
+    expect(missedPlannedDates(mobility, WEDNESDAY_MORNING, WEEK)).toEqual(["2026-09-28", "2026-09-30"]);
+    // Saturday's 2.1 L and Monday's 2.5 L fell short of 3 L; Wednesday has no entry yet.
+    expect(missedPlannedDates(water, WEDNESDAY_MORNING, WEEK)).toEqual(["2026-09-26", "2026-09-28", "2026-09-30"]);
+    // A weekly habit plans no day, so it misses none.
+    expect(missedPlannedDates(sauna, [], WEEK)).toEqual([]);
+  });
+
+  it("misses no day a one-date edit took off, and misses a day it put on", () => {
+    const edited = {
+      ...mobility,
+      dayEdits: [
+        { date: "2026-09-28", planned: false, target: null },
+        { date: "2026-09-26", planned: true, target: null },
+      ],
+    };
+    expect(missedPlannedDates(edited, WEDNESDAY_MORNING, WEEK)).toEqual(["2026-09-26", "2026-09-30"]);
   });
 
   it("lists days as they happened for any dates", () => {

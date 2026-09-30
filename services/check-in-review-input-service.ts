@@ -23,8 +23,8 @@ import type { CheckInReviewInput } from "@/types/check-in-review-input";
  * What the AI review is given for one check-in, assembled from the review
  * page's own reads — the check-in and its client's words, the period's
  * workouts with their logs and exercise lines, the nutrition rows the check-in
- * froze, the habit figures, the day-form rows, and the comparison behind the
- * goal strip. The client's submit and the coach's Regenerate both call this,
+ * froze, the habit week it froze, the day-form rows, and the comparison behind
+ * the goal strip. The client's submit and the coach's Regenerate both call this,
  * so the two reviews of one check-in start from the same input.
  *
  * The unit system is the OWNING coach's: they read the review whoever
@@ -97,7 +97,7 @@ export async function getCheckInReviewInput(
     workouts,
     exerciseLines,
     nutrition,
-    habits: adherence?.habits.perHabit ?? [],
+    habitWeek: adherence?.habitWeek ?? null,
     dailyLogs,
     comparison,
   };

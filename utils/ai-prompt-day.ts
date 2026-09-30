@@ -5,6 +5,7 @@ import { AI_PROMPT_TEXT_LIMIT } from "@/lib/constants";
 import type { CheckInTrainingEventDetail } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { NutritionDay } from "@/types/schedule";
+import type { SentHabitWeek } from "@/lib/check-in/sent-snapshot";
 
 /**
  * One day of the check-in week as the AI reads it: what was prescribed and
@@ -12,7 +13,7 @@ import type { NutritionDay } from "@/types/schedule";
  * wherever nothing was (owner decision 2026-09-18). Every figure is the review
  * page's own — the workout's quality off its log, the exercise lines from
  * commit 11b-2, the food row the check-in froze, the day-form row, the habit
- * rail — so nothing here is worked out a second way.
+ * week the check-in froze — so nothing here is worked out a second way.
  */
 export type ReviewDay = {
   date: string;
@@ -30,9 +31,23 @@ export type ReviewDay = {
   nutrition: NutritionDay | null;
   /** The day-form row: the day's wellness scores. */
   dailyLog: DailyLog | null;
-  /** The habits the client had that day, ticked or not. */
+  /** The habits planned that day, or entered on it, each ticked when met. */
   habits: { name: string; ticked: boolean }[];
 };
+
+/**
+ * A day's habits from the habit week the check-in froze: each habit planned
+ * that day, or entered on it though not planned, ticked when the day was met.
+ * A day a habit was not running, and an unplanned day nothing was entered on,
+ * say nothing about it.
+ */
+export function habitsOnDay(habitWeek: SentHabitWeek | null, date: string): ReviewDay["habits"] {
+  return (habitWeek?.habits ?? []).flatMap((habit) => {
+    const day = habit.days.find((candidate) => candidate.date === date);
+    if (!day?.covered || (!day.planned && day.entry === null)) return [];
+    return [{ name: habit.name, ticked: day.met }];
+  });
+}
 
 const text = (value: string) => sanitizeForAIPrompt(value, AI_PROMPT_TEXT_LIMIT);
 const kcal = (value: number) => `${value.toLocaleString("en-GB")} kcal`;

@@ -1,0 +1,34 @@
+-- =============================================================================
+-- Migration 205: the old habit tables go (docs/HABITS-REBUILD-PLAN.md section 6,
+-- commit 2).
+--
+-- A client's habits are migration 203's five tables: client_habits,
+-- client_habit_versions, client_habit_version_days, client_habit_day_edits and
+-- client_habit_logs, read and written by the habit services, the habit
+-- functions and the kernel in lib/habits/. Every reader and writer of
+-- daily_habits and daily_habit_logs moved onto them in the same commit, so both
+-- go, each with its indexes, its updated_at trigger and its foreign keys: the
+-- entries first, whose foreign key points at the habits, then the habits.
+--
+-- Nothing is moved (owner, 2026-09-30, decision D3): every habit and entry on
+-- DEV is test data, and the seeds create fresh habits through add_client_habits.
+-- A sent check-in keeps its own frozen copy of its habit week (check_ins.
+-- sent_snapshot, migration 195), which names neither table, so every copy
+-- still reads.
+--
+-- DEV facts at push time (aeaphsslctwcmebldrzx, 2026-09-30): daily_habits 638
+-- rows on 211 clients (636 switched on); daily_habit_logs 40,740 rows from
+-- 2025-06-04 to 2026-09-25 (10,877 unticked, 1,452 carrying a number, none a
+-- note). No function body, view or rewrite rule names either table; no policy
+-- sits on either (migration 201); the only foreign key into them is the
+-- entries' own, to the habits. The five new tables held no row. PROD
+-- (etezzztgafcotyahgijk) is re-probed before its own push (CONVENTIONS
+-- section 8); its facts do not travel.
+--
+-- IF EXISTS keeps a half-applied push re-runnable. No CASCADE: a dependant the
+-- probe did not see would stop this file rather than go quietly with it.
+-- Pure ASCII.
+-- =============================================================================
+
+DROP TABLE IF EXISTS public.daily_habit_logs;
+DROP TABLE IF EXISTS public.daily_habits;

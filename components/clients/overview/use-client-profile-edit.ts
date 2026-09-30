@@ -9,6 +9,7 @@ import { useUnits } from "@/contexts/units-context";
 import { useCanonicalInput, useHeightInput } from "@/hooks/use-unit-inputs";
 import { formatWeight } from "@/utils/unit-conversions";
 import { computeEnergyPair } from "@/services/client-energy-calc";
+import { useClearClientHabitWeeks } from "@/hooks/use-client-habits";
 import type { Client } from "@/types/check-in";
 
 /**
@@ -104,6 +105,7 @@ export type ClientProfileEdit = ReturnType<typeof useClientProfileEdit>;
 
 export function useClientProfileEdit(client: Client, onSaved: () => void) {
   const { preference } = useUnits();
+  const clearHabitWeeks = useClearClientHabitWeeks();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [customTdee, setCustomTdee] = useState("");
@@ -323,6 +325,9 @@ export function useClientProfileEdit(client: Client, onSaved: () => void) {
             sendBeforeHours: 24,
           },
         });
+        // The client's week starts on the next check-in's weekday, so a new
+        // date can move every week the Habits tab has read.
+        if (dueChanged) void clearHabitWeeks(client.id);
       }
 
       onSaved();

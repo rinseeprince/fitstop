@@ -91,7 +91,7 @@ describe("getCheckInNutritionPeriod — a sent check-in reads the rows its copy 
   /** The check-in's saved copy, with or without a week. */
   function sentCopy(period: SentSnapshot["period"]): SentSnapshot {
     return parseSentSnapshot({
-      version: 2,
+      version: 3,
       day: "2026-05-09",
       readings: { weight: 80.4, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null },
       standing: { weight: 80.4, bodyFat: null },
@@ -107,7 +107,7 @@ describe("getCheckInNutritionPeriod — a sent check-in reads the rows its copy 
     dates: ["2026-05-08", "2026-05-09"],
     loggedDates: ["2026-05-08", "2026-05-09"],
     nutrition: frozen,
-    habits: { rail: ["none", "none"], avgPct: null, daysBelow50: 0, perHabit: [] },
+    habitWeek: { habits: [], totals: { planned: 0, done: 0, met: 0 } },
   };
 
   it("hands back the copy's rows and the kernel over them, and reads nothing live", () => {

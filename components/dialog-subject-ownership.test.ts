@@ -39,6 +39,7 @@ const SURFACES: { file: string; derived: RegExp[]; latches?: string[] }[] = [
   { file: "components/clients/metrics/remove-reading-dialog.tsx", derived: [/open=\{row\s*!==?\s*null\}/], latches: ["prevOpen"] },
   { file: "components/clients/nutrition/calendar/nutrition-edit-targets-dialog.tsx", derived: [], latches: ["latchedDays"] },
   { file: "components/clients/goals/delete-goal-dialog.tsx", derived: [/open=\{subject\s*!==?\s*null\}/], latches: ["prevOpen"] },
+  { file: "components/clients/habits/habit-confirm-dialog.tsx", derived: [/open=\{subject\s*!==?\s*null\}/], latches: ["prevOpen"] },
 ];
 
 // Each host keeps its subjects with the hook, and no close nulls one.
@@ -54,6 +55,7 @@ const HOSTS: { file: string; nulled: string[] }[] = [
   { file: "components/clients/metrics/metrics-tab-content.tsx", nulled: ["setEditingReading(null)", "setRemovingReading(null)"] },
   { file: "hooks/use-nutrition-calendar-editing.ts", nulled: ["setEditorOpen(false)"] },
   { file: "components/clients/goals/goals-sheet.tsx", nulled: ["setDeleteTarget(null)"] },
+  { file: "components/clients/habits/habits-manage-drawer.tsx", nulled: ["setConfirmTarget(null)"] },
   { file: "components/clients/client-overview-tab.tsx", nulled: ["setGoalsSheetOpen(false)"] },
 ];
 
@@ -90,5 +92,9 @@ describe("a dialog's subject outlives its close", () => {
 
   it("the goal delete confirm is keyed by the opening, so each opens with its typed box empty", () => {
     expect(read("components/clients/goals/goals-sheet.tsx")).toContain("key={`delete-goal-${deleteDialog.openKey}`}");
+  });
+
+  it("the habit stop and delete confirm is keyed by the opening, so each opens without the last one's spinner", () => {
+    expect(read("components/clients/habits/habits-manage-drawer.tsx")).toContain("key={`habit-confirm-${confirmDialog.openKey}`}");
   });
 });

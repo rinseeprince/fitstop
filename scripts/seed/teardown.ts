@@ -24,10 +24,15 @@
  * walk cannot delete: `client_measurements` (migration 158) is append-only for
  * the app role — service_role holds SELECT and INSERT and no DELETE,
  * deliberately — and the goal tables, `client_goals` and
- * `client_goal_deadlines` (migration 193), are written only through their
- * functions, which mint ids outside the seed namespace. Their seed rows leave
- * with their client's row, through the tables' `ON DELETE CASCADE`: they are
- * absent from TEARDOWN_ORDER, and the `clients` delete is what clears them.
+ * `client_goal_deadlines` (migration 193), and the habit tables,
+ * `client_habits` with its versions, their weekdays and its one-date edits
+ * (migration 203), are written only through their functions, which mint ids
+ * outside the seed namespace, and the app role holds SELECT alone on them.
+ * Their seed rows leave with their client's row, through the tables' `ON
+ * DELETE CASCADE`: they are absent from TEARDOWN_ORDER, and the `clients`
+ * delete is what clears them. The habit entries, `client_habit_logs`, carry
+ * seed ids and are walked like any other table, before the clients whose
+ * habits they point at.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -43,7 +48,6 @@ export const TEARDOWN_ORDER: readonly string[] = [
   "set_logs",
   "exercise_logs",
   "session_logs",
-  "daily_habit_logs",
   "nutrition_logs",
   "wellness_logs",
   "nutrition_plan_daily_targets",
@@ -53,7 +57,7 @@ export const TEARDOWN_ORDER: readonly string[] = [
   "training_exercise_groups",
   "training_sessions",
   "training_plans",
-  "daily_habits",
+  "client_habit_logs",
   "client_invitations",
   "clients",
   "coaches",

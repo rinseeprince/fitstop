@@ -15,9 +15,11 @@ import type { AttentionAlert } from "@/types/attention-feed";
  * prose ("3 of 7 days below 50%"), and these recover them. Edit a template in
  * `lib/*-triggers.ts` and both surfaces silently fall back to the raw message.
  *
- * The two prescription-ending types are the exception: their dates ARE the
- * message, so both switches hand the message back unparsed and the Overview
- * row is one line (`alertLines` drops a sub that repeats the title).
+ * The two prescription-ending types and the missed-habit line are the
+ * exception: their dates, or the habit's name and its missed days, ARE the
+ * message ("Missed Water 4 days"), so both switches hand the message back
+ * unparsed and the Overview row is one line (`alertLines` drops a sub that
+ * repeats the title).
  */
 
 /** The headline: a short label, counts recovered from the message. */
@@ -39,10 +41,8 @@ export function getShortAlertText(alert: AttentionAlert): string {
       const match = alert.message.match(/(\d+)\s+.*sessions/);
       return `${match ? match[1] : days} sessions missed`;
     }
-    case "habit_dropoff": {
-      const habitMatch = alert.message.match(/(\d+)\s+of.*?(\d+)\s+days/);
-      return habitMatch ? `Low habits (${habitMatch[1]}/${habitMatch[2]} days)` : "Low habits";
-    }
+    case "habit_missed":
+      return alert.message;
     case "activity_cal_mismatch":
       return "Overeating on rest days";
     case "partial_training_pattern":
@@ -93,7 +93,7 @@ export function getPriorityAlertText(alert: AttentionAlert): string {
       const count = match ? match[1] : days;
       return `Missed ${count} sessions this week`;
     }
-    case "habit_dropoff":
+    case "habit_missed":
       return alert.message;
     case "activity_cal_mismatch":
       return "Calorie intake matched activities despite skipping them";
@@ -131,9 +131,9 @@ export function alertLines(alert: AttentionAlert): { title: string; sub: string 
  * strictly stronger, so a client who trips it usually trips both, and the coach
  * reads two rows describing one silence.
  *
- * Suppression rather than a merge, deliberately: dismissals are keyed by alert
- * TYPE (`attention_dismissals`), so a merged row's × would have to dismiss two
- * types or leave the survivor to reappear on the next revalidate. Hiding one
+ * Suppression rather than a merge, deliberately: dismissals are keyed per alert
+ * (`attention_dismissals`, `alertDismissalKey`), so a merged row's × would have
+ * to dismiss two or leave the survivor to reappear on the next revalidate. Hiding one
  * keeps the dismissal 1:1, and the hidden alert returns by itself the moment
  * `no_engagement` clears.
  *

@@ -51,6 +51,11 @@ export function weekFigureWords(figures: HabitWeekFigures): string {
   return figures.planned === 0 ? "Nothing planned" : `${figures.met} of ${figures.planned}`;
 }
 
+/** A week's figure as a whole percentage, met over planned; null when nothing was planned. */
+export function weekFigurePercent(figures: HabitWeekFigures): number | null {
+  return figures.planned === 0 ? null : Math.round((figures.met / figures.planned) * 100);
+}
+
 /** A habit's words from a version: its schedule and its target — the day's when given, else the version's. */
 export function habitWords(
   habit: { measure: HabitMeasure; unit: string | null; direction: HabitDirection | null },

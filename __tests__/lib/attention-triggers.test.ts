@@ -7,11 +7,11 @@ import {
   evaluatePartialTrainingPattern,
   evaluateHighStress,
   evaluateHighSoreness,
-  evaluateHabitDropoff,
+  evaluateMissedHabits,
   evaluateActivityCalMismatch
 } from '@/lib/attention-triggers'
 import type { DailyLog } from '@/types/daily-log'
-import type { DailyHabit, DailyHabitLog } from '@/types/daily-habit'
+import type { ClientHabit, HabitEntry, HabitVersion } from '@/types/habits'
 import type { TrainingEventRow } from '@/lib/attention-feed-helpers'
 
 describe('attention-triggers', () => {
@@ -331,83 +331,97 @@ describe('attention-triggers', () => {
     })
   })
 
-  describe('evaluateHabitDropoff', () => {
-    it('should detect when completion rate < 50% for 5+ of last 7 days', () => {
-      const habits: DailyHabit[] = [
-        { id: 'h1', coachId: 'c1', clientId: 'cl1', name: 'Habit 1', isBoolean: true, isActive: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '', effectiveDate: '2024-01-01' },
-        { id: 'h2', coachId: 'c1', clientId: 'cl1', name: 'Habit 2', isBoolean: true, isActive: true, sortOrder: 1, createdAt: '2024-01-01T00:00:00Z', updatedAt: '', effectiveDate: '2024-01-01' },
-      ]
-      
-      const habitLogs: DailyHabitLog[] = [
-        // Day 1: 0/2 = 0%
-        // Day 2: 0/2 = 0%
-        // Day 3: 1/2 = 50%
-        { id: 'l1', dailyHabitId: 'h1', clientId: 'cl1', date: '2024-01-03', completed: true, createdAt: '', updatedAt: '' },
-        // Day 4: 0/2 = 0%
-        // Day 5: 0/2 = 0%
-        // Day 6: 2/2 = 100%
-        { id: 'l2', dailyHabitId: 'h1', clientId: 'cl1', date: '2024-01-06', completed: true, createdAt: '', updatedAt: '' },
-        { id: 'l3', dailyHabitId: 'h2', clientId: 'cl1', date: '2024-01-06', completed: true, createdAt: '', updatedAt: '' },
-        // Day 7: 0/2 = 0%
-        // Total: 5 days < 50% (days 1,2,4,5,7)
-      ]
+  describe('evaluateMissedHabits (D4)', () => {
+    // The feed's today is Wednesday 10 January 2024: the last 7 days gone by
+    // run Wednesday 3 to Tuesday 9.
+    const TODAY = '2024-01-10'
+    const EVERY_DAY: HabitVersion['weekdays'] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+    const habit = (id: string, overrides: Partial<HabitVersion> = {}, identity: Partial<ClientHabit> = {}): ClientHabit => ({
+      id,
+      name: id,
+      howTo: null,
+      measure: 'tick',
+      unit: null,
+      direction: null,
+      position: 1,
+      versions: [{ id: `${id}-v`, startsOn: '2023-12-01', endsOn: null, target: null, timesPerWeek: null, weekdays: EVERY_DAY, ...overrides }],
+      dayEdits: [],
+      ...identity,
+    })
+    const done = (habitId: string, ...dates: string[]): HabitEntry[] =>
+      dates.map((date) => ({ habitId, date, done: true, value: null, note: null }))
+    const WEEK_GONE_BY = ['2024-01-03', '2024-01-04', '2024-01-05', '2024-01-06', '2024-01-07', '2024-01-08', '2024-01-09']
 
-      const result = evaluateHabitDropoff(habitLogs, habits)
-      
-      expect(result).not.toBeNull()
-      expect(result?.type).toBe('habit_dropoff')
-      expect(result?.severity).toBe('medium')
-      expect(result?.affectedDays).toHaveLength(5)
+    it('lists a habit missed on 3 of its planned days, in a row or not, as one line naming it', () => {
+      const water = habit('Water')
+      // Done on four of the seven: missed the 4th, the 6th and the 9th.
+      const entries = done('Water', '2024-01-03', '2024-01-05', '2024-01-07', '2024-01-08')
+      expect(evaluateMissedHabits([water], entries, TODAY)).toEqual([
+        {
+          type: 'habit_missed',
+          severity: 'medium',
+          message: 'Missed Water 3 days',
+          affectedDays: ['2024-01-04', '2024-01-06', '2024-01-09'],
+          metricData: [],
+          habitId: 'Water',
+        },
+      ])
     })
 
-    it('should use created_at to determine denominator', () => {
-      // Mock today to be a specific date for consistent testing
-      const mockToday = new Date('2024-01-10T00:00:00Z')
-      const originalDate = global.Date
-      global.Date = class extends originalDate {
-        constructor(...args: any[]) {
-          if (args.length === 0) {
-            super(mockToday.toISOString())
-          } else {
-            // @ts-expect-error -- spread args for Date subclass in test
-            super(...args)
-          }
-        }
-        static now() {
-          return mockToday.getTime()
-        }
-      } as any
-      
-      const habits: DailyHabit[] = [
-        // Habit created 3 days ago (2024-01-07)
-        { id: 'h1', coachId: 'c1', clientId: 'cl1', name: 'Habit 1', isBoolean: true, isActive: true, sortOrder: 0, createdAt: '2024-01-07T00:00:00Z', updatedAt: '', effectiveDate: '2024-01-07' },
-      ]
-      
-      const habitLogs: DailyHabitLog[] = [
-        // Habit was completed on 2 of the 4 days it existed
-        { id: 'l1', dailyHabitId: 'h1', clientId: 'cl1', date: '2024-01-07', completed: true, createdAt: '', updatedAt: '' },
-        { id: 'l2', dailyHabitId: 'h1', clientId: 'cl1', date: '2024-01-09', completed: true, createdAt: '', updatedAt: '' },
-      ]
-
-      const result = evaluateHabitDropoff(habitLogs, habits)
-      
-      // Restore original Date
-      global.Date = originalDate
-      
-      // Only 4 days should be considered (Jan 7-10), not 7
-      // With 2/4 days having completion (50%), it shouldn't trigger
-      expect(result).toBeNull()
+    it('lists nothing for two missed days', () => {
+      const entries = done('Water', '2024-01-03', '2024-01-04', '2024-01-05', '2024-01-06', '2024-01-07')
+      expect(evaluateMissedHabits([habit('Water')], entries, TODAY)).toEqual([])
     })
 
-    it('should handle no habits or logs', () => {
-      const result1 = evaluateHabitDropoff([], [])
-      expect(result1).toBeNull()
-      
-      const habits: DailyHabit[] = [
-        { id: 'h1', coachId: 'c1', clientId: 'cl1', name: 'Habit 1', isBoolean: true, isActive: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '', effectiveDate: '2024-01-01' },
-      ]
-      const result2 = evaluateHabitDropoff([], habits)
-      expect(result2).toBeNull()
+    it('judges only the 7 days gone by: today can still be done, and 8 days ago is outside', () => {
+      // Missed today, and 8 days ago, and two days inside the window: two, not four.
+      const entries = done('Water', '2024-01-03', '2024-01-04', '2024-01-05', '2024-01-06', '2024-01-07')
+      expect(evaluateMissedHabits([habit('Water')], entries, TODAY)).toEqual([])
+    })
+
+    it('counts only planned days: a Mon, Wed, Fri habit missed on all three of its days is listed with 3', () => {
+      // Wed 3, Fri 5, Mon 8 are its planned days in the window.
+      const mobility = habit('Mobility', { weekdays: ['monday', 'wednesday', 'friday'] })
+      const result = evaluateMissedHabits([mobility], [], TODAY)
+      expect(result.map((line) => [line.message, line.affectedDays])).toEqual([
+        ['Missed Mobility 3 days', ['2024-01-03', '2024-01-05', '2024-01-08']],
+      ])
+    })
+
+    it('keeps a day made up on another day missed: done on the Tuesday is not done on the Monday', () => {
+      const mobility = habit('Mobility', { weekdays: ['monday', 'wednesday', 'friday'] })
+      const result = evaluateMissedHabits([mobility], done('Mobility', '2024-01-09'), TODAY)
+      expect(result[0]?.affectedDays).toEqual(['2024-01-03', '2024-01-05', '2024-01-08'])
+    })
+
+    it('counts a number short of its target as missed', () => {
+      const water = habit('Water', { target: 3 }, { measure: 'number', unit: 'L', direction: 'at_least' })
+      const entries: HabitEntry[] = WEEK_GONE_BY.map((date, i) => ({
+        habitId: 'Water',
+        date,
+        done: null,
+        value: i < 4 ? 2.5 : 3.1, // short on the first four days
+        note: null,
+      }))
+      expect(evaluateMissedHabits([water], entries, TODAY)[0]?.message).toBe('Missed Water 4 days')
+    })
+
+    it('never lists a habit done a number of times a week: it plans no day', () => {
+      const sauna = habit('Sauna', { timesPerWeek: 3, weekdays: [] })
+      expect(evaluateMissedHabits([sauna], [], TODAY)).toEqual([])
+    })
+
+    it('misses no day a version does not cover: a habit started on the 8th has missed only two', () => {
+      const walk = habit('Walk', { startsOn: '2024-01-08' })
+      expect(evaluateMissedHabits([walk], [], TODAY)).toEqual([])
+    })
+
+    it('gives several missed habits one line each, each keyed by its habit', () => {
+      const result = evaluateMissedHabits([habit('Water'), habit('Walk')], done('Walk', '2024-01-03'), TODAY)
+      expect(result.map((line) => [line.habitId, line.message])).toEqual([
+        ['Water', 'Missed Water 7 days'],
+        ['Walk', 'Missed Walk 6 days'],
+      ])
     })
   })
 

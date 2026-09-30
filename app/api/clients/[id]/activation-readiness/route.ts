@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
-import { getClientById } from "@/services/client-service";
+import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getActiveTrainingPlan } from "@/services/training-service";
-import { getClientHabits } from "@/services/daily-habits-service";
+import { hasHabitFromToday } from "@/services/client-habit-figures-service";
 import {
   getNutritionPlanIdForDate,
   getNextFutureNutritionPlan,
@@ -27,31 +26,26 @@ export async function GET(
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
-    if (!coachId) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: clientId } = await params;
-    const client = await getClientById(clientId, true);
-    if (!client) {
-      return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
-    }
-    if (client.coachId !== coachId) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
-    }
+    const auth = await requireCoachOwnsClient(clientId, request);
+    if (!auth.authorized) return auth.response;
 
-    const [trainingPlan, habits, hasNutritionPlan] = await Promise.all([
+    // The client's today, read once for the two items judged on it and
+    // awaited inside each, so a failed read still fails each item alone.
+    const today = getClientTodayString(clientId);
+    const [trainingPlan, hasHabits, hasNutritionPlan] = await Promise.all([
       safeQuery(() => getActiveTrainingPlan(clientId)),
-      safeQuery(() => getClientHabits(clientId)),
+      // A habit running on the client's today or starting later: a habit
+      // queued to start IS set up, and a stopped one is not.
+      safeQuery(async () => hasHabitFromToday(clientId, await today)),
       // Versioned model (migration 144): ready = a version covers the client's
       // today OR one is queued — a coach who queued a first plan IS set up.
       // The same covering-or-future predicate as the client log guard, so the
       // two surfaces can never disagree about the same client.
       safeQuery(async () => {
-        const today = await getClientTodayString(clientId);
-        if ((await getNutritionPlanIdForDate(clientId, today)) != null) return true;
-        return (await getNextFutureNutritionPlan(clientId, today)) != null;
+        const day = await today;
+        if ((await getNutritionPlanIdForDate(clientId, day)) != null) return true;
+        return (await getNextFutureNutritionPlan(clientId, day)) != null;
       }),
     ]);
 
@@ -60,7 +54,7 @@ export async function GET(
       data: {
         hasTrainingPlan: trainingPlan !== null,
         hasNutritionPlan: hasNutritionPlan === true,
-        hasHabits: Array.isArray(habits) && habits.length > 0,
+        hasHabits: hasHabits === true,
       },
     });
   } catch (error) {

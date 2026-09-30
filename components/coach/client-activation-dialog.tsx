@@ -21,6 +21,7 @@ import {
   MONO_INPUT_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens"
 import { toast } from "sonner"
+import { useClearClientHabitWeeks } from "@/hooks/use-client-habits"
 import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
 import { addDaysToDateString, getTodayDateString } from "@/lib/date-helpers"
 import { getFirstName } from "@/lib/client-name"
@@ -82,6 +83,7 @@ export function ClientActivationDialog({
   // check-in a full-week denominator it never earned. The field stays editable
   // for the coach who actually started them last Monday.
   const [startDate, setStartDate] = useState<string>(getTodayDateString)
+  const clearHabitWeeks = useClearClientHabitWeeks()
 
   useEffect(() => {
     if (open) {
@@ -114,6 +116,8 @@ export function ClientActivationDialog({
       const data = await response.json()
 
       if (data.success) {
+        // The first check-in date is the weekday the Habits tab's week starts on.
+        void clearHabitWeeks(client.id)
         toast.success(`${client.name} is now active`, {
           description: "They have been emailed and can see their plans.",
         })

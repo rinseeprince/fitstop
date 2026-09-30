@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { evaluateNoEngagement } from "@/lib/engagement-triggers"
-import type { DailyHabit } from "@/types/daily-habit"
+import type { ClientHabit } from "@/types/habits"
 import type { TrainingEventRow } from "@/lib/attention-feed-helpers"
 
 // Fixed "now" so the silence/grace windows are deterministic regardless of CI timezone.
@@ -10,17 +10,26 @@ import type { TrainingEventRow } from "@/lib/attention-feed-helpers"
 const NOW = new Date(2026, 5, 10)
 const PAST_START = "2026-06-01" // well past the activation grace window
 
-const makeHabit = (): DailyHabit => ({
+// A habit a version covers on a day of the feed's window — prescribed work.
+const makeHabit = (): ClientHabit => ({
   id: "h1",
-  coachId: "co1",
-  clientId: "c1",
   name: "Drink water",
-  isBoolean: true,
-  isActive: true,
-  sortOrder: 0,
-  effectiveDate: "2026-06-01",
-  createdAt: "2026-06-01",
-  updatedAt: "2026-06-01",
+  howTo: null,
+  measure: "tick",
+  unit: null,
+  direction: null,
+  position: 1,
+  versions: [
+    {
+      id: "h1-v",
+      startsOn: "2026-06-01",
+      endsOn: null,
+      target: null,
+      timesPerWeek: null,
+      weekdays: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+    },
+  ],
+  dayEdits: [],
 })
 const event = (date: string, status: string): TrainingEventRow => ({
   client_id: "c1",

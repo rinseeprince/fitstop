@@ -157,7 +157,7 @@ export const CheckInDetailView = ({
             changes={comparisonData?.comparison.changes ?? null}
           />
 
-          <HabitsSection perHabit={periodAdherence?.habits.perHabit ?? []} />
+          <HabitsSection habitWeek={periodAdherence?.habitWeek ?? null} />
 
           <ClientNotesSection checkIn={data.checkIn} />
 

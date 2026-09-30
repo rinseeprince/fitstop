@@ -115,7 +115,7 @@ describe("useCheckInDetailData", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseWellnessData.mockReturnValue({ logs: [], habitLogs: [], isLoading: false });
+    mockUseWellnessData.mockReturnValue({ logs: [], isLoading: false });
   });
 
   it("reads the detail and its comparison under the exported key", () => {
@@ -131,13 +131,10 @@ describe("useCheckInDetailData", () => {
     const { result } = renderHook(() =>
       useCheckInDetailData({ checkInId: "ci-1", clientId: "c1" })
     );
-    // `withHabitLogs: false` is asserted, not incidental: the habit figures come
-    // from the server's `periodAdherence` now, and a logs-derived grid silently
-    // drops a habit the client ignored all week. Re-enabling the fetch here
-    // would re-open that hole and cost a request nothing reads.
+    // The range and nothing else: the habit figures are the habit week the
+    // check-in froze, on the server's `periodAdherence`, never a read here.
     expect(mockUseWellnessData).toHaveBeenCalledWith("c1", {
       range: { startDate: "2026-08-22", endDate: "2026-08-28" },
-      withHabitLogs: false,
     });
     expect(result.current.isForeign).toBe(false);
     expect(getDateString(result.current.contextStartDate!)).toBe("2026-08-22");
@@ -149,10 +146,7 @@ describe("useCheckInDetailData", () => {
       useCheckInDetailData({ checkInId: "ci-1", clientId: "c2" })
     );
     expect(result.current.isForeign).toBe(true);
-    expect(mockUseWellnessData).toHaveBeenCalledWith("c2", {
-      range: null,
-      withHabitLogs: false,
-    });
+    expect(mockUseWellnessData).toHaveBeenCalledWith("c2", { range: null });
     expect(result.current.contextStartDate).toBeNull();
     expect(result.current.dailyContextLoading).toBe(false);
     const planTargetKeys = mockUseSWR.mock.calls
@@ -168,7 +162,7 @@ describe("useCheckInDetailData", () => {
       log("2026-08-22", { targetCalories: 9999 }),
       log("2026-08-23", { targetCalories: 9999 }),
     ];
-    mockUseWellnessData.mockReturnValue({ logs, habitLogs: [], isLoading: false });
+    mockUseWellnessData.mockReturnValue({ logs, isLoading: false });
     wireSWR();
     const { result } = renderHook(() =>
       useCheckInDetailData({ checkInId: "ci-1", clientId: "c1" })
@@ -181,7 +175,7 @@ describe("useCheckInDetailData", () => {
 
   it("reports the context as loading only once a window exists", () => {
     wireSWR();
-    mockUseWellnessData.mockReturnValue({ logs: [], habitLogs: [], isLoading: true });
+    mockUseWellnessData.mockReturnValue({ logs: [], isLoading: true });
     const { result } = renderHook(() =>
       useCheckInDetailData({ checkInId: "ci-1", clientId: "c1" })
     );

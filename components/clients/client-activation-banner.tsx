@@ -1,7 +1,6 @@
 "use client"
 
 import type { ReactNode } from "react"
-import useSWR from "swr"
 import { ArrowRight, ChevronRight, CircleCheckBig, Dumbbell, ListChecks, Rocket, UserRound, Utensils } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -26,7 +25,7 @@ import {
   gapsNeedMeasurement,
   type ProfileGap,
 } from "@/lib/client-profile-completeness"
-import { swrFetcher } from "@/lib/swr-fetcher"
+import { useActivationReadiness } from "@/hooks/use-activation-readiness"
 import { cn } from "@/lib/utils"
 import type { ClientTab } from "@/lib/client-tabs"
 import type { Client } from "@/types/check-in"
@@ -291,12 +290,9 @@ export function ClientActivationBanner({
   onTabChange,
   onOpenProfile,
 }: ClientActivationBannerProps) {
-  const { data, isLoading } = useSWR<{ success: boolean; data: Readiness }>(
+  const { readiness, isLoading } = useActivationReadiness(
+    client.id,
     client.onboardingStatus === "setup_in_progress"
-      ? `/api/clients/${client.id}/activation-readiness`
-      : null,
-    swrFetcher,
-    { revalidateOnFocus: false }
   )
 
   // Existence and contents are two different questions (CONVENTIONS §7 "Gate
@@ -307,9 +303,8 @@ export function ClientActivationBanner({
   // with nothing (the error path) hides the card exactly as it always has —
   // only the in-flight window changed.
   if (client.onboardingStatus !== "setup_in_progress") return null
-  if (!isLoading && !data?.data) return null
+  if (!isLoading && !readiness) return null
 
-  const readiness: Readiness | null = data?.data ?? null
   // The counter and the footer sentence stay about the three PLANS. The client
   // profile is a prerequisite — activation does not send it anywhere, so
   // counting it would make this line say "4 of 4 plans ready".

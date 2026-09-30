@@ -8,13 +8,17 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 
 type HabitsSummaryStripProps = {
-  /** The week read is still in flight: values render as pending text inside
-   *  the real elements — a dash is a settled answer, not a loading state. */
-  pending?: boolean;
-  todayCompleted: number | null;
-  todayTotal: number | null;
-  weeklyRate: number | null;
-  allHabitsStreak: number | null;
+  /** The week read is still in flight: Today and Weekly Rate render as pending
+   *  text inside the real elements — a dash is a settled answer, not a
+   *  loading state. */
+  weekPending: boolean;
+  /** The habit list is still in flight: Active Habits is pending. */
+  listPending: boolean;
+  /** Today's planned habits done today, "1/2"; null when today is not in the week shown or nothing is planned today. */
+  today: string | null;
+  /** The week's met of its planned, "6/14"; null when nothing was planned. */
+  weeklyRate: string | null;
+  /** The habits running on the client's today. */
   activeCount: number | null;
 };
 
@@ -57,55 +61,22 @@ function StatColumn({
 }
 
 export function HabitsSummaryStrip({
-  pending = false,
-  todayCompleted,
-  todayTotal,
+  weekPending,
+  listPending,
+  today,
   weeklyRate,
-  allHabitsStreak,
   activeCount,
 }: HabitsSummaryStripProps) {
-  const todayValue =
-    todayCompleted != null && todayTotal != null
-      ? `${todayCompleted}/${todayTotal}`
-      : "—";
-
-  const rateValue = weeklyRate != null ? `${weeklyRate}%` : "—";
-
-  const streakValue =
-    allHabitsStreak != null
-      ? allHabitsStreak >= 90
-        ? "90+"
-        : String(allHabitsStreak)
-      : "—";
-
-  const activeValue = activeCount != null ? String(activeCount) : "—";
-
   return (
-    <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-4">
-      <StatColumn
-        label="Today"
-        value={todayValue}
-        sub="completed"
-        pending={pending}
-      />
-      <StatColumn
-        label="Weekly Rate"
-        value={rateValue}
-        sub="this week"
-        pending={pending}
-      />
-      <StatColumn
-        label="Streak"
-        value={streakValue}
-        sub={allHabitsStreak != null && allHabitsStreak > 0 ? "days — all habits hit" : "days"}
-        pending={pending}
-      />
+    <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-3">
+      <StatColumn label="Today" value={today ?? "—"} sub="completed" pending={weekPending} />
+      <StatColumn label="Weekly Rate" value={weeklyRate ?? "—"} sub="this week" pending={weekPending} />
       <StatColumn
         label="Active Habits"
-        value={activeValue}
+        value={activeCount === null ? "—" : String(activeCount)}
         sub="tracked"
         isLast
-        pending={pending}
+        pending={listPending}
       />
     </div>
   );

@@ -55,17 +55,9 @@ describe("getShortAlertText", () => {
     ).toBe("2 sessions missed");
   });
 
-  it("recovers both numbers from the habit_dropoff message", () => {
-    expect(
-      getShortAlertText(
-        alert({ type: "habit_dropoff", message: "Completed 3 of 7 days below 50%" })
-      )
-    ).toBe("Low habits (3/7 days)");
-  });
-
-  it("degrades habit_dropoff to a bare label when the message does not parse", () => {
-    expect(getShortAlertText(alert({ type: "habit_dropoff", message: "habits low" }))).toBe(
-      "Low habits"
+  it("keeps a missed-habit line whole: the habit's name and its days are the message", () => {
+    expect(getShortAlertText(alert({ type: "habit_missed", message: "Missed Water 4 days" }))).toBe(
+      "Missed Water 4 days"
     );
   });
 
@@ -122,9 +114,10 @@ describe("getPriorityAlertText", () => {
     ).toBe("Missed 3 sessions this week");
   });
 
-  it("passes habit_dropoff through verbatim", () => {
-    const message = "Completed 2 of 7 days below 50%";
-    expect(getPriorityAlertText(alert({ type: "habit_dropoff", message }))).toBe(message);
+  it("passes a missed-habit line through verbatim, so the Overview row is one line", () => {
+    const message = "Missed Water 4 days";
+    expect(getPriorityAlertText(alert({ type: "habit_missed", message }))).toBe(message);
+    expect(alertLines(alert({ type: "habit_missed", message }))).toEqual({ title: message, sub: null });
   });
 
   it("falls back to the raw message for a type it does not name", () => {

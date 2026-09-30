@@ -54,11 +54,6 @@ const SUMMARY: AdherenceSummary = {
     rail: rail("complete", "partial", "partial", "missed", "no_log", "complete", "complete"),
     avgPct: 71,
     daysBelow50: 2,
-    // The card renders the three RAILS, never the per-habit cut — that is the
-    // check-in review's reader. Empty here on purpose: a value would suggest
-    // this card had an opinion about it. (The Signals card that did render it
-    // is rejected; see project_overview_v2_workstream.)
-    perHabit: [],
   },
 };
 
@@ -111,6 +106,29 @@ describe("AdherenceCard", () => {
 
     expect(screen.getByText("—")).toBeInTheDocument();
     expect(screen.getByText("No sessions planned in this window")).toBeInTheDocument();
+  });
+
+  it("draws the habits rail's days with nothing planned as dashes and says nothing was planned", () => {
+    const { container } = render(
+      <AdherenceCard
+        adherence={{
+          ...SUMMARY,
+          habits: {
+            rail: rail("none", "none", "none", "none", "none", "none", "none"),
+            avgPct: null,
+            daysBelow50: 0,
+          },
+        }}
+        onTabChange={vi.fn()}
+        {...PROPS}
+      />
+    );
+
+    expect(screen.getByText("No habits planned in this window")).toBeInTheDocument();
+    // The habits rail is the third: seven dashes, not seven no-log dots.
+    const habitsRail = container.querySelectorAll<HTMLElement>('[style*="grid-template-columns"]')[2];
+    expect(habitsRail.querySelectorAll(".rounded-full")).toHaveLength(0);
+    expect(habitsRail.querySelectorAll(".h-px")).toHaveLength(7);
   });
 
   it("sends each row to the tab that owns its data", async () => {

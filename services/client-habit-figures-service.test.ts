@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("./check-in-week-service", () => ({ getClientWeekAnchor: vi.fn() }));
 vi.mock("./client-habits-service", () => ({
   listClientHabits: vi.fn(),
+  listClientHabitsWithEntryCheck: vi.fn(),
   listHabitEntries: vi.fn(),
   getClientHabit: vi.fn(),
 }));
@@ -20,15 +21,25 @@ vi.mock("./client-habit-writes-service", () => {
 });
 
 import { getClientWeekAnchor } from "./check-in-week-service";
-import { getClientHabit, listClientHabits, listHabitEntries } from "./client-habits-service";
+import {
+  getClientHabit,
+  listClientHabits,
+  listClientHabitsWithEntryCheck,
+  listHabitEntries,
+} from "./client-habits-service";
 import { getClientTodayString } from "./today-service";
 import {
   getClientHabitDay,
   getClientHabitProgress,
   getClientHabitWeek,
+  getCoachHabitList,
   getCoachHabitWeek,
+  getHabitDaySummary,
   getHabitEntryResult,
+  getHabitPeriodWeek,
+  hasHabitFromToday,
   HabitWeekRangeError,
+  readHabitRange,
 } from "./client-habit-figures-service";
 import type { ClientHabit, HabitEntry, HabitVersion } from "@/types/habits";
 
@@ -155,5 +166,199 @@ describe("getClientHabitProgress", () => {
       "2026-09-01",
       "2026-09-28",
     ]);
+  });
+
+  it("adds the weeks' figures together for the span, each week judged on its own first", async () => {
+    // Thu 17 to Wed 23: four days done, one more than the three planned, so
+    // that week is met 3 of 3. Thu 24 to Wed 30: two of three.
+    vi.mocked(listHabitEntries).mockResolvedValue(
+      ["2026-09-17", "2026-09-18", "2026-09-19", "2026-09-20", "2026-09-25", "2026-09-29"].map((date) =>
+        ticked("mobility", date)
+      )
+    );
+    const [mobilityRow] = (await getClientHabitProgress("client-3", 2)).habits;
+    expect(mobilityRow.weeks.map((week) => [week.planned, week.done, week.met])).toEqual([
+      [3, 4, 3],
+      [3, 2, 2],
+    ]);
+    // Five of six: the first week's extra day never counts toward the second.
+    expect(mobilityRow.span).toEqual({ planned: 6, done: 6, met: 5 });
+  });
+});
+
+describe("readHabitRange — the kernel's input over a run of days", () => {
+  it("reads the client's habits, with the edits on those days, and their entries on them, side by side", async () => {
+    const range = await readHabitRange("client-3", "2026-09-24", "2026-09-30");
+    expect(listClientHabits).toHaveBeenCalledWith("client-3", { from: "2026-09-24", to: "2026-09-30" });
+    expect(listHabitEntries).toHaveBeenCalledWith("client-3", { from: "2026-09-24", to: "2026-09-30" });
+    expect(range.habits.map((h) => h.id)).toEqual(["mobility", "water", "stopped"]);
+    expect(range.entries).toHaveLength(2);
+  });
+});
+
+describe("getHabitPeriodWeek — the habit week a check-in freezes", () => {
+  const ENTRIES = [ticked("mobility", "2026-09-25"), ticked("mobility", "2026-09-29")];
+
+  it("gives each habit a version covered during the period: its days as they happened, its figures, and the totals", () => {
+    const week = getHabitPeriodWeek({ habits: [mobility, water, stoppedLongAgo], entries: ENTRIES }, "2026-09-24", "2026-09-30");
+    // Mobility's Monday was missed and made up on the Tuesday: 2 of 3. Water:
+    // every day planned, nothing entered. The habit stopped in August is not in it.
+    expect(week.habits.map((row) => [row.habit.id, row.figures])).toEqual([
+      ["mobility", { planned: 3, done: 2, met: 2 }],
+      ["water", { planned: 7, done: 0, met: 0 }],
+    ]);
+    expect(week.totals).toEqual({ planned: 10, done: 2, met: 2 });
+    expect(week.habits[0].days.map((day) => [day.date, day.planned, day.met])).toEqual([
+      ["2026-09-24", false, false],
+      ["2026-09-25", true, true],
+      ["2026-09-26", false, false],
+      ["2026-09-27", false, false],
+      ["2026-09-28", true, false],
+      ["2026-09-29", false, true],
+      ["2026-09-30", true, false],
+    ]);
+    // The one-date edit's target is the day's.
+    expect(week.habits[1].days[6]).toMatchObject({ target: 2, edited: true });
+    expect(week.habits.map((row) => row.firstStartsOn)).toEqual(["2026-09-01", "2026-09-01"]);
+  });
+
+  it("carries only the versions running during the period: the prescription those days had", () => {
+    const steppedUp = habit("steps", {
+      versions: [
+        version({ id: "old", startsOn: "2026-08-01", endsOn: "2026-09-15" }),
+        version({ id: "before", startsOn: "2026-09-16", endsOn: "2026-09-26" }),
+        version({ id: "after", startsOn: "2026-09-27" }),
+      ],
+    });
+    const week = getHabitPeriodWeek({ habits: [steppedUp], entries: [] }, "2026-09-24", "2026-09-30");
+    expect(week.habits[0].versions.map((v) => v.id)).toEqual(["before", "after"]);
+    // Its first start is the history's, not the first of those versions.
+    expect(week.habits[0].firstStartsOn).toBe("2026-08-01");
+  });
+
+  it("dates a habit stopped before the period and started again inside it from its first start, not its restart", () => {
+    // Added 1 Aug, stopped after 31 Aug, started again on Sunday 27 Sep: the
+    // period holds only the restart, yet the habit was added long before it.
+    const restarted = habit("restarted", {
+      versions: [
+        version({ id: "first", startsOn: "2026-08-01", endsOn: "2026-08-31" }),
+        version({ id: "again", startsOn: "2026-09-27" }),
+      ],
+    });
+    const [row] = getHabitPeriodWeek({ habits: [restarted], entries: [] }, "2026-09-24", "2026-09-30").habits;
+    expect(row.versions.map((v) => v.id)).toEqual(["again"]);
+    expect(row.firstStartsOn).toBe("2026-08-01");
+    // Its days before the restart are covered by nothing that week.
+    expect(row.days.slice(0, 3).map((day) => day.covered)).toEqual([false, false, false]);
+  });
+
+  it("dates a habit first added inside the period from that day", () => {
+    const added = habit("added", { versions: [version({ id: "new", startsOn: "2026-09-27" })] });
+    const [row] = getHabitPeriodWeek({ habits: [added], entries: [] }, "2026-09-24", "2026-09-30").habits;
+    expect(row.firstStartsOn).toBe("2026-09-27");
+  });
+
+  it("reads nothing, no week anchor included: the period is the check-in's own week however the anchor has moved since", () => {
+    // Monday to Friday straddles two of today's Thursday-to-Wednesday weeks.
+    const week = getHabitPeriodWeek({ habits: [mobility, water, stoppedLongAgo], entries: ENTRIES }, "2026-09-28", "2026-10-02");
+    expect(getClientWeekAnchor).not.toHaveBeenCalled();
+    expect(listClientHabits).not.toHaveBeenCalled();
+    expect(listHabitEntries).not.toHaveBeenCalled();
+    expect(week.habits[0].days.map((day) => day.date)).toEqual([
+      "2026-09-28",
+      "2026-09-29",
+      "2026-09-30",
+      "2026-10-01",
+      "2026-10-02",
+    ]);
+  });
+});
+
+describe("getCoachHabitList — the Habits tab's list", () => {
+  const upcoming = habit("sauna", { versions: [version({ startsOn: "2026-10-05", timesPerWeek: 3, weekdays: [] })] });
+
+  beforeEach(() => {
+    vi.mocked(listClientHabitsWithEntryCheck).mockResolvedValue([
+      // Edits on either side of today and one on it; no entries yet.
+      {
+        ...mobility,
+        dayEdits: [
+          { date: "2026-09-28", planned: false, target: null },
+          { date: "2026-09-30", planned: true, target: null },
+          { date: "2026-10-05", planned: false, target: null },
+        ],
+        hasEntries: false,
+      },
+      // Entries made, and no edit at all.
+      { ...stoppedLongAgo, hasEntries: true },
+      { ...upcoming, hasEntries: false },
+    ]);
+  });
+
+  it("gives every habit in the client's order where it stands on the client's today, its words, whether it has entries, and its edits from today on", async () => {
+    const list = await getCoachHabitList("client-3");
+    expect(getClientTodayString).toHaveBeenCalledWith("client-3");
+    expect(listClientHabitsWithEntryCheck).toHaveBeenCalledWith("client-3", {});
+    expect(list.clientToday).toBe(TODAY);
+    // Whether a habit has entries is the entry check's answer, whatever its edits.
+    expect(list.habits.map((h) => [h.id, h.status, h.hasEntries, h.words])).toEqual([
+      ["mobility", "running", false, { schedule: "Mon, Wed, Fri", target: null }],
+      ["stopped", "stopped", true, { schedule: "Mon, Wed, Fri", target: null }],
+      ["sauna", "upcoming", false, { schedule: "3 times a week", target: null }],
+    ]);
+    // An edit before today is history; the tab edits from today on, today's own included.
+    expect(list.habits[0].dayEdits).toEqual([
+      { date: "2026-09-30", planned: true, target: null },
+      { date: "2026-10-05", planned: false, target: null },
+    ]);
+    expect(list.habits[0].versions).toEqual(mobility.versions);
+  });
+
+  it("uses the client's today when the caller already read it", async () => {
+    const list = await getCoachHabitList("client-3", "2026-10-05");
+    expect(getClientTodayString).not.toHaveBeenCalled();
+    expect(list.clientToday).toBe("2026-10-05");
+    expect(list.habits.find((h) => h.id === "sauna")?.status).toBe("running");
+  });
+});
+
+describe("getHabitDaySummary — the home card's habits", () => {
+  it("counts the habits running on the day, those planned on it, and those planned and done that day", async () => {
+    vi.mocked(listHabitEntries).mockResolvedValue([ticked("mobility", "2026-09-30")]);
+    // Wednesday: Mobility and Water are planned; Mobility is done.
+    expect(await getHabitDaySummary("client-3", TODAY)).toEqual({ plannedToday: 2, doneToday: 1, running: 2 });
+    expect(listClientHabits).toHaveBeenCalledWith("client-3", { from: TODAY, to: TODAY });
+    expect(listHabitEntries).toHaveBeenCalledWith("client-3", { from: TODAY, to: TODAY });
+  });
+
+  it("never counts a habit done on a day it was not planned: the done count stays within the planned one", async () => {
+    // Tuesday: Mobility is not planned, and made up anyway; Water is planned and not done.
+    vi.mocked(listHabitEntries).mockResolvedValue([ticked("mobility", "2026-09-29")]);
+    expect(await getHabitDaySummary("client-3", "2026-09-29")).toEqual({ plannedToday: 1, doneToday: 0, running: 2 });
+  });
+});
+
+describe("hasHabitFromToday — the activation card's habits item", () => {
+  it("is true for a habit running on the client's today, or one starting later", async () => {
+    vi.mocked(listClientHabits).mockResolvedValue([stoppedLongAgo, mobility]);
+    expect(await hasHabitFromToday("client-3", TODAY)).toBe(true);
+    vi.mocked(listClientHabits).mockResolvedValue([habit("later", { versions: [version({ startsOn: "2026-10-12" })] })]);
+    expect(await hasHabitFromToday("client-3", TODAY)).toBe(true);
+  });
+
+  it("is false with only stopped habits, or none", async () => {
+    vi.mocked(listClientHabits).mockResolvedValue([stoppedLongAgo]);
+    expect(await hasHabitFromToday("client-3", TODAY)).toBe(false);
+    vi.mocked(listClientHabits).mockResolvedValue([]);
+    expect(await hasHabitFromToday("client-3", TODAY)).toBe(false);
+  });
+
+  it("judges on the today it is handed, reading none of its own and no edit but that day's", async () => {
+    // Stopped at the end of August, so stopped on the 30 September the today
+    // service would give — but running on the 15 August it is handed.
+    vi.mocked(listClientHabits).mockResolvedValue([stoppedLongAgo]);
+    expect(await hasHabitFromToday("client-3", "2026-08-15")).toBe(true);
+    expect(getClientTodayString).not.toHaveBeenCalled();
+    expect(listClientHabits).toHaveBeenCalledWith("client-3", { from: "2026-08-15", to: "2026-08-15" });
   });
 });

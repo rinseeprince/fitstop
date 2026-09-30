@@ -1,4 +1,5 @@
 import type { TrainingEventSummary } from "./training";
+import type { HabitDaySummary } from "./habits";
 
 export type DaySummary = {
   // The day's training events, and nothing else: a workout has one date — the
@@ -15,5 +16,7 @@ export type DaySummary = {
     note: string | null; // the coach's per-day note, on the day's target
   };
   wellness: { hasLog: boolean };
-  habits: { totalCount: number; loggedCount: number };
+  // `running`: the habits a version covers on the day; `plannedToday`: those
+  // planned on it; `doneToday`: how many of those were done that day.
+  habits: HabitDaySummary;
 };

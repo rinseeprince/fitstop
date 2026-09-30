@@ -6,8 +6,9 @@
  *   npx tsx scripts/check-in-sent-snapshot-proof.ts
  *
  * A throwaway client under the owner's coach, deleted at the end: an intake
- * weight, a goal, a nutrition version, a habit and a custom question. The
- * client sends a check-in through `submitCheckIn` (the POST's writer), then:
+ * weight, a goal, a nutrition version, a habit with three entries in the week
+ * and a custom question. The client sends a check-in through `submitCheckIn`
+ * (the POST's writer), then:
  *
  *   1  the copy saved in the INSERT equals the review's own computation run
  *      straight after the Send (`buildSentSnapshotAsShown`) — one kernel;
@@ -15,8 +16,8 @@
  *      over HTTP — and the AI review's prompt are recorded;
  *   3  the coach then corrects the check-in's weigh-in on the Journey, sets a
  *      new goal from today, saves a nutrition plan from today with the
- *      training surplus off, switches the habit off, rewords the question and
- *      moves the start date;
+ *      training surplus off, stops the habit from today and renames it,
+ *      rewords the question and moves the start date;
  *   4  the review, the comparison and the prompt read exactly as before — the
  *      one live answer, "is the judged goal still current", now says no;
  *   5  the database refuses a change to the saved copy and still takes the
@@ -30,12 +31,14 @@ import "./env-bootstrap";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { appendMeasurements } from "@/services/measurements-service";
 import { addGoal } from "@/services/client-goal-writes-service";
+import { addHabits, renameHabit, stopHabit } from "@/services/client-habit-writes-service";
 import { submitCheckIn } from "@/services/check-in-service";
 import { buildSentSnapshotAsShown } from "@/services/check-in-sent-snapshot-fill";
 import { getCheckInReviewInput } from "@/services/check-in-review-input-service";
 import { buildCheckInReviewPrompt } from "@/utils/ai-prompt-builder";
 import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { addDaysToDateString, getTodayDateStringInTimezone } from "@/lib/date-helpers";
+import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import { mintSession, send, type ProofSession } from "./proof-session";
 
 const COACH_EMAIL = "samuel.k@taboola.com";
@@ -154,12 +157,32 @@ async function main(): Promise<void> {
       tdee: 2610,
     } as never);
     if (planError) throw new Error(`Plan insert failed: ${planError.message}`);
-    const { data: habit, error: habitError } = await supabaseAdmin
-      .from("daily_habits")
-      .insert({ client_id: C, coach_id: coach.id, name: "Ten thousand steps", is_active: true, effective_date: d(-11) } as never)
-      .select("id")
-      .single();
-    if (habitError || !habit) throw new Error(`Habit insert failed: ${habitError?.message}`);
+    // Every day from d(-11), through add_client_habits — handed that day as its
+    // today, as the goal above is — with three entries inside the week the
+    // check-in reports on: two done, one not.
+    const [habitId] = await addHabits({
+      clientId: C,
+      today: d(-11),
+      startsOn: d(-11),
+      createdBy: coach.id,
+      habits: [
+        {
+          name: "Ten thousand steps",
+          howTo: null,
+          measure: "tick",
+          unit: null,
+          direction: null,
+          target: null,
+          schedule: { weekdays: [...DAYS_OF_WEEK] },
+        },
+      ],
+    });
+    const { error: entriesError } = await supabaseAdmin.from("client_habit_logs").insert([
+      { client_habit_id: habitId, client_id: C, date: d(-5), done: true },
+      { client_habit_id: habitId, client_id: C, date: d(-4), done: false },
+      { client_habit_id: habitId, client_id: C, date: d(-2), done: true },
+    ]);
+    if (entriesError) throw new Error(`Habit entries insert failed: ${entriesError.message}`);
     const { data: question, error: questionError } = await supabaseAdmin
       .from("check_in_questions")
       .insert({ coach_id: coach.id, prompt: "What went well this week?" } as never)
@@ -242,7 +265,11 @@ async function main(): Promise<void> {
       p_today: today,
     } as never);
     check("a plan saved from today with the surplus off", !surplusError, surplusError?.message);
-    await supabaseAdmin.from("daily_habits").update({ is_active: false } as never).eq("id", habit.id);
+    // The habit stopped from the client's today and renamed: the copy keeps
+    // the name it froze and the week as it was prescribed.
+    const stopped = await stopHabit({ habitId, clientId: C, today, stopsOn: today });
+    const renamed = await renameHabit({ habitId, clientId: C, name: "Twelve thousand steps", howTo: null });
+    check("the habit is stopped from today and renamed", stopped && renamed, { stopped, renamed });
     await supabaseAdmin.from("check_in_questions").update({ prompt: "What was your biggest win?" } as never).eq("id", question.id);
     await supabaseAdmin.from("clients").update({ start_date: d(-16) } as never).eq("id", C);
 

@@ -178,15 +178,32 @@ export const HIGH_STRESS_CONSECUTIVE_DAYS = 3;
 export const HIGH_SORENESS_THRESHOLD = 8; // Soreness level
 export const HIGH_SORENESS_CONSECUTIVE_DAYS = 3;
 
+// The Overview's habit rail: a day whose planned habits were done below this
+// share counts toward its "days below 50%" line.
 export const HABIT_DROPOFF_THRESHOLD_PERCENT = 50; // Completion rate %
-export const HABIT_DROPOFF_DAYS_IN_WEEK = 5; // Days out of 7
+
+// The missed-habit alert (decision D4): a habit is listed when the client
+// missed at least HABIT_MISSED_DAYS of its planned days over the last
+// HABIT_MISSED_WINDOW_DAYS days gone by, in a row or not.
+export const HABIT_MISSED_DAYS = 3;
+export const HABIT_MISSED_WINDOW_DAYS = 7;
 
 // Habits (migration 203). A target and a number entry are NUMERIC(10,2): the
 // wire refuses more than two decimals, and anything above this, rather than
 // letting Postgres round or overflow a value quietly.
 export const HABIT_AMOUNT_MAX = 1_000_000;
+// A habit amount as written: digits, and at most two decimals after a point.
+// One spelling for the box that reads a typed amount and the wire that checks
+// a sent one; no `g` flag, so `test` keeps no state between calls.
+export const HABIT_AMOUNT_PATTERN = /^\d+(\.\d{1,2})?$/;
+// A habit's name, how-to and unit; migration 203's CHECKs hold the same bounds.
+export const HABIT_NAME_MAX = 100;
+export const HABIT_HOW_TO_MAX = 500;
+export const HABIT_UNIT_MAX = 20;
 // A note on an entry; migration 203's CHECK holds the same bound.
 export const HABIT_NOTE_MAX = 500;
+// The most habits one add may carry.
+export const HABIT_ADD_MAX = 50;
 // The most habits one new order may name: a client's whole list, stopped ones included.
 export const HABIT_ORDER_MAX = 500;
 // The Journey's habits: the client weeks it shows unless asked for another

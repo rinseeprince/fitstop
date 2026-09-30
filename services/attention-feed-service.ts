@@ -5,8 +5,9 @@
  * - clients: to get the list of clients for a coach
  * - wellness_logs + nutrition_logs: the 28-day window's day-form rows for all
  *   clients, assembled per client and date into the days the triggers read
- * - daily_habits: habit definitions for all clients
- * - daily_habit_logs: 28-day rolling window of habit logs for all clients
+ * - the clients' habits a version covers on a day of the window, with those
+ *   days' versions and one-date edits, and their habit entries over the window
+ *   (through the habit service's cross-client reads)
  * - training_events: the window's events, for the training triggers and the workout logs
  * - client_measurements_live: the client's own measurement logs (source = client_log)
  * - nutrition_plans + training_plans: every active version's and live program's
@@ -32,6 +33,7 @@ import { getNutritionWindowsForClients } from "./nutrition-plan-service"
 import { getNutritionTargetsForClients } from "./nutrition-days-service"
 import { getLiveProgramWindowsForClients } from "./training-service"
 import { getBlockWindowsForClients } from "./client-blocks-service"
+import { listHabitEntriesForClients, listHabitsForClients } from "./client-habits-service"
 import {
   NUTRITION_LOG_COLUMNS,
   WELLNESS_LOG_COLUMNS,
@@ -92,9 +94,9 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // these reads have two independent ceilings and fixing one leaves the other:
   //
   //  - ROW cap: PostgREST truncates an unpaged response at ~1000 rows with no
-  //    error. At 5 habits x 29 dates = 145 rows/client the habit logs were
-  //    losing rows from the SEVENTH client onward, silently skewing the
-  //    habit-dropoff percentage shown to the coach.
+  //    error. At 5 habits x 29 dates = 145 rows/client the habit entries would
+  //    lose rows from the SEVENTH client onward, silently hiding a missed habit
+  //    from the coach.
   //  - URL cap: inlining every client id into `.in()` costs ~38 B/uuid, so the
   //    request line passes a typical 8 KB proxy limit at ~205 clients and 16 KB
   //    at ~425. Paging does NOT help — the loop re-sends the whole id list on
@@ -115,7 +117,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     wellnessResult,
     nutritionResult,
     habitsResult,
-    habitLogsResult,
+    habitEntriesResult,
     eventsResult,
     clientLogsResult,
     dismissalsResult,
@@ -151,30 +153,12 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
         .range(from, to),
       { errorLabel: "nutrition logs" },
     ),
-    // 3. Habit definitions (graceful degradation)
-    fetchAllByChunkedIds(clientIds, (chunk, from, to) =>
-      supabaseAdmin
-        .from("daily_habits")
-        .select("*")
-        .in("client_id", chunk)
-        .eq("is_active", true)
-        .order("id", { ascending: true })
-        .range(from, to),
-      { errorLabel: "habits" },
-    ),
-    // 4. Habit logs (graceful degradation)
-    fetchAllByChunkedIds(clientIds, (chunk, from, to) =>
-      supabaseAdmin
-        .from("daily_habit_logs")
-        .select("*")
-        .in("client_id", chunk)
-        .gte("date", startDate)
-        .lte("date", endDate)
-        .order("date", { ascending: false })
-        .order("id", { ascending: true })
-        .range(from, to),
-      { errorLabel: "habit logs" },
-    ),
+    // 3. The habits a version covers on a day of the window (graceful
+    //    degradation): the missed-habit lines, and prescribed work
+    listHabitsForClients(clientIds, { from: startDate, to: endDate }),
+    // 4. The habit entries over the window (graceful degradation): the
+    //    missed-habit lines, and a logged-day source
+    listHabitEntriesForClients(clientIds, { from: startDate, to: endDate }),
     // 5. Training events (graceful degradation)
     fetchAllByChunkedIds(clientIds, (chunk, from, to) =>
       supabaseAdmin
@@ -248,11 +232,11 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     console.error("Error fetching habits:", habitsResult.reason)
   }
 
-  let allHabitLogs = null
-  if (habitLogsResult.status === "fulfilled") {
-    allHabitLogs = habitLogsResult.value
+  let allHabitEntries = null
+  if (habitEntriesResult.status === "fulfilled") {
+    allHabitEntries = habitEntriesResult.value
   } else {
-    console.error("Error fetching habit logs:", habitLogsResult.reason)
+    console.error("Error fetching habit entries:", habitEntriesResult.reason)
   }
 
   let eventRows = null
@@ -302,7 +286,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     clients,
     dayRows,
     allHabits,
-    allHabitLogs,
+    allHabitEntries,
     eventRows,
     clientLogRows,
     nutritionWindows,
@@ -355,7 +339,7 @@ export async function evaluateSingleClientAlerts(
     wellnessResult,
     nutritionResult,
     habitsResult,
-    habitLogsResult,
+    habitEntriesResult,
     eventsResult,
     clientLogsResult,
     dismissalsResult,
@@ -383,13 +367,10 @@ export async function evaluateSingleClientAlerts(
         .lte("date", endDate)
         .order("date", { ascending: false })
         .order("id", { ascending: true }),
-      supabaseAdmin.from("daily_habits").select("*").eq("client_id", clientId).eq("is_active", true),
-      supabaseAdmin
-        .from("daily_habit_logs")
-        .select("*")
-        .eq("client_id", clientId)
-        .gte("date", startDate)
-        .lte("date", endDate),
+      // The same habit reads the cross-client path uses, over one id, so the
+      // Overview and the dashboard list the same missed habits.
+      listHabitsForClients([clientId], { from: startDate, to: endDate }),
+      listHabitEntriesForClients([clientId], { from: startDate, to: endDate }),
       supabaseAdmin
         .from("training_events")
         .select(
@@ -429,10 +410,8 @@ export async function evaluateSingleClientAlerts(
     nutrition: nutritionResult.value.data ?? [],
   }
 
-  const allHabits =
-    habitsResult.status === "fulfilled" && !habitsResult.value.error ? habitsResult.value.data : null
-  const allHabitLogs =
-    habitLogsResult.status === "fulfilled" && !habitLogsResult.value.error ? habitLogsResult.value.data : null
+  const allHabits = habitsResult.status === "fulfilled" ? habitsResult.value : null
+  const allHabitEntries = habitEntriesResult.status === "fulfilled" ? habitEntriesResult.value : null
   const eventRows =
     eventsResult.status === "fulfilled" && !eventsResult.value.error ? eventsResult.value.data : null
   const clientLogRows =
@@ -454,7 +433,7 @@ export async function evaluateSingleClientAlerts(
     [client] as ClientInfoWithCheckIn[],
     dayRows,
     allHabits,
-    allHabitLogs,
+    allHabitEntries,
     eventRows,
     clientLogRows,
     nutritionWindows,

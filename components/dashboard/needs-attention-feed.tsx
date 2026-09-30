@@ -9,6 +9,7 @@ import type { AttentionAlert } from "@/types/attention-feed"
 import { cn } from "@/lib/utils"
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
 import { alertDestination } from "@/lib/attention-alert-destinations"
+import { alertDismissalKey } from "@/lib/attention-alert-dismissal"
 import {
   getPriorityAlertText,
   getShortAlertText,
@@ -17,7 +18,8 @@ import {
 function AlertRow({ clientId, alert, onDismiss }: {
   clientId: string
   alert: AttentionAlert
-  onDismiss: (clientId: string, alertType: string) => void
+  /** Dismisses the alert by its key (`alertDismissalKey`): its type, and a missed-habit line's habit. */
+  onDismiss: (clientId: string, dismissalKey: string) => void
 }) {
   return (
     <div className="flex items-center justify-between py-1.5">
@@ -37,7 +39,8 @@ function AlertRow({ clientId, alert, onDismiss }: {
           View
         </Link>
         <button
-          onClick={() => onDismiss(clientId, alert.type)}
+          onClick={() => onDismiss(clientId, alertDismissalKey(alert))}
+          aria-label={`Dismiss: ${alert.message}`}
           className="text-[#93b0b4] hover:text-[#0c1a1e]"
         >
           <X className="w-3.5 h-3.5" />
@@ -64,12 +67,12 @@ export function NeedsAttentionFeed() {
     })
   }
 
-  const handleDismiss = async (clientId: string, alertType: string) => {
+  const handleDismiss = async (clientId: string, dismissalKey: string) => {
     try {
       const res = await fetch("/api/dashboard/attention-feed/dismiss", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, alertType }),
+        body: JSON.stringify({ clientId, alertType: dismissalKey }),
       })
       if (!res.ok) throw new Error("Failed to dismiss")
       void mutate()
@@ -195,7 +198,7 @@ export function NeedsAttentionFeed() {
                       <div className="mt-2 border-t border-[rgba(13,148,136,0.1)] pt-1.5">
                         {priorityClient.alerts.map(alert => (
                           <AlertRow
-                            key={alert.type}
+                            key={alertDismissalKey(alert)}
                             clientId={priorityClient.clientId}
                             alert={alert}
                             onDismiss={handleDismiss}
@@ -253,7 +256,7 @@ export function NeedsAttentionFeed() {
                       <div className="ml-0 mt-1 pl-2 border-l-2 border-[rgba(13,148,136,0.1)]">
                         {client.alerts.map(alert => (
                           <AlertRow
-                            key={alert.type}
+                            key={alertDismissalKey(alert)}
                             clientId={client.clientId}
                             alert={alert}
                             onDismiss={handleDismiss}

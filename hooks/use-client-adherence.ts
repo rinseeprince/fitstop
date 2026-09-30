@@ -1,6 +1,7 @@
 "use client";
 
-import useSWR from "swr";
+import { useCallback } from "react";
+import useSWR, { useSWRConfig } from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { AdherenceSummary } from "@/types/coach-overview";
 
@@ -9,9 +10,14 @@ type AdherenceResponse = { success: boolean; data: AdherenceSummary };
 /** The Overview's three-rail window. The route clamps `days` to [7, 60]. */
 export const ADHERENCE_WINDOW_DAYS = 14;
 
+/** The area every adherence read of a client lives under. */
+function clientAdherenceAreaPrefix(clientId: string): string {
+  return `/api/clients/${clientId}/adherence`;
+}
+
 /** The key builder. Never construct this URL at a call site. */
-function clientAdherenceKey(clientId: string, days: number): string {
-  return `/api/clients/${clientId}/adherence?days=${days}`;
+export function clientAdherenceKey(clientId: string, days: number): string {
+  return `${clientAdherenceAreaPrefix(clientId)}?days=${days}`;
 }
 
 /**
@@ -31,4 +37,26 @@ export function useClientAdherence(clientId: string, days: number) {
   );
 
   return { adherence: data?.data ?? null, isLoading, isError: !!error };
+}
+
+/**
+ * Drop every cached adherence read of a client, then let them refetch.
+ *
+ * CLEARED, not merely revalidated (CONVENTIONS §7): the rails render definite
+ * answers — a day's dot, "3 days below 50%" — and SWR would serve the stale
+ * ones for the whole refetch. Called by every habit writer on success: a
+ * habit added, changed, stopped or deleted changes the days the habits rail
+ * judges.
+ */
+export function useClearClientAdherence() {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    (clientId: string) =>
+      mutate(
+        (key) => typeof key === "string" && key.startsWith(clientAdherenceAreaPrefix(clientId)),
+        undefined,
+        { revalidate: true }
+      ),
+    [mutate]
+  );
 }

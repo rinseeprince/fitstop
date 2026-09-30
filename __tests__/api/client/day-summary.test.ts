@@ -31,7 +31,7 @@ describe("GET /api/client/day-summary", () => {
       training: [],
       nutrition: { hasLog: false, caloriesConsumed: null, targetCalories: null, note: null },
       wellness: { hasLog: false },
-      habits: { totalCount: 0, loggedCount: 0 },
+      habits: { plannedToday: 0, doneToday: 0, running: 0 },
     });
   });
 
@@ -50,7 +50,7 @@ describe("GET /api/client/day-summary", () => {
       ],
       nutrition: { hasLog: true, caloriesConsumed: 1900, targetCalories: 2000, note: null },
       wellness: { hasLog: true },
-      habits: { totalCount: 3, loggedCount: 2 },
+      habits: { plannedToday: 3, doneToday: 2, running: 4 },
     });
 
     const res = await GET(createRequest("2026-05-08"));
@@ -61,7 +61,7 @@ describe("GET /api/client/day-summary", () => {
     expect(body.data.training).toHaveLength(1);
     expect(body.data.nutrition).toEqual({ hasLog: true, caloriesConsumed: 1900, targetCalories: 2000, note: null });
     expect(body.data.wellness).toEqual({ hasLog: true });
-    expect(body.data.habits).toEqual({ totalCount: 3, loggedCount: 2 });
+    expect(body.data.habits).toEqual({ plannedToday: 3, doneToday: 2, running: 4 });
     expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 

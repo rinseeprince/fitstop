@@ -7,7 +7,7 @@ import type { CheckInReviewInput } from "@/types/check-in-review-input";
 import type { CheckIn, CheckInWithDetails, CheckInTrainingEventDetail } from "@/types/check-in";
 import type { NutritionDay } from "@/types/schedule";
 import type { DailyLog } from "@/types/daily-log";
-import type { HabitBreakdown } from "@/types/coach-overview";
+import { readSentSnapshot, type SentHabitWeek } from "@/lib/check-in/sent-snapshot";
 
 // A fixture week, Fri 11 to Thu 17 September 2026, built to hold one of
 // everything the AI is given: a full workout with its exercise lines, a
@@ -90,10 +90,31 @@ const nutritionDays: NutritionDay[] = [
   day("2026-09-17", "not_logged", null, TARGET),
 ];
 
-const habits: HabitBreakdown[] = [
+// The habits as a version 2 copy saved them, read into the current shape by the
+// reader every surface uses: the pinned prompt below is the one version 2 gave,
+// so a copy saved before version 3 still writes the same week (commit 2 of
+// docs/HABITS-REBUILD-PLAN.md: version 3 in, the pinned text unchanged).
+const perHabit = [
   { id: "h-1", name: "Walk 10k steps", eligibleDays: 7, completedDays: 3, pct: 43, rail: [true, false, false, true, false, true, false] },
   { id: "h-2", name: "Water 3 L", eligibleDays: 4, completedDays: 2, pct: 50, rail: [null, null, null, true, false, true, false] },
 ];
+
+function habitWeekFromVersion2(): SentHabitWeek {
+  const copy = readSentSnapshot({
+    version: 2,
+    day: "2026-09-17",
+    readings: { weight: null, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null },
+    standing: { weight: null, bodyFat: null },
+    goal: null,
+    goalProgress: {},
+    nutritionPlan: null,
+    period: { dates: DATES, loggedDates: [], nutrition: [], habits: { rail: [], avgPct: null, daysBelow50: 0, perHabit } },
+    questions: [],
+  });
+  return copy!.period!.habitWeek;
+}
+
+const habitWeek = habitWeekFromVersion2();
 
 const dailyLog = (date: string, fields: Partial<DailyLog>): DailyLog =>
   ({ id: `dl-${date}`, clientId: "client-1", date, createdAt: "", updatedAt: "", ...fields }) as DailyLog;
@@ -117,7 +138,7 @@ const fixture: CheckInReviewInput = {
   workouts,
   exerciseLines,
   nutrition: { days: nutritionDays, summary: summarizeNutritionPeriod(nutritionDays) },
-  habits,
+  habitWeek,
   dailyLogs,
   comparison: {
     comparison: {
@@ -326,7 +347,7 @@ describe("buildCheckInReviewPrompt — the fixture week, pinned", () => {
       checkIn: { ...checkIn, notes: undefined, prs: undefined, challenges: undefined, exerciseHighlights: [], customAnswers: [] },
       comparison: null,
       loggedDates: null,
-      habits: [],
+      habitWeek: null,
     });
     expect(prompt).toContain("Submitted Thursday 17 September 2026.");
     expect(prompt).toContain("Weight: 82.4 kg\nBody fat: not tracked\nGoal: not available");

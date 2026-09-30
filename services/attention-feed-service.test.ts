@@ -197,13 +197,11 @@ describe("attention-feed-service", () => {
         log("2026-04-04", { caloriesConsumed: 2100 }),
         log("2026-04-07"), // a day-form row with no reading is not a log
       ]
-      data.habitLogs = [
-        { id: "hl", dailyHabitId: "h1", clientId: "c1", date: "2026-04-02", completed: false, createdAt: "", updatedAt: "" },
-      ]
+      data.habitEntries = [{ habitId: "h1", date: "2026-04-02", done: false, value: null, note: null }]
 
       expect(loggedDaysFor(data, dateRange)).toEqual([
         "2026-04-01", // trained
-        "2026-04-02", // ticked (or unticked) a habit
+        "2026-04-02", // answered a habit — done or not, either is the client acting
         "2026-04-03", // wellness
         "2026-04-04", // nutrition
         "2026-04-05", // logged a measurement
@@ -289,7 +287,7 @@ describe("attention-feed-service", () => {
       ]
       const dateRange = { start: iso(start), end: iso(today) }
 
-      const map = groupClientData(clients, null, null, null, events, null)
+      const map = groupClientData(clients, null, null, [], events, null)
       const result = evaluateAndSortTriggers(map, dateRange)
 
       const c1 = result.find((c) => c.clientId === "c1")
@@ -297,9 +295,92 @@ describe("attention-feed-service", () => {
       expect(c1!.alerts.some((a) => a.type === "no_engagement")).toBe(true)
     })
 
+    // A habit of c1's the roster read returns, planned every day from 1 March 2024.
+    const everyDay = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
+    const rosterHabit = (id: string, name: string) => ({
+      clientId: "c1",
+      id,
+      name,
+      howTo: null,
+      measure: "tick" as const,
+      unit: null,
+      direction: null,
+      position: 1,
+      versions: [{ id: `${id}-v`, startsOn: "2024-03-01", endsOn: null, target: null, timesPerWeek: null, weekdays: [...everyDay] }],
+      dayEdits: [],
+    })
+
+    describe("missed habits (D4): one line per habit, under the client's row", () => {
+      // The window ends on Wednesday 27 March 2024, the coach's today: the
+      // days gone by are the 20th to the 26th.
+      const dateRange = { start: "2024-02-28", end: "2024-03-27" }
+      const doneOn = (habitId: string, ...dates: string[]) =>
+        dates.map((date) => ({ clientId: "c1", habitId, date, done: true, value: null, note: null }))
+
+      it("lists each habit missed on 3+ of its planned days as its own line, keyed by the habit", () => {
+        const map = groupClientData(
+          [baseClient],
+          null,
+          [rosterHabit("h-water", "Water"), rosterHabit("h-walk", "Walk"), rosterHabit("h-read", "Read")],
+          [
+            // Water: done on 4 of the 7 → missed 3. Walk: done on 6 → missed 1. Read: never → missed 7.
+            ...doneOn("h-water", "2024-03-20", "2024-03-21", "2024-03-22", "2024-03-23"),
+            ...doneOn("h-walk", "2024-03-20", "2024-03-21", "2024-03-22", "2024-03-23", "2024-03-24", "2024-03-25"),
+          ],
+          null,
+          null,
+        )
+        const alerts = evaluateAndSortTriggers(map, dateRange).find((c) => c.clientId === "c1")?.alerts ?? []
+        const habitLines = alerts.filter((alert) => alert.type === "habit_missed")
+
+        expect(habitLines.map((alert) => [alert.habitId, alert.message, alert.severity])).toEqual([
+          ["h-water", "Missed Water 3 days", "medium"],
+          ["h-read", "Missed Read 7 days", "medium"],
+        ])
+        expect(habitLines[0].affectedDays).toEqual(["2024-03-24", "2024-03-25", "2024-03-26"])
+      })
+
+      it("groups the roster's habits and entries under their own clients", () => {
+        const map = groupClientData(
+          [baseClient, { ...baseClient, id: "c2", name: "Client 2" }],
+          null,
+          [rosterHabit("h-water", "Water"), { ...rosterHabit("h-other", "Other"), clientId: "c2" }],
+          [...doneOn("h-water", "2024-03-20"), { ...doneOn("h-other", "2024-03-20")[0], clientId: "c2" }],
+          null,
+          null,
+        )
+        expect(map.get("c1")!.habits.map((habit) => habit.id)).toEqual(["h-water"])
+        expect(map.get("c2")!.habitEntries?.map((entry) => entry.habitId)).toEqual(["h-other"])
+        expect("clientId" in map.get("c1")!.habits[0]).toBe(false)
+      })
+
+      it("lists nothing when the entries read failed: unknown entries are never read as every planned day missed", () => {
+        const habits = [rosterHabit("h-water", "Water"), rosterHabit("h-walk", "Walk")]
+        const degraded = groupClientData([baseClient], null, habits, null, null, null)
+        expect(degraded.get("c1")!.habitEntries).toBeNull()
+        const alerts = evaluateAndSortTriggers(degraded, dateRange).find((c) => c.clientId === "c1")?.alerts ?? []
+        expect(alerts.filter((alert) => alert.type === "habit_missed")).toEqual([])
+
+        // The same habits with the read answering "no entries" are missed every day.
+        const answered = groupClientData([baseClient], null, habits, [], null, null)
+        const lines = evaluateAndSortTriggers(answered, dateRange).find((c) => c.clientId === "c1")?.alerts ?? []
+        expect(lines.filter((alert) => alert.type === "habit_missed")).toHaveLength(2)
+      })
+
+      it("counts a habit covering the window as prescribed work: a never-logged client with only habits surfaces", () => {
+        const clients = [{ ...baseClient, start_date: "2024-01-01" }]
+        const map = groupClientData(clients, null, [rosterHabit("h-water", "Water")], [], null, null)
+        const types = evaluateAndSortTriggers(map, dateRange).find((c) => c.clientId === "c1")?.alerts.map((a) => a.type)
+        expect(types).toContain("no_engagement")
+        expect(types).toContain("habit_missed")
+      })
+    })
+
     describe("a client who only trains, or only ticks habits, is never read as silent", () => {
       // A fixed window: the coach-local today is the window end, so the
-      // silence cutoff is the 24th and a log on the 25th is inside it.
+      // silence cutoff is the 24th and a log on the 25th is inside it. The
+      // habit-entries read answers "no entries" ([]) unless a test says
+      // otherwise: a failed read (null) leaves the logged days unknown.
       const dateRange = { start: "2024-02-28", end: "2024-03-27" }
       const clients = [{ ...baseClient, start_date: "2024-01-01" }]
       const prescribed: TrainingEventRow = {
@@ -310,30 +391,34 @@ describe("attention-feed-service", () => {
           .find((c) => c.clientId === "c1")?.alerts.map((a) => a.type) ?? []
 
       it("a completed workout in the silence window clears no_engagement, and no day-form row is needed", () => {
-        const map = groupClientData(clients, null, null, null, [
+        const map = groupClientData(clients, null, null, [], [
           prescribed,
           { client_id: "c1", date: "2024-03-25", status: "completed", estimated_calories: 300 },
         ], null)
         expect(alertsFor(map)).not.toContain("no_engagement")
       })
 
-      it("a habit log in the silence window clears it", () => {
+      it("a habit entry in the silence window clears it", () => {
         const map = groupClientData(clients, null, null, null, [prescribed], null)
-        map.get("c1")!.habitLogs = [
-          { id: "hl", dailyHabitId: "h1", clientId: "c1", date: "2024-03-26", completed: true, createdAt: "", updatedAt: "" },
-        ]
+        map.get("c1")!.habitEntries = [{ habitId: "h1", date: "2024-03-26", done: true, value: null, note: null }]
+        expect(alertsFor(map)).not.toContain("no_engagement")
+      })
+
+      it("a number entry clears it too, whatever it answers", () => {
+        const map = groupClientData(clients, null, null, null, [prescribed], null)
+        map.get("c1")!.habitEntries = [{ habitId: "h1", date: "2024-03-26", done: null, value: 0, note: null }]
         expect(alertsFor(map)).not.toContain("no_engagement")
       })
 
       it("a measurement the client logged themselves clears it", () => {
-        const map = groupClientData(clients, null, null, null, [prescribed], [
+        const map = groupClientData(clients, null, null, [], [prescribed], [
           { client_id: "c1", recorded_on: "2024-03-27" },
         ])
         expect(alertsFor(map)).not.toContain("no_engagement")
       })
 
       it("a scheduled event alone does not", () => {
-        const map = groupClientData(clients, null, null, null, [prescribed], null)
+        const map = groupClientData(clients, null, null, [], [prescribed], null)
         expect(alertsFor(map)).toContain("no_engagement")
       })
 
@@ -342,7 +427,7 @@ describe("attention-feed-service", () => {
         // Counting day-form rows this is a seven-day gap; counting logged days the
         // longest gap is one day.
         const range = { start: "2024-03-01", end: "2024-03-09" }
-        const map = groupClientData(clients, null, null, null, [
+        const map = groupClientData(clients, null, null, [], [
           { client_id: "c1", date: "2024-03-03", status: "completed", estimated_calories: null },
           // Logged, at whatever quality: a partly done workout is a logged day.
           {
@@ -362,6 +447,37 @@ describe("attention-feed-service", () => {
           .find((c) => c.clientId === "c1")?.alerts.map((a) => a.type) ?? []
         expect(types).not.toContain("no_log_gap")
       })
+
+      it("a client who only ticks habits is not read as silent when the entries read failed; the read answering no entries is", () => {
+        // Unknown entries are never none: the day they would fill is not a
+        // day the client logged nothing.
+        const failed = groupClientData(clients, null, [rosterHabit("h-water", "Water")], null, null, null)
+        expect(alertsFor(failed)).not.toContain("no_engagement")
+        expect(alertsFor(failed)).not.toContain("no_log_gap")
+
+        const none = groupClientData(clients, null, [rosterHabit("h-water", "Water")], [], null, null)
+        expect(alertsFor(none)).toContain("no_engagement")
+      })
+
+      it("nor opens a logging gap across the days only the unknown entries could fill", () => {
+        // Water planned daily, and a mood logged on the 1st and 2nd of March:
+        // with the entries unknown the logged days would stop on the 2nd —
+        // a gap to the window's end and no log in the last 3 days — so
+        // neither alert is raised; the read answering "no entries" raises both.
+        const withMood = (map: ReturnType<typeof groupClientData>) => {
+          map.get("c1")!.logs = [
+            { id: "b", clientId: "c1", date: "2024-03-02", mood: 3, createdAt: "", updatedAt: "" },
+            { id: "a", clientId: "c1", date: "2024-03-01", mood: 3, createdAt: "", updatedAt: "" },
+          ]
+          return map
+        }
+        const failed = withMood(groupClientData(clients, null, [rosterHabit("h-water", "Water")], null, null, null))
+        expect(alertsFor(failed)).not.toContain("no_log_gap")
+        expect(alertsFor(failed)).not.toContain("no_engagement")
+
+        const none = withMood(groupClientData(clients, null, [rosterHabit("h-water", "Water")], [], null, null))
+        expect(alertsFor(none)).toEqual(expect.arrayContaining(["no_log_gap", "no_engagement"]))
+      })
     })
 
     it("skips a client with nothing logged and nothing prescribed", () => {
@@ -375,7 +491,7 @@ describe("attention-feed-service", () => {
       // list; the ended nutrition version fires HIGH after it. The client's
       // alerts must still lead with the HIGH.
       const map = groupClientData(
-        [{ ...baseClient, start_date: "2025-10-06" }], null, null, null,
+        [{ ...baseClient, start_date: "2025-10-06" }], null, null, [],
         [{ client_id: "c1", date: "2026-01-19", status: "scheduled", estimated_calories: 300 }],
         null,
         [{ clientId: "c1", start: "2025-11-17", end: "2025-12-28" }],
@@ -431,7 +547,7 @@ describe("attention-feed-service", () => {
       ]
       const dateRange = { start: "2024-02-28", end: "2024-03-27" }
 
-      const map = groupClientData(clients, null, null, null, events, null)
+      const map = groupClientData(clients, null, null, [], events, null)
       const result = evaluateAndSortTriggers(map, dateRange)
 
       const alert = result
@@ -454,6 +570,7 @@ describe("attention-feed-service", () => {
         eq: vi.fn().mockReturnThis(),
         is: vi.fn().mockReturnThis(),
         neq: vi.fn().mockReturnThis(),
+        or: vi.fn().mockReturnThis(),
         in: vi.fn().mockReturnThis(),
         gte: vi.fn().mockReturnThis(),
         lte: vi.fn().mockReturnThis(),
@@ -490,6 +607,7 @@ describe("attention-feed-service", () => {
           eq: vi.fn().mockReturnThis(),
           is: vi.fn().mockReturnThis(),
           neq: vi.fn().mockReturnThis(),
+          or: vi.fn().mockReturnThis(),
           gte: vi.fn().mockReturnThis(),
           lte: vi.fn().mockReturnThis(),
           order: vi.fn().mockReturnThis(),
@@ -522,10 +640,10 @@ describe("attention-feed-service", () => {
       // not on a positional slice.)
       expect(new Set(inCalls.flat()).size).toBe(250)
       // Each read covers all 250 ids across 3 chunks (100/100/50), 10 reads: the
-      // six window reads (the day-form's two tables, habits, habit logs, events,
-      // measurements), the two plan-window reads, the blocks read and the day
-      // reader's versions read (its per-day sources are read for the clients a
-      // version covers, none here).
+      // six window reads (the day-form's two tables, habits, habit entries,
+      // events, measurements), the two plan-window reads, the blocks read and
+      // the day reader's versions read (its per-day sources are read for the
+      // clients a version covers, none here).
       expect(inCalls.length).toBe(30)
     })
 
@@ -544,6 +662,7 @@ describe("attention-feed-service", () => {
           in: vi.fn().mockReturnThis(),
           is: vi.fn().mockReturnThis(),
           neq: vi.fn().mockReturnThis(),
+          or: vi.fn().mockReturnThis(),
           eq: vi.fn((...args: unknown[]) => { (eqCalls[table] ??= []).push(args); return q }),
         }
         Object.defineProperty(q, "then", {
@@ -576,7 +695,7 @@ describe("attention-feed-service", () => {
       let rosterServed = false
       const makeQuery = (table: string) => {
         const q: Record<string, unknown> = {}
-        for (const method of ["select", "eq", "is", "neq", "in", "gte", "lte", "order", "range"]) {
+        for (const method of ["select", "eq", "is", "neq", "or", "in", "gte", "lte", "order", "range"]) {
           q[method] = vi.fn((...args: unknown[]) => { record(table, method, args); return q })
         }
         Object.defineProperty(q, "then", {
@@ -625,6 +744,7 @@ describe("attention-feed-service", () => {
           order: vi.fn().mockReturnThis(),
           range: vi.fn().mockReturnThis(),
           in: vi.fn().mockReturnThis(),
+          or: vi.fn().mockReturnThis(),
         }
         for (const method of ["select", "eq", "is", "neq"]) {
           q[method] = vi.fn((...args: unknown[]) => { record(table, method, args); return q })
@@ -743,6 +863,59 @@ describe("attention-feed-service", () => {
       const result = filterDismissedAlerts(clients, null)
       expect(result).toHaveLength(1)
       expect(result[0].alerts).toHaveLength(1)
+    })
+
+    it("dismisses a missed-habit line by its habit: the other habit's line stays", () => {
+      const water = { ...makeAlert("habit_missed", ["2026-04-01", "2026-04-02", "2026-04-03"]), habitId: "h-water" }
+      const walk = { ...makeAlert("habit_missed", ["2026-04-01", "2026-04-02", "2026-04-03"]), habitId: "h-walk" }
+      const dismissals: DismissalRow[] = [
+        { client_id: "c1", alert_type: "habit_missed:h-water", dismissed_at: "2026-04-04" },
+      ]
+
+      const result = filterDismissedAlerts([makeClient("c1", [water, walk])], dismissals)
+      expect(result[0].alerts.map((alert) => alert.habitId)).toEqual(["h-walk"])
+    })
+
+    it("brings a dismissed habit's line back when the habit is missed again on a later day", () => {
+      const water = { ...makeAlert("habit_missed", ["2026-04-02", "2026-04-03", "2026-04-05"]), habitId: "h-water" }
+      const dismissals: DismissalRow[] = [
+        { client_id: "c1", alert_type: "habit_missed:h-water", dismissed_at: "2026-04-04" },
+      ]
+
+      expect(filterDismissedAlerts([makeClient("c1", [water])], dismissals)[0].alerts).toHaveLength(1)
+    })
+
+    it("brings a dismissed habit's line back for a miss on the dismissal day itself", () => {
+      // Dismissed on the 4th, the coach's today, over the 1st to the 3rd: the
+      // line judges the days gone by and never lists the feed's today, so
+      // every day the coach dismissed is before the 4th, and a miss on the
+      // 4th is the habit missed again on a later day.
+      const dismissals: DismissalRow[] = [
+        { client_id: "c1", alert_type: "habit_missed:h-water", dismissed_at: "2026-04-04" },
+      ]
+      const missedOnTheDay = { ...makeAlert("habit_missed", ["2026-04-02", "2026-04-03", "2026-04-04"]), habitId: "h-water" }
+      expect(filterDismissedAlerts([makeClient("c1", [missedOnTheDay])], dismissals)[0].alerts).toHaveLength(1)
+
+      // The line the coach dismissed, its last day the 3rd, stays hidden.
+      const dismissedLine = { ...makeAlert("habit_missed", ["2026-04-01", "2026-04-02", "2026-04-03"]), habitId: "h-water" }
+      expect(filterDismissedAlerts([makeClient("c1", [dismissedLine])], dismissals)).toEqual([])
+    })
+
+    it("keeps every other alert hidden through its dismissal day: a no-engagement line dismissed today stays hidden today", () => {
+      // No-engagement lists the feed's today as its day, so the dismissal
+      // stamped the same day holds it until tomorrow.
+      const dismissals: DismissalRow[] = [
+        { client_id: "c1", alert_type: "no_engagement", dismissed_at: "2026-04-04" },
+      ]
+      expect(filterDismissedAlerts([makeClient("c1", [makeAlert("no_engagement", ["2026-04-04"])])], dismissals)).toEqual([])
+      expect(filterDismissedAlerts([makeClient("c1", [makeAlert("no_engagement", ["2026-04-05"])])], dismissals)).toHaveLength(1)
+    })
+
+    it("never lets a bare habit_missed dismissal hide a habit's line", () => {
+      const water = { ...makeAlert("habit_missed", ["2026-04-01", "2026-04-02", "2026-04-03"]), habitId: "h-water" }
+      const dismissals: DismissalRow[] = [{ client_id: "c1", alert_type: "habit_missed", dismissed_at: "2026-04-04" }]
+
+      expect(filterDismissedAlerts([makeClient("c1", [water])], dismissals)[0].alerts).toHaveLength(1)
     })
 
     it("suppresses for an ahead-of-UTC coach dismissing just after local midnight", () => {

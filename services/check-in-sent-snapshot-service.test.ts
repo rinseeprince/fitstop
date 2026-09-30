@@ -42,11 +42,13 @@ vi.mock("./measurements-service", () => ({
 }));
 vi.mock("./nutrition-plan-service", () => ({ getNutritionPlanForDate: vi.fn() }));
 vi.mock("./client-adherence-service", () => ({ getClientAdherenceForRange: vi.fn() }));
+vi.mock("./client-habit-figures-service", () => ({ readHabitRange: vi.fn(), getHabitPeriodWeek: vi.fn() }));
 
 import { listClientGoals } from "./client-goals-service";
 import { getBaseline, getReadingsAsOf, getReadingsOnDay } from "./measurements-service";
 import { getNutritionPlanForDate } from "./nutrition-plan-service";
 import { getClientAdherenceForRange } from "./client-adherence-service";
+import { getHabitPeriodWeek, readHabitRange } from "./client-habit-figures-service";
 import { buildSentSnapshotAtSend } from "./check-in-sent-snapshot-service";
 import { parseSentSnapshot } from "@/lib/check-in/sent-snapshot";
 import type { ClientGoal } from "@/types/client-goals";
@@ -118,13 +120,58 @@ const FOOD: NutritionDay[] = WEEK.map((date, i) => ({
   actualFatG: 63,
 }));
 
-const HABITS = {
-  rail: WEEK.map(() => "complete" as const),
-  avgPct: 100,
-  daysBelow50: 0,
-  perHabit: [
-    { id: "habit-water", name: "3 L water", eligibleDays: 7, completedDays: 7, pct: 100, rail: WEEK.map(() => true) },
+/** The client's habits and entries over the period, as the figures service reads them — once. */
+const HABIT_RANGE = { habits: [], entries: [] };
+
+/** The figures service's habit week over the period: one number habit, met every day. */
+const HABIT_WEEK = {
+  habits: [
+    {
+      habit: { id: "habit-water", name: "3 L water", howTo: "A glass with each meal", measure: "number" as const, unit: "L", direction: "at_least" as const },
+      firstStartsOn: "2026-08-03",
+      versions: [
+        { id: "v-water", startsOn: "2026-09-01", endsOn: null, target: 3, timesPerWeek: null, weekdays: ["monday" as const] },
+      ],
+      days: WEEK.map((date) => ({
+        date,
+        covered: true,
+        planned: true,
+        target: 3,
+        edited: false,
+        versionId: "v-water",
+        timesPerWeek: null,
+        entry: { done: null, value: 3.2, note: null },
+        met: true,
+      })),
+      figures: { planned: 7, done: 7, met: 7 },
+    },
   ],
+  totals: { planned: 7, done: 7, met: 7 },
+};
+
+/** The same week as the copy freezes it: values, no ids of the rows it was read from. */
+const FROZEN_HABIT_WEEK = {
+  habits: [
+    {
+      id: "habit-water",
+      name: "3 L water",
+      measure: "number",
+      unit: "L",
+      direction: "at_least",
+      firstStartsOn: "2026-08-03",
+      versions: [{ startsOn: "2026-09-01", endsOn: null, target: 3, timesPerWeek: null, weekdays: ["monday"] }],
+      days: WEEK.map((date) => ({
+        date,
+        covered: true,
+        planned: true,
+        target: 3,
+        entry: { done: null, value: 3.2, note: null },
+        met: true,
+      })),
+      figures: { planned: 7, done: 7, met: 7 },
+    },
+  ],
+  totals: { planned: 7, done: 7, met: 7 },
 };
 
 const build = (overrides: Partial<Parameters<typeof buildSentSnapshotAtSend>[0]> = {}) =>
@@ -167,8 +214,9 @@ describe("buildSentSnapshotAtSend", () => {
     vi.mocked(getClientAdherenceForRange).mockResolvedValue({
       dates: WEEK,
       loggedDates: ["2026-09-16", "2026-09-20"],
-      habits: HABITS,
     } as never);
+    vi.mocked(readHabitRange).mockResolvedValue(HABIT_RANGE);
+    vi.mocked(getHabitPeriodWeek).mockReturnValue(HABIT_WEEK);
   });
 
   it("the reported weight is the reading the goal is judged on; a metric not reported takes the log's as of the day", async () => {
@@ -241,7 +289,7 @@ describe("buildSentSnapshotAtSend", () => {
   it("a first check-in has no trend, and saves none — never a guess (commit 8d4)", async () => {
     db.state.results.check_ins = { data: [], error: null };
     const copy = await build({ reported: { weight: 78.3 } });
-    expect(copy.version).toBe(2);
+    expect(copy.version).toBe(3);
     expect(copy.goalProgress.weight?.position?.trend).toBeNull();
   });
 
@@ -253,21 +301,35 @@ describe("buildSentSnapshotAtSend", () => {
     await expect(build()).rejects.toThrow(/prev-unfilled has no saved copy/);
   });
 
-  it("freezes the week — the days, the days logged, the food rows and the habits", async () => {
+  it("reads the week's habits and entries once, and hands that one read to both the days logged and the habit week", async () => {
+    await build();
+    expect(vi.mocked(readHabitRange).mock.calls).toEqual([["client-send", "2026-09-15", DAY]]);
+    const read = vi.mocked(readHabitRange).mock.results[0].value;
+    // The days logged: the summary is handed the read in flight, so it reads no habits of its own.
+    expect(vi.mocked(getClientAdherenceForRange).mock.calls).toEqual([["client-send", "2026-09-15", DAY, DAY, read]]);
+    expect(vi.mocked(getClientAdherenceForRange).mock.calls[0][4]).toBe(read);
+    // The habit week: judged from the same rows.
+    expect(vi.mocked(getHabitPeriodWeek).mock.calls).toEqual([[HABIT_RANGE, "2026-09-15", DAY]]);
+    expect(vi.mocked(getHabitPeriodWeek).mock.calls[0][0]).toBe(HABIT_RANGE);
+  });
+
+  it("freezes the week — the days, the days logged, the food rows and the habit week as prescribed and as it happened", async () => {
     const copy = await build();
-    expect(vi.mocked(getClientAdherenceForRange)).toHaveBeenCalledWith("client-send", "2026-09-15", DAY, DAY);
+    expect(copy.version).toBe(3);
     expect(copy.period).toEqual({
       dates: WEEK,
       loggedDates: ["2026-09-16", "2026-09-20"],
       nutrition: FOOD,
-      habits: HABITS,
+      habitWeek: FROZEN_HABIT_WEEK,
     });
   });
 
   it("with no week to report on, freezes none and reads no figures", async () => {
     const copy = await build({ period: null, nutritionDays: null });
     expect(copy.period).toBeNull();
+    expect(vi.mocked(readHabitRange)).not.toHaveBeenCalled();
     expect(vi.mocked(getClientAdherenceForRange)).not.toHaveBeenCalled();
+    expect(vi.mocked(getHabitPeriodWeek)).not.toHaveBeenCalled();
   });
 
   it("keeps the wording of each question the client answered", async () => {

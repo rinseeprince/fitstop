@@ -5,9 +5,13 @@ vi.mock("./today-service", () => ({ getClientTodayString: vi.fn() }));
 // The day's target is the computed day, read in one batched lookup beside the
 // logs; the verdict is derived here from what was eaten against it.
 vi.mock("./nutrition-days-service", () => ({ getNutritionTargetsForDateRange: vi.fn() }));
+// The habits and their entries come from the figures service's range read, or
+// from the caller that read them already.
+vi.mock("./client-habit-figures-service", () => ({ readHabitRange: vi.fn() }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getNutritionTargetsForDateRange } from "./nutrition-days-service";
+import { readHabitRange } from "./client-habit-figures-service";
 import {
   buildAdherenceSummary,
   classifyTrainingDay,
@@ -16,6 +20,35 @@ import {
   getClientAdherenceForRange,
   type AdherenceSourceRows,
 } from "./client-adherence-service";
+import type { ClientHabit, HabitEntry, HabitVersion } from "@/types/habits";
+
+const EVERY_DAY: HabitVersion["weekdays"] = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+];
+
+/** A tick habit planned on every day from `startsOn` — or on its own weekdays, to `endsOn`. */
+function habit(id: string, startsOn: string, overrides: Partial<HabitVersion> = {}, measure: Partial<ClientHabit> = {}): ClientHabit {
+  return {
+    id,
+    name: id,
+    howTo: null,
+    measure: "tick",
+    unit: null,
+    direction: null,
+    position: 1,
+    versions: [{ id: `${id}-v`, startsOn, endsOn: null, target: null, timesPerWeek: null, weekdays: EVERY_DAY, ...overrides }],
+    dayEdits: [],
+    ...measure,
+  };
+}
+
+const tick = (habitId: string, date: string, done = true): HabitEntry => ({ habitId, date, done, value: null, note: null });
 
 /** A nutrition row that carries a consumed value — a logged day by itself. */
 const nut = (date: string, calories_consumed = 2000) => ({
@@ -65,18 +98,16 @@ describe("classifyNutritionDay", () => {
 });
 
 describe("classifyHabitDay", () => {
-  it("distinguishes missed (a logged day, zero habits) from no_log (no log at all)", () => {
-    expect(classifyHabitDay({ eligible: 2, completed: 0, logged: true }).dot).toBe("missed");
-    expect(classifyHabitDay({ eligible: 2, completed: 0, logged: false }).dot).toBe("no_log");
-    expect(classifyHabitDay({ eligible: 2, completed: 1, logged: false }).dot).toBe("partial");
-    expect(classifyHabitDay({ eligible: 2, completed: 2, logged: false }).dot).toBe("complete");
+  it("distinguishes missed (a logged day, none done) from no_log (no log at all)", () => {
+    expect(classifyHabitDay({ planned: 2, done: 0, logged: true }).dot).toBe("missed");
+    expect(classifyHabitDay({ planned: 2, done: 0, logged: false }).dot).toBe("no_log");
+    expect(classifyHabitDay({ planned: 2, done: 1, logged: false }).dot).toBe("partial");
+    expect(classifyHabitDay({ planned: 2, done: 2, logged: false }).dot).toBe("complete");
   });
 
-  it("carries no signal when no habit is eligible", () => {
-    expect(classifyHabitDay({ eligible: 0, completed: 0, logged: true })).toEqual({
-      dot: "no_log",
-      pct: null,
-    });
+  it("draws a dash for a day with nothing planned — nothing to judge, in no figure (D8)", () => {
+    expect(classifyHabitDay({ planned: 0, done: 0, logged: true })).toEqual({ dot: "none", pct: null });
+    expect(classifyHabitDay({ planned: 0, done: 0, logged: false })).toEqual({ dot: "none", pct: null });
   });
 });
 
@@ -107,15 +138,15 @@ describe("buildAdherenceSummary", () => {
       target("2026-07-23", 2000),
     ],
     habits: [
-      { id: "h1", name: "Water", effective_date: "2026-07-01" },
-      { id: "h2", name: "Steps", effective_date: "2026-07-22" }, // eligible mid-window
+      habit("h1", "2026-07-01"),
+      habit("h2", "2026-07-22"), // planned from mid-window
     ],
-    habitLogs: [
-      { date: "2026-07-20", daily_habit_id: "h1", completed: true },
-      { date: "2026-07-21", daily_habit_id: "h1", completed: false },
-      { date: "2026-07-22", daily_habit_id: "h1", completed: true },
-      { date: "2026-07-22", daily_habit_id: "h2", completed: false },
-      { date: "2026-07-22", daily_habit_id: "stale-habit", completed: true }, // inactive habit → ignored
+    habitEntries: [
+      tick("h1", "2026-07-20"),
+      tick("h1", "2026-07-21", false),
+      tick("h1", "2026-07-22"),
+      tick("h2", "2026-07-22", false),
+      tick("no-such-habit", "2026-07-22"), // no habit it belongs to → in no figure
     ],
     wellnessLogs: [],
     clientLogDates: [],
@@ -147,7 +178,7 @@ describe("buildAdherenceSummary", () => {
     const summary = buildAdherenceSummary({
       ...fixture,
       nutritionLogs: [],
-      habitLogs: [],
+      habitEntries: [],
       trainingEvents: [
         { date: "2026-07-23", status: "completed", completionQuality: "full" },
       ],
@@ -157,11 +188,23 @@ describe("buildAdherenceSummary", () => {
     expect(summary.habits.rail).toEqual(["no_log", "no_log", "no_log", "missed"]);
   });
 
+  it("counts a habit entry as a logged day whatever it answers — an unticked habit is the client acting", () => {
+    const summary = buildAdherenceSummary({
+      ...fixture,
+      nutritionLogs: [],
+      trainingEvents: [],
+      habitEntries: [tick("h1", "2026-07-21", false)],
+    });
+
+    expect(summary.loggedDates).toEqual(["2026-07-21"]);
+    expect(summary.habits.rail).toEqual(["no_log", "missed", "no_log", "no_log"]);
+  });
+
   it("does not read a scheduled event, a wellness row with no reading or a coach's work as a log", () => {
     const summary = buildAdherenceSummary({
       ...fixture,
       nutritionLogs: [],
-      habitLogs: [],
+      habitEntries: [],
       trainingEvents: [
         { date: "2026-07-23", status: "scheduled", completionQuality: null },
       ],
@@ -178,7 +221,7 @@ describe("buildAdherenceSummary", () => {
     const summary = buildAdherenceSummary({
       ...fixture,
       nutritionLogs: [],
-      habitLogs: [],
+      habitEntries: [],
       trainingEvents: [],
       wellnessLogs: [
         { date: "2026-07-21", mood: 4, energy: null, sleep: null, stress: null, soreness: null },
@@ -245,11 +288,57 @@ describe("buildAdherenceSummary", () => {
     });
   });
 
-  it("computes habit avgPct over eligible days and daysBelow50 via the shipped threshold", () => {
+  it("computes habit avgPct over the judged days and daysBelow50 via the shipped threshold", () => {
     const summary = buildAdherenceSummary(fixture);
     // day pcts: 100, 0, 50, 0 → avg 38; below-50 days: the two zeros
     expect(summary.habits.avgPct).toBe(38);
     expect(summary.habits.daysBelow50).toBe(2);
+  });
+
+  describe("the habits rail reads each day by its own planned habits (D8)", () => {
+    // 20 Jul 2026 is a Monday.
+    const week = ["2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23"];
+    const rows = (habits: ClientHabit[], habitEntries: HabitEntry[]): AdherenceSourceRows => ({
+      dates: week,
+      today: "2026-07-23",
+      trainingEvents: [],
+      nutritionLogs: week.map((date) => nut(date)), // every day logged
+      nutritionTargets: [],
+      habits,
+      habitEntries,
+      wellnessLogs: [],
+      clientLogDates: [],
+    });
+
+    it("draws a dash on a day nothing was planned, not a no-log dot, and leaves it out of the figure", () => {
+      const summary = buildAdherenceSummary(rows([habit("steps", "2026-07-22")], [tick("steps", "2026-07-22")]));
+      expect(summary.habits.rail).toEqual(["none", "none", "complete", "missed"]);
+      // Two judged days: 100 and 0.
+      expect(summary.habits.avgPct).toBe(50);
+    });
+
+    it("gives no credit from another day: Monday's habit done on the Tuesday leaves Monday missed", () => {
+      const mondayWednesday = habit("mobility", "2026-07-01", { weekdays: ["monday", "wednesday"] });
+      const summary = buildAdherenceSummary(rows([mondayWednesday], [tick("mobility", "2026-07-21")]));
+      // Mon planned, not done that day · Tue not planned · Wed planned, not done · Thu not planned.
+      expect(summary.habits.rail).toEqual(["missed", "none", "missed", "none"]);
+      expect(summary.habits.avgPct).toBe(0);
+    });
+
+    it("counts a number short of its target as not done", () => {
+      const water = habit("water", "2026-07-01", { target: 3 }, { measure: "number", unit: "L", direction: "at_least" });
+      const entries: HabitEntry[] = [
+        { habitId: "water", date: "2026-07-20", done: null, value: 3.2, note: null },
+        { habitId: "water", date: "2026-07-21", done: null, value: 2.4, note: null },
+      ];
+      expect(buildAdherenceSummary(rows([water], entries)).habits.rail).toEqual(["complete", "missed", "missed", "missed"]);
+    });
+
+    it("keeps a stopped habit's past: the days it ran stay planned, the days after are dashes", () => {
+      const stopped = habit("walk", "2026-07-01", { endsOn: "2026-07-21" });
+      const summary = buildAdherenceSummary(rows([stopped], [tick("walk", "2026-07-20")]));
+      expect(summary.habits.rail).toEqual(["complete", "missed", "none", "none"]);
+    });
   });
 
   // The verdict comes from what was eaten against the COMPUTED target — a
@@ -282,7 +371,7 @@ describe("buildAdherenceSummary", () => {
       nutritionLogs: [],
       nutritionTargets: [],
       habits: [],
-      habitLogs: [],
+      habitEntries: [],
       wellnessLogs: [],
       clientLogDates: [],
     });
@@ -290,69 +379,9 @@ describe("buildAdherenceSummary", () => {
     expect(empty.nutrition.daysOnTargetPct).toBeNull();
     expect(empty.nutrition.rail).toEqual(["none", "none", "none", "none"]);
     expect(empty.habits.avgPct).toBeNull();
+    expect(empty.habits.rail).toEqual(["none", "none", "none", "none"]);
     expect(empty.training.rail).toEqual(["none", "none", "none", "none"]);
     expect(empty.loggedDates).toEqual([]);
-  });
-
-  describe("the per-habit cut", () => {
-    it("scores each habit over its OWN eligible days", () => {
-      const summary = buildAdherenceSummary(fixture);
-
-      expect(summary.habits.perHabit).toEqual([
-        {
-          id: "h1",
-          name: "Water",
-          eligibleDays: 4,
-          completedDays: 2,
-          pct: 50,
-          rail: [true, false, true, false],
-        },
-        {
-          id: "h2",
-          name: "Steps",
-          // Eligible from the 22nd only — the two days before it existed are
-          // null, not misses, so its 0% is over two days rather than four.
-          eligibleDays: 2,
-          completedDays: 0,
-          pct: 0,
-          rail: [null, null, false, false],
-        },
-      ]);
-    });
-
-    it("keeps a habit with NO logs in the window, at 0% rather than absent", () => {
-      // The whole reason this rides on the adherence read: `logHabit` writes a
-      // row only when the client acts, so a habit they ignored for the window has
-      // no rows at all and a logs-derived grid would omit it silently — exactly
-      // the habit a coach needs to see.
-      const summary = buildAdherenceSummary({
-        ...fixture,
-        habits: [{ id: "h3", name: "Sleep 7h+", effective_date: "2026-07-01" }],
-        habitLogs: [],
-      });
-
-      expect(summary.habits.perHabit).toEqual([
-        {
-          id: "h3",
-          name: "Sleep 7h+",
-          eligibleDays: 4,
-          completedDays: 0,
-          pct: 0,
-          rail: [false, false, false, false],
-        },
-      ]);
-    });
-
-    it("reports pct as null for a habit that was never eligible in the window", () => {
-      const summary = buildAdherenceSummary({
-        ...fixture,
-        habits: [{ id: "h4", name: "Stretch", effective_date: "2026-08-01" }],
-        habitLogs: [],
-      });
-
-      expect(summary.habits.perHabit[0].pct).toBeNull();
-      expect(summary.habits.perHabit[0].rail).toEqual([null, null, null, null]);
-    });
   });
 });
 
@@ -368,7 +397,7 @@ describe("the nutrition denominator", () => {
     nutritionLogs,
     nutritionTargets,
     habits: [],
-    habitLogs: [],
+    habitEntries: [],
     wellnessLogs: [],
     clientLogDates: [],
   });
@@ -449,22 +478,33 @@ describe("getClientAdherenceForRange — the reads", () => {
       return builder(table);
     }) as never);
     vi.mocked(getNutritionTargetsForDateRange).mockClear().mockResolvedValue(new Map());
+    vi.mocked(readHabitRange).mockClear().mockResolvedValue({ habits: [], entries: [] });
   });
 
   it("reads the five client sources and never a daily_logs parent row", async () => {
     await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23", "2026-07-23");
 
     expect([...calls.keys()].sort()).toEqual(
-      [
-        "client_measurements_live",
-        "daily_habit_logs",
-        "daily_habits",
-        "nutrition_logs",
-        "training_events",
-        "wellness_logs",
-      ].sort()
+      ["client_measurements_live", "nutrition_logs", "training_events", "wellness_logs"].sort()
     );
     expect(calls.has("daily_logs")).toBe(false);
+  });
+
+  it("reads every habit of the client — stopped ones too, so their past stays — and the entries, over the window", async () => {
+    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23", "2026-07-23");
+
+    expect(readHabitRange).toHaveBeenCalledWith("client-1", "2026-07-20", "2026-07-23");
+  });
+
+  it("takes the habits and entries a caller has read already, reading none of its own — a check-in's Send reads them once", async () => {
+    // A daily walk from the 20th, done on the 21st: the only thing logged all window.
+    const handed = Promise.resolve({ habits: [habit("walk", "2026-07-20")], entries: [tick("walk", "2026-07-21")] });
+
+    const summary = await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23", "2026-07-23", handed);
+
+    expect(readHabitRange).not.toHaveBeenCalled();
+    expect(summary.loggedDates).toEqual(["2026-07-21"]);
+    expect(summary.habits.rail).toEqual(["no_log", "complete", "no_log", "no_log"]);
   });
 
   it("reads the log for what was eaten and the targets in ONE batched lookup over the window — never a verdict off the row", async () => {

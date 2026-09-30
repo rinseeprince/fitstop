@@ -1,5 +1,10 @@
 import { getClientWeekAnchor } from "./check-in-week-service";
-import { getClientHabit, listClientHabits, listHabitEntries } from "./client-habits-service";
+import {
+  getClientHabit,
+  listClientHabits,
+  listClientHabitsWithEntryCheck,
+  listHabitEntries,
+} from "./client-habits-service";
 import { HabitWriteError } from "./client-habit-writes-service";
 import { getClientTodayString } from "./today-service";
 import {
@@ -8,7 +13,7 @@ import {
   getTrainingWeekDays,
   getTrainingWeekStart,
 } from "@/lib/date-helpers";
-import { versionForWords, versionOn } from "@/lib/habits/habit-day";
+import { habitStatus, versionForWords, versionOn, versionsOver } from "@/lib/habits/habit-day";
 import { habitDays, habitDayTallies, habitWeek, sumWeekFigures } from "@/lib/habits/habit-week";
 import { habitWords, weekFigureWords } from "@/lib/habits/habit-words";
 import { HABIT_PROGRESS_DAYS } from "@/lib/constants";
@@ -18,10 +23,13 @@ import type {
   ClientHabitDay,
   ClientHabitProgress,
   ClientHabitWeek,
+  CoachHabitList,
   CoachHabitWeek,
+  HabitDaySummary,
   HabitEntry,
   HabitEntryResult,
   HabitIdentity,
+  HabitPeriodWeek,
   HabitWeekRow,
 } from "@/types/habits";
 
@@ -33,9 +41,15 @@ import type {
  * `lib/habits/`, which is the only place a habit figure is worked out. Every
  * figure is on the CLIENT's calendar (ARCHITECTURE "Timezone model").
  *
- * Each read is two rounds of queries, bounded by the days asked and never by
- * the client's history: the anchor and the client's today, then the habits
- * and the entries over those days (the entries paged, 1,000 rows a page).
+ * Each read is at most two rounds of queries: the week anchor and the
+ * client's today where it needs them, then the client's habits and the
+ * entries it counts, side by side. The entries are bounded by the days asked
+ * (paged, 1,000 rows a page); the habits are read whole — every habit with
+ * every version it has had, the client's habit history, a coaching record of
+ * tens of rows — with the one-date edits on the days asked (the coach's list
+ * takes every edit and one entry per habit, `getCoachHabitList`). A check-in's
+ * period week reads nothing of its own: its caller reads the rows once
+ * (`readHabitRange`) and hands them over.
  */
 
 /** A week that is not inside one of the client's weeks. */
@@ -75,8 +89,14 @@ function weekRows(habits: ClientHabit[], entries: HabitEntry[], dates: string[])
     });
 }
 
-/** The client's habits and entries over from..to, read together. */
-async function readRange(clientId: string, from: string, to: string) {
+/** A client's habits and their entries over a run of days: what the kernel judges them from. */
+export type HabitRange = { habits: ClientHabit[]; entries: HabitEntry[] };
+
+/**
+ * The client's habits — every one, with every version and the one-date edits
+ * on from..to — and their entries on those days, read side by side.
+ */
+export async function readHabitRange(clientId: string, from: string, to: string): Promise<HabitRange> {
   const range = { from, to };
   const [habits, entries] = await Promise.all([
     listClientHabits(clientId, range),
@@ -94,7 +114,7 @@ export async function getCoachHabitWeek(clientId: string, day?: string): Promise
   const [anchor, today] = await Promise.all([getClientWeekAnchor(clientId), getClientTodayString(clientId)]);
   const dates = getTrainingWeekDays(day ?? today, anchor.weekday);
   const [start, end] = [dates[0], dates[dates.length - 1]];
-  const { habits, entries } = await readRange(clientId, start, end);
+  const { habits, entries } = await readHabitRange(clientId, start, end);
 
   const rows = weekRows(habits, entries, dates);
   const tally = dates.includes(today) ? habitDayTallies(habits, entries, [today])[0] : null;
@@ -117,7 +137,7 @@ export async function getClientHabitDay(clientId: string, date: string): Promise
   const anchor = await getClientWeekAnchor(clientId);
   const dates = getTrainingWeekDays(date, anchor.weekday);
   const [start, end] = [dates[0], dates[dates.length - 1]];
-  const { habits, entries } = await readRange(clientId, start, end);
+  const { habits, entries } = await readHabitRange(clientId, start, end);
 
   return {
     date,
@@ -147,10 +167,96 @@ export async function getClientHabitWeek(clientId: string, start: string, end: s
     throw new HabitWeekRangeError();
   }
   const dates = expandDateRange(start, end);
-  const { habits, entries } = await readRange(clientId, start, end);
+  const { habits, entries } = await readHabitRange(clientId, start, end);
 
   const rows = weekRows(habits, entries, dates);
   return { start, end, dates, habits: rows, totals: sumWeekFigures(rows.map((row) => row.figures)) };
+}
+
+/**
+ * A check-in's habit week over its period, `start`..`end`, as a sent
+ * check-in freezes it (rule 9), from the client's habits and entries over the
+ * period (`readHabitRange`, read once by the caller — the days logged count
+ * the same entries): each habit a version covered during the period, in the
+ * client's order — the day it first started, its versions running those
+ * days, each day as it happened and the week's figures — and the week's
+ * totals. The period is the check-in's own week however the client's week
+ * anchor has moved since, so it needs no anchor.
+ */
+export function getHabitPeriodWeek({ habits, entries }: HabitRange, start: string, end: string): HabitPeriodWeek {
+  const dates = expandDateRange(start, end);
+  const rows = habits
+    .filter((habit) => coversAny(habit, dates))
+    .map((habit) => {
+      const week = habitWeek(habit, entries, dates);
+      return {
+        habit: habitIdentity(habit),
+        // From the habit's whole history, before the period's versions are
+        // picked: one stopped before the period and started again inside it
+        // had been added long before, so its days before the restart are not
+        // running, never "not yet added". Versions come oldest first.
+        firstStartsOn: habit.versions[0].startsOn,
+        versions: versionsOver(habit, start, end),
+        days: week.days,
+        figures: week.figures,
+      };
+    });
+  return { habits: rows, totals: sumWeekFigures(rows.map((row) => row.figures)) };
+}
+
+/**
+ * The coach's list of the client's habits — running, upcoming and stopped, in
+ * their order — each with every version, the one-date edits from the client's
+ * today on, whether the client has made an entry for it, where it stands on
+ * that today and its words. `today` is the client's, when the caller has
+ * already read it.
+ */
+export async function getCoachHabitList(clientId: string, today?: string): Promise<CoachHabitList> {
+  const [clientToday, habits] = await Promise.all([
+    today ?? getClientTodayString(clientId),
+    // Every edit, filtered below: the read then needs no today of its own.
+    listClientHabitsWithEntryCheck(clientId, {}),
+  ]);
+
+  return {
+    clientToday,
+    habits: habits.map((habit) => ({
+      ...habitIdentity(habit),
+      position: habit.position,
+      versions: habit.versions,
+      dayEdits: habit.dayEdits.filter((edit) => edit.date >= clientToday),
+      hasEntries: habit.hasEntries,
+      status: habitStatus(habit, clientToday),
+      words: habitWords(habit, versionForWords(habit, clientToday)),
+    })),
+  };
+}
+
+/**
+ * The home card's habits on `date`: how many a version covers that day, how
+ * many were planned, and how many of those were done that day — each day by
+ * its own planned habits, as the Overview reads a day, so the done count is
+ * never more than the planned one.
+ */
+export async function getHabitDaySummary(clientId: string, date: string): Promise<HabitDaySummary> {
+  const { habits, entries } = await readHabitRange(clientId, date, date);
+  const [tally] = habitDayTallies(habits, entries, [date]);
+  return {
+    plannedToday: tally.planned,
+    doneToday: tally.done,
+    running: habits.filter((habit) => versionOn(habit, date)).length,
+  };
+}
+
+/**
+ * Whether the client has a habit running on their today or starting later —
+ * the activation card's habits item. `today` is the client's, which the card
+ * reads once for every item judged on it. Where a habit stands turns on its
+ * versions alone, so no edit but today's is read.
+ */
+export async function hasHabitFromToday(clientId: string, today: string): Promise<boolean> {
+  const habits = await listClientHabits(clientId, { from: today, to: today });
+  return habits.some((habit) => habitStatus(habit, today) !== "stopped");
 }
 
 /**
@@ -178,8 +284,10 @@ export async function getHabitEntryResult(
 
 /**
  * The Journey: for each habit a version covers during the span, its figures
- * over the last `weeks` client weeks — the last holding today — and its last
- * days as they happened, ending today.
+ * over the last `weeks` client weeks — the last holding today — those weeks'
+ * figures added together, each week judged on its own first (the kernel's
+ * `sumWeekFigures`, so no app adds them up), and its last days as they
+ * happened, ending today.
  */
 export async function getClientHabitProgress(clientId: string, weeks: number): Promise<ClientHabitProgress> {
   const [anchor, today] = await Promise.all([getClientWeekAnchor(clientId), getClientTodayString(clientId)]);
@@ -190,7 +298,7 @@ export async function getClientHabitProgress(clientId: string, weeks: number): P
   const to = thisWeek[thisWeek.length - 1];
   const span = expandDateRange(from, to);
   const weekDates = weekStarts.map((start) => expandDateRange(start, addDaysToDateString(start, 6)));
-  const { habits, entries } = await readRange(clientId, from, to);
+  const { habits, entries } = await readHabitRange(clientId, from, to);
 
   return {
     clientToday: today,
@@ -198,14 +306,16 @@ export async function getClientHabitProgress(clientId: string, weeks: number): P
       .filter((habit) => coversAny(habit, span))
       .map((habit) => {
         const own = entries.filter((entry) => entry.habitId === habit.id);
+        const weekSpans = weekDates.map((dates) => ({
+          ...habitWeek(habit, own, dates).figures,
+          start: dates[0],
+          end: dates[dates.length - 1],
+        }));
         return {
           habit: habitIdentity(habit),
           words: habitWords(habit, versionForWords(habit, today)),
-          weeks: weekDates.map((dates) => ({
-            ...habitWeek(habit, own, dates).figures,
-            start: dates[0],
-            end: dates[dates.length - 1],
-          })),
+          weeks: weekSpans,
+          span: sumWeekFigures(weekSpans),
           days: habitDays(habit, own, days),
         };
       }),

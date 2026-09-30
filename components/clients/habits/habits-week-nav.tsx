@@ -3,43 +3,46 @@
 import type { ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDateOnlyShort } from "@/lib/date-helpers";
+import { TextSkeleton } from "@/components/text-skeleton";
 import { MONO_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 
 type HabitsWeekNavProps = {
-  weekOffset: number;
+  /** The week shown, first and last day; null while the client's week is not known yet. */
+  weekStart: string | null;
+  weekEnd: string | null;
+  canPrev: boolean;
+  /** False on the week holding the client's today: the tracker pages back only. */
+  canNext: boolean;
   onPrev: () => void;
   onNext: () => void;
-  weekStart: string;
-  weekEnd: string;
   actions?: ReactNode;
 };
-
-function formatShortDate(dateStr: string) {
-  const date = new Date(dateStr + "T00:00:00");
-  return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
-}
 
 // The habits control line IS the divider (calendar-toolbar idiom): the week
 // nav sits on the left where a section label would, the hairline runs the
 // middle, and row actions right-align. Block-flow parent → the row owns the
 // divider spec's full mb-3.
 export function HabitsWeekNav({
-  weekOffset,
-  onPrev,
-  onNext,
   weekStart,
   weekEnd,
+  canPrev,
+  canNext,
+  onPrev,
+  onNext,
   actions,
 }: HabitsWeekNavProps) {
-  const isCurrentWeek = weekOffset === 0;
-
   return (
     <div className="mb-3 flex min-h-[24.5px] items-center gap-3">
       <div className="flex items-center gap-2">
         <button
           onClick={onPrev}
+          disabled={!canPrev}
           aria-label="Previous week"
-          className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
+          className={cn(
+            "rounded p-1 transition-colors",
+            canPrev ? "text-[#93b0b4] hover:text-[#0d9488]" : "cursor-default text-[#d5e0dd]"
+          )}
         >
           <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
         </button>
@@ -52,17 +55,19 @@ export function HabitsWeekNav({
             "min-w-[116px] whitespace-nowrap text-center text-[11px]"
           )}
         >
-          {formatShortDate(weekStart)} – {formatShortDate(weekEnd)}
+          {weekStart && weekEnd ? (
+            `${formatDateOnlyShort(weekStart)} – ${formatDateOnlyShort(weekEnd)}`
+          ) : (
+            <TextSkeleton className="w-24" />
+          )}
         </span>
         <button
           onClick={onNext}
-          disabled={isCurrentWeek}
+          disabled={!canNext}
           aria-label="Next week"
           className={cn(
             "rounded p-1 transition-colors",
-            isCurrentWeek
-              ? "cursor-default text-[#d5e0dd]"
-              : "text-[#93b0b4] hover:text-[#0d9488]"
+            canNext ? "text-[#93b0b4] hover:text-[#0d9488]" : "cursor-default text-[#d5e0dd]"
           )}
         >
           <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />

@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { query, result } = vi.hoisted(() => {
   const result: { value: { data: unknown; error: unknown } } = { value: { data: [], error: null } };
   const query: Record<string, ReturnType<typeof vi.fn>> & { then?: unknown } = {};
-  for (const method of ["select", "eq", "gte", "lte", "order", "range"]) query[method] = vi.fn(() => query);
+  for (const method of ["select", "eq", "in", "or", "gte", "lte", "order", "range", "limit"]) query[method] = vi.fn(() => query);
   query.maybeSingle = vi.fn(() => Promise.resolve(result.value));
   query.then = (resolve: (value: unknown) => unknown) => resolve(result.value);
   return { query, result };
@@ -13,7 +13,15 @@ const { query, result } = vi.hoisted(() => {
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn(() => query), rpc: vi.fn() } }));
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getClientHabit, listClientHabits, listHabitChoices, listHabitEntries } from "./client-habits-service";
+import {
+  getClientHabit,
+  listClientHabits,
+  listClientHabitsWithEntryCheck,
+  listHabitChoices,
+  listHabitEntries,
+  listHabitEntriesForClients,
+  listHabitsForClients,
+} from "./client-habits-service";
 
 const RANGE = { from: "2026-09-24", to: "2026-09-30" };
 
@@ -85,6 +93,111 @@ describe("listClientHabits", () => {
   it("fails loudly when the read fails", async () => {
     result.value = { data: null, error: { message: "boom" } };
     await expect(listClientHabits("client-3", RANGE)).rejects.toThrow(/Failed to read habits: boom/);
+  });
+
+  it("leaves an end of the edits' range open when it is not given: every edit from a day, or every edit", async () => {
+    await listClientHabits("client-3", { from: "2026-09-30" });
+    expect(query.gte).toHaveBeenCalledWith("client_habit_day_edits.date", "2026-09-30");
+    expect(query.lte).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    await listClientHabits("client-3", {});
+    expect(query.gte).not.toHaveBeenCalled();
+    expect(query.lte).not.toHaveBeenCalled();
+    expect(query.eq).toHaveBeenCalledWith("client_id", "client-3");
+  });
+});
+
+describe("listClientHabitsWithEntryCheck", () => {
+  it("looks for one entry per habit in the same read — never counts them all — and says whether it has any", async () => {
+    result.value = {
+      data: [
+        { ...waterRow, client_habit_logs: [{ id: "log-1" }] },
+        { ...waterRow, id: "habit-new", client_habit_logs: [] },
+      ],
+      error: null,
+    };
+    const habits = await listClientHabitsWithEntryCheck("client-3", {});
+
+    const selected = query.select.mock.calls[0][0] as string;
+    expect(selected).toContain("client_habit_logs(id)");
+    expect(selected).not.toContain("count");
+    expect(query.limit).toHaveBeenCalledWith(1, { referencedTable: "client_habit_logs" });
+    expect(habits.map((habit) => [habit.id, habit.hasEntries])).toEqual([
+      ["habit-water", true],
+      ["habit-new", false],
+    ]);
+    expect(habits[0].versions).toHaveLength(2);
+  });
+
+  it("is listClientHabits' own query — the same client, edits and order — with the check added", async () => {
+    const filters = () => ({
+      eq: [...query.eq.mock.calls],
+      gte: [...query.gte.mock.calls],
+      lte: [...query.lte.mock.calls],
+      order: [...query.order.mock.calls],
+    });
+    await listClientHabits("client-3", { from: "2026-09-30" });
+    const list = { select: query.select.mock.calls[0][0] as string, filters: filters() };
+    // Only the list with the check looks at the entries.
+    expect(query.limit).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    await listClientHabitsWithEntryCheck("client-3", { from: "2026-09-30" });
+
+    expect(query.select.mock.calls[0][0]).toBe(`${list.select}, client_habit_logs(id)`);
+    expect(filters()).toEqual(list.filters);
+    expect(list.filters.gte).toEqual([["client_habit_day_edits.date", "2026-09-30"]]);
+  });
+});
+
+describe("the attention feed's cross-client reads", () => {
+  const WINDOW = { from: "2026-09-02", to: "2026-09-30" };
+
+  it("reads the roster's habits a version covers on a day of the window, with those days' versions and edits, and names each one's client", async () => {
+    result.value = { data: [{ ...waterRow, client_id: "client-3" }], error: null };
+    const habits = await listHabitsForClients(["client-3", "client-4"], WINDOW);
+
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("client_habits");
+    expect(query.select.mock.calls[0][0]).toContain("client_habit_versions!inner(");
+    expect(query.in).toHaveBeenCalledWith("client_id", ["client-3", "client-4"]);
+    // A version overlapping the window: it starts by its end, and runs on or ends in it.
+    expect(query.lte).toHaveBeenCalledWith("client_habit_versions.starts_on", "2026-09-30");
+    expect(query.or).toHaveBeenCalledWith("ends_on.is.null,ends_on.gte.2026-09-02", {
+      referencedTable: "client_habit_versions",
+    });
+    expect(query.gte).toHaveBeenCalledWith("client_habit_day_edits.date", "2026-09-02");
+    expect(query.lte).toHaveBeenCalledWith("client_habit_day_edits.date", "2026-09-30");
+    // Paged on a unique order, so a page cannot repeat or skip a habit.
+    expect(query.order.mock.calls.map((call) => call[0])).toEqual(["client_id", "id"]);
+    expect(habits[0]).toMatchObject({ clientId: "client-3", id: "habit-water", measure: "number" });
+  });
+
+  it("reads the roster's entries over the window without their notes, each naming its client", async () => {
+    result.value = {
+      data: [{ client_id: "client-4", client_habit_id: "habit-walk", date: "2026-09-29", done: false, value: null }],
+      error: null,
+    };
+    const entries = await listHabitEntriesForClients(["client-4"], WINDOW);
+
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("client_habit_logs");
+    // The feed judges entries and never shows a note, so none is read.
+    expect(query.select).toHaveBeenCalledWith("client_id, client_habit_id, date, done, value");
+    expect(query.in).toHaveBeenCalledWith("client_id", ["client-4"]);
+    expect(query.gte).toHaveBeenCalledWith("date", "2026-09-02");
+    expect(query.lte).toHaveBeenCalledWith("date", "2026-09-30");
+    expect(entries).toEqual([{ clientId: "client-4", habitId: "habit-walk", date: "2026-09-29", done: false, value: null }]);
+  });
+
+  it("pages the roster's entries in the (client_id, date) index's order, the habit last: unique, so no page repeats or skips one", async () => {
+    await listHabitEntriesForClients(["client-4"], WINDOW);
+    expect(query.order.mock.calls.map((call) => call[0])).toEqual(["client_id", "date", "client_habit_id"]);
+  });
+
+  it("reads nothing for an empty roster", async () => {
+    expect(await listHabitsForClients([], WINDOW)).toEqual([]);
+    expect(await listHabitEntriesForClients([], WINDOW)).toEqual([]);
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
   });
 });
 

@@ -1,7 +1,7 @@
 import { getEventSummariesForDate } from "./training-event-service";
 import { getNutritionForDate } from "./daily-context-service";
 import { getTodayLog } from "./daily-logs-service";
-import { getClientHabits, getTodayHabitLogs } from "./daily-habits-service";
+import { getHabitDaySummary } from "./client-habit-figures-service";
 import type { DaySummary } from "@/types/client-day";
 
 /**
@@ -17,13 +17,12 @@ export async function getDaySummary(
   clientId: string,
   date: string
 ): Promise<DaySummary> {
-  const [trainingEvents, nutrition, dailyLog, habits, habitLogs] =
+  const [trainingEvents, nutrition, dailyLog, habits] =
     await Promise.all([
       getEventSummariesForDate(clientId, date),
       getNutritionForDate(clientId, date),
       getTodayLog(clientId, date),
-      getClientHabits(clientId),
-      getTodayHabitLogs(clientId, date),
+      getHabitDaySummary(clientId, date),
     ]);
 
   return {
@@ -49,13 +48,9 @@ export async function getDaySummary(
           dailyLog.stress != null ||
           dailyLog.soreness != null),
     },
-    // Only count habits that had become effective by `date` — mirrors the
-    // /client/habits detail page's `effectiveDate <= date` filter so the home card's
-    // "X of N" agrees with the toggles the page renders (a habit can't be logged for a
-    // date before it existed, so loggedCount is already within this set).
-    habits: {
-      totalCount: habits.filter((h) => h.effectiveDate <= date).length,
-      loggedCount: habitLogs.filter((l) => l.completed).length,
-    },
+    // The habits a version covers on the day, the ones planned on it and how
+    // many of those were done that day — the habit kernel's day, so the done
+    // count is never more than the planned one.
+    habits,
   };
 }

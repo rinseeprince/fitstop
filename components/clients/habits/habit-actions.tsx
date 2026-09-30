@@ -1,105 +1,115 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { ChevronDown, ChevronUp, CirclePause, Loader2, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  ChevronUp,
-  ChevronDown,
-  Edit,
-  Trash2,
-} from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
 
 type HabitActionsProps = {
+  name: string;
   canMoveUp: boolean;
   canMoveDown: boolean;
-  onEdit: (e: React.MouseEvent) => void;
-  onDelete: (e: React.MouseEvent) => void;
-  onMoveUp: (e: React.MouseEvent) => void;
-  onMoveDown: (e: React.MouseEvent) => void;
+  /** A write for the row in flight: the button spins in the ⋯'s place and waits for its answer. */
+  busy: boolean;
+  onEdit: () => void;
+  /** Absent on a stopped habit: it is started again instead. */
+  onStop?: () => void;
+  /** A stopped habit's alone: a running or upcoming one is stopped instead. */
+  onStartAgain?: () => void;
+  /** Absent once the client has made an entry: a habit with entries can only be stopped. */
+  onDelete?: () => void;
+  /** Absent on a stopped habit: it sits below the running and upcoming ones and never moves. */
+  onMoveUp?: () => void;
+  /** Absent on a stopped habit, like Move up. */
+  onMoveDown?: () => void;
 };
 
+/** An item's glyph at the menu's 14px: a `size-` class, so the item's 16px default leaves it be. */
+const ITEM_ICON = "size-3.5";
+
+/**
+ * A habit row's ⋯ menu (docs/newdesignsystem.md → Dropdown menu): Edit, Stop
+ * and the two moves on a running or upcoming habit; Start again and Edit on a
+ * stopped one; then, for a habit the client never logged, Delete, last behind
+ * a separator. Stop is no deletion (a stopped habit starts again), so it is a
+ * plain item. The ⋯ is always in sight, in the row actions' muted icon style,
+ * and names its habit for a screen reader.
+ */
 export const HabitActions = ({
+  name,
   canMoveUp,
   canMoveDown,
+  busy,
   onEdit,
+  onStop,
+  onStartAgain,
   onDelete,
   onMoveUp,
   onMoveDown,
 }: HabitActionsProps) => {
   return (
-    <div className="flex items-center gap-0.5">
-      {/* Edit */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7"
-        onClick={onEdit}
-      >
-        <Edit className="h-3.5 w-3.5" />
-      </Button>
-
-      {/* Delete with confirmation */}
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Habit</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this habit? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={onDelete}
-              className="bg-destructive hover:bg-destructive/90"
-            >
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={busy}>
+        <button
+          type="button"
+          aria-label={`Actions for ${name}`}
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-[#93b0b4] transition-colors duration-150 hover:bg-[#f0f5f4] hover:text-[#5a7d82] data-[state=open]:bg-[#f0f5f4] data-[state=open]:text-[#5a7d82] disabled:pointer-events-none",
+            FOCUS_RING
+          )}
+        >
+          {busy ? (
+            <Loader2 className="h-[15px] w-[15px] animate-spin" strokeWidth={1.5} />
+          ) : (
+            <MoreHorizontal className="h-[15px] w-[15px]" strokeWidth={1.5} />
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        {onStartAgain && (
+          <DropdownMenuItem onSelect={onStartAgain}>
+            <RotateCcw className={ITEM_ICON} strokeWidth={1.5} />
+            Start again
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onSelect={onEdit}>
+          <Pencil className={ITEM_ICON} strokeWidth={1.5} />
+          Edit
+        </DropdownMenuItem>
+        {onStop && (
+          <DropdownMenuItem onSelect={onStop}>
+            <CirclePause className={ITEM_ICON} strokeWidth={1.5} />
+            Stop
+          </DropdownMenuItem>
+        )}
+        {onMoveUp && (
+          <DropdownMenuItem disabled={!canMoveUp} onSelect={onMoveUp}>
+            <ChevronUp className={ITEM_ICON} strokeWidth={1.5} />
+            Move up
+          </DropdownMenuItem>
+        )}
+        {onMoveDown && (
+          <DropdownMenuItem disabled={!canMoveDown} onSelect={onMoveDown}>
+            <ChevronDown className={ITEM_ICON} strokeWidth={1.5} />
+            Move down
+          </DropdownMenuItem>
+        )}
+        {onDelete && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+              <Trash2 className={ITEM_ICON} strokeWidth={1.5} />
               Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Move Up */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7"
-        onClick={onMoveUp}
-        disabled={!canMoveUp}
-      >
-        <ChevronUp className="h-3.5 w-3.5" />
-      </Button>
-
-      {/* Move Down */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7"
-        onClick={onMoveDown}
-        disabled={!canMoveDown}
-      >
-        <ChevronDown className="h-3.5 w-3.5" />
-      </Button>
-    </div>
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 };

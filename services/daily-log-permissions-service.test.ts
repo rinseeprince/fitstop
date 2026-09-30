@@ -112,7 +112,7 @@ describe("getLogWindow", () => {
     mockFrom({ lastPeriodEnd: null });
     await getLogWindow("c1");
     // Mutation guard: a day's LOG STATE decides nothing, so no log table
-    // (nutrition_logs / wellness_logs / daily_habit_logs) is read to ask
+    // (nutrition_logs / wellness_logs / client_habit_logs) is read to ask
     // whether the day was already logged.
     expect(new Set(touched)).toEqual(new Set(["clients", "check_ins"]));
   });

@@ -8,6 +8,7 @@
 
 import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import type { NutritionDay } from "@/types/schedule";
+import type { SentHabitWeek } from "@/lib/check-in/sent-snapshot";
 import type { MeasurementKey, MeasurementSource } from "@/lib/measurements/keys";
 import type { WellnessKey } from "@/lib/wellness/keys";
 
@@ -84,49 +85,26 @@ export type OverviewPlanSummary = {
   };
 };
 
-/** 'none' = nothing to judge that day — no session planned (training), no target prescribed (nutrition) → faint dash */
+/** 'none' = nothing to judge that day — no session planned (training), no target prescribed (nutrition), no habit planned (habits) → faint dash */
 export type DotState = "complete" | "partial" | "missed" | "no_log" | "none";
-
-/**
- * One habit's window, cut per habit rather than per day.
- *
- * Built from the HABIT list, never from the logs: `logHabit` writes a row only
- * when the client acts, so from the log side "never touched it" and "no such
- * habit" are the same absence — and the habit a coach most needs to see is
- * exactly the one with no rows.
- */
-export type HabitBreakdown = {
-  id: string;
-  name: string;
-  /** Days in the window the habit was eligible (`effective_date <= date`). */
-  eligibleDays: number;
-  completedDays: number;
-  /** Completed over ELIGIBLE days; null when the habit was never eligible. */
-  pct: number | null;
-  /**
-   * Index-aligned with `dates`, like every other rail:
-   * `true` completed · `false` eligible and not completed · `null` not yet
-   * eligible (the habit did not exist yet — not a miss).
-   */
-  rail: (boolean | null)[];
-};
 
 /**
  * What `GET /api/check-in/[id]` carries for the check-in's own reporting
  * period, read from the copy the check-in saved at Send
- * (lib/check-in/sent-snapshot.ts): the Overview kernel's dates, logged dates
- * and habit figures, and the nutrition summary with its rail plus the frozen
- * food rows themselves — `nutrition.days`, one per day of the week in the
- * copy's order, which the review's week lists one line per day. Its
- * own type rather than a `Pick` of `AdherenceSummary`, so the Overview's own
- * summary carries no rows it never renders.
+ * (lib/check-in/sent-snapshot.ts): the Overview kernel's dates and logged
+ * dates, the nutrition summary with its rail plus the frozen food rows
+ * themselves — `nutrition.days`, one per day of the week in the copy's order,
+ * which the review's week lists one line per day — and the habit week as it
+ * was prescribed and as it happened. Its own type rather than a `Pick` of
+ * `AdherenceSummary`, so the Overview's own summary carries no rows it never
+ * renders.
  *
  * Training is deliberately absent: the review page already carries the period's
  * own workouts and counts them once with `summariseTraining`
  * (`lib/training-adherence.ts`), so a training figure here would be a second
  * derivation of the same number on the same screen.
  */
-export type CheckInPeriodAdherence = Pick<AdherenceSummary, "dates" | "loggedDates" | "habits"> & {
+export type CheckInPeriodAdherence = Pick<AdherenceSummary, "dates" | "loggedDates"> & {
   nutrition: AdherenceSummary["nutrition"] & {
     /**
      * The week's food rows as the check-in froze them, verbatim: date, weekday,
@@ -135,6 +113,8 @@ export type CheckInPeriodAdherence = Pick<AdherenceSummary, "dates" | "loggedDat
      */
     days: NutritionDay[];
   };
+  /** Each habit's week as the check-in froze it: its versions, each day as it happened, its figures; and the totals. */
+  habitWeek: SentHabitWeek;
 };
 
 export type AdherenceSummary = {
@@ -164,11 +144,15 @@ export type AdherenceSummary = {
    * is on target over TARGETED days — a day with no target is in no ratio.
    */
   nutrition: { rail: DotState[] } & NutritionPeriodSummary;
+  /**
+   * The habits rail: one dot per date from that day's planned habits done on
+   * the day, a dash where nothing was planned; the mean of the judged days'
+   * percentages; and how many of them fell under the threshold.
+   */
   habits: {
     rail: DotState[];
     avgPct: number | null;
     daysBelow50: number;
-    perHabit: HabitBreakdown[];
   };
 };
 

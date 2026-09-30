@@ -16,11 +16,15 @@ vi.mock("@/services/client-habit-writes-service", () => {
   }
   return { HabitWriteError, orderHabits: vi.fn() };
 });
+vi.mock("@/services/client-habit-figures-service", () => ({ getCoachHabitList: vi.fn() }));
 
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { HabitWriteError, orderHabits } from "@/services/client-habit-writes-service";
+import { getCoachHabitList } from "@/services/client-habit-figures-service";
+
+const LIST = { clientToday: "2026-09-30", habits: [] };
 
 const A = "7c1a4d8e-2f3b-4c5d-8e9f-0a1b2c3d4e5f";
 const B = "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e";
@@ -36,13 +40,15 @@ describe("PUT /api/clients/[id]/habits/order", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
+    vi.mocked(getCoachHabitList).mockResolvedValue(LIST);
   });
 
-  it("puts the client's habits in the order given", async () => {
+  it("puts the client's habits in the order given, and answers with the habits as they now stand", async () => {
     vi.mocked(orderHabits).mockResolvedValue(true);
     const req = request({ habitIds: [B, A] });
     const response = await PUT(req, params);
-    expect(await response.json()).toEqual({ success: true, data: { changed: true } });
+    expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: LIST } });
+    expect(getCoachHabitList).toHaveBeenCalledWith("client-2", undefined);
     expect(requireCoachOwnsClient).toHaveBeenCalledWith("client-2", req);
     expect(orderHabits).toHaveBeenCalledWith({ clientId: "client-2", habitIds: [B, A] });
   });

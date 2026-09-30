@@ -14,7 +14,7 @@ const EXPECTED_TABS: Record<AlertType, string> = {
   activity_cal_mismatch: "nutrition",
   training_missed: "training",
   partial_training_pattern: "training",
-  habit_dropoff: "daily-habits",
+  habit_missed: "daily-habits",
   no_engagement: "training",
   nutrition_ending: "nutrition",
   training_ending: "training",
@@ -34,7 +34,7 @@ describe("alertDestination", () => {
     expect(alertDestination("training_missed").label).toBe("TRAINING");
     expect(alertDestination("mood_drop").label).toBe("WELLNESS");
     expect(alertDestination("nutrition_missed").label).toBe("NUTRITION");
-    expect(alertDestination("habit_dropoff").label).toBe("HABITS");
+    expect(alertDestination("habit_missed").label).toBe("HABITS");
   });
 
   it("never maps to check-ins (the check-in row owns that destination)", () => {

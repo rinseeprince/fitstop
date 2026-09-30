@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { habitDay, versionForWords, versionOn } from "./habit-day";
+import { habitDay, habitStatus, versionForWords, versionOn, versionsOver } from "./habit-day";
 import type { ClientHabit, HabitVersion } from "@/types/habits";
 
 // 28 Sep 2026 is a Monday; 4 Oct the Sunday after.
@@ -132,10 +132,46 @@ describe("versionOn and versionForWords", () => {
     expect(versionOn(history, "2026-09-12")).toBeNull();
   });
 
+  it("finds every version running on a day of a span, its ends included", () => {
+    expect(versionsOver(history, "2026-09-10", "2026-09-15").map((v) => v.id)).toEqual(["version-a", "version-b"]);
+    expect(versionsOver(history, "2026-09-11", "2026-09-14")).toEqual([]);
+    expect(versionsOver(history, "2026-09-21", "2026-10-05").map((v) => v.id)).toEqual(["version-c"]);
+    expect(versionsOver(history, "2026-12-01", "2026-12-07").map((v) => v.id)).toEqual(["version-c"]);
+  });
+
   it("reads a stopped habit's words from its last version, and a habit not started yet from its first", () => {
     expect(versionForWords(history, "2026-09-16")?.id).toBe("version-b");
     expect(versionForWords(history, "2026-09-25")?.id).toBe("version-b");
     expect(versionForWords(history, "2026-08-20")?.id).toBe("version-a");
     expect(versionForWords(habit({ versions: [] }), "2026-09-25")).toBeNull();
+  });
+});
+
+describe("habitStatus", () => {
+  const history = habit({
+    versions: [
+      version({ startsOn: "2026-09-01", endsOn: "2026-09-10" }),
+      version({ id: "version-b", startsOn: "2026-09-15", endsOn: "2026-09-20" }),
+      version({ id: "version-c", startsOn: "2026-10-05" }),
+    ],
+  });
+
+  it("is running on a day a version covers, its first and last days included", () => {
+    expect(habitStatus(history, "2026-09-16")).toBe("running");
+    expect(habitStatus(history, "2026-09-15")).toBe("running");
+    expect(habitStatus(history, "2026-09-20")).toBe("running");
+    expect(habitStatus(history, "2026-10-05")).toBe("running");
+  });
+
+  it("is upcoming in a gap with a version queued after it, and before its first version", () => {
+    expect(habitStatus(history, "2026-09-25")).toBe("upcoming");
+    expect(habitStatus(history, "2026-08-20")).toBe("upcoming");
+  });
+
+  it("is stopped once its last version has ended, and with no version at all", () => {
+    const stopped = habit({ versions: [version({ endsOn: "2026-09-10" })] });
+    expect(habitStatus(stopped, "2026-09-11")).toBe("stopped");
+    expect(habitStatus(stopped, "2026-09-10")).toBe("running");
+    expect(habitStatus(habit({ versions: [] }), "2026-09-25")).toBe("stopped");
   });
 });

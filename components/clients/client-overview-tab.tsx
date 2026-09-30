@@ -39,7 +39,6 @@ import { useWellnessData } from "@/hooks/use-wellness-data";
 import { toast } from "sonner";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { ClientTab } from "@/lib/client-tabs";
-import type { AlertType } from "@/types/attention-feed";
 import type { Client } from "@/types/check-in";
 import type { ClientNote } from "@/types/coach-overview";
 
@@ -94,14 +93,13 @@ export function ClientOverviewTab({
   // Two consistency surfaces, each on its own window: the dot rails read a
   // fortnight, the wellness cards a week — which is what their sparklines and
   // their "not logged this week" copy are drawn for. The chart above them reads
-  // no window at all. `withHabitLogs` stays off; nothing here consumes them.
+  // no window at all.
   const { adherence, isLoading: adherenceLoading } = useClientAdherence(
     client.id,
     ADHERENCE_WINDOW_DAYS
   );
   const { logs: wellnessLogs, isLoading: wellnessLoading } = useWellnessData(client.id, {
     daysBack: WELLNESS_WINDOW_DAYS - 1,
-    withHabitLogs: false,
   });
   // Which body metric the chart is showing. Local to the page, not a URL param:
   // it is a lens on one card, not a pane, and the client page's param contract
@@ -174,15 +172,16 @@ export function ClientOverviewTab({
 
   // Reuses the dashboard's dismissal store, so clearing an alert here clears it
   // there too. The brief's evaluator already filters dismissed alerts, hence the
-  // plain revalidate rather than any local bookkeeping.
+  // plain revalidate rather than any local bookkeeping. The key is the alert's
+  // (`alertDismissalKey`): its type, and a missed-habit line's habit.
   const handleDismissAlert = useCallback(
-    (alertType: AlertType) => {
+    (dismissalKey: string) => {
       void (async () => {
         try {
           const res = await fetch("/api/dashboard/attention-feed/dismiss", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ clientId: client.id, alertType }),
+            body: JSON.stringify({ clientId: client.id, alertType: dismissalKey }),
           });
           const payload = (await res.json()) as { success?: boolean; error?: string };
           if (!res.ok || !payload.success) {

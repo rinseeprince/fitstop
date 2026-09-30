@@ -65,8 +65,9 @@ export function TrainingPlanBuilderOverlay({
 }: TrainingPlanBuilderOverlayProps) {
   const builder = useTrainingBuilderContext();
   // The surface is open while either address is: the tray shows under no
-  // editor, the editor over none. The library browser is a 920px right drawer;
-  // the editor is full-screen (the 3-column builder needs the width).
+  // editor, the editor over none. The library browser is a right drawer the
+  // nutrition plan tray's width; the editor is full-screen (the 3-column
+  // builder needs the width).
   const fullScreen = editorPlanId != null;
   const isOpen = trayOpen || fullScreen;
 
@@ -150,7 +151,9 @@ export function TrainingPlanBuilderOverlay({
         ) : (
           <DialogPrimitive.Content
             key="tray"
-            className="fixed inset-y-0 right-0 z-50 flex w-[920px] max-w-[100vw] flex-col bg-[#f4f7f6] shadow-[-8px_0_24px_rgba(15,32,39,0.12)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:duration-250 data-[state=closed]:duration-200 data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right"
+            // The nutrition plan tray's width: its w-[420px] under the sheet's
+            // cap on a right-hand panel (sm:max-w-sm), 384px on a desktop screen.
+            className="fixed inset-y-0 right-0 z-50 flex w-[420px] max-w-[100vw] sm:max-w-sm flex-col bg-[#f4f7f6] shadow-[-8px_0_24px_rgba(15,32,39,0.12)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:duration-250 data-[state=closed]:duration-200 data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right"
           >
             <DialogPrimitive.Title className="sr-only">Apply a program</DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">

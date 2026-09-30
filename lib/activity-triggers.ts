@@ -1,80 +1,50 @@
 import type { DailyLog } from "@/types/daily-log"
-import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit"
+import type { ClientHabit, HabitEntryRead } from "@/types/habits"
 import type { TriggerResult } from "./attention-triggers"
 import type { TrainingEventRow } from "./attention-feed-helpers"
 import {
-  HABIT_DROPOFF_THRESHOLD_PERCENT,
-  HABIT_DROPOFF_DAYS_IN_WEEK,
+  HABIT_MISSED_DAYS,
+  HABIT_MISSED_WINDOW_DAYS,
   ACTIVITY_CAL_MISMATCH_DAY_COUNT,
   ACTIVITY_CAL_MISMATCH_WINDOW_DAYS,
 } from "@/lib/constants"
-import { getDateString } from "@/lib/date-helpers"
+import { addDaysToDateString } from "@/lib/date-helpers"
 import { isTrainingLogStatus } from "@/lib/logged-days"
+import { missedPlannedDates } from "@/lib/habits/habit-week"
 
 /**
- * Evaluates if habit completion has dropped off
+ * Missed habits, one line each (decision D4): a habit is listed when the
+ * client missed at least HABIT_MISSED_DAYS of its planned days over the last
+ * HABIT_MISSED_WINDOW_DAYS days gone by — the days before the feed's today, in
+ * a row or not. A missed day is a planned day without the habit done on it,
+ * a number short of its target included; a day made up on another day stays
+ * missed on its own. A habit done a number of times a week plans no day, so
+ * it is never listed. The missed days are the line's affected days, so a
+ * dismissal (keyed by the habit, `alertDismissalKey`) lasts until the habit is
+ * missed again on a later day.
  */
-export function evaluateHabitDropoff(
-  habitLogs: DailyHabitLog[],
-  habits: DailyHabit[],
-  now: Date = new Date()
-): TriggerResult | null {
-  if (!habits.length || !habitLogs.length) return null
-
-  // Get last 7 days
-  const today = now
-  const sevenDaysAgo = new Date(today)
-  sevenDaysAgo.setDate(today.getDate() - 6)
-  
-  const dailyCompletionRates: { date: string; rate: number }[] = []
-  const affectedDays: string[] = []
-  
-  // Calculate completion rate for each of the last 7 days
-  for (let i = 0; i < 7; i++) {
-    const checkDate = new Date(sevenDaysAgo)
-    checkDate.setDate(sevenDaysAgo.getDate() + i)
-    const dateStr = getDateString(checkDate)
-    
-    // Only count habits that existed on this day (created_at <= day)
-    const habitsOnThisDay = habits.filter(habit => {
-      const habitCreatedDate = new Date(habit.createdAt.split('T')[0] + 'T00:00:00')
-      return habitCreatedDate <= checkDate
-    })
-    
-    if (habitsOnThisDay.length === 0) continue
-    
-    // Count completed habits for this day
-    const completedCount = habitLogs.filter(log => 
-      log.date === dateStr && 
-      log.completed &&
-      habitsOnThisDay.some(h => h.id === log.dailyHabitId)
-    ).length
-    
-    const completionRate = (completedCount / habitsOnThisDay.length) * 100
-    dailyCompletionRates.push({ date: dateStr, rate: completionRate })
-    
-    if (completionRate < HABIT_DROPOFF_THRESHOLD_PERCENT) {
-      affectedDays.push(dateStr)
-    }
-  }
-  
-  // Check if completion rate was below threshold for 5+ of the last 7 days
-  if (affectedDays.length >= HABIT_DROPOFF_DAYS_IN_WEEK) {
-    const metricData = dailyCompletionRates.map(d => ({
-      date: d.date,
-      value: Math.round(d.rate)
-    }))
-    
-    return {
-      type: "habit_dropoff",
-      severity: "medium",
-      message: `Daily habit completion below ${HABIT_DROPOFF_THRESHOLD_PERCENT}% for ${affectedDays.length} of the last 7 days`,
-      affectedDays: affectedDays.slice(-HABIT_DROPOFF_DAYS_IN_WEEK),
-      metricData
-    }
-  }
-  
-  return null
+export function evaluateMissedHabits(
+  habits: Pick<ClientHabit, "id" | "name" | "measure" | "direction" | "versions" | "dayEdits">[],
+  entries: HabitEntryRead[],
+  today: string
+): TriggerResult[] {
+  const days = Array.from({ length: HABIT_MISSED_WINDOW_DAYS }, (_, i) =>
+    addDaysToDateString(today, i - HABIT_MISSED_WINDOW_DAYS)
+  )
+  return habits.flatMap((habit) => {
+    const missed = missedPlannedDates(habit, entries, days)
+    if (missed.length < HABIT_MISSED_DAYS) return []
+    return [
+      {
+        type: "habit_missed" as const,
+        severity: "medium" as const,
+        message: `Missed ${habit.name} ${missed.length} days`,
+        affectedDays: missed,
+        metricData: [],
+        habitId: habit.id,
+      },
+    ]
+  })
 }
 
 /**

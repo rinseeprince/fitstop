@@ -52,13 +52,13 @@ export const resolveCheckInReportingPeriod = async (
 /**
  * The nutrition and habit figures for a check-in's own period, as they stood
  * when it was sent — read from its saved copy (lib/check-in/sent-snapshot.ts),
- * so a nutrition setting switched, a same-day re-save or a habit switched off
- * afterwards never moves them (owner ruling 2026-09-22). The food against each
- * day's target is the saved rows through the same kernel the Overview runs
- * (`summarizeNutritionPeriod`, one dot per day by `classifyNutritionDay`), and
- * the saved rows themselves, verbatim and in the copy's order, for the card's
- * day-by-day list; the habits, the days and the days logged are the saved
- * figures themselves.
+ * so a nutrition setting switched, a same-day re-save or a habit changed or
+ * stopped afterwards never moves them (owner ruling 2026-09-22). The food
+ * against each day's target is the saved rows through the same kernel the
+ * Overview runs (`summarizeNutritionPeriod`, one dot per day by
+ * `classifyNutritionDay`), and the saved rows themselves, verbatim and in the
+ * copy's order, for the card's day-by-day list; the habit week, the days and
+ * the days logged are the saved figures themselves.
  *
  * **Training is deliberately NOT on this wire.** The review page counts the
  * period's training itself, from the per-workout detail it already carries,
@@ -86,7 +86,7 @@ export const getCheckInPeriodAdherence = (
       rail: period.nutrition.map((day) => classifyNutritionDay(day.status)),
       ...summarizeNutritionPeriod(period.nutrition),
     },
-    habits: period.habits,
+    habitWeek: period.habitWeek,
   };
 };
 
