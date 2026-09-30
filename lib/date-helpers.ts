@@ -171,6 +171,17 @@ export const DAY_NAMES: Record<number, DayOfWeek> = {
   4: "thursday", 5: "friday", 6: "saturday",
 };
 
+/** A weekday as a screen shortens it: "Mon". */
+export const SHORT_WEEKDAY: Record<DayOfWeek, string> = {
+  monday: "Mon",
+  tuesday: "Tue",
+  wednesday: "Wed",
+  thursday: "Thu",
+  friday: "Fri",
+  saturday: "Sat",
+  sunday: "Sun",
+};
+
 /**
  * The weekday a YYYY-MM-DD calendar date falls on, in the product's one
  * spelling. A local-midnight parse read back through `getDay()`, so the answer

@@ -1,51 +1,46 @@
 "use client";
 
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import {
-  LABEL_CLASS,
-  MONO,
-  TEXT_MUTED,
-} from "@/components/clients/training/program-builder/builder-tokens";
+import { formatDateOnlyShort, SHORT_WEEKDAY, weekdayOf } from "@/lib/date-helpers";
+import { FOCUS_RING, MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import { weekFigurePercent } from "@/lib/habits/habit-words";
 import { HabitDayCell } from "./habit-day-cell";
-import { habitCellState } from "./habit-cell-state";
+import { habitCellState, isDayEditable } from "./habit-cell-state";
 import { habitFigure } from "./habit-figure";
-import type { HabitWeekRow } from "@/types/habits";
+import { HabitRowMenu, type HabitRowAction } from "./habit-row-menu";
+import type { HabitTrackerRow } from "./habit-tracker-rows";
+import type { CoachHabit, HabitDayFacts } from "@/types/habits";
 
 type HabitsWeekTrackerProps = {
-  habits: HabitWeekRow[];
+  /** The table's rows; null while the habits or the week are still loading. */
+  rows: HabitTrackerRow[] | null;
   weekDays: string[];
-  /** The client's today: the day ringed, and the edge between a missed day and one still to come. */
+  /** The client's today: the day ringed, the edge between a missed day and one to come, and the first day a coach can change. */
   today: string;
-  isLoading: boolean;
+  /** The running and starting-later habits, in order: the ones Move up and Move down reorder among. */
+  movableIds: string[];
+  /** The habit a move is in flight for: its ⋯ spins, and nothing else on the table writes until it answers. */
+  movingId: string | null;
+  onAction: (habit: CoachHabit, action: HabitRowAction) => void;
+  /** A set-days habit's day from today on, opened in "This day". */
+  onDay: (habit: CoachHabit, day: HabitDayFacts) => void;
 };
 
-/** The week's rate from which a row's rate reads teal rather than muted. */
+/** The week's rate from which a row's figure reads teal rather than muted. */
 const WEEK_RATE_STRONG_PERCENT = 70;
+
+/** "Wed 30 Sept": a day as the tracker names it to a screen reader. */
+const dayName = (date: string) => `${SHORT_WEEKDAY[weekdayOf(date)]} ${formatDateOnlyShort(date)}`;
 
 function formatDayHeader(dateStr: string) {
   const date = new Date(dateStr + "T00:00:00");
-  const dayAbbr = date.toLocaleDateString("en-AU", { weekday: "short" });
-  const dateNum = date.getDate();
-  return { dayAbbr, dateNum };
+  return { dayAbbr: SHORT_WEEKDAY[weekdayOf(dateStr)], dateNum: date.getDate() };
 }
 
-export function HabitsWeekTracker({
-  habits,
-  weekDays,
-  today,
-  isLoading,
-}: HabitsWeekTrackerProps) {
-  if (isLoading) {
+export function HabitsWeekTracker({ rows, weekDays, today, movableIds, movingId, onAction, onDay }: HabitsWeekTrackerProps) {
+  if (rows === null) {
     return (
       <div className="bg-white rounded-[6px] p-5">
         <div className="space-y-3">
@@ -57,12 +52,10 @@ export function HabitsWeekTracker({
     );
   }
 
-  if (habits.length === 0) {
+  if (rows.length === 0) {
     return (
       <div className="bg-white rounded-[6px] p-5">
-        <div className="h-24 flex items-center justify-center text-[13px] text-[#93b0b4]">
-          No habits this week
-        </div>
+        <div className="h-24 flex items-center justify-center text-[13px] text-[#93b0b4]">No habits yet</div>
       </div>
     );
   }
@@ -71,10 +64,8 @@ export function HabitsWeekTracker({
     <div className="bg-white rounded-[6px] p-5">
       <Table>
         <TableHeader>
-          <TableRow className="border-b border-[rgba(13,148,136,0.08)] hover:bg-transparent">
-            <TableHead className={cn(LABEL_CLASS, "min-w-[140px] h-10")}>
-              Habit
-            </TableHead>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="min-w-[180px]">Habit</TableHead>
             {weekDays.map((date) => {
               const { dayAbbr, dateNum } = formatDayHeader(date);
               const isToday = date === today;
@@ -82,65 +73,68 @@ export function HabitsWeekTracker({
                 <TableHead
                   key={date}
                   className={cn(
-                    // normal-case/tracking-normal: TableHead now carries
-                    // LABEL_CLASS, and these headers hold a mixed-case day
-                    // abbreviation ("Mon"), not a label.
-                    "text-center min-w-[48px] h-10 px-1 normal-case tracking-normal",
+                    // normal-case/tracking-normal: these headers hold a
+                    // mixed-case day abbreviation ("Mon"), not a label.
+                    "text-center min-w-[48px] normal-case tracking-normal",
                     isToday && "bg-[rgba(13,148,136,0.05)] rounded-t-[4px]"
                   )}
                 >
                   <div className="text-[10px] text-[#93b0b4] font-medium">{dayAbbr}</div>
-                  <div
-                    className={cn(
-                      MONO,
-                      "text-[12px]",
-                      isToday ? "text-[#0d9488] font-semibold" : "text-[#5a7d82]"
-                    )}
-                  >
+                  <div className={cn(MONO, "text-[12px]", isToday ? "text-[#0d9488] font-semibold" : "text-[#5a7d82]")}>
                     {dateNum}
                   </div>
                 </TableHead>
               );
             })}
-            <TableHead className={cn(LABEL_CLASS, "text-right min-w-[60px] h-10")}>
-              Rate
-            </TableHead>
+            <TableHead className="text-right min-w-[60px]">Week</TableHead>
+            <TableHead className="w-10" />
           </TableRow>
         </TableHeader>
         <TableBody>
-          {habits.map((row) => {
-            // The Rate cell reads met of planned; its percentage decides the colour.
-            const rate = weekFigurePercent(row.figures);
-            const figure = habitFigure(row.figures.met, row.figures.planned);
+          {rows.map((row) => {
+            const rate = row.figures ? weekFigurePercent(row.figures) : null;
+            const figure = row.figures ? habitFigure(row.figures.met, row.figures.planned) : null;
+            const habit = row.habit;
+            const place = habit ? movableIds.indexOf(habit.id) : -1;
             return (
-              <TableRow
-                key={row.habit.id}
-                className="border-b border-[rgba(13,148,136,0.06)] hover:bg-[rgba(13,148,136,0.02)] transition-colors"
-              >
-                <TableCell className="py-2.5">
-                  <span className="text-[13px] font-medium text-[#0c1a1e]">
-                    {row.habit.name}
-                  </span>
-                  {/* Words ("at least 3 L"), so sans: mono is for numbers alone. */}
-                  {row.words.target && (
-                    <span className={cn(TEXT_MUTED, "text-[11px] ml-1.5")}>· {row.words.target}</span>
-                  )}
+              <TableRow key={row.id}>
+                <TableCell>
+                  <div className={cn("max-w-[260px]", row.quiet && "opacity-60")}>
+                    <p className="truncate text-[13.5px] font-semibold text-[#0c1a1e]">{row.name}</p>
+                    {row.line && <p className="mt-0.5 truncate text-xs text-[#93b0b4]">{row.line}</p>}
+                  </div>
                 </TableCell>
-                {row.days.map((day) => {
-                  const isToday = day.date === today;
+                {weekDays.map((date, i) => {
+                  const day = row.days?.[i] ?? null;
+                  const cell = (
+                    <HabitDayCell
+                      state={day ? habitCellState(day, today) : "blank"}
+                      value={day?.entry?.value ?? null}
+                      edited={day?.edited ?? false}
+                    />
+                  );
                   return (
-                    <TableCell
-                      key={day.date}
-                      className={cn(
-                        "text-center py-2.5 px-1",
-                        isToday && "bg-[rgba(13,148,136,0.05)]"
+                    <TableCell key={date} className={cn("text-center", date === today && "bg-[rgba(13,148,136,0.05)]")}>
+                      {habit && day && isDayEditable(day, today) ? (
+                        <button
+                          type="button"
+                          aria-label={`${row.name}, ${dayName(date)}`}
+                          onClick={() => onDay(habit, day)}
+                          disabled={movingId !== null}
+                          className={cn(
+                            "mx-auto block rounded-[4px] p-0.5 transition-colors duration-150 hover:bg-[rgba(13,148,136,0.08)] disabled:pointer-events-none",
+                            FOCUS_RING
+                          )}
+                        >
+                          {cell}
+                        </button>
+                      ) : (
+                        cell
                       )}
-                    >
-                      <HabitDayCell state={habitCellState(day, today)} value={day.entry?.value ?? null} />
                     </TableCell>
                   );
                 })}
-                <TableCell className="text-right py-2.5">
+                <TableCell className="text-right">
                   <span
                     className={cn(
                       MONO,
@@ -150,6 +144,19 @@ export function HabitsWeekTracker({
                   >
                     {figure ?? "—"}
                   </span>
+                </TableCell>
+                <TableCell>
+                  {habit && (
+                    <HabitRowMenu
+                      name={habit.name}
+                      status={habit.status}
+                      canMoveUp={place > 0}
+                      canMoveDown={place !== -1 && place < movableIds.length - 1}
+                      busy={movingId === habit.id}
+                      disabled={movingId !== null}
+                      onAction={(action) => onAction(habit, action)}
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             );

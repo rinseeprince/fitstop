@@ -1,5 +1,5 @@
 import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
-import type { DayOfWeek } from "@/types/check-in";
+import { SHORT_WEEKDAY } from "@/lib/date-helpers";
 import type { HabitDirection, HabitMeasure, HabitVersion, HabitWeekFigures, HabitWords } from "@/types/habits";
 
 /**
@@ -8,16 +8,6 @@ import type { HabitDirection, HabitMeasure, HabitVersion, HabitWeekFigures, Habi
  * week"), a target ("at least 3 L", "at most 2 drinks") and a week's figure
  * ("2 of 3"). A unit is the coach's word, shown as typed and never converted.
  */
-
-const SHORT_DAY: Record<DayOfWeek, string> = {
-  monday: "Mon",
-  tuesday: "Tue",
-  wednesday: "Wed",
-  thursday: "Thu",
-  friday: "Fri",
-  saturday: "Sat",
-  sunday: "Sun",
-};
 
 /** When a version runs: every day, its weekdays Monday first, or its times a week. */
 export function scheduleWords(version: Pick<HabitVersion, "timesPerWeek" | "weekdays">): string {
@@ -28,12 +18,17 @@ export function scheduleWords(version: Pick<HabitVersion, "timesPerWeek" | "week
   }
   const days = DAYS_OF_WEEK.filter((day) => version.weekdays.includes(day));
   if (days.length === DAYS_OF_WEEK.length) return "Every day";
-  return days.map((day) => SHORT_DAY[day]).join(", ");
+  return days.map((day) => SHORT_WEEKDAY[day]).join(", ");
 }
 
 /** A habit's number as it reads: "6,000", "2.5", "3". */
 export function habitNumber(value: number): string {
   return value.toLocaleString("en-GB", { maximumFractionDigits: 2 });
+}
+
+/** A number habit's direction as the label of its Target box reads it: "At least", "At most". */
+export function directionLabel(direction: HabitDirection | null): string {
+  return direction === "at_most" ? "At most" : "At least";
 }
 
 /** A number habit's target in its direction and unit; null on a tick habit or with no target. */

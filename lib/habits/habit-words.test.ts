@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { habitNumber, habitWords, scheduleWords, targetWords, weekFigurePercent, weekFigureWords } from "./habit-words";
+import { directionLabel, habitNumber, habitWords, scheduleWords, targetWords, weekFigurePercent, weekFigureWords } from "./habit-words";
 
 describe("scheduleWords", () => {
   it("says every day for all seven, and the chosen days Monday first otherwise", () => {
@@ -33,6 +33,13 @@ describe("targetWords", () => {
 
   it("has nothing to say for a tick habit", () => {
     expect(targetWords({ measure: "tick", unit: null, direction: null }, null)).toBeNull();
+  });
+});
+
+describe("directionLabel", () => {
+  it("labels a Target box by the habit's direction", () => {
+    expect(directionLabel("at_least")).toBe("At least");
+    expect(directionLabel("at_most")).toBe("At most");
   });
 });
 

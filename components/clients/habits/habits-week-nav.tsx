@@ -12,7 +12,7 @@ type HabitsWeekNavProps = {
   weekStart: string | null;
   weekEnd: string | null;
   canPrev: boolean;
-  /** False on the week holding the client's today: the tracker pages back only. */
+  /** True once the week is known: the tracker pages forward past today too, to plan one-date changes. */
   canNext: boolean;
   onPrev: () => void;
   onNext: () => void;

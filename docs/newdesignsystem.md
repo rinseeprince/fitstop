@@ -305,6 +305,26 @@ shadcn defaults. The spec above is that hand-written string, moved into the prim
 **It carries its own accessible name.** Radix gives it `role="switch"`, so an `aria-label`
 is all it needs — never wrap it in a `role="group"` to name it.
 
+### Weekday toggle row — picking a set of days
+
+**Every pick of several weekdays is `<WeekdayToggleRow>`**
+(`@/components/programs/shared/weekday-toggle-row`) — a habit's chosen days is the first. It
+picks a SET, which neither a segmented control nor a switch can say: a segmented control
+chooses one of several, a switch turns one thing on or off. Seven toggles, Monday first, each
+a `button` with `aria-pressed`, in a `role="group"` the call site names with `label`;
+`onChange` answers the days picked, Monday first.
+
+| Part | Class |
+|---|---|
+| Row | `grid grid-cols-7 gap-1` — seven equal cells, so nothing moves as days are picked |
+| Day | `h-8 rounded-[6px] border text-[12.5px] font-medium` + `FOCUS_RING`, the short day ("Mon") in sans |
+| Picked | `border-transparent bg-[rgba(13,148,136,0.08)] text-[#0d9488]` — the filter chip's active wash |
+| Not picked | `border-[rgba(13,148,136,0.08)] bg-white text-[#5a7d82] hover:text-[#0c1a1e]` |
+| Disabled | `disabled:cursor-not-allowed disabled:opacity-50` |
+
+**`font-medium` in both states**, the segmented control's rule: the wash carries the pick, never
+the weight — a heavier picked day would reflow the row.
+
 ### Input heights by context
 
 | Height | Class | Where |
@@ -414,6 +434,7 @@ To turn a mono label to normal case (e.g. a meta line), append `normal-case trac
 | Toolbar sort select | `@/components/programs/shared/library-sort-select` → `<LibrarySortSelect options value onChange />` |
 | Relative "updated" formatting | `@/components/programs/shared/format-relative` → `formatRelativeUpdated()` |
 | Per-item on/off toggle | `@/components/ui/switch` → `<Switch checked onCheckedChange aria-label />` — see "Switch" |
+| A set of weekdays picked | `@/components/programs/shared/weekday-toggle-row` → `<WeekdayToggleRow value onChange label />` — see "Weekday toggle row" |
 | Slider, single or two-thumb | `@/components/ui/slider` → `<Slider thumbLabels trackContent />` — the `h-1.5` rounded track in the `0.08` tint with a teal range, a 16px white thumb on a teal hairline with `FOCUS_RING`. `thumbLabels` names each thumb (a two-thumb pair otherwise reads "Minimum" / "Maximum", wrong for boundaries); `trackContent` replaces the range fill with a track that is itself the information. The macro balancer (`components/clients/nutrition/macro-balance.tsx`) is the reference |
 | Dialog / Sheet / Popover / Button / Badge / Input / Select / Table | `@/components/ui/*` (already Teal-Summit-styled — see Overlays) |
 | Toast | `import { toast } from "sonner"` → `toast.success(title, { description })` / `toast.error(…)` / plain `toast(title)`. The one toaster is `@/components/ui/sonner` → `<Toaster />`, mounted by `app/layout.tsx` alone — see Toasts |
@@ -446,7 +467,9 @@ Page body rhythm:
 
 ```tsx
 <div className="space-y-5">
-  <StatBand cells={cells} />                     {/* dark KPI band */}
+  <div className="animate-card-in">              {/* a page is arrived at: its band enters */}
+    <StatBand cells={cells} />                   {/* dark KPI band */}
+  </div>
   {/* toolbar: search + segmented + spacer + sort */}
   <div className="mb-4 flex flex-wrap items-center gap-3"> … <div className="flex-1" /> … </div>
   <SectionLabel label="…" actions={…} />         {/* uppercase divider */}
@@ -501,6 +524,7 @@ One owner per overlay, and an overlay whose content derives from the address clo
 | **Dialog** | Short confirm or small create form (name + a few fields); a readout of a record (the logged workout) | `sm:max-w-md` (compact) → `sm:max-w-lg` (default) → `sm:max-w-xl` (rich) → `sm:max-w-[780px]` (a readout as wide as the tray, e.g. the target-over-actual table) |
 | **Sheet** (right) | Editing a rich object in place (session editor) | `sm:w-[780px] sm:max-w-full` |
 | **Slide-over** (right Sheet) | Creating a rich object (new session) | `sm:w-[780px] sm:max-w-full` |
+| **Side tray** (right Sheet) | A tray of settings or picks beside the page: the nutrition plan tray, the Habits tab's Add habits. A dark `#0f2027` header drawing its own close (the base X hidden: `hideClose`) over a `#f4f7f6` body | `w-[420px]` under the sheet's own `sm:max-w-sm` cap, left in place: 384px on a desktop (`components/side-tray-width.test.ts` pins it) |
 | **Popover** | Quick pick / attach (choose a session to place) | `w-[320px]` |
 
 ### Dialog
@@ -529,7 +553,7 @@ Overlay is `bg-black/50`. Slide-over footer uses `justify-end` (Cancel ghost + S
 
 The base `DropdownMenuContent`/`Item` primitives (`components/ui/dropdown-menu.tsx`) are Teal-Summit — and since 2026-08-22 so is `components/ui/select.tsx`, which had been the un-migrated twin of this exact pattern: content `bg-white rounded-[6px] border border-[rgba(13,148,136,0.08)] p-1 shadow-[0_10px_40px_rgba(13,148,136,0.10)]`; items `rounded-[4px] px-2.5 py-1.5 text-[13px]` with hover/focus `bg-[rgba(13,148,136,0.05)] text-[#0a5c55]` and muted `#93b0b4` icons (`h-3.5 w-3.5 strokeWidth={1.5}`); separator = the `0.06` hairline. Destructive rows use `variant="destructive"` (`#c06060` text + `rgba(192,96,96,0.08)` wash — never a filled red) and sit LAST, grouped behind a separator. Typical width `w-52`.
 
-**No single menu currently demonstrates the whole pattern.** The training calendar's week-actions menu (`calendar-week-rail.tsx`) was the reference until its three non-destructive items were removed on 2026-07-27; with one item left it stopped being a menu at all and is now a bare destructive rail icon (see Buttons → "Icon action (in a rail)"). **A kebab holding one action is the wrong affordance** — two clicks to reach one thing; drop to a bare icon and let the confirm dialog carry the safety. For the multi-item shape see `nutrition-calendar-week-rail.tsx`; for a menu mixing a normal and a destructive row see the calendar event card (`calendar-event-card.tsx`), which currently hand-rolls `className="text-[#c06060] focus:text-[#c06060]"` instead of `variant="destructive"` and carries no separator — a deviation to fix when that file is next touched, not a pattern to copy.
+**The Habits tab's row menu demonstrates the whole pattern** (`components/clients/habits/habit-row-menu.tsx`): several items, each with its glyph at `size-3.5`, Delete last behind a separator on `variant="destructive"`, `w-52`. The training calendar's week-actions menu (`calendar-week-rail.tsx`) was the reference until its three non-destructive items were removed on 2026-07-27; with one item left it stopped being a menu at all and is now a bare destructive rail icon (see Buttons → "Icon action (in a rail)"). **A kebab holding one action is the wrong affordance** — two clicks to reach one thing; drop to a bare icon and let the confirm dialog carry the safety. For the multi-item shape see `nutrition-calendar-week-rail.tsx`; for a menu mixing a normal and a destructive row see the calendar event card (`calendar-event-card.tsx`), which currently hand-rolls `className="text-[#c06060] focus:text-[#c06060]"` instead of `variant="destructive"` and carries no separator — a deviation to fix when that file is next touched, not a pattern to copy.
 
 ### Popover (320px pattern)
 
@@ -597,7 +621,8 @@ slots: never `return null`, never a guessed value. Structural chrome never
 waits on data it does not read. The code-side rule is `CONVENTIONS.md` §7 →
 "Gate content, not structure"; worked examples: the activation banner
 (existence is `onboardingStatus`, readiness renders as pending inside it), the
-roster frame (`view={null}`), the Programs stat band (muted `—` values).
+roster frame (`view={null}`), the Programs stat band (each value pending text
+until its read settles).
 
 ### Which treatment
 
@@ -621,7 +646,7 @@ Reference: `app/(coach)/dashboard/programs/page.tsx`, `components/programs/progr
 
 ### Stat band
 
-`<StatBand cells={cells} />` renders `bg-[#0f2027] rounded-[6px] p-5 grid animate-card-in` (2–4 cols by cell count). Each cell: `flex flex-col pl-5 pr-5`, right divider `border-r border-[rgba(255,255,255,0.07)]` (except last). Label = `STAT_LABEL_DARK_CLASS`; value = `STAT_VALUE_DARK_CLASS` + `text-[24px] leading-tight` (muted fallback `text-[13px] text-[rgba(255,255,255,0.3)]`); unit `text-[10px] text-[rgba(255,255,255,0.3)]`; sub = `MONO` + `text-[10px] mt-1` (tones: neutral `rgba(255,255,255,0.3)`, warn `#d97706`, up `#0d9488`).
+`<StatBand cells={cells} />` renders `bg-[#0f2027] rounded-[6px] p-5 grid` (2–4 cols by cell count). Each cell: `flex flex-col pl-5 pr-5`, right divider `border-r border-[rgba(255,255,255,0.07)]` (except last). Label = `STAT_LABEL_DARK_CLASS`; value = `STAT_VALUE_DARK_CLASS` + `text-[24px] leading-tight` (muted fallback `text-[13px] text-[rgba(255,255,255,0.3)]`); unit `text-[10px] text-[rgba(255,255,255,0.3)]`; sub = `MONO` + `text-[10px] mt-1` (tones: neutral `rgba(255,255,255,0.3)`, warn `#d97706`, up `#0d9488`). A pending cell holds its sub line as pending text, so the band does not grow when the sub lands; a cell with no sub line at all passes `sub: null`, so none is held and the band does not shrink when its value lands (the Habits tab's three cells). The band carries no entrance of its own: an arrival surface animates it (`<div className="animate-card-in">` around it — the roster, the Programs page), and the Habits tab, which is not arrived at, shows it still (Animations → "Where animation may be used").
 
 ### Toolbar
 
@@ -914,7 +939,7 @@ The client portal animates nothing. Its pages are arrivals, so the rule **permit
 
 Two consequences to know before reaching for an exception:
 
-- **A shared component carries one verdict.** `StatBand` renders both the roster's band and the Programs library's, so an animation on it is on both surfaces. The rule is drawn so that never has to be settled with a per-call-site prop — both are arrivals.
+- **A shared component carries one verdict.** `StatBand` renders the roster's band, the Programs library's and the Habits tab's, so an animation on it would be on all three — and the Habits tab is not an arrival. Its verdict is therefore no entrance: each arrival surface wraps its own band in `animate-card-in`, the way the Overview's cards carry their own, so no per-call-site prop decides it.
 - **A tab remounts.** Radix unmounts inactive `TabsContent`, so the Overview replays its entrance on every return to it. Accepted: suppressing it needs per-visit state, which is more machinery than the effect is worth.
 
 ---

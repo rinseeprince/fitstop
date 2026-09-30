@@ -18,7 +18,11 @@ vi.mock("@/services/client-habit-writes-service", () => {
 });
 vi.mock("@/services/today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("@/services/audit-log-service", () => ({ recordAuditEvent: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/services/client-habit-figures-service", () => ({ getCoachHabitList: vi.fn() }));
+vi.mock("@/services/client-habit-figures-service", () => ({
+  getCoachHabitList: vi.fn(),
+  getCoachHabitWeek: vi.fn(),
+  getCoachHabitWeekAndCurrent: vi.fn(),
+}));
 
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -26,14 +30,24 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { HabitWriteError, stopHabit } from "@/services/client-habit-writes-service";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
-import { getCoachHabitList } from "@/services/client-habit-figures-service";
+import { getCoachHabitList, getCoachHabitWeek, getCoachHabitWeekAndCurrent } from "@/services/client-habit-figures-service";
+import type { CoachHabitWeek } from "@/types/habits";
 
 const LIST = { clientToday: "2026-09-30", habits: [] };
+const WEEK: CoachHabitWeek = {
+  clientToday: "2026-09-30",
+  start: "2026-09-24",
+  end: "2026-09-30",
+  dates: [],
+  habits: [],
+  totals: { planned: 0, done: 0, met: 0 },
+  today: null,
+};
 
 const HABIT = "7c1a4d8e-2f3b-4c5d-8e9f-0a1b2c3d4e5f";
 const params = { params: Promise.resolve({ id: "client-2", habitId: HABIT }) };
-const request = (body: unknown) =>
-  new NextRequest(`http://localhost:3000/api/clients/client-2/habits/${HABIT}/stop`, {
+const request = (body: unknown, query = "") =>
+  new NextRequest(`http://localhost:3000/api/clients/client-2/habits/${HABIT}/stop${query}`, {
     method: "POST",
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
@@ -45,15 +59,18 @@ describe("POST /api/clients/[id]/habits/[habitId]/stop", () => {
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
     vi.mocked(getClientTodayString).mockResolvedValue("2026-09-30");
     vi.mocked(getCoachHabitList).mockResolvedValue(LIST);
+    vi.mocked(getCoachHabitWeek).mockResolvedValue(WEEK);
+    vi.mocked(getCoachHabitWeekAndCurrent).mockResolvedValue({ week: { ...WEEK, start: "2026-10-08" }, currentWeek: WEEK });
   });
 
-  it("stops from the client's today when no day is given, audits it, and answers with the habits as they now stand", async () => {
+  it("stops from the client's today when no day is given, audits it, and answers with the habits and the week as they now stand", async () => {
     vi.mocked(stopHabit).mockResolvedValue(true);
     const req = request({});
     const response = await POST(req, params);
     expect(requireCoachOwnsClient).toHaveBeenCalledWith("client-2", req);
-    expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: LIST } });
+    expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: LIST, week: WEEK, currentWeek: null } });
     expect(getCoachHabitList).toHaveBeenCalledWith("client-2", "2026-09-30");
+    expect(getCoachHabitWeek).toHaveBeenCalledWith("client-2", undefined, "2026-09-30");
     expect(stopHabit).toHaveBeenCalledWith({ habitId: HABIT, clientId: "client-2", today: "2026-09-30", stopsOn: "2026-09-30" });
     expect(recordAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ action: "habit.stop", targetId: HABIT, metadata: { stopsOn: "2026-09-30" } })
@@ -65,6 +82,16 @@ describe("POST /api/clients/[id]/habits/[habitId]/stop", () => {
     await POST(request({ stopsOn: "2026-10-12" }), params);
     expect(stopHabit).toHaveBeenCalledWith(expect.objectContaining({ stopsOn: "2026-10-12" }));
     expect(recordAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("answers with the week the Habits tab named, and refuses one that is not a real day before any write", async () => {
+    vi.mocked(stopHabit).mockResolvedValue(true);
+    await POST(request({}, "?week=2026-10-08"), params);
+    expect(getCoachHabitWeekAndCurrent).toHaveBeenCalledWith("client-2", "2026-10-08", "2026-09-30");
+
+    vi.mocked(stopHabit).mockClear();
+    expect((await POST(request({}, "?week=2026-10-32"), params)).status).toBe(400);
+    expect(stopHabit).not.toHaveBeenCalled();
   });
 
   it("refuses a malformed day or an unknown key before any write", async () => {

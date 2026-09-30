@@ -9,14 +9,19 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens"
 import { TextSkeleton } from "@/components/text-skeleton"
 
-// Dark KPI band for the library pages — the established dark summary-card
-// pattern (model: check-in/kpi-ribbon.tsx), minus the status dots: library
-// stats are descriptive, not statuses. Adapts to the number of cells.
+// Dark KPI band — the established dark summary-card pattern (model:
+// check-in/kpi-ribbon.tsx), minus the status dots: its stats are descriptive,
+// not statuses. Adapts to the number of cells. It carries no entrance of its
+// own: animation marks arrival (docs/newdesignsystem.md → "Where animation
+// may be used"), and a band on a client-page tab — the Habits tab's — is not
+// arrived at, so each arrival surface animates its own band (the roster, the
+// Programs page).
 export type StatBandCell = {
   label: string
   value: string
   unit?: string
-  sub?: string
+  /** The line under the value; `null` when the cell has none, so no line is held for it while it is pending. */
+  sub?: string | null
   subTone?: "neutral" | "warn" | "up"
   valueMuted?: boolean
   /** The read behind this cell is still in flight: the value slot renders
@@ -48,7 +53,7 @@ export function StatBand({ cells }: { cells: StatBandCell[] }) {
   return (
     <div
       className={cn(
-        "bg-[#0f2027] rounded-[6px] p-5 grid animate-card-in",
+        "bg-[#0f2027] rounded-[6px] p-5 grid",
         GRID_COLS[cells.length] ?? "grid-cols-4",
       )}
       data-slot="stat-band"
@@ -81,8 +86,9 @@ export function StatBand({ cells }: { cells: StatBandCell[] }) {
               )}
             </div>
             {/* The sub LINE exists while pending too — suppressing it made
-                the band grow when the sub copy landed. */}
-            {cell.pending ? (
+                the band grow when the sub copy landed — unless the cell has
+                none, when holding one would shrink the band as it lands. */}
+            {cell.pending && cell.sub !== null ? (
               <span className={cn("text-[10px] mt-1", MONO, SUB_TONE_CLASS.neutral)}>
                 <TextSkeleton className="w-20" />
               </span>

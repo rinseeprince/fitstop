@@ -8,7 +8,7 @@ import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvents } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { habitWriteErrorResponse } from "@/lib/habits/habit-write-response";
-import { habitListAfterWrite } from "@/lib/habits/habit-list-after-write";
+import { habitsAfterWrite, readShownWeek } from "@/lib/habits/habits-after-write";
 import { addHabitsSchema } from "@/lib/validations/client-habits";
 
 type Params = { params: Promise<{ id: string }> };
@@ -42,7 +42,8 @@ export async function GET(request: NextRequest, { params }: Params) {
 /**
  * One or more habits added from a day — the client's today when `startsOn` is
  * absent — appended to the client's list in the order given. Answers with the
- * new habits' ids and the client's habits as they now stand.
+ * new habits' ids, the client's habits as they now stand and the week the
+ * Habits tab shows (`?week=`).
  */
 export async function POST(request: NextRequest, { params }: Params) {
   const rateLimitResult = await coachApiRateLimit(request);
@@ -56,6 +57,8 @@ export async function POST(request: NextRequest, { params }: Params) {
     const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
+    const shown = readShownWeek(request);
+    if (!shown.ok) return shown.response;
     const validation = addHabitsSchema.safeParse(await request.json().catch(() => null));
     if (!validation.success) {
       return NextResponse.json(
@@ -96,7 +99,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       }))
     );
 
-    return await habitListAfterWrite(clientId, today, (habits) => ({ habitIds, habits }));
+    return await habitsAfterWrite(clientId, { today, week: shown.week }, (after) => ({ habitIds, ...after }));
   } catch (error) {
     return habitWriteErrorResponse(error);
   }

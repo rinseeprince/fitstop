@@ -18,6 +18,11 @@ vi.mock("@/services/client-habit-writes-service", () => {
 });
 vi.mock("@/services/today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("@/services/audit-log-service", () => ({ recordAuditEvent: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/services/client-habit-figures-service", () => ({
+  getCoachHabitList: vi.fn(),
+  getCoachHabitWeek: vi.fn(),
+  getCoachHabitWeekAndCurrent: vi.fn(),
+}));
 
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -30,11 +35,24 @@ import {
 } from "@/services/client-habit-writes-service";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
+import { getCoachHabitList, getCoachHabitWeek, getCoachHabitWeekAndCurrent } from "@/services/client-habit-figures-service";
+import type { CoachHabitWeek } from "@/types/habits";
 
 const HABIT = "7c1a4d8e-2f3b-4c5d-8e9f-0a1b2c3d4e5f";
+const LIST = { clientToday: "2026-09-30", habits: [] };
+const WEEK: CoachHabitWeek = {
+  clientToday: "2026-09-30",
+  start: "2026-10-01",
+  end: "2026-10-07",
+  dates: [],
+  habits: [],
+  totals: { planned: 0, done: 0, met: 0 },
+  today: null,
+};
+const CURRENT_WEEK: CoachHabitWeek = { ...WEEK, start: "2026-09-24", end: "2026-09-30" };
 const params = (date = "2026-10-07", habitId = HABIT) => ({ params: Promise.resolve({ id: "client-2", habitId, date }) });
-const request = (method: "PUT" | "DELETE", body?: unknown) =>
-  new NextRequest(`http://localhost:3000/api/clients/client-2/habits/${HABIT}/days/2026-10-07`, {
+const request = (method: "PUT" | "DELETE", body?: unknown, query = "") =>
+  new NextRequest(`http://localhost:3000/api/clients/client-2/habits/${HABIT}/days/2026-10-07${query}`, {
     method,
     ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }),
   });
@@ -44,14 +62,22 @@ describe("/api/clients/[id]/habits/[habitId]/days/[date]", () => {
     vi.clearAllMocks();
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
     vi.mocked(getClientTodayString).mockResolvedValue("2026-09-30");
+    vi.mocked(getCoachHabitList).mockResolvedValue(LIST);
+    vi.mocked(getCoachHabitWeek).mockResolvedValue(CURRENT_WEEK);
+    vi.mocked(getCoachHabitWeekAndCurrent).mockResolvedValue({ week: WEEK, currentWeek: CURRENT_WEEK });
   });
 
   describe("PUT", () => {
-    it("sets the date's edit against the client's today, and audits it", async () => {
+    it("sets the date's edit against the client's today, audits it, and answers with the habits, the week named and the current week", async () => {
       vi.mocked(setHabitDay).mockResolvedValue(true);
-      const req = request("PUT", { planned: true, target: 2.5 });
+      const req = request("PUT", { planned: true, target: 2.5 }, "?week=2026-10-01");
       const response = await PUT(req, params());
-      expect(await response.json()).toEqual({ success: true, data: { changed: true } });
+      expect(await response.json()).toEqual({
+        success: true,
+        data: { changed: true, habits: LIST, week: WEEK, currentWeek: CURRENT_WEEK },
+      });
+      expect(getCoachHabitList).toHaveBeenCalledWith("client-2", "2026-09-30");
+      expect(getCoachHabitWeekAndCurrent).toHaveBeenCalledWith("client-2", "2026-10-01", "2026-09-30");
       expect(requireCoachOwnsClient).toHaveBeenCalledWith("client-2", req);
       expect(setHabitDay).toHaveBeenCalledWith({
         habitId: HABIT,
@@ -83,10 +109,21 @@ describe("/api/clients/[id]/habits/[habitId]/days/[date]", () => {
       expect(setHabitDay).not.toHaveBeenCalled();
     });
 
-    it("refuses a date that does not exist, and a path that names no habit", async () => {
+    it("refuses a date that does not exist, a path that names no habit, and a week that is not a real day", async () => {
       expect((await PUT(request("PUT", { planned: true }), params("2026-13-01"))).status).toBe(400);
       expect((await PUT(request("PUT", { planned: true }), params("2026-10-07", "habit-1"))).status).toBe(404);
+      expect((await PUT(request("PUT", { planned: true }, "?week=2026-10-00"), params())).status).toBe(400);
       expect(setHabitDay).not.toHaveBeenCalled();
+    });
+
+    it("answers the edit as saved, with neither the list nor the week, when reading them back fails", async () => {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      vi.mocked(setHabitDay).mockResolvedValue(true);
+      vi.mocked(getCoachHabitList).mockRejectedValue(new Error("read failed"));
+      const response = await PUT(request("PUT", { planned: false }), params());
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: null, week: null, currentWeek: null } });
+      spy.mockRestore();
     });
 
     it.each<[HabitRefusalCode, number, string]>([
@@ -125,10 +162,11 @@ describe("/api/clients/[id]/habits/[habitId]/days/[date]", () => {
   });
 
   describe("DELETE", () => {
-    it("resets the date against the client's today, and audits a reset that removed an edit", async () => {
+    it("resets the date against the client's today, audits a reset that removed an edit, and answers with the habits and the week", async () => {
       vi.mocked(resetHabitDay).mockResolvedValue(true);
       const response = await DELETE(request("DELETE"), params());
-      expect(await response.json()).toEqual({ success: true, data: { changed: true } });
+      expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: LIST, week: CURRENT_WEEK, currentWeek: null } });
+      expect(getCoachHabitWeek).toHaveBeenCalledWith("client-2", undefined, "2026-09-30");
       expect(resetHabitDay).toHaveBeenCalledWith({ habitId: HABIT, clientId: "client-2", today: "2026-09-30", date: "2026-10-07" });
       expect(recordAuditEvent).toHaveBeenCalledWith(
         expect.objectContaining({ action: "habit.day_edit", metadata: { date: "2026-10-07", reset: true } })
@@ -141,6 +179,11 @@ describe("/api/clients/[id]/habits/[habitId]/days/[date]", () => {
       expect(recordAuditEvent).not.toHaveBeenCalled();
       vi.mocked(resetHabitDay).mockRejectedValue(new HabitWriteError("day_in_past", "x"));
       expect((await DELETE(request("DELETE"), params("2026-09-29"))).status).toBe(409);
+    });
+
+    it("refuses a week that is not a real day before anything is reset", async () => {
+      expect((await DELETE(request("DELETE", undefined, "?week=today"), params())).status).toBe(400);
+      expect(resetHabitDay).not.toHaveBeenCalled();
     });
   });
 });

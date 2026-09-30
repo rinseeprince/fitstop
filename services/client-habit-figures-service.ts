@@ -3,6 +3,7 @@ import {
   getClientHabit,
   listClientHabits,
   listClientHabitsWithEntryCheck,
+  listDeletedHabitIds,
   listHabitEntries,
 } from "./client-habits-service";
 import { HabitWriteError } from "./client-habit-writes-service";
@@ -106,17 +107,18 @@ export async function readHabitRange(clientId: string, from: string, to: string)
 }
 
 /**
- * The coach's week tracker and summary: the client week holding `day` — the
- * client's today when absent — each habit's days and figures, the totals, and
- * today's planned habits and how many were done today.
+ * One client week of the coach's tracker over `dates`: each habit's days and
+ * figures — and whether the coach has deleted it since, read with them — the
+ * totals, and today's planned habits and how many were done today.
  */
-export async function getCoachHabitWeek(clientId: string, day?: string): Promise<CoachHabitWeek> {
-  const [anchor, today] = await Promise.all([getClientWeekAnchor(clientId), getClientTodayString(clientId)]);
-  const dates = getTrainingWeekDays(day ?? today, anchor.weekday);
+async function coachWeek(clientId: string, dates: string[], today: string): Promise<CoachHabitWeek> {
   const [start, end] = [dates[0], dates[dates.length - 1]];
-  const { habits, entries } = await readHabitRange(clientId, start, end);
+  const [{ habits, entries }, deleted] = await Promise.all([
+    readHabitRange(clientId, start, end),
+    listDeletedHabitIds(clientId),
+  ]);
 
-  const rows = weekRows(habits, entries, dates);
+  const rows = weekRows(habits, entries, dates).map((row) => ({ ...row, deleted: deleted.has(row.habit.id) }));
   const tally = dates.includes(today) ? habitDayTallies(habits, entries, [today])[0] : null;
   return {
     clientToday: today,
@@ -127,6 +129,46 @@ export async function getCoachHabitWeek(clientId: string, day?: string): Promise
     totals: sumWeekFigures(rows.map((row) => row.figures)),
     today: tally ? { planned: tally.planned, done: tally.done } : null,
   };
+}
+
+/** The client's week anchor and today, the latter read only when the caller has not. */
+async function weekFrame(clientId: string, clientToday?: string) {
+  const [anchor, today] = await Promise.all([
+    getClientWeekAnchor(clientId),
+    clientToday ?? getClientTodayString(clientId),
+  ]);
+  return { weekday: anchor.weekday, today };
+}
+
+/**
+ * The coach's week tracker and summary: the client week holding `day` — the
+ * client's today when absent. `clientToday` is the client's, when the caller
+ * has already read it.
+ */
+export async function getCoachHabitWeek(clientId: string, day?: string, clientToday?: string): Promise<CoachHabitWeek> {
+  const { weekday, today } = await weekFrame(clientId, clientToday);
+  return coachWeek(clientId, getTrainingWeekDays(day ?? today, weekday), today);
+}
+
+/**
+ * The client week holding `day` and, when that is not the week holding the
+ * client's today, the current week as well — the Habits tab's summary always
+ * shows now, whichever week its table shows. The anchor and today are read
+ * once; the two weeks side by side.
+ */
+export async function getCoachHabitWeekAndCurrent(
+  clientId: string,
+  day: string,
+  clientToday?: string
+): Promise<{ week: CoachHabitWeek; currentWeek: CoachHabitWeek | null }> {
+  const { weekday, today } = await weekFrame(clientId, clientToday);
+  const dates = getTrainingWeekDays(day, weekday);
+  if (dates.includes(today)) return { week: await coachWeek(clientId, dates, today), currentWeek: null };
+  const [week, currentWeek] = await Promise.all([
+    coachWeek(clientId, dates, today),
+    coachWeek(clientId, getTrainingWeekDays(today, weekday), today),
+  ]);
+  return { week, currentWeek };
 }
 
 /**

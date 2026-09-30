@@ -130,6 +130,21 @@ export async function listClientHabitsWithEntryCheck(
   }));
 }
 
+/**
+ * The ids of the client's habits the coach deleted — every read of the past
+ * keeps them for the days they ran, and the coach's week says which they are,
+ * so no screen has to guess it from a habit missing from another read.
+ */
+export async function listDeletedHabitIds(clientId: string): Promise<Set<string>> {
+  const { data, error } = await supabaseAdmin
+    .from("client_habits")
+    .select("id")
+    .eq("client_id", clientId)
+    .not("deleted_at", "is", null);
+  if (error) throw new Error(`Failed to read the deleted habits: ${error.message}`);
+  return new Set((data ?? []).map((row) => row.id));
+}
+
 /** One of the client's habits, as `listClientHabits` reads it; null when it is not theirs. */
 export async function getClientHabit(
   clientId: string,

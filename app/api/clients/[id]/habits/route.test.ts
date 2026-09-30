@@ -16,7 +16,11 @@ vi.mock("@/services/client-habit-writes-service", () => {
   }
   return { HabitWriteError, addHabits: vi.fn() };
 });
-vi.mock("@/services/client-habit-figures-service", () => ({ getCoachHabitList: vi.fn() }));
+vi.mock("@/services/client-habit-figures-service", () => ({
+  getCoachHabitList: vi.fn(),
+  getCoachHabitWeek: vi.fn(),
+  getCoachHabitWeekAndCurrent: vi.fn(),
+}));
 vi.mock("@/services/today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("@/services/audit-log-service", () => ({ recordAuditEvents: vi.fn().mockResolvedValue(undefined) }));
 
@@ -24,9 +28,10 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { addHabits, HabitWriteError } from "@/services/client-habit-writes-service";
-import { getCoachHabitList } from "@/services/client-habit-figures-service";
+import { getCoachHabitList, getCoachHabitWeek, getCoachHabitWeekAndCurrent } from "@/services/client-habit-figures-service";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvents } from "@/services/audit-log-service";
+import type { CoachHabitWeek } from "@/types/habits";
 
 const LIST = {
   clientToday: "2026-09-30",
@@ -47,11 +52,21 @@ const LIST = {
     },
   ],
 };
+const WEEK: CoachHabitWeek = {
+  clientToday: "2026-09-30",
+  start: "2026-09-24",
+  end: "2026-09-30",
+  dates: [],
+  habits: [],
+  totals: { planned: 0, done: 0, met: 0 },
+  today: null,
+};
+const NEXT_WEEK: CoachHabitWeek = { ...WEEK, start: "2026-10-01", end: "2026-10-07" };
 const EVERY_DAY = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const params = { params: Promise.resolve({ id: "client-2" }) };
 
-function post(body: unknown) {
-  return new NextRequest("http://localhost:3000/api/clients/client-2/habits", {
+function post(body: unknown, query = "") {
+  return new NextRequest(`http://localhost:3000/api/clients/client-2/habits${query}`, {
     method: "POST",
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
@@ -66,6 +81,8 @@ beforeEach(() => {
   vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
   vi.mocked(getClientTodayString).mockResolvedValue("2026-09-30");
   vi.mocked(getCoachHabitList).mockResolvedValue(LIST);
+  vi.mocked(getCoachHabitWeek).mockResolvedValue(WEEK);
+  vi.mocked(getCoachHabitWeekAndCurrent).mockResolvedValue({ week: NEXT_WEEK, currentWeek: WEEK });
 });
 
 describe("GET /api/clients/[id]/habits", () => {
@@ -103,7 +120,7 @@ describe("GET /api/clients/[id]/habits", () => {
 });
 
 describe("POST /api/clients/[id]/habits", () => {
-  it("adds the habits from the client's today, audits each, and answers with their ids and the habits as they now stand", async () => {
+  it("adds the habits from the client's today, audits each, and answers with their ids and the habits and the week as they now stand", async () => {
     vi.mocked(addHabits).mockResolvedValue(["h1", "h2"]);
     const req = post({
       habits: [
@@ -114,7 +131,7 @@ describe("POST /api/clients/[id]/habits", () => {
     const response = await POST(req, params);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ success: true, data: { habitIds: ["h1", "h2"], habits: LIST } });
+    expect(await response.json()).toEqual({ success: true, data: { habitIds: ["h1", "h2"], habits: LIST, week: WEEK, currentWeek: null } });
     expect(requireCoachOwnsClient).toHaveBeenCalledWith("client-2", req);
     // The day is the CLIENT's today, on their calendar — never the coach's.
     expect(getClientTodayString).toHaveBeenCalledWith("client-2");
@@ -133,6 +150,21 @@ describe("POST /api/clients/[id]/habits", () => {
       expect.objectContaining({ action: "habit.create", targetId: "h2" }),
     ]);
     expect(getCoachHabitList).toHaveBeenCalledWith("client-2", "2026-09-30");
+    // No week named: the client's current week, on the today just read.
+    expect(getCoachHabitWeek).toHaveBeenCalledWith("client-2", undefined, "2026-09-30");
+  });
+
+  it("answers with the week the Habits tab named and the client's current week, which its summary shows", async () => {
+    vi.mocked(addHabits).mockResolvedValue(["h1"]);
+    const response = await POST(post({ habits: [water] }, "?week=2026-10-01"), params);
+    expect(getCoachHabitWeekAndCurrent).toHaveBeenCalledWith("client-2", "2026-10-01", "2026-09-30");
+    expect((await response.json()).data).toMatchObject({ week: NEXT_WEEK, currentWeek: WEEK });
+  });
+
+  it("refuses a week that is not a real day before any write", async () => {
+    const response = await POST(post({ habits: [water] }, "?week=2026-13-01"), params);
+    expect(response.status).toBe(400);
+    expect(addHabits).not.toHaveBeenCalled();
   });
 
   it("starts from the day asked for", async () => {
@@ -195,13 +227,13 @@ describe("POST /api/clients/[id]/habits", () => {
     expect(requireCoachOwnsClient).not.toHaveBeenCalled();
   });
 
-  it("answers the added habits as saved, with no list, when reading them back fails — so the screen reads again, never adds twice", async () => {
+  it("answers the added habits as saved, with neither the list nor the week, when reading them back fails — so the screen reads again, never adds twice", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(addHabits).mockResolvedValue(["h1"]);
     vi.mocked(getCoachHabitList).mockRejectedValue(new Error("read failed"));
     const response = await POST(post({ habits: [water] }), params);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ success: true, data: { habitIds: ["h1"], habits: null } });
+    expect(await response.json()).toEqual({ success: true, data: { habitIds: ["h1"], habits: null, week: null, currentWeek: null } });
     expect(recordAuditEvents).toHaveBeenCalled();
     spy.mockRestore();
   });

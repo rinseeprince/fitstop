@@ -7,19 +7,19 @@ import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { habitWriteErrorResponse } from "@/lib/habits/habit-write-response";
-import { habitListAfterWrite } from "@/lib/habits/habit-list-after-write";
+import { habitsAfterWrite, readShownWeek } from "@/lib/habits/habits-after-write";
 import { habitIdParam, renameHabitSchema } from "@/lib/validations/client-habits";
 
 type Params = { params: Promise<{ id: string; habitId: string }> };
 
 type Verified =
   | { ok: false; response: Response }
-  | { ok: true; clientId: string; habitId: string; coachId: string };
+  | { ok: true; clientId: string; habitId: string; coachId: string; week: string | null };
 
 /**
- * The route's first four steps: the rate limit, CSRF, the coach owning the
- * client, and the path naming a habit. A response when one refuses; else the
- * verified ids.
+ * The route's first steps: the rate limit, CSRF, the coach owning the client,
+ * the path naming a habit, and the week the Habits tab shows (`?week=`). A
+ * response when one refuses; else the verified ids and the week.
  */
 async function authorize(request: NextRequest, params: Params["params"]): Promise<Verified> {
   const rateLimitResult = await coachApiRateLimit(request);
@@ -34,20 +34,22 @@ async function authorize(request: NextRequest, params: Params["params"]): Promis
   if (!habitIdParam.safeParse(habitId).success) {
     return { ok: false, response: NextResponse.json({ success: false, error: "Habit not found." }, { status: 404 }) };
   }
-  return { ok: true, clientId, habitId, coachId: auth.coachId };
+  const shown = readShownWeek(request);
+  if (!shown.ok) return { ok: false, response: shown.response };
+  return { ok: true, clientId, habitId, coachId: auth.coachId, week: shown.week };
 }
 
 /**
  * A habit's labels: its name and its how-to (null clears it), on any habit —
  * running, upcoming or stopped. A sent check-in keeps the name it froze.
- * Answers with whether anything changed and the client's habits as they now
- * stand.
+ * Answers with whether anything changed, the client's habits as they now
+ * stand and the week the Habits tab shows.
  */
 export async function PATCH(request: NextRequest, { params }: Params) {
   try {
     const verified = await authorize(request, params);
     if (!verified.ok) return verified.response;
-    const { clientId, habitId, coachId } = verified;
+    const { clientId, habitId, coachId, week } = verified;
 
     const validation = renameHabitSchema.safeParse(await request.json().catch(() => null));
     if (!validation.success) {
@@ -57,7 +59,12 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       );
     }
 
-    const changed = await renameHabit({ habitId, clientId, name: validation.data.name, howTo: validation.data.howTo });
+    // The client's today is read beside the write (it never throws: it falls
+    // back to UTC), so the answer's two reads share one today.
+    const [changed, today] = await Promise.all([
+      renameHabit({ habitId, clientId, name: validation.data.name, howTo: validation.data.howTo }),
+      getClientTodayString(clientId),
+    ]);
 
     if (changed) {
       void recordAuditEvent({
@@ -71,7 +78,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       });
     }
 
-    return await habitListAfterWrite(clientId, undefined, (habits) => ({ changed, habits }));
+    return await habitsAfterWrite(clientId, { today, week }, (after) => ({ changed, ...after }));
   } catch (error) {
     return habitWriteErrorResponse(error);
   }
@@ -81,13 +88,14 @@ export async function PATCH(request: NextRequest, { params }: Params) {
  * Any habit, deleted from the client's today. One the client never made an
  * entry for goes with its versions and one-date edits; one with entries is
  * stopped from today and leaves the list, everything the client logged kept.
- * Answers with the client's habits as they now stand.
+ * Answers with the client's habits as they now stand and the week the Habits
+ * tab shows.
  */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const verified = await authorize(request, params);
     if (!verified.ok) return verified.response;
-    const { clientId, habitId, coachId } = verified;
+    const { clientId, habitId, coachId, week } = verified;
 
     const today = await getClientTodayString(clientId);
     await deleteHabit({ habitId, clientId, today });
@@ -102,7 +110,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       request,
     });
 
-    return await habitListAfterWrite(clientId, today, (habits) => ({ changed: true, habits }));
+    return await habitsAfterWrite(clientId, { today, week }, (after) => ({ changed: true, ...after }));
   } catch (error) {
     return habitWriteErrorResponse(error);
   }

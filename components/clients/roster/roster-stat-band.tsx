@@ -83,5 +83,11 @@ export function RosterStatBand({
     },
   ]
 
-  return <StatBand cells={cells} />
+  // The roster is an arrival (docs/newdesignsystem.md → "Where animation may
+  // be used"): its band enters; the shared band carries no entrance.
+  return (
+    <div className="animate-card-in">
+      <StatBand cells={cells} />
+    </div>
+  )
 }

@@ -4,6 +4,7 @@ vi.mock("./check-in-week-service", () => ({ getClientWeekAnchor: vi.fn() }));
 vi.mock("./client-habits-service", () => ({
   listClientHabits: vi.fn(),
   listClientHabitsWithEntryCheck: vi.fn(),
+  listDeletedHabitIds: vi.fn(),
   listHabitEntries: vi.fn(),
   getClientHabit: vi.fn(),
 }));
@@ -25,6 +26,7 @@ import {
   getClientHabit,
   listClientHabits,
   listClientHabitsWithEntryCheck,
+  listDeletedHabitIds,
   listHabitEntries,
 } from "./client-habits-service";
 import { getClientTodayString } from "./today-service";
@@ -34,6 +36,7 @@ import {
   getClientHabitWeek,
   getCoachHabitList,
   getCoachHabitWeek,
+  getCoachHabitWeekAndCurrent,
   getHabitDaySummary,
   getHabitEntryResult,
   getHabitPeriodWeek,
@@ -71,6 +74,7 @@ beforeEach(() => {
   vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
   vi.mocked(listClientHabits).mockResolvedValue([mobility, water, stoppedLongAgo]);
   vi.mocked(listHabitEntries).mockResolvedValue([ticked("mobility", "2026-09-25"), ticked("mobility", "2026-09-29")]);
+  vi.mocked(listDeletedHabitIds).mockResolvedValue(new Set());
 });
 
 describe("getCoachHabitWeek", () => {
@@ -88,6 +92,46 @@ describe("getCoachHabitWeek", () => {
   it("reads the week holding the day asked for, with no today when today is outside it", async () => {
     const week = await getCoachHabitWeek("client-3", "2026-10-05");
     expect(week).toMatchObject({ start: "2026-10-01", end: "2026-10-07", today: null });
+  });
+
+  // A habit write's answer reads the list and the week side by side on the
+  // today its route already read: one today for both, and no second read of it.
+  it("judges on the client's today the caller already read, without reading it again", async () => {
+    const week = await getCoachHabitWeek("client-3", undefined, "2026-10-02");
+    expect(getClientTodayString).not.toHaveBeenCalled();
+    expect(week).toMatchObject({ clientToday: "2026-10-02", start: "2026-10-01", end: "2026-10-07" });
+    // Friday 2 Oct: Mobility (Mon, Wed, Fri) and Water (every day).
+    expect(week.today).toEqual({ planned: 2, done: 0 });
+  });
+
+  // The server says which habit the coach deleted — the screen never guesses
+  // it from a habit missing from another read.
+  it("says which of the week's habits the coach has deleted since", async () => {
+    vi.mocked(listDeletedHabitIds).mockResolvedValue(new Set(["water"]));
+    const week = await getCoachHabitWeek("client-3");
+    expect(listDeletedHabitIds).toHaveBeenCalledWith("client-3");
+    expect(week.habits.map((row) => [row.habit.id, row.deleted])).toEqual([
+      ["mobility", false],
+      ["water", true],
+    ]);
+  });
+});
+
+describe("getCoachHabitWeekAndCurrent — a write's answer on another week", () => {
+  it("reads the week holding the day and the client's current week, the anchor and today once", async () => {
+    const { week, currentWeek } = await getCoachHabitWeekAndCurrent("client-3", "2026-09-17");
+    expect(getClientWeekAnchor).toHaveBeenCalledTimes(1);
+    expect(getClientTodayString).toHaveBeenCalledTimes(1);
+    expect(week).toMatchObject({ start: "2026-09-17", end: "2026-09-23", today: null });
+    expect(currentWeek).toMatchObject({ start: "2026-09-24", end: "2026-09-30", today: { planned: 2, done: 0 } });
+  });
+
+  it("answers no current week when the day is in it, reading one week alone", async () => {
+    const { week, currentWeek } = await getCoachHabitWeekAndCurrent("client-3", "2026-09-26", TODAY);
+    expect(getClientTodayString).not.toHaveBeenCalled();
+    expect(week).toMatchObject({ start: "2026-09-24", end: "2026-09-30" });
+    expect(currentWeek).toBeNull();
+    expect(listClientHabits).toHaveBeenCalledTimes(1);
   });
 });
 

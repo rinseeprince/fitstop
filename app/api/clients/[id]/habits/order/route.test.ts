@@ -16,21 +16,38 @@ vi.mock("@/services/client-habit-writes-service", () => {
   }
   return { HabitWriteError, orderHabits: vi.fn() };
 });
-vi.mock("@/services/client-habit-figures-service", () => ({ getCoachHabitList: vi.fn() }));
+vi.mock("@/services/client-habit-figures-service", () => ({
+  getCoachHabitList: vi.fn(),
+  getCoachHabitWeek: vi.fn(),
+  getCoachHabitWeekAndCurrent: vi.fn(),
+}));
+vi.mock("@/services/today-service", () => ({ getClientTodayString: vi.fn() }));
 
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { HabitWriteError, orderHabits } from "@/services/client-habit-writes-service";
-import { getCoachHabitList } from "@/services/client-habit-figures-service";
+import { getCoachHabitList, getCoachHabitWeek, getCoachHabitWeekAndCurrent } from "@/services/client-habit-figures-service";
+import { getClientTodayString } from "@/services/today-service";
+import type { CoachHabitWeek } from "@/types/habits";
 
 const LIST = { clientToday: "2026-09-30", habits: [] };
+const WEEK: CoachHabitWeek = {
+  clientToday: "2026-09-30",
+  start: "2026-09-17",
+  end: "2026-09-23",
+  dates: [],
+  habits: [],
+  totals: { planned: 0, done: 0, met: 0 },
+  today: null,
+};
+const CURRENT_WEEK: CoachHabitWeek = { ...WEEK, start: "2026-09-24", end: "2026-09-30" };
 
 const A = "7c1a4d8e-2f3b-4c5d-8e9f-0a1b2c3d4e5f";
 const B = "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e";
 const params = { params: Promise.resolve({ id: "client-2" }) };
-const request = (body: unknown) =>
-  new NextRequest("http://localhost:3000/api/clients/client-2/habits/order", {
+const request = (body: unknown, query = "") =>
+  new NextRequest(`http://localhost:3000/api/clients/client-2/habits/order${query}`, {
     method: "PUT",
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
@@ -41,16 +58,30 @@ describe("PUT /api/clients/[id]/habits/order", () => {
     vi.clearAllMocks();
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
     vi.mocked(getCoachHabitList).mockResolvedValue(LIST);
+    vi.mocked(getCoachHabitWeek).mockResolvedValue(CURRENT_WEEK);
+    vi.mocked(getCoachHabitWeekAndCurrent).mockResolvedValue({ week: WEEK, currentWeek: CURRENT_WEEK });
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-09-30");
   });
 
-  it("puts the client's habits in the order given, and answers with the habits as they now stand", async () => {
+  it("puts the client's habits in the order given, and answers with the habits, the week named and the current week", async () => {
     vi.mocked(orderHabits).mockResolvedValue(true);
-    const req = request({ habitIds: [B, A] });
+    const req = request({ habitIds: [B, A] }, "?week=2026-09-17");
     const response = await PUT(req, params);
-    expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: LIST } });
-    expect(getCoachHabitList).toHaveBeenCalledWith("client-2", undefined);
+    expect(await response.json()).toEqual({
+      success: true,
+      data: { changed: true, habits: LIST, week: WEEK, currentWeek: CURRENT_WEEK },
+    });
+    // The client's today, read once beside the order, serves both reads of the answer.
+    expect(getClientTodayString).toHaveBeenCalledTimes(1);
+    expect(getCoachHabitList).toHaveBeenCalledWith("client-2", "2026-09-30");
+    expect(getCoachHabitWeekAndCurrent).toHaveBeenCalledWith("client-2", "2026-09-17", "2026-09-30");
     expect(requireCoachOwnsClient).toHaveBeenCalledWith("client-2", req);
     expect(orderHabits).toHaveBeenCalledWith({ clientId: "client-2", habitIds: [B, A] });
+  });
+
+  it("refuses a week that is not a real day before any write", async () => {
+    expect((await PUT(request({ habitIds: [A] }, "?week=17-09-2026"), params)).status).toBe(400);
+    expect(orderHabits).not.toHaveBeenCalled();
   });
 
   it("stops at the rate limit and at a failed CSRF check, before the coach is read", async () => {

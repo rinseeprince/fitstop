@@ -5,18 +5,19 @@ import { describe, it, expect } from "vitest";
 
 /**
  * The coach's side trays are the nutrition plan tray's width (owner,
- * 2026-09-30). The nutrition plan tray and Manage Habits are Sheets that ask
- * for w-[420px] and leave the sheet's own cap on a right-hand panel
- * (sm:max-w-sm, components/ui/sheet.tsx) in place, so the same Sheet renders
- * both at 384px on a desktop screen. The Training tab's "Apply a program" tray
- * is no Sheet, so it carries that width and that cap itself. jsdom lays
- * nothing out; this scan pins the shape the shared width rests on.
+ * 2026-09-30). The nutrition plan tray and the Habits tab's Add habits sheet
+ * are Sheets that ask for w-[420px] and leave the sheet's own cap on a
+ * right-hand panel (sm:max-w-sm, components/ui/sheet.tsx) in place, so the
+ * same Sheet renders both at 384px on a desktop screen. The Training tab's
+ * "Apply a program" tray is no Sheet, so it carries that width and that cap
+ * itself. jsdom lays nothing out; this scan pins the shape the shared width
+ * rests on.
  */
 const ROOT = join(__dirname, "..");
 const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
 
 const NUTRITION_TRAY = "components/clients/nutrition/builder/nutrition-settings-drawer.tsx";
-const HABITS_DRAWER = "components/clients/habits/habits-manage-drawer.tsx";
+const ADD_HABITS_SHEET = "components/clients/habits/add-habits-sheet.tsx";
 const APPLY_TRAY = "components/clients/training/builder/training-plan-builder-overlay.tsx";
 
 /** The classes of the first `className="…"` after `anchor` in `file`. */
@@ -39,8 +40,8 @@ describe("the coach's side trays are the nutrition plan tray's width", () => {
     expect(right![1].split(/\s+/)).toContain("sm:max-w-sm");
   });
 
-  it("the nutrition plan tray and Manage Habits ask the sheet for w-[420px] alone, never lifting its cap", () => {
-    for (const file of [NUTRITION_TRAY, HABITS_DRAWER]) {
+  it("the nutrition plan tray and Add habits ask the sheet for w-[420px] alone, never lifting its cap", () => {
+    for (const file of [NUTRITION_TRAY, ADD_HABITS_SHEET]) {
       expect(widthClasses(classesAfter(file, "<SheetContent")), file).toEqual(["w-[420px]"]);
     }
   });

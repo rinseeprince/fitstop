@@ -7,7 +7,7 @@ import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { habitWriteErrorResponse } from "@/lib/habits/habit-write-response";
-import { habitListAfterWrite } from "@/lib/habits/habit-list-after-write";
+import { habitsAfterWrite, readShownWeek } from "@/lib/habits/habits-after-write";
 import { habitIdParam, stopHabitSchema } from "@/lib/validations/client-habits";
 
 type Params = { params: Promise<{ id: string; habitId: string }> };
@@ -16,7 +16,8 @@ type Params = { params: Promise<{ id: string; habitId: string }> };
  * A habit stopped from a day — the client's today when `stopsOn` is absent.
  * The version running the day before ends then, and what was queued from that
  * day goes; the habit and its past stay. Answers with whether anything
- * changed and the client's habits as they now stand.
+ * changed, the client's habits as they now stand and the week the Habits tab
+ * shows (`?week=`).
  */
 export async function POST(request: NextRequest, { params }: Params) {
   const rateLimitResult = await coachApiRateLimit(request);
@@ -33,6 +34,8 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ success: false, error: "Habit not found." }, { status: 404 });
     }
 
+    const shown = readShownWeek(request);
+    if (!shown.ok) return shown.response;
     const validation = stopHabitSchema.safeParse(await request.json().catch(() => null));
     if (!validation.success) {
       return NextResponse.json(
@@ -58,7 +61,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       });
     }
 
-    return await habitListAfterWrite(clientId, today, (habits) => ({ changed, habits }));
+    return await habitsAfterWrite(clientId, { today, week: shown.week }, (after) => ({ changed, ...after }));
   } catch (error) {
     return habitWriteErrorResponse(error);
   }

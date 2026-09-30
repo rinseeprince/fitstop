@@ -28,19 +28,30 @@ vi.mock("@/hooks/use-attention-feed", () => ({ useClearAttentionFeed: () => clea
 vi.mock("@/hooks/use-activation-readiness", () => ({ useClearActivationReadiness: () => clearReadiness }));
 
 import {
+  clientHabitChoicesKey,
   clientHabitsKey,
   clientHabitWeekKey,
   HabitRequestError,
   isClientHabitReadBesideList,
   isClientHabitWeekKey,
   useClearClientHabitWeeks,
+  useClientHabitChoices,
   useClientHabitList,
   useClientHabitWeek,
   useHabitWrites,
 } from "./use-client-habits";
-import type { CoachHabitList } from "@/types/habits";
+import type { CoachHabitList, CoachHabitWeek } from "@/types/habits";
 
 const LIST: CoachHabitList = { clientToday: "2026-09-30", habits: [] };
+const WEEK: CoachHabitWeek = {
+  clientToday: "2026-09-30",
+  start: "2026-09-17",
+  end: "2026-09-23",
+  dates: [],
+  habits: [],
+  totals: { planned: 0, done: 0, met: 0 },
+  today: null,
+};
 const HABIT = "7c1a4d8e-2f3b-4c5d-8e9f-0a1b2c3d4e5f";
 
 function respond(status: number, body: unknown) {
@@ -59,25 +70,46 @@ const sent = (fetchMock: ReturnType<typeof vi.fn>, call = 0) => {
   return { url, method: init.method, body: init.body ? JSON.parse(init.body as string) : undefined };
 };
 
-const writes = () => renderHook(() => useHabitWrites("client-7")).result.current;
+/** The writes of the tab showing the client's current week, or the week starting `weekStart`. */
+const writes = (weekStart: string | null = null) => renderHook(() => useHabitWrites("client-7", weekStart)).result.current;
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the keys", () => {
-  it("reads the list and the weeks under the client's habit area, the week holding today with no start", () => {
+  it("reads the list, the weeks and the choices under the client's habit area, the week holding today with no start", () => {
     expect(clientHabitsKey("c1")).toBe("/api/clients/c1/habits");
     expect(clientHabitWeekKey("c1", null)).toBe("/api/clients/c1/habits/week");
     expect(clientHabitWeekKey("c1", "2026-09-17")).toBe("/api/clients/c1/habits/week?start=2026-09-17");
+    expect(clientHabitChoicesKey("c1")).toBe("/api/clients/c1/habits/choices");
   });
 
   it("the readers subscribe with exactly those keys", () => {
     renderHook(() => useClientHabitList("c1"));
     renderHook(() => useClientHabitWeek("c1", "2026-09-17"));
+    renderHook(() => useClientHabitChoices("c1", true));
     expect(swr.mock.calls.map((call) => call[0])).toEqual([
       "/api/clients/c1/habits",
       "/api/clients/c1/habits/week?start=2026-09-17",
+      "/api/clients/c1/habits/choices",
     ]);
+  });
+
+  // The choices are the Add habits sheet's alone: nothing reads them while it
+  // is shut, and the closing sheet keeps the list it showed.
+  it("reads the choices only while the sheet is open, keeping the list shown through the close", () => {
+    renderHook(() => useClientHabitChoices("c1", false));
+    expect(swr.mock.calls.map((call) => call[0])).toEqual([null]);
+    expect(swr.mock.calls[0][2]).toMatchObject({ keepPreviousData: true });
+  });
+
+  // The client writes a week's entries in their own browser, which no
+  // invalidator here reaches: the week is read again on the coach's return.
+  it("reads a week again when the coach comes back to the page, and the list only on its own writes", () => {
+    renderHook(() => useClientHabitWeek("c1", null));
+    renderHook(() => useClientHabitList("c1"));
+    expect(swr.mock.calls[0][2]).toMatchObject({ revalidateOnFocus: true });
+    expect(swr.mock.calls[1][2]).toMatchObject({ revalidateOnFocus: false });
   });
 
   it("the list is read again on a retry", () => {
@@ -118,56 +150,90 @@ describe("the keys", () => {
   });
 });
 
-describe("each write goes to its route and answers with the habits as they now stand", () => {
-  it("add, rename, change, stop, delete and order", async () => {
+describe("each write goes to its route and answers with the habits and the week as they now stand", () => {
+  it("add, rename, change, stop, delete, order, a one-date edit and its reset, each naming the week on screen", async () => {
     const fetchMock = stubFetch(
-      respond(200, { success: true, data: { habitIds: ["h1"], habits: LIST } }),
-      ...Array.from({ length: 5 }, () => respond(200, { success: true, data: { changed: true, habits: LIST } }))
+      respond(200, { success: true, data: { habitIds: ["h1"], habits: LIST, week: WEEK } }),
+      ...Array.from({ length: 7 }, () => respond(200, { success: true, data: { changed: true, habits: LIST, week: WEEK } }))
     );
-    const api = writes();
+    const api = writes("2026-09-17");
     const water = { name: "Water", howTo: null, measure: "number" as const, unit: "L", direction: "at_least" as const, target: 3, weekdays: ["monday" as const] };
 
-    expect(await api.add([water])).toEqual({ habitIds: ["h1"], habits: LIST });
+    // Each answer carries the week it named, so it lands under that week's key.
+    expect(await api.add([water])).toEqual({ habitIds: ["h1"], habits: LIST, week: WEEK, weekStart: "2026-09-17" });
     await api.rename(HABIT, "Water", "A glass with each meal");
     await api.change(HABIT, { target: 3.5, weekdays: ["monday"] });
     await api.stop(HABIT);
     await api.remove(HABIT);
     await api.order([HABIT]);
+    expect(await api.setDay(HABIT, "2026-10-07", { planned: true, target: 2.5 })).toEqual({
+      changed: true,
+      habits: LIST,
+      week: WEEK,
+      weekStart: "2026-09-17",
+    });
+    await api.resetDay(HABIT, "2026-10-07");
 
-    expect(sent(fetchMock, 0)).toEqual({ url: "/api/clients/client-7/habits", method: "POST", body: { habits: [water] } });
+    const week = "?week=2026-09-17";
+    expect(sent(fetchMock, 0)).toEqual({ url: `/api/clients/client-7/habits${week}`, method: "POST", body: { habits: [water] } });
     expect(sent(fetchMock, 1)).toEqual({
-      url: `/api/clients/client-7/habits/${HABIT}`,
+      url: `/api/clients/client-7/habits/${HABIT}${week}`,
       method: "PATCH",
       body: { name: "Water", howTo: "A glass with each meal" },
     });
     expect(sent(fetchMock, 2)).toEqual({
-      url: `/api/clients/client-7/habits/${HABIT}/change`,
+      url: `/api/clients/client-7/habits/${HABIT}/change${week}`,
       method: "POST",
       body: { target: 3.5, weekdays: ["monday"] },
     });
-    expect(sent(fetchMock, 3)).toEqual({ url: `/api/clients/client-7/habits/${HABIT}/stop`, method: "POST", body: {} });
-    expect(sent(fetchMock, 4)).toEqual({ url: `/api/clients/client-7/habits/${HABIT}`, method: "DELETE", body: undefined });
-    expect(sent(fetchMock, 5)).toEqual({ url: "/api/clients/client-7/habits/order", method: "PUT", body: { habitIds: [HABIT] } });
+    expect(sent(fetchMock, 3)).toEqual({ url: `/api/clients/client-7/habits/${HABIT}/stop${week}`, method: "POST", body: {} });
+    expect(sent(fetchMock, 4)).toEqual({ url: `/api/clients/client-7/habits/${HABIT}${week}`, method: "DELETE", body: undefined });
+    expect(sent(fetchMock, 5)).toEqual({ url: `/api/clients/client-7/habits/order${week}`, method: "PUT", body: { habitIds: [HABIT] } });
+    expect(sent(fetchMock, 6)).toEqual({
+      url: `/api/clients/client-7/habits/${HABIT}/days/2026-10-07${week}`,
+      method: "PUT",
+      body: { planned: true, target: 2.5 },
+    });
+    expect(sent(fetchMock, 7)).toEqual({
+      url: `/api/clients/client-7/habits/${HABIT}/days/2026-10-07${week}`,
+      method: "DELETE",
+      body: undefined,
+    });
   });
 
-  it("adds from a later day when one is given", async () => {
-    const fetchMock = stubFetch(respond(200, { success: true, data: { habitIds: [], habits: LIST } }));
-    await writes().add([], "2026-10-05");
-    expect(sent(fetchMock).body).toEqual({ habits: [], startsOn: "2026-10-05" });
+  it("names no week on the client's current week, and its answers say so", async () => {
+    const fetchMock = stubFetch(respond(200, { success: true, data: { changed: true, habits: LIST, week: WEEK } }));
+    expect(await writes(null).stop(HABIT)).toEqual({ changed: true, habits: LIST, week: WEEK, weekStart: null });
+    expect(sent(fetchMock).url).toBe(`/api/clients/client-7/habits/${HABIT}/stop`);
   });
 
-  it("answers with no list, never a failure, when the write saved but the habits could not be read back", async () => {
-    stubFetch(
-      respond(200, { success: true, data: { habitIds: ["h1"], habits: null } }),
-      respond(200, { success: true, data: { changed: true, habits: null } })
+  it("adds from a later day, stops from a later day, and takes a day off with no target", async () => {
+    const fetchMock = stubFetch(
+      respond(200, { success: true, data: { habitIds: [], habits: LIST, week: WEEK } }),
+      respond(200, { success: true, data: { changed: true, habits: LIST, week: WEEK } }),
+      respond(200, { success: true, data: { changed: true, habits: LIST, week: WEEK } })
     );
     const api = writes();
-    expect(await api.add([])).toEqual({ habitIds: ["h1"], habits: null });
-    expect(await api.stop(HABIT)).toEqual({ changed: true, habits: null });
+    await api.add([], "2026-10-05");
+    await api.stop(HABIT, "2026-10-12");
+    await api.setDay(HABIT, "2026-10-07", { planned: false, target: null });
+    expect(sent(fetchMock, 0).body).toEqual({ habits: [], startsOn: "2026-10-05" });
+    expect(sent(fetchMock, 1).body).toEqual({ stopsOn: "2026-10-12" });
+    expect(sent(fetchMock, 2).body).toEqual({ planned: false });
+  });
+
+  it("answers with neither, never a failure, when the write saved but the habits and the week could not be read back", async () => {
+    stubFetch(
+      respond(200, { success: true, data: { habitIds: ["h1"], habits: null, week: null } }),
+      respond(200, { success: true, data: { changed: true, habits: null, week: null } })
+    );
+    const api = writes();
+    expect(await api.add([])).toEqual({ habitIds: ["h1"], habits: null, week: null, weekStart: null });
+    expect(await api.stop(HABIT)).toEqual({ changed: true, habits: null, week: null, weekStart: null });
   });
 
   it("lands nothing by itself: the caller lands the answer as it closes what the write was made in", async () => {
-    stubFetch(respond(200, { success: true, data: { changed: true, habits: LIST } }));
+    stubFetch(respond(200, { success: true, data: { changed: true, habits: LIST, week: WEEK } }));
     await writes().stop(HABIT);
     expect(mutate).not.toHaveBeenCalled();
     expect(clearOverview).not.toHaveBeenCalled();
@@ -187,38 +253,80 @@ describe("each write goes to its route and answers with the habits as they now s
 });
 
 describe("land — the answer seeded, every read it changed cleared", () => {
-  it("seeds the list and clears the weeks, the adherence row, the Overview, the feed and the activation card", () => {
-    writes().land(LIST);
+  // The fix CONVENTIONS §7 names for a post-write flash: the write's own answer
+  // put in the cache in one tick, so no frame exists between the save and the
+  // settled card — never a clear-and-refetch of what is on screen.
+  it("seeds the list, the week the write named and the current week in one tick, then clears every other read the write changed", () => {
+    const current = { ...WEEK, start: "2026-09-24", end: "2026-09-30" };
+    writes().land({ habits: LIST, week: WEEK, currentWeek: current, weekStart: "2026-09-17" });
 
-    // The list: the answer itself, never refetched.
-    expect(mutate).toHaveBeenCalledWith(clientHabitsKey("client-7"), { success: true, data: LIST }, { revalidate: false });
-    // Every other habit read: cleared, then refetched — its figures are definite answers.
-    const [matcher, data, options] = mutate.mock.calls[1] as [(key: unknown) => boolean, unknown, unknown];
-    expect(matcher(clientHabitWeekKey("client-7", null))).toBe(true);
+    expect(mutate.mock.calls[0]).toEqual([clientHabitsKey("client-7"), { success: true, data: LIST }, { revalidate: false }]);
+    expect(mutate.mock.calls[1]).toEqual([
+      clientHabitWeekKey("client-7", "2026-09-17"),
+      { success: true, data: WEEK },
+      { revalidate: false },
+    ]);
+    // The summary shows now, read under the current week's key: seeded too.
+    expect(mutate.mock.calls[2]).toEqual([clientHabitWeekKey("client-7", null), { success: true, data: current }, { revalidate: false }]);
+    // Every other habit read — the other weeks held: cleared, then refetched,
+    // as each renders a definite answer. Never a week just seeded.
+    const [matcher, data, options] = mutate.mock.calls[3] as [(key: unknown) => boolean, unknown, unknown];
+    expect(matcher(clientHabitWeekKey("client-7", "2026-09-17"))).toBe(false);
+    expect(matcher(clientHabitWeekKey("client-7", null))).toBe(false);
+    expect(matcher(clientHabitWeekKey("client-7", "2026-09-10"))).toBe(true);
     expect(matcher(clientHabitsKey("client-7"))).toBe(false);
+    expect(matcher(clientHabitWeekKey("client-8", "2026-09-10"))).toBe(false);
     expect(data).toBeUndefined();
     expect(options).toEqual({ revalidate: true });
+    // The choices: cleared and NOT refetched — only the Add habits sheet shows
+    // them; it reads them afresh on its next opening, and the closing sheet
+    // keeps the list it showed rather than change it as it slides away.
+    expect(matcher(clientHabitChoicesKey("client-7"))).toBe(false);
+    expect(mutate.mock.calls[4]).toEqual([clientHabitChoicesKey("client-7"), undefined, { revalidate: false }]);
+    expect(mutate).toHaveBeenCalledTimes(5);
     expect(clearAdherence).toHaveBeenCalledWith("client-7");
     expect(clearOverview).toHaveBeenCalledWith("client-7");
     expect(clearFeed).toHaveBeenCalledTimes(1);
     expect(clearReadiness).toHaveBeenCalledWith("client-7");
   });
 
-  // A write saved without its list read back: the list is merely old, so it
-  // is refetched in place — never cleared, which would unmount the drawer
-  // that renders only while the list exists — and every other read is cleared
-  // exactly as for any other answer.
-  it("with no list, refetches the list in place without clearing it, and clears every other read as ever", () => {
-    writes().land(null);
+  it("seeds the client's current week under its own key when the write named none", () => {
+    writes().land({ habits: LIST, week: WEEK, currentWeek: null, weekStart: null });
+    expect(mutate.mock.calls[1][0]).toBe(clientHabitWeekKey("client-7", null));
+    const matcher = mutate.mock.calls[2][0] as (key: unknown) => boolean;
+    expect(matcher(clientHabitWeekKey("client-7", null))).toBe(false);
+    expect(matcher(clientHabitWeekKey("client-7", "2026-09-17"))).toBe(true);
+  });
+
+  // A save that changed nothing — a stop dated after the stop already
+  // scheduled, a change to what the habit already has — changed no other read.
+  it("with nothing changed, seeds what it answered and clears nothing else", () => {
+    writes().land({ changed: false, habits: LIST, week: WEEK, currentWeek: null, weekStart: null });
+    expect(mutate).toHaveBeenCalledTimes(2);
+    expect(clearAdherence).not.toHaveBeenCalled();
+    expect(clearOverview).not.toHaveBeenCalled();
+    expect(clearFeed).not.toHaveBeenCalled();
+    expect(clearReadiness).not.toHaveBeenCalled();
+  });
+
+  // A write saved without its habits read back: the list is refetched in
+  // place — never cleared, since the Add habits sheet and the row dialogs
+  // render only while it exists — and every week is cleared, the one on
+  // screen included, so it reloads rather than show a figure the write moved.
+  it("with none of them, refetches the list in place without clearing it, and clears every week", () => {
+    writes().land({ habits: null, week: null, currentWeek: null, weekStart: "2026-09-17" });
 
     expect(mutate.mock.calls[0]).toEqual([clientHabitsKey("client-7")]);
     expect(mutate.mock.calls.filter(([key]) => key === clientHabitsKey("client-7"))).toHaveLength(1);
     const [matcher, data, options] = mutate.mock.calls[1] as [(key: unknown) => boolean, unknown, unknown];
     expect(matcher(clientHabitWeekKey("client-7", "2026-09-17"))).toBe(true);
+    expect(matcher(clientHabitWeekKey("client-7", null))).toBe(true);
     expect(matcher(clientHabitsKey("client-7"))).toBe(false);
+    expect(matcher(clientHabitChoicesKey("client-7"))).toBe(false);
     expect(data).toBeUndefined();
     expect(options).toEqual({ revalidate: true });
-    expect(mutate).toHaveBeenCalledTimes(2);
+    expect(mutate.mock.calls[2]).toEqual([clientHabitChoicesKey("client-7"), undefined, { revalidate: false }]);
+    expect(mutate).toHaveBeenCalledTimes(3);
     expect(clearAdherence).toHaveBeenCalledWith("client-7");
     expect(clearOverview).toHaveBeenCalledWith("client-7");
     expect(clearFeed).toHaveBeenCalledTimes(1);

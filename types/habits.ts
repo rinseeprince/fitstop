@@ -135,14 +135,17 @@ export type HabitWeekRow = {
   figures: HabitWeekFigures;
 };
 
+/** A habit over the coach's week: its row, and whether the coach has deleted it since — its past days stay. */
+export type CoachHabitWeekRow = HabitWeekRow & { deleted: boolean };
+
 /** `GET /api/clients/[id]/habits/week`: the coach's week tracker and summary. */
 export type CoachHabitWeek = {
   clientToday: string;
   start: string;
   end: string;
   dates: string[];
-  /** Every habit a version covers on one of the week's days, in the client's order. */
-  habits: HabitWeekRow[];
+  /** Every habit a version covers on one of the week's days, in the client's order, deleted ones included. */
+  habits: CoachHabitWeekRow[];
   totals: HabitWeekFigures;
   /** Today's planned habits and how many were done today; null when today is not in the week. */
   today: { planned: number; done: number } | null;
@@ -208,23 +211,27 @@ export type CoachHabit = HabitIdentity & {
   words: HabitWords;
 };
 
-/**
- * `GET /api/clients/[id]/habits` — every habit but the deleted ones — and what
- * every coach habit write but a one-date edit and its reset answers with once
- * it has landed.
- */
+/** `GET /api/clients/[id]/habits`: every habit but the deleted ones, and the client's today. */
 export type CoachHabitList = { clientToday: string; habits: CoachHabit[] };
 
 /**
- * A coach habit write's answer: whether anything changed, and the client's
- * habits as they now stand — null when the write is saved but the habits could
+ * What every coach habit write answers with once it has committed: the
+ * client's habits as they now stand and the week the Habits tab shows — the
+ * one the write named, else the client's current week — and, when the write
+ * named another week, the client's current week too, which the tab's summary
+ * always shows. All of them, or none when the write is saved but they could
  * not be read back, so the screen reads them again rather than calling the
  * save a failure.
  */
-export type CoachHabitWriteResult = { changed: boolean; habits: CoachHabitList | null };
+export type HabitsAfterWrite =
+  | { habits: CoachHabitList; week: CoachHabitWeek; currentWeek: CoachHabitWeek | null }
+  | { habits: null; week: null; currentWeek: null };
 
-/** `POST /api/clients/[id]/habits`: the new habits' ids, in order, and the client's habits as they now stand (null as above). */
-export type CoachHabitAddResult = { habitIds: string[]; habits: CoachHabitList | null };
+/** A coach habit write's answer: whether anything changed, and the habits and the week as they now stand. */
+export type CoachHabitWriteResult = { changed: boolean } & HabitsAfterWrite;
+
+/** `POST /api/clients/[id]/habits`: the new habits' ids, in order, and the habits and the week as they now stand. */
+export type CoachHabitAddResult = { habitIds: string[] } & HabitsAfterWrite;
 
 /**
  * One habit's week over a check-in's period, as the check-in freezes it at

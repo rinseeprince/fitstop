@@ -18,7 +18,11 @@ vi.mock("@/services/client-habit-writes-service", () => {
 });
 vi.mock("@/services/today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("@/services/audit-log-service", () => ({ recordAuditEvent: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/services/client-habit-figures-service", () => ({ getCoachHabitList: vi.fn() }));
+vi.mock("@/services/client-habit-figures-service", () => ({
+  getCoachHabitList: vi.fn(),
+  getCoachHabitWeek: vi.fn(),
+  getCoachHabitWeekAndCurrent: vi.fn(),
+}));
 
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -26,15 +30,26 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { changeHabit, HabitWriteError } from "@/services/client-habit-writes-service";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
-import { getCoachHabitList } from "@/services/client-habit-figures-service";
+import { getCoachHabitList, getCoachHabitWeek, getCoachHabitWeekAndCurrent } from "@/services/client-habit-figures-service";
+import type { CoachHabitWeek } from "@/types/habits";
 
 const LIST = { clientToday: "2026-09-30", habits: [] };
+const WEEK: CoachHabitWeek = {
+  clientToday: "2026-09-30",
+  start: "2026-10-08",
+  end: "2026-10-14",
+  dates: [],
+  habits: [],
+  totals: { planned: 0, done: 0, met: 0 },
+  today: null,
+};
+const CURRENT_WEEK: CoachHabitWeek = { ...WEEK, start: "2026-09-24", end: "2026-09-30" };
 
 const HABIT = "7c1a4d8e-2f3b-4c5d-8e9f-0a1b2c3d4e5f";
 const params = (habitId = HABIT) => ({ params: Promise.resolve({ id: "client-2", habitId }) });
 
-function request(body: unknown) {
-  return new NextRequest(`http://localhost:3000/api/clients/client-2/habits/${HABIT}/change`, {
+function request(body: unknown, query = "") {
+  return new NextRequest(`http://localhost:3000/api/clients/client-2/habits/${HABIT}/change${query}`, {
     method: "POST",
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
@@ -47,16 +62,22 @@ describe("POST /api/clients/[id]/habits/[habitId]/change", () => {
     vi.mocked(requireCoachOwnsClient).mockResolvedValue({ authorized: true, coachId: "coach-3" });
     vi.mocked(getClientTodayString).mockResolvedValue("2026-09-30");
     vi.mocked(getCoachHabitList).mockResolvedValue(LIST);
+    vi.mocked(getCoachHabitWeek).mockResolvedValue(CURRENT_WEEK);
+    vi.mocked(getCoachHabitWeekAndCurrent).mockResolvedValue({ week: WEEK, currentWeek: CURRENT_WEEK });
   });
 
-  it("changes the target and days from the client's today, audits the change, and answers with the habits as they now stand", async () => {
+  it("changes the target and days from the client's today, audits the change, and answers with the habits, the week named and the current week", async () => {
     vi.mocked(changeHabit).mockResolvedValue(true);
-    const req = request({ target: 3.5, weekdays: ["monday", "friday"] });
+    const req = request({ target: 3.5, weekdays: ["monday", "friday"] }, "?week=2026-10-08");
     const response = await POST(req, params());
     expect(response.status).toBe(200);
     expect(requireCoachOwnsClient).toHaveBeenCalledWith("client-2", req);
-    expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: LIST } });
+    expect(await response.json()).toEqual({
+      success: true,
+      data: { changed: true, habits: LIST, week: WEEK, currentWeek: CURRENT_WEEK },
+    });
     expect(getCoachHabitList).toHaveBeenCalledWith("client-2", "2026-09-30");
+    expect(getCoachHabitWeekAndCurrent).toHaveBeenCalledWith("client-2", "2026-10-08", "2026-09-30");
     expect(changeHabit).toHaveBeenCalledWith({
       habitId: HABIT,
       clientId: "client-2",
@@ -90,6 +111,21 @@ describe("POST /api/clients/[id]/habits/[habitId]/change", () => {
   ])("refuses %s before any write", async (_label, body) => {
     expect((await POST(request(body), params())).status).toBe(400);
     expect(changeHabit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a week that is not a real day before any write", async () => {
+    expect((await POST(request({ weekdays: ["monday"] }, "?week=next"), params())).status).toBe(400);
+    expect(changeHabit).not.toHaveBeenCalled();
+  });
+
+  it("answers the change as saved, with neither the list nor the week, when reading them back fails", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(changeHabit).mockResolvedValue(true);
+    vi.mocked(getCoachHabitWeek).mockRejectedValue(new Error("read failed"));
+    const response = await POST(request({ weekdays: ["monday"] }), params());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, data: { changed: true, habits: null, week: null, currentWeek: null } });
+    spy.mockRestore();
   });
 
   it("says a change cannot start before today", async () => {

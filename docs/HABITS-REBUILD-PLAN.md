@@ -256,7 +256,7 @@ Grepped 2026-09-30 at `a646cb79` (`daily_habits`, `daily_habit_logs`, `DailyHabi
 | `CLIENT-APP-REFERENCE.md` (the lines in the table above, plus `:31, 51, 57, 95-100, 1054, 1095, 1115, 1126`) | the old wire, a nonexistent `types/habit.ts` | 2, 5, 6 |
 | `TECHNICAL-DEBT.md:503` ("N+1 habit stats — Open"; stale, the batch exists and nothing renders it), `:746` (the weekly route's anchor fallback) | debt against code that goes | 2 (deleted with the routes) |
 | `docs/perf-baseline.md:18, 200-219` | the `getHabitLogs` baseline | 3 |
-| `docs/newdesignsystem.md:648, 658, 911` | the habits tracker as the reference table and the protected pulse | kept true through 4; re-checked there |
+| `docs/newdesignsystem.md:673, 683, 936` (648, 658, 911 at `a646cb79`) | the habits tracker as the reference table and the protected pulse | kept true through 4; re-checked at commit 4: all three hold |
 | `.claude/agents/*.md` (type-quality-checker :30, convention-enforcer :27, 68, 116-119, 196-199, implementation-planner :60, 83, 118, 151, security-auditor :100) | the old names | 3 |
 
 ## 5. Verification that nothing is missed

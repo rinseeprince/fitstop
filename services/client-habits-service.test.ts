@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { query, result } = vi.hoisted(() => {
   const result: { value: { data: unknown; error: unknown } } = { value: { data: [], error: null } };
   const query: Record<string, ReturnType<typeof vi.fn>> & { then?: unknown } = {};
-  for (const method of ["select", "eq", "in", "or", "is", "gte", "lte", "order", "range", "limit"]) query[method] = vi.fn(() => query);
+  for (const method of ["select", "eq", "in", "or", "is", "not", "gte", "lte", "order", "range", "limit"]) query[method] = vi.fn(() => query);
   query.maybeSingle = vi.fn(() => Promise.resolve(result.value));
   query.then = (resolve: (value: unknown) => unknown) => resolve(result.value);
   return { query, result };
@@ -17,6 +17,7 @@ import {
   getClientHabit,
   listClientHabits,
   listClientHabitsWithEntryCheck,
+  listDeletedHabitIds,
   listHabitChoices,
   listHabitEntries,
   listHabitEntriesForClients,
@@ -53,6 +54,22 @@ const waterRow = {
 beforeEach(() => {
   vi.clearAllMocks();
   result.value = { data: [], error: null };
+});
+
+describe("listDeletedHabitIds", () => {
+  it("reads the ids of the client's habits the coach deleted, scoped to the client", async () => {
+    result.value = { data: [{ id: "habit-walk" }, { id: "habit-read" }], error: null };
+    expect(await listDeletedHabitIds("client-1")).toEqual(new Set(["habit-walk", "habit-read"]));
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("client_habits");
+    expect(query.select).toHaveBeenCalledWith("id");
+    expect(query.eq).toHaveBeenCalledWith("client_id", "client-1");
+    expect(query.not).toHaveBeenCalledWith("deleted_at", "is", null);
+  });
+
+  it("throws when the read fails", async () => {
+    result.value = { data: null, error: { message: "boom" } };
+    await expect(listDeletedHabitIds("client-1")).rejects.toThrow("Failed to read the deleted habits: boom");
+  });
 });
 
 describe("listClientHabits", () => {
