@@ -517,7 +517,7 @@ edits and no faked dates.
 
 ### Commit 5 — `feat(habits): the client sees every habit every day, logs a number against its target, and makes up a missed day`
 
-**STATUS: SHIPPED `e6a8a41a` 2026-10-02.** No migration; DEV stays at 207, and PROD at 184 owes 185–207. The owner's smoke is owed; decisions the plan left open are in the commit body.
+**STATUS: SHIPPED `e6a8a41a` 2026-10-02.** No migration; DEV stays at 207, and PROD at 184 owes 185–207. The owner's smoke passed (2026-10-02); decisions the plan left open are in the commit body.
 
 - The habits page's end state (§2.5): Planned today, Any day this week, Not planned today; each habit's entry — a tick, or a number box with its unit and the day's target in words — its week's figure and an optional note, each saved on its own (a tick at once, a number or a note on leaving the box), answering with the habit's day and week figures, which update the page in the same tick. Locked and future days as today.
 - The home card: "2 of 3 done today", "Nothing planned today · 1 to do this week", "No habits to track"; the day summary refreshed through its key builder.
