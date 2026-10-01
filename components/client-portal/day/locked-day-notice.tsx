@@ -27,9 +27,16 @@ const COPY: Record<LockedDayReason, string> = {
   "today-no-plan": "There's no plan scheduled for today yet.",
 };
 
-export function LockedDayNotice({ reason }: LockedDayNoticeProps) {
+/**
+ * The notice can take the focus (`ref`, `tabIndex={-1}`, out of the tab
+ * order): a page whose day locks underneath a write moves the focus here from
+ * the control it just disabled, rather than leave it on nothing.
+ */
+export function LockedDayNotice({ reason, ref }: LockedDayNoticeProps & { ref?: React.Ref<HTMLDivElement> }) {
   return (
     <div
+      ref={ref}
+      tabIndex={-1}
       role="status"
       className="mt-4 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
     >

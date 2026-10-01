@@ -35,7 +35,7 @@ function setDefaults() {
   mockTrainingSummaries.mockResolvedValue([]);
   mockNutrition.mockResolvedValue({ consumed: null, target: null, source: null });
   mockTodayLog.mockResolvedValue(null);
-  mockHabitDay.mockResolvedValue({ plannedToday: 0, doneToday: 0, running: 0 });
+  mockHabitDay.mockResolvedValue({ plannedToday: 0, doneToday: 0, running: 0, toDoThisWeek: 0 });
 }
 
 describe("client-day-service", () => {
@@ -53,7 +53,7 @@ describe("client-day-service", () => {
       training: [],
       nutrition: { hasLog: false, caloriesConsumed: null, targetCalories: null, note: null },
       wellness: { hasLog: false },
-      habits: { plannedToday: 0, doneToday: 0, running: 0 },
+      habits: { plannedToday: 0, doneToday: 0, running: 0, toDoThisWeek: 0 },
     });
   });
 
@@ -294,11 +294,11 @@ describe("client-day-service", () => {
   // ---- Habits: the habit kernel's day, from the figures service ----
 
   it("carries the day's habits as the figures service counts them, for the client and the date asked", async () => {
-    mockHabitDay.mockResolvedValue({ plannedToday: 3, doneToday: 1, running: 4 });
+    mockHabitDay.mockResolvedValue({ plannedToday: 3, doneToday: 1, running: 4, toDoThisWeek: 6 });
 
     const result = await getDaySummary(CLIENT_ID, DATE);
 
     expect(mockHabitDay).toHaveBeenCalledWith(CLIENT_ID, DATE);
-    expect(result.habits).toEqual({ plannedToday: 3, doneToday: 1, running: 4 });
+    expect(result.habits).toEqual({ plannedToday: 3, doneToday: 1, running: 4, toDoThisWeek: 6 });
   });
 });

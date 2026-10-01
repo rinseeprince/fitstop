@@ -15,7 +15,7 @@ import {
   getTrainingWeekStart,
 } from "@/lib/date-helpers";
 import { habitStatus, versionForWords, versionOn, versionsOver } from "@/lib/habits/habit-day";
-import { habitDays, habitDayTallies, habitWeek, sumWeekFigures } from "@/lib/habits/habit-week";
+import { habitDays, habitDayTallies, habitWeek, sumWeekFigures, weekToDo } from "@/lib/habits/habit-week";
 import { habitWords, weekFigureWords } from "@/lib/habits/habit-words";
 import { HABIT_PROGRESS_DAYS } from "@/lib/constants";
 import type { DayOfWeek } from "@/types/check-in";
@@ -278,15 +278,26 @@ export async function getCoachHabitList(clientId: string, today?: string): Promi
  * The home card's habits on `date`: how many a version covers that day, how
  * many were planned, and how many of those were done that day — each day by
  * its own planned habits, as the Overview reads a day, so the done count is
- * never more than the planned one.
+ * never more than the planned one — and how many habit-days the client week
+ * holding the date still asks of the habits running that day, each habit's
+ * week judged on its own (`weekToDo`): what an entry on that day's habits page
+ * can still make up. The week's anchor and the habits are read side by side:
+ * the six days either side of the date hold whichever week holds it.
  */
 export async function getHabitDaySummary(clientId: string, date: string): Promise<HabitDaySummary> {
-  const { habits, entries } = await readHabitRange(clientId, date, date);
+  const [anchor, { habits, entries }] = await Promise.all([
+    getClientWeekAnchor(clientId),
+    readHabitRange(clientId, addDaysToDateString(date, -6), addDaysToDateString(date, 6)),
+  ]);
+  const dates = getTrainingWeekDays(date, anchor.weekday);
   const [tally] = habitDayTallies(habits, entries, [date]);
+  const running = habits.filter((habit) => versionOn(habit, date));
+  const week = sumWeekFigures(running.map((habit) => habitWeek(habit, entries, dates).figures));
   return {
     plannedToday: tally.planned,
     doneToday: tally.done,
-    running: habits.filter((habit) => versionOn(habit, date)).length,
+    running: running.length,
+    toDoThisWeek: weekToDo(week),
   };
 }
 

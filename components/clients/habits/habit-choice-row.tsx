@@ -18,7 +18,7 @@ const choiceLine = (choice: HabitChoice) =>
 /**
  * One of the coach's habits in the Add habits sheet: its name and, under it,
  * its days then its target, the whole row one toggle (`role="checkbox"`, the
- * builder's picking idiom — the un-migrated checkbox primitive is not used).
+ * builder's picking idiom: a row picked as one, not a tick box beside it).
  * Picked, it opens its how-to, days and target to adjust for this client.
  */
 export function HabitChoiceRow({

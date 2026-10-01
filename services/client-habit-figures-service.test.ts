@@ -367,18 +367,82 @@ describe("getCoachHabitList — the Habits tab's list", () => {
 });
 
 describe("getHabitDaySummary — the home card's habits", () => {
-  it("counts the habits running on the day, those planned on it, and those planned and done that day", async () => {
+  it("counts the habits running on the day, those planned on it, those planned and done that day, and what the week still asks", async () => {
     vi.mocked(listHabitEntries).mockResolvedValue([ticked("mobility", "2026-09-30")]);
-    // Wednesday: Mobility and Water are planned; Mobility is done.
-    expect(await getHabitDaySummary("client-3", TODAY)).toEqual({ plannedToday: 2, doneToday: 1, running: 2 });
-    expect(listClientHabits).toHaveBeenCalledWith("client-3", { from: TODAY, to: TODAY });
-    expect(listHabitEntries).toHaveBeenCalledWith("client-3", { from: TODAY, to: TODAY });
+    // Wednesday: Mobility and Water are planned; Mobility is done. The week,
+    // Thursday 24 to Wednesday 30: Mobility 1 of 3 (2 to do), Water 0 of 7.
+    expect(await getHabitDaySummary("client-3", TODAY)).toEqual({
+      plannedToday: 2,
+      doneToday: 1,
+      running: 2,
+      toDoThisWeek: 9,
+    });
+    // The six days either side of the date: whichever week holds it.
+    expect(listClientHabits).toHaveBeenCalledWith("client-3", { from: "2026-09-24", to: "2026-10-06" });
+    expect(listHabitEntries).toHaveBeenCalledWith("client-3", { from: "2026-09-24", to: "2026-10-06" });
   });
 
-  it("never counts a habit done on a day it was not planned: the done count stays within the planned one", async () => {
+  it("never counts a habit done on a day it was not planned as done that day, and counts it toward its week", async () => {
     // Tuesday: Mobility is not planned, and made up anyway; Water is planned and not done.
     vi.mocked(listHabitEntries).mockResolvedValue([ticked("mobility", "2026-09-29")]);
-    expect(await getHabitDaySummary("client-3", "2026-09-29")).toEqual({ plannedToday: 1, doneToday: 0, running: 2 });
+    expect(await getHabitDaySummary("client-3", "2026-09-29")).toEqual({
+      plannedToday: 1,
+      doneToday: 0,
+      running: 2,
+      // Mobility's Tuesday counts toward its week: 1 of 3, 2 to do; Water 7.
+      toDoThisWeek: 9,
+    });
+  });
+
+  it("asks of the client week holding the date, by the client's week anchor", async () => {
+    // Mobility done on Friday 25 September. A client checking in on
+    // Wednesdays holds it in Wednesday 30's week (2 left of 3); one checking
+    // in on Sundays starts that week on Monday 28 (3 left of 3).
+    vi.mocked(listHabitEntries).mockResolvedValue([ticked("mobility", "2026-09-25")]);
+    expect((await getHabitDaySummary("client-3", TODAY)).toDoThisWeek).toBe(2 + 7);
+    vi.mocked(getClientWeekAnchor).mockResolvedValue({ weekday: "sunday", startDate: "2026-06-01" });
+    expect((await getHabitDaySummary("client-3", TODAY)).toDoThisWeek).toBe(3 + 7);
+  });
+
+  it("asks only of the habits running on the day: one stopped earlier in the week or starting later in it is not on that day's page", async () => {
+    // Mobility stopped on Monday 28 (ran to Sunday 27); Stretch starts on
+    // Wednesday 30. On Tuesday 29 neither runs, so neither's week counts; Water
+    // runs and asks 7.
+    const stopped = habit("mobility", { versions: [version({ endsOn: "2026-09-27" })] });
+    const later = habit("stretch", { versions: [version({ startsOn: "2026-09-30", weekdays: ["wednesday", "thursday"] })] });
+    vi.mocked(listClientHabits).mockResolvedValue([stopped, later, water]);
+    vi.mocked(listHabitEntries).mockResolvedValue([]);
+    expect(await getHabitDaySummary("client-3", "2026-09-29")).toEqual({
+      plannedToday: 1,
+      doneToday: 0,
+      running: 1,
+      toDoThisWeek: 7,
+    });
+  });
+
+  it("says nothing is planned on a day only a weekly habit runs, and what its week still asks", async () => {
+    const sauna = habit("sauna", { versions: [version({ timesPerWeek: 3, weekdays: [] })] });
+    vi.mocked(listClientHabits).mockResolvedValue([sauna]);
+    vi.mocked(listHabitEntries).mockResolvedValue([ticked("sauna", "2026-09-25"), ticked("sauna", "2026-09-27")]);
+    expect(await getHabitDaySummary("client-3", "2026-09-29")).toEqual({
+      plannedToday: 0,
+      doneToday: 0,
+      running: 1,
+      toDoThisWeek: 1,
+    });
+  });
+
+  it("reads the week's anchor and the habits side by side", async () => {
+    let answerAnchor: (anchor: Awaited<ReturnType<typeof getClientWeekAnchor>>) => void = () => {};
+    vi.mocked(getClientWeekAnchor).mockReturnValue(new Promise((resolve) => (answerAnchor = resolve)));
+
+    const summary = getHabitDaySummary("client-3", TODAY);
+    // The habits are asked for before the anchor answers.
+    await vi.waitFor(() => expect(listClientHabits).toHaveBeenCalled());
+    expect(listHabitEntries).toHaveBeenCalled();
+
+    answerAnchor({ weekday: "wednesday", startDate: null });
+    expect((await summary).plannedToday).toBe(2);
   });
 });
 

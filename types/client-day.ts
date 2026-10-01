@@ -17,6 +17,8 @@ export type DaySummary = {
   };
   wellness: { hasLog: boolean };
   // `running`: the habits a version covers on the day; `plannedToday`: those
-  // planned on it; `doneToday`: how many of those were done that day.
+  // planned on it; `doneToday`: how many of those were done that day;
+  // `toDoThisWeek`: the habit-days the client week holding the day still asks
+  // of the habits running that day.
   habits: HabitDaySummary;
 };

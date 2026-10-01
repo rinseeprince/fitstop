@@ -12,12 +12,14 @@ import type { ClientLayoutMove, ClientTrainingWeek } from "@/types/client-traini
 // week's session list, so it invalidates the whole area rather than guessing
 // which dates a swap changed.
 
+const CLIENT_DAY_SUMMARY_PREFIX = "/api/client/day-summary";
+
 const CLIENT_TRAINING_AREA_PREFIXES = [
-  "/api/client/day-summary",
+  CLIENT_DAY_SUMMARY_PREFIX,
   "/api/client/training/week",
 ] as const;
 
-export const clientDaySummaryKey = (date: string) => `/api/client/day-summary?date=${date}`;
+export const clientDaySummaryKey = (date: string) => `${CLIENT_DAY_SUMMARY_PREFIX}?date=${date}`;
 export const clientTrainingWeekKey = (date: string) => `/api/client/training/week?date=${date}`;
 
 /** Pure matcher, exported so the area contract is testable without React. */
@@ -26,6 +28,26 @@ export function isClientTrainingAreaKey(key: unknown): boolean {
     typeof key === "string" &&
     CLIENT_TRAINING_AREA_PREFIXES.some((prefix) => key.startsWith(prefix))
   );
+}
+
+/** Pure matcher for every day summary, one per date the home has shown. */
+export function isClientDaySummaryKey(key: unknown): boolean {
+  return typeof key === "string" && key.startsWith(CLIENT_DAY_SUMMARY_PREFIX);
+}
+
+/**
+ * Drop every cached day summary, then let a mounted one refetch. CLEARED, not
+ * merely revalidated (CONVENTIONS §7): the home's cards state counts — "2 of 3
+ * done today", "1 to do this week" — and SWR serves the stale entry for the
+ * whole refetch, so a client coming back to the home would read the old count
+ * until the new one landed. Clearing puts the home into the placeholder it
+ * already shows. The habit entry write calls it: an entry changes its date's
+ * count and its week's to-do on every day of that week.
+ */
+export function useClearClientDaySummaries() {
+  const { mutate } = useSWRConfig();
+  // Memoized: a hook returning a callback must return a stable one.
+  return useCallback(() => mutate(isClientDaySummaryKey, undefined, { revalidate: true }), [mutate]);
 }
 
 function useInvalidateClientTrainingData() {

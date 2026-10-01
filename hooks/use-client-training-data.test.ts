@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import useSWR, { SWRConfig } from "swr";
+import { createElement, type ReactNode } from "react";
 import {
   ClientLayoutError,
   clientDaySummaryKey,
   clientTrainingWeekKey,
+  isClientDaySummaryKey,
   isClientTrainingAreaKey,
   useApplyClientLayout,
+  useClearClientDaySummaries,
 } from "./use-client-training-data";
 
 // The key builders and the area matcher are the contract (CONVENTIONS §7):
@@ -28,6 +32,46 @@ describe("client training-area SWR keys", () => {
     expect(isClientTrainingAreaKey("/api/client/daily-logs/2026-08-26/nutrition")).toBe(false);
     expect(isClientTrainingAreaKey(null)).toBe(false);
     expect(isClientTrainingAreaKey(["/api/client/day-summary", "x"])).toBe(false);
+  });
+});
+
+// The habit entry write clears every day summary — each date's home counts,
+// and a week's to-do on every day of it — and nothing of the training week.
+describe("the day summaries' clear", () => {
+  it("matches every day summary the builder produces, and nothing else", () => {
+    expect(isClientDaySummaryKey(clientDaySummaryKey("2026-08-26"))).toBe(true);
+    expect(isClientDaySummaryKey(clientDaySummaryKey("2027-01-01"))).toBe(true);
+    expect(isClientDaySummaryKey(clientTrainingWeekKey("2026-08-26"))).toBe(false);
+    expect(isClientDaySummaryKey("/api/client/habits/day?date=2026-08-26")).toBe(false);
+    expect(isClientDaySummaryKey(null)).toBe(false);
+  });
+
+  it("drops every cached day summary, and leaves the training week as it was", async () => {
+    // A real cache: the home read two days and the week view its week, then
+    // the client went to the habits page and made an entry.
+    const cache = new Map();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(SWRConfig, { value: { provider: () => cache, dedupingInterval: 0 } }, children);
+    const read = (key: string) => () => Promise.resolve({ key });
+    const home = renderHook(
+      () => [
+        useSWR(clientDaySummaryKey("2026-08-26"), read("tue")),
+        useSWR(clientDaySummaryKey("2026-08-27"), read("wed")),
+        useSWR(clientTrainingWeekKey("2026-08-26"), read("week")),
+      ],
+      { wrapper }
+    );
+    await waitFor(() => expect(home.result.current.every((reader) => reader.data !== undefined)).toBe(true));
+    home.unmount();
+
+    const { result } = renderHook(() => useClearClientDaySummaries(), { wrapper });
+    await act(async () => {
+      await result.current();
+    });
+
+    expect(cache.get(clientDaySummaryKey("2026-08-26"))?.data).toBeUndefined();
+    expect(cache.get(clientDaySummaryKey("2026-08-27"))?.data).toBeUndefined();
+    expect(cache.get(clientTrainingWeekKey("2026-08-26"))?.data).toEqual({ key: "week" });
   });
 });
 

@@ -19,12 +19,26 @@ vi.mock("next/navigation", () => ({
 vi.mock("swr", () => ({
   __esModule: true,
   default: (key: unknown, _fetcher: unknown, _opts: unknown) => swrCall(key),
+  // The day's read waits for habit entries on their way, through the cache's ledger.
+  useSWRConfig: () => ({ cache: new Map(), mutate: vi.fn() }),
 }));
 
 // The home's weekly check-in card fetches its own status and is unit-tested
 // separately; stub it here so it doesn't add to the shared SWR mock or skeletons.
 vi.mock("@/components/client-portal/day/check-in-card-summary", () => ({
   CheckInCardSummary: () => null,
+}));
+
+// The profile carries the day rule the habits card asks by; read at render
+// time, so a test can lock the day. null = nothing closed.
+let mockLogsOpenFrom: string | null = null;
+vi.mock("@/hooks/use-client-profile", () => ({
+  useClientProfile: () => ({
+    client: { timezone: "UTC", logsOpenFrom: mockLogsOpenFrom },
+    error: null,
+    isLoading: false,
+    mutate: vi.fn(),
+  }),
 }));
 
 const today = getTodayDateString();
@@ -56,6 +70,7 @@ describe("ClientHomePage", () => {
     replaceMock.mockReset();
     swrCall.mockReset();
     mockSearchParam = null;
+    mockLogsOpenFrom = null;
     setSWR();
     cleanup();
   });
@@ -126,7 +141,7 @@ describe("ClientHomePage", () => {
           training: [],
           nutrition: { hasLog: false, caloriesConsumed: null, targetCalories: null, note: null },
           wellness: { hasLog: false },
-          habits: { plannedToday: 0, doneToday: 0, running: 0 },
+          habits: { plannedToday: 0, doneToday: 0, running: 0, toDoThisWeek: 0 },
         },
       },
     });
@@ -136,6 +151,28 @@ describe("ClientHomePage", () => {
     expect(screen.getByText("Nutrition")).toBeInTheDocument();
     expect(screen.getByText("Wellness")).toBeInTheDocument();
     expect(screen.getByText("Habits")).toBeInTheDocument();
+  });
+
+  it("lets the habits card ask for entries on an open day and nothing on a locked one", () => {
+    const day = {
+      success: true,
+      data: {
+        training: [],
+        nutrition: { hasLog: false, caloriesConsumed: null, targetCalories: null, note: null },
+        wellness: { hasLog: false },
+        habits: { plannedToday: 2, doneToday: 1, running: 2, toDoThisWeek: 3 },
+      },
+    };
+    mockSearchParam = today;
+    setSWR({ data: day });
+    const { unmount } = render(<ClientHomePage />);
+    expect(screen.getByRole("link", { name: "Habits: 1 of 2 done today" })).toHaveTextContent("Tap to log");
+    unmount();
+
+    // A check-in sent today closed the week: the day rule opens logs from tomorrow.
+    mockLogsOpenFrom = tomorrow;
+    render(<ClientHomePage />);
+    expect(screen.getByRole("link", { name: "Habits: 1 of 2 done today" })).toHaveTextContent("Tap to view");
   });
 
   it("renders an error message with a Try again button when the fetch fails", async () => {

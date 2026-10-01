@@ -80,6 +80,26 @@ export function habitWeek(habit: Habit, entries: readonly HabitEntryRead[], date
   return { days, figures: { planned, done, met: Math.min(done, planned) } };
 }
 
+/**
+ * What a week still asks for: its planned less its met — the habit-days left
+ * to do, each one doable on any day the habit runs that week. A make-up past
+ * the plan lowers it no further, because met is done up to planned.
+ */
+export function weekToDo(figures: HabitWeekFigures): number {
+  return figures.planned - figures.met;
+}
+
+/**
+ * A habit's week once one of its covered days goes from met to not met, or
+ * back — an entry made, changed or cleared: done moves by that day alone, and
+ * met is done up to planned. Planned never turns on an entry, so it stays.
+ * Moving a day to what it already was leaves the week as it is.
+ */
+export function weekAfterDayChange(figures: HabitWeekFigures, wasMet: boolean, isMet: boolean): HabitWeekFigures {
+  const done = figures.done - (wasMet ? 1 : 0) + (isMet ? 1 : 0);
+  return { planned: figures.planned, done, met: Math.min(done, figures.planned) };
+}
+
 /** Several habits' weeks added together; each habit is judged on its own first. */
 export function sumWeekFigures(figures: readonly HabitWeekFigures[]): HabitWeekFigures {
   return figures.reduce(

@@ -45,9 +45,8 @@ import { LABEL_CLASS, TEXT_MUTED } from "./builder-tokens";
 //
 // Built from the styled DropdownMenu primitives rather than a Popover with
 // checkboxes: DropdownMenuCheckboxItem already carries the teal tick, the 6px
-// panel and the disabled treatment, and components/ui/checkbox.tsx is still
-// un-migrated OKLCH. The menu stays open across ticks and presets so several
-// columns can be set in one go.
+// panel and the disabled treatment. The menu stays open across ticks and
+// presets so several columns can be set in one go.
 type SetColumnsMenuProps = {
   /**
    * The exercise's columns. Absent for a linked group's heading, where the

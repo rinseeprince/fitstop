@@ -233,7 +233,7 @@ export function SetRow({
             onCheckedChange={() => onToggleComplete?.()}
             aria-label={`${rowNoun} ${setNumber} complete`}
             data-testid={`set-complete-${exerciseIndex}-${setIndex}`}
-            className="size-5 border-[#93b0b4] data-[state=checked]:border-[#0d9488] data-[state=checked]:bg-[#0d9488]"
+            className="size-5"
           />
         </div>
       )}

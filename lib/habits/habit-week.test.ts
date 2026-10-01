@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { habitDays, habitDayTallies, habitWeek, missedPlannedDates, sumWeekFigures } from "./habit-week";
+import {
+  habitDays,
+  habitDayTallies,
+  habitWeek,
+  missedPlannedDates,
+  sumWeekFigures,
+  weekAfterDayChange,
+  weekToDo,
+} from "./habit-week";
 import type { ClientHabit, HabitEntry, HabitVersion } from "@/types/habits";
 
 // The plan's week (docs/HABITS-REBUILD-PLAN.md §2.5): a client whose week runs
@@ -108,6 +116,43 @@ describe("habitWeek — the plan's week", () => {
   it("reads 11 of 13 once the client has done Wednesday's", () => {
     const weeks = [water, mobility, sauna].map((habit) => habitWeek(habit, WEDNESDAY_EVENING, WEEK).figures);
     expect(sumWeekFigures(weeks)).toEqual({ planned: 13, done: 11, met: 11 });
+  });
+
+  it("leaves 5 to do on the Wednesday morning and 2 that evening: the week's planned less its met", () => {
+    const morning = sumWeekFigures([water, mobility, sauna].map((habit) => habitWeek(habit, WEDNESDAY_MORNING, WEEK).figures));
+    const evening = sumWeekFigures([water, mobility, sauna].map((habit) => habitWeek(habit, WEDNESDAY_EVENING, WEEK).figures));
+    expect(weekToDo(morning)).toBe(5);
+    expect(weekToDo(evening)).toBe(2);
+  });
+
+  it("moves a week by one day's change exactly as the week read counts it", () => {
+    // Every Wednesday-morning habit, each day of the week entered or cleared,
+    // agrees with reading the whole week again.
+    for (const habit of [water, mobility, sauna]) {
+      for (const date of WEEK) {
+        const before = habitWeek(habit, WEDNESDAY_MORNING, WEEK);
+        const others = WEDNESDAY_MORNING.filter((entry) => !(entry.habitId === habit.id && entry.date === date));
+        const entered = habit.measure === "number" ? number(habit.id, date, 3.5) : ticked(habit.id, date);
+        for (const entries of [[...others, entered], others]) {
+          const after = habitWeek(habit, entries, WEEK);
+          const day = WEEK.indexOf(date);
+          expect(weekAfterDayChange(before.figures, before.days[day].met, after.days[day].met)).toEqual(after.figures);
+        }
+      }
+    }
+  });
+
+  it("caps met at planned when a day is made up past the plan, and gives a day back when it is cleared", () => {
+    expect(weekAfterDayChange({ planned: 3, done: 3, met: 3 }, false, true)).toEqual({ planned: 3, done: 4, met: 3 });
+    expect(weekAfterDayChange({ planned: 3, done: 4, met: 3 }, true, false)).toEqual({ planned: 3, done: 3, met: 3 });
+    expect(weekAfterDayChange({ planned: 3, done: 2, met: 2 }, true, false)).toEqual({ planned: 3, done: 1, met: 1 });
+    expect(weekAfterDayChange({ planned: 3, done: 2, met: 2 }, true, true)).toEqual({ planned: 3, done: 2, met: 2 });
+  });
+
+  it("leaves nothing to do once a week is met, however far past its plan the client went", () => {
+    // Mobility done every day: 7 done of 3 planned is 3 met, nothing left — never "-4 to do".
+    const everyDayMobility = WEEK.map((date) => ticked("mobility", date));
+    expect(weekToDo(habitWeek(mobility, everyDayMobility, WEEK).figures)).toBe(0);
   });
 
   it("shows each day as it happened: Monday planned and not done, Tuesday not planned and done", () => {

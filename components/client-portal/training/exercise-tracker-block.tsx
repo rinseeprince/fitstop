@@ -414,7 +414,7 @@ function FormModeBlock({
               onCheckedChange={() => bankEveryRow(!allCompleted)}
               aria-label={`Mark every set of ${exercise.name} complete`}
               data-testid={`complete-exercise-${index}`}
-              className="size-5 border-[#93b0b4] data-[state=checked]:border-[#0d9488] data-[state=checked]:bg-[#0d9488] data-[state=indeterminate]:border-[#0d9488] data-[state=indeterminate]:bg-[rgba(13,148,136,0.25)]"
+              className="size-5"
             />
           </label>
           {onRemove ? (

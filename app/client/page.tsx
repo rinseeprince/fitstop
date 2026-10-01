@@ -13,7 +13,10 @@ import { HabitsCardSummary } from "@/components/client-portal/day/habits-card-su
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { canEditDay } from "@/lib/daily-log-permissions";
 import { clientDaySummaryKey } from "@/hooks/use-client-training-data";
+import { useClientProfile } from "@/hooks/use-client-profile";
+import { useReadAfterHabitEntries } from "@/hooks/use-client-portal-habits";
 import {
   getDateDaysFrom,
   getTodayDateString,
@@ -33,16 +36,25 @@ function ClientHomePageInner() {
     [searchParams],
   );
 
+  // No previous day's data is kept while another loads: under the new date's
+  // header it would be another day's cards. A day not cached shows the
+  // placeholder until it lands. A habit entry on its way clears the days and
+  // holds their next read until it settles, so the habits card never shows a
+  // count from before it.
+  const readAfterEntries = useReadAfterHabitEntries(swrFetcher);
   const { data, error, isLoading, mutate } = useSWR<{
     success: boolean;
     data: DaySummary;
-  }>(clientDaySummaryKey(date), swrFetcher, {
+  }>(clientDaySummaryKey(date), readAfterEntries, {
     dedupingInterval: 2000,
     revalidateOnFocus: false,
     errorRetryCount: 3,
     errorRetryInterval: 1000,
-    keepPreviousData: true,
   });
+
+  // The day rule, for the card that asks the client to log: a locked day asks nothing.
+  const { client } = useClientProfile();
+  const editable = canEditDay(date, client?.logsOpenFrom ?? null, client?.timezone ?? "UTC");
 
   const goTo = useCallback(
     (next: string) => {
@@ -115,7 +127,7 @@ function ClientHomePageInner() {
           />
           <NutritionCardSummary nutrition={data.data.nutrition} date={date} />
           <WellnessCardSummary wellness={data.data.wellness} date={date} />
-          <HabitsCardSummary habits={data.data.habits} date={date} />
+          <HabitsCardSummary habits={data.data.habits} date={date} editable={editable} />
         </div>
       )}
     </div>

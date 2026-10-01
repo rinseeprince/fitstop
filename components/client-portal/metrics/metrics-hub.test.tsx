@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MetricsHub } from "./metrics-hub";
+import { formatDateOnlyShort } from "@/lib/date-helpers";
 
 const { mockUseSWR } = vi.hoisted(() => ({ mockUseSWR: vi.fn() }));
-vi.mock("swr", () => ({ default: mockUseSWR }));
+vi.mock("swr", () => ({ default: mockUseSWR, useSWRConfig: () => ({ cache: new Map(), mutate: vi.fn() }) }));
 vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
 
 // The Journey adds no weeks up: a habit's recent weeks together are the
@@ -196,27 +197,97 @@ describe("MetricsHub", () => {
     expect(screen.getByText("Drink water")).toBeInTheDocument();
   });
 
-  it("shows each habit's days, this week's figure and its recent weeks', and no habit streak", () => {
+  it("shows each habit's words, this week's figure and its recent weeks as bars, and no habit streak", () => {
     render(<MetricsHub initialTab="habits" />);
-    const card = screen.getByText("Drink water").closest("[data-slot='card']") as HTMLElement;
+    const card = screen.getByRole("region", { name: "Drink water" });
 
     expect(within(card).getByText("Mon, Wed, Fri")).toBeInTheDocument();
-    expect(within(card).getByText("This week")).toBeInTheDocument();
-    expect(within(card).getByText("2 of 3")).toBeInTheDocument();
-    // The eight weeks together, as the server sent them: 19 met of 24 planned.
-    expect(within(card).getByText("Last 8 weeks")).toBeInTheDocument();
-    expect(within(card).getByText("19 of 24")).toBeInTheDocument();
+    // This week's figure under its label; the bars' axis names this week too.
+    expect(within(card).getByText("2 of 3").previousElementSibling).toHaveTextContent("This week");
+    expect(within(card).getAllByText("This week")).toHaveLength(2);
+    // One bar per week, oldest first, the last this week: each names its week and its figure.
+    const bars = within(card).getAllByRole("img");
+    expect(bars.map((bar) => bar.getAttribute("aria-label"))).toEqual([
+      ...habitProgress.habits[0].weeks.slice(0, -1).map((week) => `Week of ${formatDateOnlyShort(week.start)}: ${week.met} of ${week.planned}`),
+      "This week: 2 of 3",
+    ]);
+    // Each bar is filled to its week's met of planned.
+    const fills = bars.map((bar) => (bar.querySelector("[style]") as HTMLElement).style.height);
+    expect(fills).toEqual(["100%", "67%", "100%", "33%", "100%", "67%", "100%", "67%"]);
+    // The weeks are the server's; the card adds none of them up.
     expect(sumWeekFigures).not.toHaveBeenCalled();
     expect(within(card).queryByText(/streak/i)).toBeNull();
   });
 
-  it("shows no habit section when the client has no habit in the span", () => {
+  it("reads a habit's days, then its target", () => {
+    const water = {
+      ...habitProgress.habits[0],
+      habit: { id: "h2", name: "Water", howTo: null, measure: "number", unit: "L", direction: "at_least" },
+      words: { schedule: "Every day", target: "at least 3 L" },
+    };
+    mockUseSWR.mockImplementation((url: string | null) =>
+      url === "/api/client/habits/progress?weeks=8"
+        ? { data: { success: true, data: { ...habitProgress, habits: [water] } }, isLoading: false }
+        : { data: undefined, isLoading: false }
+    );
+    render(<MetricsHub initialTab="habits" />);
+    expect(within(screen.getByRole("region", { name: "Water" })).getByText("Every day · at least 3 L")).toBeInTheDocument();
+  });
+
+  it("draws no track for a week that planned nothing, and fills an empty one to nothing", () => {
+    const weeks = habitProgress.habits[0].weeks.map((week, i) =>
+      i === 0 ? { ...week, planned: 0, done: 0, met: 0 } : i === 1 ? { ...week, done: 0, met: 0 } : week
+    );
+    mockUseSWR.mockImplementation((url: string | null) =>
+      url === "/api/client/habits/progress?weeks=8"
+        ? { data: { success: true, data: { ...habitProgress, habits: [{ ...habitProgress.habits[0], weeks }] } }, isLoading: false }
+        : { data: undefined, isLoading: false }
+    );
+    render(<MetricsHub initialTab="habits" />);
+    const [nothingPlanned, noneMet] = within(screen.getByRole("region", { name: "Drink water" })).getAllByRole("img");
+
+    expect(nothingPlanned).toHaveAttribute("aria-label", `Week of ${formatDateOnlyShort(weeks[0].start)}: nothing planned`);
+    expect(nothingPlanned.childElementCount).toBe(0);
+    expect(noneMet).toHaveAttribute("aria-label", `Week of ${formatDateOnlyShort(weeks[1].start)}: 0 of 3`);
+    expect((noneMet.querySelector("[style]") as HTMLElement).style.height).toBe("0%");
+  });
+
+  it("says so when the client has no habit in the span, under the section's heading", () => {
     mockUseSWR.mockImplementation((url: string | null) =>
       url === "/api/client/habits/progress?weeks=8"
         ? { data: { success: true, data: { ...habitProgress, habits: [] } }, isLoading: false }
         : { data: undefined, isLoading: false }
     );
     render(<MetricsHub initialTab="habits" />);
-    expect(screen.queryByRole("heading", { name: "My Habits" })).toBeNull();
+    expect(screen.getByText("No habits yet")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "My Habits" })).toBeInTheDocument();
+  });
+
+  it("holds the cards' places, a card's height each, under the heading while the habits load, and says nothing about them", () => {
+    mockUseSWR.mockImplementation((url: string | null) =>
+      url === "/api/client/habits/progress?weeks=8" ? { data: undefined, isLoading: true } : { data: undefined, isLoading: false }
+    );
+    const { container } = render(<MetricsHub initialTab="habits" />);
+    const placeholders = container.querySelector('[aria-busy="true"]')?.querySelectorAll('[data-slot="skeleton"]');
+    expect(placeholders?.length).toBe(2);
+    placeholders?.forEach((placeholder) => expect(placeholder).toHaveClass("h-[156px]"));
+    expect(screen.getByRole("heading", { name: "My Habits" })).toBeInTheDocument();
+    expect(screen.queryByText("No habits yet")).toBeNull();
+  });
+
+  it("says the habits could not be loaded, with a retry, never that there are none", async () => {
+    const retry = vi.fn();
+    mockUseSWR.mockImplementation((url: string | null) =>
+      url === "/api/client/habits/progress?weeks=8"
+        ? { data: undefined, error: new Error("boom"), isLoading: false, mutate: retry }
+        : { data: undefined, isLoading: false }
+    );
+    render(<MetricsHub initialTab="habits" />);
+    expect(screen.getByText(/couldn.t load your habits/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "My Habits" })).toBeInTheDocument();
+    expect(screen.queryByText("No habits yet")).toBeNull();
+
+    await userEvent.setup().click(screen.getByRole("button", { name: /try again/i }));
+    expect(retry).toHaveBeenCalled();
   });
 });

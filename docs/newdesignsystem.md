@@ -305,6 +305,34 @@ shadcn defaults. The spec above is that hand-written string, moved into the prim
 **It carries its own accessible name.** Radix gives it `role="switch"`, so an `aria-label`
 is all it needs — never wrap it in a `role="group"` to name it.
 
+### Checkbox — a tick on one thing
+
+**Every tick box that records or picks one thing — a set done, a habit done, a client picked from
+a list — is `<Checkbox>`** (`@/components/ui/checkbox`). A `<Switch>` turns a setting on or off; a
+tick says something about the row it sits on ("done", "picked"), so the two are not
+interchangeable. A whole row or card picked as one is the builder's picking idiom instead — a
+`role="checkbox"` button carrying no tick box (the Link mode's card headers, the Add habits
+sheet's habit rows).
+
+| Part | Class |
+|---|---|
+| Box | `size-4 rounded-[4px] border border-[#93b0b4] shadow-xs transition-colors duration-150` |
+| Ticked | `border-[#0d9488] bg-[#0d9488] text-white`, a `CheckIcon` at `size-3.5` |
+| Part done (`checked="indeterminate"`) | `border-[#0d9488] bg-[rgba(13,148,136,0.25)]`, the same `CheckIcon` in the row's ink — an exercise with some of its sets ticked |
+| Invalid | `aria-invalid:border-[#c06060]` |
+| Focus | `FOCUS_RING` |
+| Disabled | `disabled:cursor-not-allowed disabled:opacity-50` |
+
+**A call site passes `checked`, `onCheckedChange`, `disabled`, a name (an `aria-label`, or a
+`<label htmlFor>` on the row and the `id` it points at), a test id where it needs one, and a size.
+Nothing of the look.** The client's ticks are `size-5` — the
+workout tracker's sets and exercises, the habits page — and every other tick keeps the 16px
+default. The primitive shipped un-migrated until 2026-10-02 (OKLCH colours and a 3px OKLCH
+focus ring): the workout tracker corrected it by hand at both its ticks, and the habits page was
+about to make a third copy. The look moved into the primitive and the corrections were deleted;
+`components/checkbox-ownership.test.ts` fails a call site that gives its Checkbox anything but a
+size.
+
 ### Weekday toggle row — picking a set of days
 
 **Every pick of several weekdays is `<WeekdayToggleRow>`**
@@ -434,6 +462,7 @@ To turn a mono label to normal case (e.g. a meta line), append `normal-case trac
 | Toolbar sort select | `@/components/programs/shared/library-sort-select` → `<LibrarySortSelect options value onChange />` |
 | Relative "updated" formatting | `@/components/programs/shared/format-relative` → `formatRelativeUpdated()` |
 | Per-item on/off toggle | `@/components/ui/switch` → `<Switch checked onCheckedChange aria-label />` — see "Switch" |
+| A tick on one thing (done, picked) | `@/components/ui/checkbox` → `<Checkbox checked onCheckedChange aria-label />`, a size at most (`size-5` on the client's ticks) — see "Checkbox" |
 | A set of weekdays picked | `@/components/programs/shared/weekday-toggle-row` → `<WeekdayToggleRow value onChange label />` — see "Weekday toggle row" |
 | Slider, single or two-thumb | `@/components/ui/slider` → `<Slider thumbLabels trackContent />` — the `h-1.5` rounded track in the `0.08` tint with a teal range, a 16px white thumb on a teal hairline with `FOCUS_RING`. `thumbLabels` names each thumb (a two-thumb pair otherwise reads "Minimum" / "Maximum", wrong for boundaries); `trackContent` replaces the range fill with a track that is itself the information. The macro balancer (`components/clients/nutrition/macro-balance.tsx`) is the reference |
 | Dialog / Sheet / Popover / Button / Badge / Input / Select / Table | `@/components/ui/*` (already Teal-Summit-styled — see Overlays) |
@@ -985,7 +1014,7 @@ Two consequences to know before reaching for an exception:
 - ❌ Invent a primary-button hover colour. ✅ `hover:bg-[#0b7f75]`.
 - ❌ Ship an input without a focus ring. ✅ Add `FOCUS_RING`.
 - ❌ Rebuild StatBand / SegmentedControl / LibraryTableShell / SectionLabel / RowActions from scratch. ✅ Import them.
-- ❌ Paste a radius, border, ink or focus ring onto `Input`/`Textarea`/`Label`/`Select`/`Table` to correct it. ✅ Fix the primitive; call sites add only size, width, `bg-white` on a tint, `resize-none`.
+- ❌ Paste a radius, border, ink or focus ring onto `Input`/`Textarea`/`Label`/`Select`/`Table`/`Checkbox` to correct it. ✅ Fix the primitive; call sites add only size, width, `bg-white` on a tint, `resize-none` — a `Checkbox` a size alone (`components/checkbox-ownership.test.ts`).
 - ❌ Hand-roll a magnifier beside an input, or a local `inputClass`/`TRIGGER_CLASS` constant. ✅ `<LibrarySearchInput>` / `<LibrarySortSelect>`.
 - ❌ Spell a focus ring by hand — even correctly. ✅ Import `FOCUS_RING`; `check:labels` clause 4 fails otherwise.
 - ❌ Hand-roll a segmented-control track, or restyle a `TabsList` into one. ✅ `<SegmentedControl>` — `npm run check:labels` clause 3 fails otherwise.

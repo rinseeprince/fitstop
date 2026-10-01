@@ -48,9 +48,9 @@ export async function getDaySummary(
           dailyLog.stress != null ||
           dailyLog.soreness != null),
     },
-    // The habits a version covers on the day, the ones planned on it and how
-    // many of those were done that day — the habit kernel's day, so the done
-    // count is never more than the planned one.
+    // The habits a version covers on the day, the ones planned on it, how many
+    // of those were done that day — the habit kernel's day, so the done count
+    // is never more than the planned one — and what the day's week still asks.
     habits,
   };
 }

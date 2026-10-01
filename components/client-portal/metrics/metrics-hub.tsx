@@ -97,9 +97,14 @@ export function MetricsHub({ initialTab = "physique" }: MetricsHubProps) {
     onError: (err) => console.error("Failed to load progress data:", err),
   });
 
-  // The habits pane: each habit's recent weeks and last days, on the client's
-  // own calendar, from the server.
-  const { progress: habitProgress } = useClientHabitProgress(HABIT_PROGRESS_WEEKS_DEFAULT);
+  // The habits pane: each habit's recent weeks, on the client's own calendar,
+  // from the server.
+  const {
+    progress: habitProgress,
+    error: habitProgressError,
+    retry: retryHabitProgress,
+    retrying: retryingHabitProgress,
+  } = useClientHabitProgress(HABIT_PROGRESS_WEEKS_DEFAULT);
 
   const progressData = progressResp?.data ?? null;
 
@@ -189,7 +194,12 @@ export function MetricsHub({ initialTab = "physique" }: MetricsHubProps) {
           </CarouselItem>
 
           <CarouselItem>
-            <HabitsSection habits={habitProgress?.habits ?? []} />
+            <HabitsSection
+              progress={habitProgress}
+              error={habitProgressError}
+              onRetry={retryHabitProgress}
+              retrying={retryingHabitProgress}
+            />
           </CarouselItem>
         </CarouselContent>
       </Carousel>

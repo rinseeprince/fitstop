@@ -56,7 +56,7 @@ Clicking a card navigates to a dedicated detail page that fetches only its own d
 - `/client/training?date=X&eventId=Y`: per-set exercise tracker.
 - `/client/nutrition?date=X`: calories and macro numeric entry.
 - `/client/wellness?date=X`: mood/energy/sleep/stress inputs.
-- `/client/habits?date=X`: habit checklist: every habit running that day, a tick or a number against its target.
+- `/client/habits?date=X`: every habit running that day, in three groups — planned today, any day this week (a habit done a number of times a week), not planned today — each a tick or a number against the day's target, with the coach's how-to, its week's figure and an optional note.
 
 Saves are per-page and independent. There is no shared "Log Day" button. The browser back button returns to the home with the date preserved.
 
@@ -110,10 +110,10 @@ New endpoint: `PATCH /api/client/settings` with zod validation for the supported
   training: TrainingCardSummary[],
   nutrition: NutritionCardSummary,
   wellness: WellnessCardSummary,
-  habits: HabitDaySummary   // { plannedToday, doneToday, running }
+  habits: HabitDaySummary   // { plannedToday, doneToday, running, toDoThisWeek }
 }
 ```
-Each summary is minimal: name, logged-state boolean, progress counts. The habits count the habits running on the day, those planned on it, and how many of those were done that day (`types/habits.ts`). Target under 100ms, under 5KB.
+Each summary is minimal: name, logged-state boolean, progress counts. The habits count the habits running on the day, those planned on it, how many of those were done that day, and how many habit-days the day's week still asks for (`types/habits.ts`). Target under 100ms, under 5KB.
 
 ### Detail endpoints
 
@@ -132,7 +132,7 @@ Each summary is minimal: name, logged-state boolean, progress counts. The habits
 - `POST /api/client/training/events/[eventId]/log`: bulk write of `session_logs` plus `exercise_logs` including `prescribed_session_snapshot` and `prescribed_exercise_snapshot`. Updates `training_events.status`. Cascades nutrition.
 - `PATCH /api/client/daily-logs/[date]/nutrition`: kcal plus macros on `nutrition_logs`.
 - `PATCH /api/client/daily-logs/[date]/wellness`: wellness fields on `wellness_logs`.
-- `PUT` / `DELETE /api/client/habits/[habitId]/days/[date]`: a habit's entry for the day, one per habit per day: `{ done }` for a tick habit or `{ value }` for a number habit, with an optional note. Answers with the habit's day and week as they now stand, or `data: null` when the entry is saved but they could not be read back: the page keeps the change and reads the day again.
+- `PUT` / `DELETE /api/client/habits/[habitId]/days/[date]`: a habit's entry for the day, one per habit per day: `{ done }` for a tick habit or `{ value }` for a number habit, with an optional note. Answers with the habit's day and week as they now stand, or `data: null` when the entry is saved but they could not be read back: the page keeps the change and reads the day again. A habit's writes go one after another, whatever day each is for, so each answer's week holds every earlier write; no control waits for one. A request with no answer is settled by reading the day: an entry there matching what was sent was saved.
 
 The nutrition `PATCH` populates the log's `nutrition_plan_id` from the version covering that date (`resolvePlanContextForDate`), the one write endpoint that stamps a plan link. All write endpoints enforce the closed-period lock (see "Date edit rules" below) server-side.
 

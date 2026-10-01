@@ -1,46 +1,55 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 
 import { LockedDayNotice } from "@/components/client-portal/day/locked-day-notice";
-import { HabitNumberRow } from "@/components/client-portal/habits/habit-number-row";
-import { HabitToggleRow } from "@/components/client-portal/habits/habit-toggle-row";
-import { Card, CardContent } from "@/components/ui/card";
+import { habitDayGroups } from "@/components/client-portal/habits/habit-day-groups";
+import { HabitEntryRow } from "@/components/client-portal/habits/habit-entry-row";
+import { HabitsLoadError } from "@/components/client-portal/habits/habits-load-error";
+import { SectionLabel } from "@/components/programs/shared/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  MONO,
+  TEXT_PRIMARY,
+  TEXT_SECONDARY,
+  TRAINING_CARD_BORDER,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { useClientProfile } from "@/hooks/use-client-profile";
-import { HabitEntryError, useClientHabitDay, useHabitEntryWrites } from "@/hooks/use-client-portal-habits";
-import { toast } from "sonner";
+import { HabitEntryError, useClientHabitDayEntries } from "@/hooks/use-client-portal-habits";
 import { canEditDay } from "@/lib/daily-log-permissions";
-import { parseDateParamOrToday } from "@/lib/date-helpers";
+import {
+  formatDateOnlyShort,
+  getTodayDateStringInTimezone,
+  parseDateParamOrToday,
+  SHORT_WEEKDAY,
+  weekdayOf,
+} from "@/lib/date-helpers";
+import { cn } from "@/lib/utils";
 import type { ClientHabitDayItem, HabitAnswer } from "@/types/habits";
 
-function formatHeading(date: string): string {
-  return new Date(date + "T00:00:00").toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-}
+const CARD = cn("rounded-[6px] bg-white px-4", TRAINING_CARD_BORDER);
 
-function HabitLogInner() {
+function HabitsDay() {
   const searchParams = useSearchParams();
   const date = parseDateParamOrToday(searchParams?.get("date") ?? null);
 
   const { client } = useClientProfile();
+  const lockNotice = useRef<HTMLDivElement>(null);
   const timezone = client?.timezone ?? "UTC";
-  // The day rule answers once for the whole day: habits lock with it.
+  // The day rule answers once for the whole day: habits lock with it. The
+  // words "today" and "this week" are judged on the same calendar.
   const editable = canEditDay(date, client?.logsOpenFrom ?? null, timezone);
+  const today = getTodayDateStringInTimezone(timezone);
 
-  // Every habit a version covers on the date, planned that day or not: the
-  // client can make an entry on any of them.
-  const { day, error, isLoading, retry } = useClientHabitDay(date);
-  const entries = useHabitEntryWrites(date);
-  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  // Every habit a version covers on the date, planned that day or not, with
+  // the client's changes not yet settled laid over it; no control waits for
+  // a write in flight.
+  const { day, error, retry, retrying, save, clear } = useClientHabitDayEntries(date);
 
-  /** One write for one habit: its row busy while in flight, the server's sentence on a refusal. */
-  async function write(item: ClientHabitDayItem, run: () => Promise<void>) {
-    setSavingIds((prev) => new Set(prev).add(item.habit.id));
+  /** One write for one habit: the server's sentence on a refusal. */
+  async function write(run: () => Promise<void>) {
     try {
       await run();
     } catch (err) {
@@ -50,105 +59,127 @@ function HabitLogInner() {
         console.error("[habits] entry write failed:", err);
         toast.error("Couldn't update habit", { description: "Network error. Please try again." });
       } else if (err.status === 403) {
-        // The day locked underneath us (a check-in sent from another tab):
-        // read the day again so each row shows the entry saved on it. The rows
-        // lock from the profile's `logsOpenFrom`, which this page does not
-        // read again, so they stay open and a further write meets the same
-        // refusal.
+        // The day locked underneath us (a check-in sent from another tab): the
+        // hook read the day rule again and landed it with the habit it took
+        // back, so the notice is on screen and the control just pressed is
+        // disabled: the focus goes to the notice.
         toast.error("This day is locked", { description: err.message });
-        retry();
+        lockNotice.current?.focus();
       } else {
         toast.error("Couldn't update habit", { description: err.message });
-        // The coach deleted the habit (404) or stopped it (409): the day
-        // changed underneath us, so it is read again.
-        if (err.status === 404 || err.status === 409) retry();
       }
-    } finally {
-      setSavingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(item.habit.id);
-        return next;
-      });
     }
   }
 
-  const save = (item: ClientHabitDayItem, answer: HabitAnswer) => write(item, () => entries.save(item, answer));
-  const clear = (item: ClientHabitDayItem) => write(item, () => entries.clear(item));
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center gap-4 py-12 text-center">
-        <p className="text-destructive">We couldn&apos;t load your habits.</p>
-        <button type="button" onClick={retry} className="text-sm text-primary underline">
-          Try again
-        </button>
-      </div>
-    );
-  }
-
-  if (isLoading || !day) {
-    return <HabitLogSkeleton />;
-  }
-
-  return (
-    <div>
-      <h1 className="text-base font-semibold text-foreground">Log habits</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{formatHeading(date)}</p>
-
-      {!editable ? <LockedDayNotice reason="locked" /> : null}
-
-      <Card className="mt-4">
-        <CardContent className="space-y-4 py-6">
-          {day.habits.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No habits on this day</p>
-          ) : (
-            day.habits.map((item) =>
-              item.habit.measure === "number" ? (
-                <HabitNumberRow
-                  // A new entry from the server mounts the box fresh on it.
-                  key={`${item.habit.id}:${item.day.entry?.value ?? ""}`}
-                  item={item}
-                  isSaving={savingIds.has(item.habit.id)}
-                  disabled={!editable}
-                  onCommit={(value) => (value === null ? clear(item) : save(item, { value }))}
-                  onInvalid={(reason) => toast.error("Couldn't update habit", { description: reason })}
-                />
-              ) : (
-                <HabitToggleRow
-                  key={item.habit.id}
-                  item={item}
-                  isSaving={savingIds.has(item.habit.id)}
-                  disabled={!editable}
-                  onToggle={(checked) => void save(item, { done: checked })}
-                />
-              )
-            )
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function HabitLogSkeleton() {
   return (
     <>
-      <Skeleton className="h-7 w-48" />
-      <Card className="mt-4">
-        <CardContent className="space-y-4 py-6">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-8 w-full" />
-          ))}
-        </CardContent>
-      </Card>
+      <p className={cn("mt-1 text-[12px]", MONO, TEXT_SECONDARY)}>{`${SHORT_WEEKDAY[weekdayOf(date)]} ${formatDateOnlyShort(date)}`}</p>
+
+      {!editable ? <LockedDayNotice reason="locked" ref={lockNotice} /> : null}
+
+      {/* A day already shown stays through a failed read of it. */}
+      {day ? (
+        <HabitGroups
+          items={day.habits}
+          date={date}
+          today={today}
+          locked={!editable}
+          onAnswer={(item, answer) => void write(() => save(item, answer))}
+          onClear={(item) => void write(() => clear(item))}
+          onNote={(item, answer, note) => void write(() => save(item, answer, note))}
+        />
+      ) : error ? (
+        <HabitsLoadError onRetry={retry} retrying={retrying} />
+      ) : (
+        <HabitGroupsSkeleton />
+      )}
     </>
   );
 }
 
-export default function ClientHabitsLogPage() {
+interface HabitGroupsProps {
+  items: ClientHabitDayItem[];
+  date: string;
+  today: string;
+  locked: boolean;
+  onAnswer: (item: ClientHabitDayItem, answer: HabitAnswer) => void;
+  onClear: (item: ClientHabitDayItem) => void;
+  onNote: (item: ClientHabitDayItem, answer: HabitAnswer, note: string | null) => void;
+}
+
+/** The day's habits in their groups, or the line saying the day has none. */
+function HabitGroups({ items, date, today, locked, onAnswer, onClear, onNote }: HabitGroupsProps) {
+  const groups = habitDayGroups(items, date, today);
+  if (groups.length === 0) {
+    return (
+      <div className={cn(CARD, "mt-5 py-6")}>
+        <p className={cn("text-[13px]", TEXT_SECONDARY)}>No habits on this day</p>
+      </div>
+    );
+  }
   return (
-    <Suspense fallback={<HabitLogSkeleton />}>
-      <HabitLogInner />
-    </Suspense>
+    <div className="mt-5 space-y-5">
+      {groups.map((group) => (
+        <section key={group.key} aria-label={group.label}>
+          <SectionLabel label={group.label} />
+          <div className={cn(CARD, "divide-y divide-[rgba(13,148,136,0.06)]")}>
+            {group.items.map((item) => (
+              <HabitEntryRow
+                key={item.habit.id}
+                item={item}
+                group={group.key}
+                today={today}
+                locked={locked}
+                onAnswer={(answer) => onAnswer(item, answer)}
+                onClear={() => onClear(item)}
+                onNote={(answer, note) => onNote(item, answer, note)}
+                onInvalid={(reason) => toast.error(`Couldn't save ${item.habit.name}`, { description: reason })}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** The groups' place while the day's habits load: a group label and rows the height of a tick habit's. */
+function HabitGroupsSkeleton() {
+  return (
+    <div className="mt-5">
+      <Skeleton className="mb-3 h-[24.5px] w-full" />
+      <div className={cn(CARD, "divide-y divide-[rgba(13,148,136,0.06)]")}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="py-3">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="mt-1 h-[18px] w-48" />
+            <Skeleton className="mt-1.5 h-[18px] w-20" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The habits page. Its heading is known before anything is read; the day it
+ * names, and everything under it, waits for the address (`?date=`) inside the
+ * boundary.
+ */
+export default function ClientHabitsPage() {
+  return (
+    <div>
+      <h1 className={cn("text-[15px] font-semibold", TEXT_PRIMARY)}>Habits</h1>
+      <Suspense
+        fallback={
+          <>
+            <Skeleton className="mt-1 h-[18px] w-24" />
+            <HabitGroupsSkeleton />
+          </>
+        }
+      >
+        <HabitsDay />
+      </Suspense>
+    </div>
   );
 }

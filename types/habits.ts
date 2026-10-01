@@ -254,8 +254,13 @@ export type HabitPeriodRow = {
 /** Every habit a version covered during the period, in the client's order, and the week's totals. */
 export type HabitPeriodWeek = { habits: HabitPeriodRow[]; totals: HabitWeekFigures };
 
-/** The home card's habits: how many are running on the day, how many were planned, how many of those were done that day. */
-export type HabitDaySummary = { plannedToday: number; doneToday: number; running: number };
+/**
+ * The home card's habits: how many are running on the day, how many were
+ * planned, how many of those were done that day, and how many habit-days the
+ * client week holding the day still asks of the habits running that day (each
+ * one's planned less its met).
+ */
+export type HabitDaySummary = { plannedToday: number; doneToday: number; running: number; toDoThisWeek: number };
 
 /** A habit the coach has given a client, offered for reuse (`coach_habit_choices`), with its newest version's defaults. */
 export type HabitChoice = {
