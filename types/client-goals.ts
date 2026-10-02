@@ -1,4 +1,5 @@
 import type { GoalType } from "@/lib/goals/goal-types";
+import type { HabitWords } from "@/types/habits";
 
 // A client's goals (migration 193): one row per goal, running from its start
 // day until the next goal starts, with every deadline it has had in its own
@@ -46,7 +47,9 @@ export type CurrentGoal = GoalOnDay & {
  * A line in an opened row of the Journey's goals table, dated by the day it
  * takes effect on the client's calendar: a deadline change, a nutrition
  * version during the goal (its window, calories and the goal it was built
- * for), or a program starting, replacing another, or ending.
+ * for), a program starting, replacing another, or ending, or a habit added,
+ * changed, stopped or started again — its name as it stands, and its days and
+ * target in words (`lib/habits/habit-words.ts`).
  */
 export type GoalHistoryLine =
   | { kind: "deadline"; on: string; from: string | null; to: string | null }
@@ -59,7 +62,13 @@ export type GoalHistoryLine =
       builtFor: { goalWeightKg: number | null; deadline: string | null };
     }
   | { kind: "program"; on: string; change: "starts" | "ends"; name: string }
-  | { kind: "program"; on: string; change: "replaces"; name: string; replaced: string };
+  | { kind: "program"; on: string; change: "replaces"; name: string; replaced: string }
+  /** Its first version, or one after a gap: its days and target from that day. */
+  | { kind: "habit"; on: string; change: "added" | "started_again"; name: string; words: HabitWords }
+  /** A version following one with no day between: what changed, as it read before and after. */
+  | { kind: "habit"; on: string; change: "changed"; name: string; from: string; to: string }
+  /** A version with none starting the day after it, dated the first day it no longer runs. */
+  | { kind: "habit"; on: string; change: "stopped"; name: string };
 
 /**
  * A row of the Journey's goals table (`GET /api/clients/[id]/goals/history`,

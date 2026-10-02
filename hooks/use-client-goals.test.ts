@@ -88,9 +88,10 @@ describe("the goals table read", () => {
 /**
  * The goals table lists, beside the goals, the programs placed, replaced or
  * ended and the nutrition versions during each — the rows the Journey's block
- * facts are computed from. So every writer that clears the block facts clears
- * the table too, and so does every goal write made where the table is not on
- * screen (CONVENTIONS §7 — the area that owes a clearer is the one that READS
+ * facts are computed from — and the habits added, changed, stopped or started
+ * again. So every writer that clears the block facts clears the table too, and
+ * so do every goal write made where the table is not on screen and every habit
+ * write (CONVENTIONS §7 — the area that owes a clearer is the one that READS
  * what you wrote). Derived from the tree, so a writer added later without the
  * clearer fails here.
  */
@@ -98,11 +99,15 @@ describe("every writer of what the goals table lists clears it", () => {
   const ROOT = join(__dirname, "..");
   const SCAN_DIRS = ["app", "components", "hooks"];
   const OWNERS = new Set(["components/clients/metrics/hooks/use-client-blocks.ts"]);
-  const GOAL_WRITERS = [
+  const GOAL_AND_HABIT_WRITERS = [
     "components/clients/goals/use-goal-writes.ts",
     // Sync metrics may set a first goal, from the intake review and its floating panel
     "components/coach/intake-review-actions.tsx",
     "components/coach/floating-intake-panel.tsx",
+    // Every coach habit write goes through `useHabitWrites`, whose writes clear
+    // the table as each saved answer arrives: the scan in
+    // `hooks/use-client-habits.test.ts` fails a screen that writes a habit by itself.
+    "hooks/use-client-habits.ts",
   ];
 
   /** The clearer is not merely taken but CALLED past its declaration. */
@@ -148,7 +153,7 @@ describe("every writer of what the goals table lists clears it", () => {
     expect(violations).toEqual([]);
   });
 
-  it.each(GOAL_WRITERS)("holds for the goal writer %s", (rel) => {
+  it.each(GOAL_AND_HABIT_WRITERS)("holds for the goal and habit writer %s", (rel) => {
     expect(callsTheClearer(readFileSync(join(ROOT, rel), "utf8"))).toBe(true);
   });
 });

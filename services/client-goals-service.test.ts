@@ -18,11 +18,13 @@ vi.mock("./supabase-admin", () => ({
 vi.mock("./today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("./measurements-service", () => ({ getReadingsOnDay: vi.fn() }));
 vi.mock("./training-service", () => ({ getTrainingPlansOverlapping: vi.fn() }));
+vi.mock("./client-habits-service", () => ({ listClientHabitVersions: vi.fn() }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getReadingsOnDay } from "./measurements-service";
 import { getTrainingPlansOverlapping } from "./training-service";
+import { listClientHabitVersions } from "./client-habits-service";
 import {
   getCurrentGoal,
   getGoalForDate,
@@ -167,6 +169,7 @@ describe("the goals table read", () => {
     vi.clearAllMocks();
     vi.mocked(getClientTodayString).mockResolvedValue("2026-09-22");
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([]);
+    vi.mocked(listClientHabitVersions).mockResolvedValue([]);
     versionsReturn([]);
   });
 
@@ -175,6 +178,42 @@ describe("the goals table read", () => {
     expect(await getGoalHistory("client-8")).toEqual([]);
     expect(getTrainingPlansOverlapping).not.toHaveBeenCalled();
     expect(supabaseAdmin.from).not.toHaveBeenCalledWith("nutrition_plans");
+    expect(listClientHabitVersions).not.toHaveBeenCalled();
+  });
+
+  // Steps' first version began before the first goal: its change on the
+  // goal's first day is a change, read off the version before it.
+  it("reads the client's habits with every version they have had, and lists what happened to them during each goal", async () => {
+    returns([row("g23", "2026-03-02")]);
+    vi.mocked(listClientHabitVersions).mockResolvedValue([
+      {
+        id: "habit-steps",
+        name: "Steps",
+        howTo: null,
+        measure: "number",
+        unit: "steps",
+        direction: "at_least",
+        position: 0,
+        versions: [
+          { id: "v1", startsOn: "2026-02-02", endsOn: "2026-03-01", target: 8000, timesPerWeek: null, weekdays: ["monday"] },
+          { id: "v2", startsOn: "2026-03-02", endsOn: "2026-04-12", target: 10000, timesPerWeek: null, weekdays: ["monday"] },
+        ],
+      },
+    ]);
+
+    const [goal] = await getGoalHistory("client-8");
+
+    expect(listClientHabitVersions).toHaveBeenCalledWith("client-8");
+    expect(goal.lines).toEqual([
+      { kind: "habit", on: "2026-03-02", change: "changed", name: "Steps", from: "at least 8,000 steps", to: "at least 10,000 steps" },
+      { kind: "habit", on: "2026-04-13", change: "stopped", name: "Steps" },
+    ]);
+  });
+
+  it("throws a failed read of the habits rather than a table missing them", async () => {
+    returns([row("g24", "2026-04-13")]);
+    vi.mocked(listClientHabitVersions).mockRejectedValue(new Error("Failed to read habits: timeout"));
+    await expect(getGoalHistory("client-8")).rejects.toThrow(/timeout/);
   });
 
   it("reads the programs from the day before the first goal on, and the versions from its first day", async () => {

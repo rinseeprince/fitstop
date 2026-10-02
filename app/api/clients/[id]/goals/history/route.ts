@@ -6,7 +6,7 @@ import { getGoalHistory } from "@/services/client-goals-service";
 /**
  * The Journey's goals table: every goal, planned first, each with its last
  * day, whether it is planned, current or ended, and its deadline changes, the
- * nutrition versions and the programs during it.
+ * nutrition versions, the programs and the habits' changes during it.
  */
 export async function GET(
   request: NextRequest,

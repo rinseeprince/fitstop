@@ -5,8 +5,10 @@ import type { HabitDirection, HabitMeasure, HabitVersion, HabitWeekFigures, Habi
 /**
  * The words every screen describes a habit in (docs/HABITS-REBUILD-PLAN.md
  * §2.3), spelled once: a schedule ("Every day", "Mon, Wed, Fri", "3 times a
- * week"), a target ("at least 3 L", "at most 2 drinks") and a week's figure
- * ("2 of 3"). A unit is the coach's word, shown as typed and never converted.
+ * week"), a target ("at least 3 L", "at most 2 drinks"), a week's figure
+ * ("2 of 3"), and a change from one version to the next ("at least 3 L" →
+ * "at least 4 L"). A unit is the coach's word, shown as typed and never
+ * converted.
  */
 
 /** When a version runs: every day, its weekdays Monday first, or its times a week. */
@@ -68,6 +70,31 @@ export function weekFigurePercent<F extends Pick<HabitWeekFigures, "met" | "plan
 export function wordsLine(words: HabitWords): string | null {
   const parts = [words.schedule, words.target].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+type VersionWorded = Pick<HabitVersion, "timesPerWeek" | "weekdays" | "target">;
+
+/**
+ * A change from one version to the next, in words: what changed — its days,
+ * its target, or both, days first — as it read before and after ("at least
+ * 8,000 steps" → "at least 10,000 steps", "3 times a week" → "Mon, Wed,
+ * Fri"); null when neither did.
+ */
+export function changeWords(
+  habit: { measure: HabitMeasure; unit: string | null; direction: HabitDirection | null },
+  before: VersionWorded,
+  after: VersionWorded
+): { from: string; to: string } | null {
+  const was = habitWords(habit, before);
+  const now = habitWords(habit, after);
+  // Each side's words with what stayed left out.
+  const changed = (words: HabitWords): HabitWords => ({
+    schedule: was.schedule !== now.schedule ? words.schedule : null,
+    target: was.target !== now.target ? words.target : null,
+  });
+  const from = wordsLine(changed(was));
+  const to = wordsLine(changed(now));
+  return from === null || to === null ? null : { from, to };
 }
 
 /** A habit's words from a version: its schedule and its target — the day's when given, else the version's. */

@@ -44,9 +44,9 @@ export function useClientAdherence(clientId: string, days: number) {
  *
  * CLEARED, not merely revalidated (CONVENTIONS §7): the rails render definite
  * answers — a day's dot, "3 days below 50%" — and SWR would serve the stale
- * ones for the whole refetch. Called by every habit writer on success: a
- * habit added, changed, stopped or deleted changes the days the habits rail
- * judges.
+ * ones for the whole refetch. Called by every coach habit write that changed
+ * something (`useHabitWrites`, as its answer arrives): a habit added,
+ * changed, stopped or deleted changes the days the habits rail judges.
  */
 export function useClearClientAdherence() {
   const { mutate } = useSWRConfig();

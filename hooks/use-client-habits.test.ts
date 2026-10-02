@@ -3,7 +3,7 @@ import { renderHook } from "@testing-library/react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const { mutate, boundMutate, clearOverview, clearAdherence, clearFeed, clearReadiness, swr } = vi.hoisted(() => {
+const { mutate, boundMutate, clearOverview, clearAdherence, clearFeed, clearReadiness, clearGoalHistory, swr } = vi.hoisted(() => {
   const boundMutate = vi.fn();
   return {
     mutate: vi.fn(),
@@ -13,6 +13,7 @@ const { mutate, boundMutate, clearOverview, clearAdherence, clearFeed, clearRead
     clearAdherence: vi.fn(),
     clearFeed: vi.fn(),
     clearReadiness: vi.fn(),
+    clearGoalHistory: vi.fn(),
     swr: vi.fn((..._args: unknown[]) => ({ data: undefined, error: undefined, isLoading: false, mutate: boundMutate })),
   };
 });
@@ -26,6 +27,7 @@ vi.mock("@/hooks/use-client-overview", () => ({ useClearClientOverview: () => cl
 vi.mock("@/hooks/use-client-adherence", () => ({ useClearClientAdherence: () => clearAdherence }));
 vi.mock("@/hooks/use-attention-feed", () => ({ useClearAttentionFeed: () => clearFeed }));
 vi.mock("@/hooks/use-activation-readiness", () => ({ useClearActivationReadiness: () => clearReadiness }));
+vi.mock("@/hooks/use-client-goals", () => ({ useClearClientGoalHistory: () => clearGoalHistory }));
 
 import {
   clientHabitChoicesKey,
@@ -236,7 +238,6 @@ describe("each write goes to its route and answers with the habits and the week 
     stubFetch(respond(200, { success: true, data: { changed: true, habits: LIST, week: WEEK } }));
     await writes().stop(HABIT);
     expect(mutate).not.toHaveBeenCalled();
-    expect(clearOverview).not.toHaveBeenCalled();
   });
 
   it("throws the server's sentence and its status on a refusal", async () => {
@@ -252,11 +253,79 @@ describe("each write goes to its route and answers with the habits and the week 
   });
 });
 
-describe("land — the answer seeded, every read it changed cleared", () => {
+/**
+ * The reads on other screens a habit write changes — the Overview (its Needs
+ * attention rows), its adherence row, the dashboard feed, the activation card
+ * and the Journey's goals table — are cleared by the write itself as its
+ * answer arrives, never left to its caller: a screen that saved a habit and
+ * forgot to land the answer would otherwise leave every one of them stale.
+ */
+describe("a saved write clears the reads on other screens as its answer arrives", () => {
+  const clearsElsewhere = (times: number) => {
+    expect(clearAdherence).toHaveBeenCalledTimes(times);
+    expect(clearOverview).toHaveBeenCalledTimes(times);
+    expect(clearFeed).toHaveBeenCalledTimes(times);
+    expect(clearReadiness).toHaveBeenCalledTimes(times);
+    expect(clearGoalHistory).toHaveBeenCalledTimes(times);
+    if (times > 0) {
+      for (const clear of [clearAdherence, clearOverview, clearReadiness, clearGoalHistory]) {
+        expect(clear).toHaveBeenCalledWith("client-7");
+      }
+    }
+  };
+
+  it("clears them when the write changed something, before anything is landed", async () => {
+    stubFetch(respond(200, { success: true, data: { changed: true, habits: LIST, week: WEEK } }));
+    await writes().stop(HABIT);
+    clearsElsewhere(1);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("clears them on an add, which always changes something", async () => {
+    stubFetch(respond(200, { success: true, data: { habitIds: ["h1"], habits: LIST, week: WEEK } }));
+    await writes().add([]);
+    clearsElsewhere(1);
+  });
+
+  // Saved, its habits not read back: still a change.
+  it("clears them when the write saved without its habits and week read back", async () => {
+    stubFetch(respond(200, { success: true, data: { changed: true, habits: null, week: null } }));
+    await writes().remove(HABIT);
+    clearsElsewhere(1);
+  });
+
+  // A stop dated after the stop already scheduled, a change to what the habit
+  // already has: no other read moved.
+  it("clears none when the write changed nothing, its answer read back or not", async () => {
+    stubFetch(
+      respond(200, { success: true, data: { changed: false, habits: LIST, week: WEEK } }),
+      respond(200, { success: true, data: { changed: false, habits: null, week: null } })
+    );
+    await writes().stop(HABIT, "2026-10-12");
+    await writes().stop(HABIT, "2026-10-12");
+    clearsElsewhere(0);
+  });
+
+  it("clears none when the write is refused", async () => {
+    stubFetch(respond(409, { success: false, error: "That habit isn't running then.", code: "not_running" }));
+    await writes()
+      .stop(HABIT)
+      .catch(() => undefined);
+    clearsElsewhere(0);
+  });
+
+  it("leaves them to no caller: landing an answer clears none of them", () => {
+    writes().land({ habits: LIST, week: WEEK, currentWeek: null, weekStart: null });
+    writes().land({ habits: null, week: null, currentWeek: null, weekStart: null });
+    clearsElsewhere(0);
+  });
+});
+
+describe("land — the answer seeded, every other habit read it changed cleared", () => {
   // The fix CONVENTIONS §7 names for a post-write flash: the write's own answer
   // put in the cache in one tick, so no frame exists between the save and the
   // settled card — never a clear-and-refetch of what is on screen.
-  it("seeds the list, the week the write named and the current week in one tick, then clears every other read the write changed", () => {
+  it("seeds the list, the week the write named and the current week in one tick, then clears every other habit read the write changed", () => {
     const current = { ...WEEK, start: "2026-09-24", end: "2026-09-30" };
     writes().land({ habits: LIST, week: WEEK, currentWeek: current, weekStart: "2026-09-17" });
 
@@ -284,10 +353,6 @@ describe("land — the answer seeded, every read it changed cleared", () => {
     expect(matcher(clientHabitChoicesKey("client-7"))).toBe(false);
     expect(mutate.mock.calls[4]).toEqual([clientHabitChoicesKey("client-7"), undefined, { revalidate: false }]);
     expect(mutate).toHaveBeenCalledTimes(5);
-    expect(clearAdherence).toHaveBeenCalledWith("client-7");
-    expect(clearOverview).toHaveBeenCalledWith("client-7");
-    expect(clearFeed).toHaveBeenCalledTimes(1);
-    expect(clearReadiness).toHaveBeenCalledWith("client-7");
   });
 
   it("seeds the client's current week under its own key when the write named none", () => {
@@ -303,10 +368,6 @@ describe("land — the answer seeded, every read it changed cleared", () => {
   it("with nothing changed, seeds what it answered and clears nothing else", () => {
     writes().land({ changed: false, habits: LIST, week: WEEK, currentWeek: null, weekStart: null });
     expect(mutate).toHaveBeenCalledTimes(2);
-    expect(clearAdherence).not.toHaveBeenCalled();
-    expect(clearOverview).not.toHaveBeenCalled();
-    expect(clearFeed).not.toHaveBeenCalled();
-    expect(clearReadiness).not.toHaveBeenCalled();
   });
 
   // A write saved without its habits read back: the list is refetched in
@@ -327,19 +388,15 @@ describe("land — the answer seeded, every read it changed cleared", () => {
     expect(options).toEqual({ revalidate: true });
     expect(mutate.mock.calls[2]).toEqual([clientHabitChoicesKey("client-7"), undefined, { revalidate: false }]);
     expect(mutate).toHaveBeenCalledTimes(3);
-    expect(clearAdherence).toHaveBeenCalledWith("client-7");
-    expect(clearOverview).toHaveBeenCalledWith("client-7");
-    expect(clearFeed).toHaveBeenCalledTimes(1);
-    expect(clearReadiness).toHaveBeenCalledWith("client-7");
   });
 });
 
 /**
- * Every coach habit write goes through `useHabitWrites`, so each one lands its
- * answer and clears the Overview, its adherence row, the feed and the
- * activation card (CONVENTIONS §7: the area that owes the clear is the one
- * that READS what was written). Derived from the tree, never a list: a screen
- * that writes a coach habit route by itself fails here.
+ * Every coach habit write goes through `useHabitWrites`, whose writes clear
+ * the Overview, its adherence row, the feed, the activation card and the goals
+ * table as each saved answer arrives (CONVENTIONS §7: the area that owes the
+ * clear is the one that READS what was written). Derived from the tree, never
+ * a list: a screen that writes a coach habit route by itself fails here.
  */
 describe("every coach habit write goes through useHabitWrites", () => {
   const ROOT = join(__dirname, "..");

@@ -2,6 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getReadingsOnDay } from "./measurements-service";
 import { getTrainingPlansOverlapping } from "./training-service";
+import { listClientHabitVersions } from "./client-habits-service";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import { goalHistoryRows, type NutritionVersionWindow } from "@/lib/goals/goal-history";
 import { goalAsOf, goalOnDay, plannedGoals } from "@/lib/goals/goal-timeline";
@@ -164,7 +165,10 @@ async function getNutritionVersionsFrom(clientId: string, from: string): Promise
  * The Journey's goals table: every goal, planned first, each with what
  * happened during it (`goalHistoryRows`), judged against the client's today.
  * The programs are read from the day before the first goal, so a program
- * starting on its first day can be seen to replace the one before it.
+ * starting on its first day can be seen to replace the one before it; the
+ * habits with every version they have had, since whether a version during the
+ * goals adds a habit, changes it or starts it again is read off the ones
+ * before it.
  */
 export async function getGoalHistory(clientId: string): Promise<GoalHistoryRow[]> {
   const [today, goals] = await Promise.all([
@@ -174,14 +178,15 @@ export async function getGoalHistory(clientId: string): Promise<GoalHistoryRow[]
   if (goals.length === 0) return [];
 
   const firstDay = goals[0].startsOn;
-  const [plans, versions] = await Promise.all([
+  const [plans, versions, habits] = await Promise.all([
     getTrainingPlansOverlapping(clientId, addDaysToDateString(firstDay, -1), null),
     getNutritionVersionsFrom(clientId, firstDay),
+    listClientHabitVersions(clientId),
   ]);
   const programs = plans.map((plan) => ({
     name: plan.name,
     startsOn: plan.effectiveFrom,
     endsOn: plan.effectiveUntil,
   }));
-  return goalHistoryRows({ goals, today, programs, versions });
+  return goalHistoryRows({ goals, today, programs, versions, habits });
 }

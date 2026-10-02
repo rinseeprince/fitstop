@@ -7,6 +7,7 @@ import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useClearClientAdherence } from "@/hooks/use-client-adherence";
 import { useClearActivationReadiness } from "@/hooks/use-activation-readiness";
+import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import type { DayOfWeek } from "@/types/check-in";
 import type {
   CoachHabitAddResult,
@@ -25,8 +26,9 @@ import type {
 // these keys, and every habit write goes through `useHabitWrites`, whose
 // answer — the client's habits and the week the tab shows, as they now stand,
 // or neither when the write saved but they could not be read back — the caller
-// lands in the same tick it closes what the write was made in, clearing every
-// other read the write changed.
+// lands in the same tick it closes what the write was made in, clearing the
+// tab's other reads the write changed; the write itself clears those of every
+// other screen.
 
 /** The area every habit read of a client lives under. */
 function clientHabitsAreaPrefix(clientId: string): string {
@@ -175,7 +177,9 @@ export class HabitRequestError extends Error {
  * `useGoalWrites`), so the card changes in place with no loading state
  * between (CONVENTIONS §7 → "Refreshing after a write"). An answer with
  * neither is still a saved write: its caller lands it and says so as it would
- * any other. A refusal throws `HabitRequestError` with the server's sentence.
+ * any other. Every read on another screen that a saved write changed, the
+ * write clears itself as its answer arrives, so no caller can leave one
+ * stale. A refusal throws `HabitRequestError` with the server's sentence.
  */
 export function useHabitWrites(clientId: string, weekStart: string | null) {
   const { mutate } = useSWRConfig();
@@ -183,6 +187,7 @@ export function useHabitWrites(clientId: string, weekStart: string | null) {
   const clearAdherence = useClearClientAdherence();
   const clearFeed = useClearAttentionFeed();
   const clearReadiness = useClearActivationReadiness();
+  const clearGoalHistory = useClearClientGoalHistory();
 
   /**
    * Seeds the list, the week the write named and — when the write named
@@ -196,10 +201,7 @@ export function useHabitWrites(clientId: string, weekStart: string | null) {
    * is refetched in place and every week cleared: the list is not cleared,
    * because the Add habits sheet and the row dialogs render only while it
    * exists and clearing it would cut a closing one — so on that rare path the
-   * summary's Habits count shows the old number for one refetch. Either way a
-   * change clears the Overview (its Needs attention rows), its adherence row,
-   * the dashboard feed and the activation card — cleared rather than
-   * revalidated, as each renders a definite answer.
+   * summary's Habits count shows the old number for one refetch.
    */
   const land = useCallback(
     (answer: HabitWriteAnswer & { changed?: boolean }) => {
@@ -222,18 +224,37 @@ export function useHabitWrites(clientId: string, weekStart: string | null) {
         void mutate((key: unknown) => beside(key) && key !== choices, undefined, { revalidate: true });
       }
       void mutate(choices, undefined, { revalidate: false });
-      void clearAdherence(clientId);
-      void clearOverview(clientId);
-      void clearFeed();
-      void clearReadiness(clientId);
     },
-    [mutate, clientId, clearAdherence, clearOverview, clearFeed, clearReadiness]
+    [mutate, clientId]
   );
+
+  /**
+   * Clears every read on another screen that a habit write changes: the
+   * Overview (its Needs attention rows), its adherence row, the dashboard
+   * feed, the activation card and the Journey's goals table, which lists each
+   * habit added, changed, stopped or started again during a goal — cleared
+   * rather than revalidated, as each renders a definite answer. The write
+   * clears them as its answer arrives, so no caller can skip it, and every
+   * caller lands the answer straight after, before the next paint, so no
+   * frame shows one without the other.
+   */
+  const clearElsewhere = useCallback(() => {
+    void clearAdherence(clientId);
+    void clearOverview(clientId);
+    void clearFeed();
+    void clearReadiness(clientId);
+    void clearGoalHistory(clientId);
+  }, [clientId, clearAdherence, clearOverview, clearFeed, clearReadiness, clearGoalHistory]);
 
   return useMemo(() => {
     const habitPath = (habitId: string) => `${clientHabitsKey(clientId)}/${habitId}`;
-    const write = <T extends HabitsAfterWrite>(method: string, path: string, body?: unknown) =>
-      send<T>(method, path, weekStart, body);
+    // A saved write clears the other screens' reads as its answer arrives,
+    // unless it changed nothing; an add always changes something.
+    const write = async <T extends HabitsAfterWrite>(method: string, path: string, body?: unknown) => {
+      const answer = await send<T>(method, path, weekStart, body);
+      if (!("changed" in answer) || answer.changed !== false) clearElsewhere();
+      return answer;
+    };
     return {
       land,
       add: (habits: NewHabit[], startsOn?: string) =>
@@ -254,7 +275,7 @@ export function useHabitWrites(clientId: string, weekStart: string | null) {
       resetDay: (habitId: string, date: string) =>
         write<CoachHabitWriteResult>("DELETE", `${habitPath(habitId)}/days/${date}`),
     };
-  }, [clientId, weekStart, land]);
+  }, [clientId, weekStart, land, clearElsewhere]);
 }
 
 /**

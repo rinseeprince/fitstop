@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ClientGoal } from "@/types/client-goals";
-import { goalHistoryRows, type NutritionVersionWindow, type ProgramWindow } from "./goal-history";
+import type { HabitVersion } from "@/types/habits";
+import { goalHistoryRows, type HabitVersions, type NutritionVersionWindow, type ProgramWindow } from "./goal-history";
 
 function goal(
   id: string,
@@ -32,6 +33,33 @@ const version = (
   goalWeightKg: number | null,
   deadline: string | null
 ): NutritionVersionWindow => ({ startsOn, endsOn, calories, builtFor: { goalWeightKg, deadline } });
+
+const EVERY_DAY = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+
+/** A habit's version, every day with no target unless said. */
+const habitVersion = (startsOn: string, endsOn: string | null, over: Partial<HabitVersion> = {}): HabitVersion => ({
+  id: `v-${startsOn}`,
+  startsOn,
+  endsOn,
+  target: null,
+  timesPerWeek: null,
+  weekdays: [...EVERY_DAY],
+  ...over,
+});
+const tickHabit = (name: string, versions: HabitVersion[]): HabitVersions => ({
+  name,
+  measure: "tick",
+  unit: null,
+  direction: null,
+  versions,
+});
+const numberHabit = (name: string, unit: string, versions: HabitVersion[]): HabitVersions => ({
+  name,
+  measure: "number",
+  unit,
+  direction: "at_least",
+  versions,
+});
 
 const TODAY = "2026-09-23";
 
@@ -66,7 +94,7 @@ const versions = [
   version("2026-10-19", "2026-12-11", 2150, 81.5, "2026-12-11"),
 ];
 
-const rows = () => goalHistoryRows({ goals: [build, leanOut, cut], today: TODAY, programs, versions });
+const rows = () => goalHistoryRows({ goals: [build, leanOut, cut], today: TODAY, programs, versions, habits: [] });
 const row = (id: string) => rows().find((r) => r.id === id)!;
 
 describe("goalHistoryRows — the rows", () => {
@@ -85,7 +113,7 @@ describe("goalHistoryRows — the rows", () => {
   it("says which is planned, which is today's and which has ended, by the client's today", () => {
     expect(rows().map((r) => r.status)).toEqual(["planned", "current", "ended"]);
     // On Lean out's first day it is today's goal and Build has ended
-    const then = goalHistoryRows({ goals: [cut, build, leanOut], today: "2026-10-19", programs, versions });
+    const then = goalHistoryRows({ goals: [cut, build, leanOut], today: "2026-10-19", programs, versions, habits: [] });
     expect(then.map((r) => r.status)).toEqual(["current", "ended", "ended"]);
   });
 
@@ -95,12 +123,13 @@ describe("goalHistoryRows — the rows", () => {
       today: "2026-10-20",
       programs: [],
       versions: [],
+      habits: [],
     });
     expect(ended.find((r) => r.id === "build")?.deadline).toBe("2026-10-09");
     expect(row("build").deadline).toBe("2026-10-09");
     expect(row("lean").deadline).toBe("2026-12-11");
     // Before its change, today's deadline was the one it started with
-    const before = goalHistoryRows({ goals: [cut, build], today: "2026-08-11", programs: [], versions: [] });
+    const before = goalHistoryRows({ goals: [cut, build], today: "2026-08-11", programs: [], versions: [], habits: [] });
     expect(before.find((r) => r.id === "build")?.deadline).toBe("2026-10-30");
   });
 
@@ -110,13 +139,13 @@ describe("goalHistoryRows — the rows", () => {
       ["2026-05-04", "2026-06-26"],
       ["2026-06-29", "2026-06-27"],
     ]);
-    const [, ended] = goalHistoryRows({ goals: [changedLate, build], today: TODAY, programs: [], versions: [] });
+    const [, ended] = goalHistoryRows({ goals: [changedLate, build], today: TODAY, programs: [], versions: [], habits: [] });
     expect(ended.deadline).toBe("2026-06-26");
     expect(ended.lines).toEqual([]);
   });
 
   it("is empty for a client with no goals", () => {
-    expect(goalHistoryRows({ goals: [], today: TODAY, programs, versions })).toEqual([]);
+    expect(goalHistoryRows({ goals: [], today: TODAY, programs, versions, habits: [] })).toEqual([]);
   });
 });
 
@@ -163,6 +192,7 @@ describe("goalHistoryRows — what happened during each goal", () => {
       today: TODAY,
       programs: [{ name: "Deload", startsOn: "2026-06-15", endsOn: "2026-06-28" }],
       versions: [version("2026-06-28", "2026-07-26", 2615, 84.6, "2026-10-30")],
+      habits: [],
     });
     expect(earlier.lines.map((line) => [line.kind, line.on])).toEqual([
       ["program", "2026-06-15"],
@@ -187,7 +217,7 @@ describe("goalHistoryRows — what happened during each goal", () => {
     ]);
   });
 
-  it("orders one day's lines as they happen: the calories, a program starting, the deadline, a program ending", () => {
+  it("orders one day's lines as they happen: the calories, a program starting, the habits stopping, then those starting in the client's order, the deadline, a program ending", () => {
     const sprint = goal(
       "sprint",
       "2026-07-06",
@@ -201,12 +231,42 @@ describe("goalHistoryRows — what happened during each goal", () => {
       today: "2026-07-27",
       programs: [{ name: "Test day", startsOn: "2026-07-20", endsOn: "2026-07-20" }],
       versions: [version("2026-07-20", "2026-08-31", 2090, null, null)],
+      // The client's order is Walk, Sauna, Bike: Walk and Bike start the day Sauna stops.
+      habits: [
+        tickHabit("Walk", [habitVersion("2026-07-20", null)]),
+        tickHabit("Sauna", [habitVersion("2026-07-06", "2026-07-19")]),
+        tickHabit("Bike", [habitVersion("2026-07-20", null)]),
+      ],
     });
-    expect(only.lines.map((line) => (line.kind === "program" ? line.change : line.kind))).toEqual([
+    expect(only.lines.map((line) => (line.kind === "program" ? line.change : line.kind === "habit" ? `${line.name} ${line.change}` : line.kind))).toEqual([
+      "Sauna added",
       "nutrition",
       "starts",
+      "Sauna stopped",
+      "Walk added",
+      "Bike added",
       "deadline",
       "ends",
+    ]);
+  });
+
+  // The coach deleted a logged Water today, added Water again from today and
+  // moved it to the top: the old one's stop reads before the new one's start.
+  it("reads a habit stopped before one started the same day, whatever the client's order", () => {
+    const [, current] = goalHistoryRows({
+      goals: [build, leanOut],
+      today: "2026-10-02",
+      programs: [],
+      versions: [],
+      habits: [
+        numberHabit("Water", "L", [habitVersion("2026-10-02", null, { target: 3 })]),
+        numberHabit("Water", "L", [habitVersion("2026-09-01", "2026-10-01", { target: 2.5 })]),
+      ],
+    });
+    expect(current.lines.flatMap((line) => (line.kind === "habit" ? [`${line.on} ${line.change}`] : []))).toEqual([
+      "2026-09-01 added",
+      "2026-10-02 stopped",
+      "2026-10-02 added",
     ]);
   });
 
@@ -216,7 +276,77 @@ describe("goalHistoryRows — what happened during each goal", () => {
       today: TODAY,
       programs: [{ name: "Off season", startsOn: "2027-03-01", endsOn: "2027-05-30" }],
       versions: [version("2027-03-01", "2027-05-30", 2520, 86.3, null)],
+      habits: [],
     });
     expect(last.lines.map((line) => line.on)).toEqual(["2026-08-12", "2027-03-01", "2027-03-01", "2027-05-30"]);
+  });
+});
+
+describe("goalHistoryRows — the habits added, changed, stopped and started again during each goal", () => {
+  // Water ran from before Cut and went up on Cut's first day; it stops on Lean
+  // out's first day, ahead of today. Steps began with Build and went up on the
+  // day Build's deadline moved. Sauna ran three times a week, stopped, and
+  // started again on set days.
+  const water = numberHabit("Water", "L", [
+    habitVersion("2026-04-20", "2026-05-03", { target: 3 }),
+    habitVersion("2026-05-04", "2026-10-18", { target: 3.5 }),
+  ]);
+  const steps = numberHabit("Steps", "steps", [
+    habitVersion("2026-06-29", "2026-08-11", { target: 8000 }),
+    habitVersion("2026-08-12", null, { target: 10000 }),
+  ]);
+  const sauna = tickHabit("Sauna", [
+    habitVersion("2026-07-06", "2026-08-30", { timesPerWeek: 3, weekdays: [] }),
+    habitVersion("2026-09-14", null, { weekdays: ["monday", "wednesday", "friday"] }),
+  ]);
+  const habitRows = (habits: HabitVersions[]) =>
+    goalHistoryRows({ goals: [cut, build, leanOut], today: TODAY, programs: [], versions: [], habits });
+  const habitLinesOf = (id: string, habits: HabitVersions[] = [water, steps, sauna]) =>
+    habitRows(habits)
+      .find((r) => r.id === id)!
+      .lines.filter((line) => line.kind === "habit");
+
+  const stepsFrom8000 = { schedule: "Every day", target: "at least 8,000 steps" };
+
+  it("lists a habit's first version as added, with its days and its target in words", () => {
+    expect(habitLinesOf("build", [steps, sauna]).filter((line) => line.change === "added")).toEqual([
+      { kind: "habit", on: "2026-06-29", change: "added", name: "Steps", words: stepsFrom8000 },
+      { kind: "habit", on: "2026-07-06", change: "added", name: "Sauna", words: { schedule: "3 times a week", target: null } },
+    ]);
+  });
+
+  it("lists a version that follows one with no day between as changed, saying what changed, and no stop", () => {
+    expect(habitLinesOf("build", [steps])).toEqual([
+      { kind: "habit", on: "2026-06-29", change: "added", name: "Steps", words: stepsFrom8000 },
+      { kind: "habit", on: "2026-08-12", change: "changed", name: "Steps", from: "at least 8,000 steps", to: "at least 10,000 steps" },
+    ]);
+  });
+
+  it("lists a habit stopped on the first day it no longer runs, and started again by a version after the gap", () => {
+    expect(habitLinesOf("build", [sauna])).toEqual([
+      { kind: "habit", on: "2026-07-06", change: "added", name: "Sauna", words: { schedule: "3 times a week", target: null } },
+      { kind: "habit", on: "2026-08-31", change: "stopped", name: "Sauna" },
+      { kind: "habit", on: "2026-09-14", change: "started_again", name: "Sauna", words: { schedule: "Mon, Wed, Fri", target: null } },
+    ]);
+  });
+
+  // Water's first version began before Cut, so it is listed on no goal; its
+  // change on Cut's first day is a change, read off the version before it.
+  it("reads the versions before the first goal, listing none of their lines", () => {
+    expect(habitLinesOf("cut")).toEqual([
+      { kind: "habit", on: "2026-05-04", change: "changed", name: "Water", from: "at least 3 L", to: "at least 3.5 L" },
+    ]);
+    expect(habitRows([water]).flatMap((r) => r.lines).some((line) => line.kind === "habit" && line.change === "added")).toBe(false);
+  });
+
+  it("lists a stop dated ahead of today on the goal whose days hold it", () => {
+    expect(habitLinesOf("lean")).toEqual([{ kind: "habit", on: "2026-10-19", change: "stopped", name: "Water" }]);
+  });
+
+  it("lists no change where a version follows one with the same days and target", () => {
+    const walk = tickHabit("Walk", [habitVersion("2026-07-01", "2026-07-31"), habitVersion("2026-08-01", null)]);
+    expect(habitLinesOf("build", [walk])).toEqual([
+      { kind: "habit", on: "2026-07-01", change: "added", name: "Walk", words: { schedule: "Every day", target: null } },
+    ]);
   });
 });

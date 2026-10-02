@@ -18,7 +18,7 @@ import type { ClientHabit, HabitChoice, HabitDirection, HabitEntry } from "@/typ
  */
 
 type Tables = Database["public"]["Tables"];
-type HabitRow = Pick<
+type HabitVersionsRow = Pick<
   Tables["client_habits"]["Row"],
   "id" | "name" | "how_to" | "measure" | "unit" | "direction" | "position"
 > & {
@@ -27,11 +27,16 @@ type HabitRow = Pick<
         client_habit_version_days: Pick<Tables["client_habit_version_days"]["Row"], "weekday">[] | null;
       })[]
     | null;
+};
+type HabitRow = HabitVersionsRow & {
   client_habit_day_edits: Pick<Tables["client_habit_day_edits"]["Row"], "date" | "planned" | "target">[] | null;
 };
 
-const HABIT_SELECT =
-  "id, name, how_to, measure, unit, direction, position, client_habit_versions(id, starts_on, ends_on, target, times_per_week, client_habit_version_days(weekday)), client_habit_day_edits(date, planned, target)";
+/** A habit with every version and its days: what the goals table reads. */
+const HABIT_VERSIONS_SELECT =
+  "id, name, how_to, measure, unit, direction, position, client_habit_versions(id, starts_on, ends_on, target, times_per_week, client_habit_version_days(weekday))";
+
+const HABIT_SELECT = `${HABIT_VERSIONS_SELECT}, client_habit_day_edits(date, planned, target)` as const;
 
 const isWeekday = (value: string): value is DayOfWeek => (DAYS_OF_WEEK as readonly string[]).includes(value);
 const weekdayOrder = (day: DayOfWeek) => DAYS_OF_WEEK.indexOf(day);
@@ -44,7 +49,7 @@ function readDirection(habitId: string, value: string | null): HabitDirection | 
   return value;
 }
 
-function mapHabit(row: HabitRow): ClientHabit {
+function mapHabitVersions(row: HabitVersionsRow): Omit<ClientHabit, "dayEdits"> {
   if (!isHabitMeasure(row.measure)) {
     throw new Error(`Habit ${row.id} has an unknown measure: ${row.measure}`);
   }
@@ -69,6 +74,12 @@ function mapHabit(row: HabitRow): ClientHabit {
           .sort((a, b) => weekdayOrder(a) - weekdayOrder(b)),
       }))
       .sort((a, b) => (a.startsOn < b.startsOn ? -1 : 1)),
+  };
+}
+
+function mapHabit(row: HabitRow): ClientHabit {
+  return {
+    ...mapHabitVersions(row),
     dayEdits: (row.client_habit_day_edits ?? [])
       .map((edit) => ({ date: edit.date, planned: edit.planned, target: amount(edit.target) }))
       .sort((a, b) => (a.date < b.date ? -1 : 1)),
@@ -85,9 +96,10 @@ type EditRange = { from?: string; to?: string };
 type DayRange = { from: string; to: string };
 
 /**
- * The one query both list reads make: every habit the client has, in their
- * order, with the one-date edits over `edits`, selecting `select` —
- * `HABIT_SELECT`, or that with the entry check.
+ * The one query every list read makes: every habit the client has, in their
+ * order, selecting `select` — `HABIT_SELECT`, that with the entry check, or
+ * `HABIT_VERSIONS_SELECT` — with the one-date edits over `edits` where the
+ * select reads them.
  */
 function clientHabitsQuery<Select extends string>(clientId: string, edits: EditRange, select: Select) {
   let query = supabaseAdmin.from("client_habits").select(select).eq("client_id", clientId);
@@ -107,6 +119,17 @@ export async function listClientHabits(clientId: string, edits: EditRange): Prom
   const { data, error } = await clientHabitsQuery(clientId, edits, HABIT_SELECT);
   if (error) throw new Error(`Failed to read habits: ${error.message}`);
   return (data ?? []).map(mapHabit);
+}
+
+/**
+ * Every habit the client has had — the deleted too, whose past stays — in
+ * their order, each with every version and none of its one-date edits: the
+ * history of what was prescribed, which the goals table lists.
+ */
+export async function listClientHabitVersions(clientId: string): Promise<Omit<ClientHabit, "dayEdits">[]> {
+  const { data, error } = await clientHabitsQuery(clientId, {}, HABIT_VERSIONS_SELECT);
+  if (error) throw new Error(`Failed to read habits: ${error.message}`);
+  return (data ?? []).map(mapHabitVersions);
 }
 
 /**

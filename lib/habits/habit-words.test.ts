@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  changeWords,
   directionLabel,
   figureFraction,
   habitAmount,
@@ -111,5 +112,43 @@ describe("habitWords", () => {
     expect(habitWords(water, version)).toEqual({ schedule: "Mon, Thu", target: "at least 3 L" });
     expect(habitWords(water, version, 2)).toEqual({ schedule: "Mon, Thu", target: "at least 2 L" });
     expect(habitWords(water, null)).toEqual({ schedule: null, target: null });
+  });
+});
+
+describe("a change in words", () => {
+  const EVERY_DAY = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+  const water = { measure: "number" as const, unit: "L", direction: "at_least" as const };
+  const walk = { measure: "tick" as const, unit: null, direction: null };
+  const everyDay = (target: number | null) => ({ timesPerWeek: null, weekdays: [...EVERY_DAY], target });
+  const monWedFri = (target: number | null) => ({
+    timesPerWeek: null,
+    weekdays: ["monday" as const, "wednesday" as const, "friday" as const],
+    target,
+  });
+
+  describe("changeWords — a change from one version to the next", () => {
+    it("says only the target when only the target changed", () => {
+      expect(changeWords(water, everyDay(3), everyDay(3.5))).toEqual({ from: "at least 3 L", to: "at least 3.5 L" });
+    });
+
+    it("says only the days when only the days changed", () => {
+      expect(changeWords(walk, monWedFri(null), everyDay(null))).toEqual({ from: "Mon, Wed, Fri", to: "Every day" });
+      expect(changeWords(water, { timesPerWeek: 3, weekdays: [], target: 3 }, monWedFri(3))).toEqual({
+        from: "3 times a week",
+        to: "Mon, Wed, Fri",
+      });
+    });
+
+    it("says the days, then the target, when both changed", () => {
+      expect(changeWords(water, everyDay(3), monWedFri(4))).toEqual({
+        from: "Every day · at least 3 L",
+        to: "Mon, Wed, Fri · at least 4 L",
+      });
+    });
+
+    it("has nothing to say when neither changed", () => {
+      expect(changeWords(water, everyDay(3), everyDay(3))).toBeNull();
+      expect(changeWords(walk, monWedFri(null), monWedFri(null))).toBeNull();
+    });
   });
 });

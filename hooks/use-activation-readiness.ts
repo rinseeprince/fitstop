@@ -42,8 +42,8 @@ export function useActivationReadiness(clientId: string, enabled: boolean) {
  *
  * CLEARED, not merely revalidated (CONVENTIONS §7): the card renders a
  * definite answer per item — "Daily habits" set up or not — and SWR would
- * serve the stale one for the whole refetch. Called by every habit writer on
- * success.
+ * serve the stale one for the whole refetch. Called by every coach habit write
+ * that changed something (`useHabitWrites`, as its answer arrives).
  */
 export function useClearActivationReadiness() {
   const { mutate } = useSWRConfig();

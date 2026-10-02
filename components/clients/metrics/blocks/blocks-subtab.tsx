@@ -107,7 +107,7 @@ export function BlocksSubtab({
   // Trims and deletes end nutrition versions, which the out-of-date rule
   // judges (docs/MEASUREMENT-LOG-PLAN.md commit 8d1).
   const clearNutritionGoal = useClearNutritionGoal();
-  // What the goals table lists beside the goals: the programs and versions.
+  // The goals table lists the programs and versions these writes change.
   const clearGoalHistory = useClearClientGoalHistory();
   const [showAddForm, setShowAddForm] = useState(false);
   // Coach-curated views (Session 3.7): "journey" = everything unarchived —

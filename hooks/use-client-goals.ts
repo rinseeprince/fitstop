@@ -122,9 +122,9 @@ export function useInvalidateClientGoals() {
  * Drops a client's cached goals table, refetching it if mounted — for a write
  * made where the table is not on screen: a goal write, which lands its own
  * answer in the goals read (`useSeedClientGoals`), and every write of what the
- * table lists beside the goals — a program's window, a nutrition version. The
- * table's next open starts from its loading state, never on the rows the write
- * changed.
+ * table lists beside the goals — a program's window, a nutrition version, a
+ * habit (`useHabitWrites`, `hooks/use-client-habits.ts`). The table's next
+ * open starts from its loading state, never on the rows the write changed.
  */
 export function useClearClientGoalHistory() {
   const { mutate } = useSWRConfig();

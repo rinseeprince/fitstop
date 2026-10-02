@@ -39,8 +39,9 @@ export function useAttentionFeed() {
  * what it says. The dashboard is not mounted while they run, so the next visit
  * would otherwise open on the stale claim for the length of the refetch.
  * Called beside `useClearClientOverview` from every calendar writer's success
- * path and from every coach habit write (`useHabitWrites`'s `land`), whose
- * missed-habit lines the feed lists.
+ * path and from every coach habit write that changed something
+ * (`useHabitWrites`, as its answer arrives), whose missed-habit lines the
+ * feed lists.
  */
 export function useClearAttentionFeed() {
   const { mutate } = useSWRConfig();

@@ -16,6 +16,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import {
   getClientHabit,
   listClientHabits,
+  listClientHabitVersions,
   listClientHabitsWithEntryCheck,
   listDeletedHabitIds,
   listHabitChoices,
@@ -168,6 +169,51 @@ describe("listClientHabitsWithEntryCheck", () => {
     expect(filters()).toEqual(list.filters);
     expect(query.is.mock.calls).toEqual([["deleted_at", null]]);
     expect(list.filters.gte).toEqual([["client_habit_day_edits.date", "2026-09-30"]]);
+  });
+});
+
+describe("listClientHabitVersions — what the goals table reads", () => {
+  it("reads every habit the client has had in their order, each with every version and none of its one-date edits", async () => {
+    const { client_habit_day_edits: _edits, ...withoutEdits } = waterRow;
+    result.value = { data: [withoutEdits], error: null };
+    const [water] = await listClientHabitVersions("client-3");
+
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("client_habits");
+    const selected = query.select.mock.calls[0][0] as string;
+    expect(selected).toContain("client_habit_versions(id, starts_on, ends_on, target, times_per_week, client_habit_version_days(weekday))");
+    expect(selected).not.toContain("client_habit_day_edits");
+    expect(query.eq.mock.calls).toEqual([["client_id", "client-3"]]);
+    expect(query.order.mock.calls.map((call) => call[0])).toEqual(["position", "created_at", "id"]);
+    expect(query.gte).not.toHaveBeenCalled();
+    expect(query.lte).not.toHaveBeenCalled();
+    expect(water).toEqual({
+      id: "habit-water",
+      name: "Water",
+      howTo: "A glass with each meal",
+      measure: "number",
+      unit: "L",
+      direction: "at_least",
+      position: 2,
+      versions: [
+        { id: "v1", startsOn: "2026-09-01", endsOn: "2026-09-27", target: 3, timesPerWeek: 3, weekdays: [] },
+        { id: "v2", startsOn: "2026-09-28", endsOn: null, target: 3.5, timesPerWeek: null, weekdays: ["monday", "thursday", "sunday"] },
+      ],
+    });
+  });
+
+  // A deleted habit's past stays: its versions are lines on the goals it ran
+  // in. So the client is the read's one filter — no other, by any spelling.
+  it("keeps the habits the coach deleted", async () => {
+    await listClientHabitVersions("client-3");
+    expect(query.eq.mock.calls).toEqual([["client_id", "client-3"]]);
+    for (const filter of ["in", "or", "is", "not", "gte", "lte", "range", "limit"]) {
+      expect(query[filter]).not.toHaveBeenCalled();
+    }
+  });
+
+  it("fails loudly when the read fails", async () => {
+    result.value = { data: null, error: { message: "boom" } };
+    await expect(listClientHabitVersions("client-3")).rejects.toThrow(/Failed to read habits: boom/);
   });
 });
 

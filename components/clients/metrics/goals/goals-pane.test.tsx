@@ -246,6 +246,51 @@ describe("GoalsPane — the table", () => {
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
   });
 
+  // Each reads in the present, as a program's line does, so the stop dated
+  // ahead of today reads true; a sentence of words and numbers, all sans.
+  it("reads the habits added, changed, stopped and started again during a goal, all in sans", async () => {
+    const user = userEvent.setup();
+    const built = {
+      ...BUILD,
+      lines: [
+        { kind: "program" as const, on: "2026-06-29", change: "replaces" as const, name: "Hypertrophy", replaced: "Strength" },
+        {
+          kind: "habit" as const,
+          on: "2026-06-29",
+          change: "added" as const,
+          name: "Steps",
+          words: { schedule: "Every day", target: "at least 8,000 steps" },
+        },
+        { kind: "habit" as const, on: "2026-08-12", change: "changed" as const, name: "Steps", from: "at least 8,000 steps", to: "at least 10,000 steps" },
+        { kind: "habit" as const, on: "2026-08-31", change: "stopped" as const, name: "Sauna" },
+        {
+          kind: "habit" as const,
+          on: "2026-09-14",
+          change: "started_again" as const,
+          name: "Sauna",
+          words: { schedule: "Mon, Wed, Fri", target: null },
+        },
+        { kind: "habit" as const, on: "2026-10-12", change: "stopped" as const, name: "Steps" },
+      ],
+    };
+    answers[HISTORY_KEY] = () => Promise.resolve({ success: true, data: [built] });
+    render(tree());
+    await waitFor(() => expect(screen.getByText("Build")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /^Build/ }));
+
+    const lines = screen.getAllByRole("listitem");
+    expect(lines.map((item) => item.textContent)).toEqual([
+      "29 JuneProgramHypertrophy replaces Strength",
+      "29 JuneHabitSteps starts · Every day · at least 8,000 steps",
+      "12 AugHabitSteps changes · at least 8,000 steps → at least 10,000 steps",
+      "31 AugHabitSauna stops",
+      "14 SeptHabitSauna starts again · Mon, Wed, Fri",
+      "12 OctHabitSteps stops",
+    ]);
+    const changed = within(lines[2]).getByText("Steps changes · at least 8,000 steps → at least 10,000 steps");
+    expect(changed.className).not.toContain(MONO);
+  });
+
   it("sets a deadline change's dates in mono and its missing side in sans", async () => {
     const user = userEvent.setup();
     const dated = { ...CUT, lines: [{ kind: "deadline" as const, on: "2026-06-01", from: null, to: "2026-06-26" }] };
@@ -265,7 +310,7 @@ describe("GoalsPane — the table", () => {
     render(tree());
     await waitFor(() => expect(screen.getByText("Build")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /^Build/ }));
-    expect(screen.getByText("No deadline changes, nutrition or programs.")).toBeInTheDocument();
+    expect(screen.getByText("No deadline, nutrition, program or habit changes.")).toBeInTheDocument();
   });
 
   it("says so when the client has no goals, and only once the read has landed", async () => {

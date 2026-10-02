@@ -1,5 +1,5 @@
 import { addDaysToDateString, formatHistoryDate } from "@/lib/date-helpers";
-import { scheduleWords, targetWords } from "@/lib/habits/habit-words";
+import { habitWords, wordsLine } from "@/lib/habits/habit-words";
 import type { CoachHabit } from "@/types/habits";
 
 /**
@@ -20,8 +20,7 @@ export function habitHistoryLines(
     const run = version.endsOn
       ? `${formatHistoryDate(version.startsOn)} – ${formatHistoryDate(version.endsOn)}`
       : `From ${formatHistoryDate(version.startsOn)}`;
-    const words = [scheduleWords(version), targetWords(habit, version.target)].filter((part): part is string => part !== null);
-    lines.push([run, ...words].join(" · "));
+    lines.push([run, wordsLine(habitWords(habit, version))].filter(Boolean).join(" · "));
 
     if (version.endsOn === null) return;
     const stopsOn = addDaysToDateString(version.endsOn, 1);
