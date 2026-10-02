@@ -103,8 +103,9 @@ export const HabitsSection = ({ habitWeek }: HabitsSectionProps) => {
       <SectionLabel label="Habits" meta={totals ? `${totals.fraction} done` : undefined} />
       <div className="rounded-[6px] bg-white px-5 pb-3 pt-2">
         {/* Fixed layout: the habit and week columns hold set widths and the
-            seven days share the rest of the card equally. The minimum keeps a
-            day wide enough for a five-figure number; a narrower card scrolls. */}
+            period's days — seven, or fewer in a first week the client started
+            part-way through — share the rest of the card equally. The minimum keeps a day wide enough
+            for a five-figure number; a narrower card scrolls. */}
         <Table className="min-w-[800px] table-fixed">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
