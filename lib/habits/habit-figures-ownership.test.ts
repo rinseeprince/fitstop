@@ -24,7 +24,9 @@ const READERS = /^services\/client-habit(s|-[a-z-]+)-service\.ts$/;
 /** Where no habit arithmetic may be spelled: the screens, the routes and the AI's prompt writers. */
 const SURFACES = /^(components|app)\/|^utils\/ai-prompt-/;
 
-const ENTRIES_TABLE = /["'`]client_habit_logs["'`]/;
+// The table named anywhere in code: read by `.from(...)` or embedded in
+// another table's select, a read is a read.
+const ENTRIES_TABLE = /\bclient_habit_logs\b/;
 // A direction compared by hand — the judgement `entryMet` owns.
 const DIRECTION_COMPARED = /===?\s*["']at_(least|most)["']|["']at_(least|most)["']\s*===?/;
 // Met as done up to planned — the week's rule `habitWeek` owns.
@@ -82,6 +84,7 @@ describe("the habit kernel owns every habit figure", () => {
 
   it("recognises what it forbids", () => {
     expect(ENTRIES_TABLE.test('supabaseAdmin.from("client_habit_logs")')).toBe(true);
+    expect(ENTRIES_TABLE.test('.select("id, client_habit_logs(id)")')).toBe(true);
     expect(DIRECTION_COMPARED.test('habit.direction === "at_most" ? value <= target : value >= target')).toBe(true);
     expect(MET_ARITHMETIC.test("const met = Math.min(week.done, week.planned);")).toBe(true);
     expect(DAYS_COUNTED.test("const done = row.days.filter((d) => d.met).length;")).toBe(true);
