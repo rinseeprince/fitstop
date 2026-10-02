@@ -2,6 +2,7 @@
 
 import { Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { dayOfMonth } from "@/lib/date-helpers";
 import { useUnits } from "@/contexts/units-context";
 import { formatLoad } from "@/utils/unit-conversions";
 import { SectionLabel } from "@/components/programs/shared/section-label";
@@ -170,7 +171,7 @@ export function WeekGrid({ dates, workouts, highlights, nutrition }: WeekGridPro
                     <span className={DAY_LINE}>
                       <span className="flex items-baseline gap-2">
                         <span className={LABEL_CLASS}>{dayLabel(date)}</span>
-                        <span className={cn(MONO, "text-[13px] font-medium", TEXT_PRIMARY)}>{Number(date.slice(8, 10))}</span>
+                        <span className={cn(MONO, "text-[13px] font-medium", TEXT_PRIMARY)}>{dayOfMonth(date)}</span>
                       </span>
                     </span>
                   </TableCell>

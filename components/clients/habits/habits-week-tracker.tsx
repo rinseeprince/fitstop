@@ -5,10 +5,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { formatDateOnlyShort, SHORT_WEEKDAY, weekdayOf } from "@/lib/date-helpers";
 import { FOCUS_RING, MONO } from "@/components/clients/training/program-builder/builder-tokens";
-import { weekFigurePercent } from "@/lib/habits/habit-words";
+import { figureFraction, weekFigurePercent } from "@/lib/habits/habit-words";
 import { HabitDayCell } from "./habit-day-cell";
 import { habitCellState, isDayEditable } from "./habit-cell-state";
-import { habitFigure } from "./habit-figure";
 import { HabitRowMenu, type HabitRowAction } from "./habit-row-menu";
 import type { HabitTrackerRow } from "./habit-tracker-rows";
 import type { CoachHabit, HabitDayFacts } from "@/types/habits";
@@ -93,7 +92,7 @@ export function HabitsWeekTracker({ rows, weekDays, today, movableIds, movingId,
         <TableBody>
           {rows.map((row) => {
             const rate = row.figures ? weekFigurePercent(row.figures) : null;
-            const figure = row.figures ? habitFigure(row.figures.met, row.figures.planned) : null;
+            const figure = row.figures ? figureFraction(row.figures.met, row.figures.planned) : null;
             const habit = row.habit;
             const place = habit ? movableIds.indexOf(habit.id) : -1;
             return (

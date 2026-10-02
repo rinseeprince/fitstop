@@ -430,6 +430,17 @@ export function composeHabitWeek(week: HabitPeriodWeek): SentHabitWeek {
   };
 }
 
+/**
+ * A sent check-in's habit figure, as the client's own check-in read carries
+ * it: the week's days met over its days planned, from the habit week the copy
+ * froze. Null when the copy holds no week — a row whose week could not be
+ * resolved, or one with no copy yet.
+ */
+export function sentHabitTotals(snapshot: SentSnapshot | null): { met: number; planned: number } | null {
+  const totals = snapshot?.period?.habitWeek.totals;
+  return totals ? { met: totals.met, planned: totals.planned } : null;
+}
+
 /** The readings a sent check-in reported, as the check-in object carries them. */
 export function reportedReadings(snapshot: SentSnapshot | null): MeasurementValues {
   const values: MeasurementValues = {};

@@ -12,10 +12,11 @@ import { readSentSnapshot, type SentHabitWeek } from "@/lib/check-in/sent-snapsh
 // A fixture week, Fri 11 to Thu 17 September 2026, built to hold one of
 // everything the AI is given: a full workout with its exercise lines, a
 // partial one with a note, two missed ones, food hit / under / over / logged
-// with no target / not logged, wellness on four days, a
-// habit the client had all week and one added midweek, a weight with its
-// change since the last check-in, a goal on track with a deadline and the
-// drift note, the client's words and an answer to the coach's question.
+// with no target / not logged, wellness on four days, a habit the client had
+// every day, a number habit added midweek with a short day and a note, a
+// Mon/Wed/Fri habit made up on a Tuesday, a habit done twice a week, a weight
+// with its change since the last check-in, a goal on track with a deadline
+// and the drift note, the client's words and an answer to the coach's question.
 const DATES = [
   "2026-09-11", "2026-09-12", "2026-09-13", "2026-09-14",
   "2026-09-15", "2026-09-16", "2026-09-17",
@@ -90,31 +91,68 @@ const nutritionDays: NutritionDay[] = [
   day("2026-09-17", "not_logged", null, TARGET),
 ];
 
-// The habits as a version 2 copy saved them, read into the current shape by the
-// reader every surface uses: the pinned prompt below is the one version 2 gave,
-// so a copy saved before version 3 still writes the same week (commit 2 of
-// docs/HABITS-REBUILD-PLAN.md: version 3 in, the pinned text unchanged).
-const perHabit = [
-  { id: "h-1", name: "Walk 10k steps", eligibleDays: 7, completedDays: 3, pct: 43, rail: [true, false, false, true, false, true, false] },
-  { id: "h-2", name: "Water 3 L", eligibleDays: 4, completedDays: 2, pct: 50, rail: [null, null, null, true, false, true, false] },
-];
+// The habit week as a version 3 copy froze it (docs/HABITS-REBUILD-PLAN.md
+// §2.2 rule 9): each habit's versions over the week, each day's facts and the
+// week's figures.
+type HabitRow = SentHabitWeek["habits"][number];
+type HabitDay = HabitRow["days"][number];
+const EVERY_DAY = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+const [FRI, SAT, SUN, MON, TUE, WED, THU] = DATES;
+const covered = (date: string, facts: Partial<HabitDay> = {}): HabitDay => ({
+  date, covered: true, planned: false, target: null, entry: null, met: false, ...facts,
+});
+const done = (note: string | null = null) => ({ done: true, value: null, note });
+const amount = (value: number, note: string | null = null) => ({ done: null, value, note });
 
-function habitWeekFromVersion2(): SentHabitWeek {
-  const copy = readSentSnapshot({
-    version: 2,
-    day: "2026-09-17",
-    readings: { weight: null, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null },
-    standing: { weight: null, bodyFat: null },
-    goal: null,
-    goalProgress: {},
-    nutritionPlan: null,
-    period: { dates: DATES, loggedDates: [], nutrition: [], habits: { rail: [], avgPct: null, daysBelow50: 0, perHabit } },
-    questions: [],
-  });
-  return copy!.period!.habitWeek;
-}
-
-const habitWeek = habitWeekFromVersion2();
+const habitWeek: SentHabitWeek = {
+  habits: [
+    {
+      id: "h-walk", name: "Walk 10k steps", measure: "tick", unit: null, direction: null, firstStartsOn: "2026-09-01",
+      versions: [{ startsOn: "2026-09-01", endsOn: null, target: null, timesPerWeek: null, weekdays: [...EVERY_DAY] }],
+      days: DATES.map((date) =>
+        [FRI, MON, WED].includes(date) ? covered(date, { planned: true, entry: done(), met: true }) : covered(date, { planned: true })
+      ),
+      figures: { planned: 7, done: 3, met: 3 },
+    },
+    {
+      // Added on the Monday, short on the Tuesday, nothing entered on the Thursday.
+      id: "h-water", name: "Water", measure: "number", unit: "L", direction: "at_least", firstStartsOn: MON,
+      versions: [{ startsOn: MON, endsOn: null, target: 3, timesPerWeek: null, weekdays: [...EVERY_DAY] }],
+      days: [
+        covered(FRI, { covered: false }),
+        covered(SAT, { covered: false }),
+        covered(SUN, { covered: false }),
+        covered(MON, { planned: true, target: 3, entry: amount(3.2), met: true }),
+        covered(TUE, { planned: true, target: 3, entry: amount(2.1, "Long meetings, forgot my bottle") }),
+        covered(WED, { planned: true, target: 3, entry: amount(3), met: true }),
+        covered(THU, { planned: true, target: 3 }),
+      ],
+      figures: { planned: 4, done: 2, met: 2 },
+    },
+    {
+      // Mon, Wed, Fri: missed the Monday, made it up on the Tuesday.
+      id: "h-mobility", name: "Mobility", measure: "tick", unit: null, direction: null, firstStartsOn: "2026-09-01",
+      versions: [{ startsOn: "2026-09-01", endsOn: null, target: null, timesPerWeek: null, weekdays: ["monday", "wednesday", "friday"] }],
+      days: [
+        covered(FRI, { planned: true, entry: done(), met: true }),
+        covered(SAT),
+        covered(SUN),
+        covered(MON, { planned: true, entry: { done: false, value: null, note: null } }),
+        covered(TUE, { entry: done(), met: true }),
+        covered(WED, { planned: true }),
+        covered(THU),
+      ],
+      figures: { planned: 3, done: 2, met: 2 },
+    },
+    {
+      id: "h-sauna", name: "Sauna", measure: "tick", unit: null, direction: null, firstStartsOn: "2026-09-01",
+      versions: [{ startsOn: "2026-09-01", endsOn: null, target: null, timesPerWeek: 2, weekdays: [] }],
+      days: DATES.map((date) => (date === SAT ? covered(date, { entry: done(), met: true }) : covered(date))),
+      figures: { planned: 2, done: 1, met: 1 },
+    },
+  ],
+  totals: { planned: 16, done: 8, met: 8 },
+};
 
 const dailyLog = (date: string, fields: Partial<DailyLog>): DailyLog =>
   ({ id: `dl-${date}`, clientId: "client-1", date, createdAt: "", updatedAt: "", ...fields }) as DailyLog;
@@ -182,7 +220,11 @@ THE WEEK IN FIGURES
 Training: 2 of 4 sessions done (1 partial, 2 missed)
 Food: 6,750 kcal of 14,400 kcal over the 6 days with a target: MISSED, 1/6 days on target. Average per logged day against its target: 2,250 kcal (target 2,400 kcal), protein 160 g (target 180 g), carbs 240 g (target 250 g), fat 72 g (target 80 g). 1 logged day had no target and is not counted.
 Wellness, change since the last check-in: mood 0, energy -1, sleep -1, stress +2, soreness not compared
-Habits: Walk 10k steps 3/7 days; Water 3 L 2/4 days
+Habits: 8/16 habit days done
+  Walk 10k steps (Every day): 3/7 days done
+  Water (Every day · at least 3 L): 2/4 days done, avg 2.8 L
+  Mobility (Mon, Wed, Fri): 2/3 days done
+  Sauna (Twice a week): 1/2 days done
 
 DAY BY DAY
 Wellness scores: mood out of 5; energy, sleep, stress and soreness out of 10, where higher stress or soreness is worse.
@@ -193,20 +235,20 @@ Training: Lower A: logged, full
   Romanian Deadlift — 3 of 3 working sets: Load (kg) 80, 80, 80 (target 80 kg); Reps 8, 8, 7 (target 8; 1 of 3 below target)
 Food: 2,350 kcal eaten (protein 170 g, carbs 240 g, fat 75 g), target 2,400 kcal (protein 180 g, carbs 250 g, fat 80 g): hit target
 Wellness: mood 4/5, energy 7/10, sleep 6/10, stress 5/10, soreness 3/10
-Habits: Walk 10k steps, ticked
+Habits: Walk 10k steps (planned): done; Mobility (planned): done
 
 Saturday 12 September
 Training: rest day, nothing scheduled
 Food: 1,800 kcal eaten (protein 120 g, carbs 200 g, fat 55 g), target 2,400 kcal (protein 180 g, carbs 250 g, fat 80 g): missed, under target
 Wellness: mood 3/5, sleep 5/10
-Habits: Walk 10k steps, not ticked
+Habits: Walk 10k steps (planned): not done; Sauna (any day of the week): done
 
 Sunday 13 September
 Nothing logged.
 Training: rest day, nothing scheduled
 Food: nothing logged, target 2,400 kcal (protein 180 g, carbs 250 g, fat 80 g)
 Wellness: nothing logged
-Habits: Walk 10k steps, not ticked
+Habits: Walk 10k steps (planned): not done
 
 Monday 14 September
 Training: Upper A: logged, partial
@@ -214,27 +256,27 @@ Training: Upper A: logged, partial
   Barbell Bench Press — 2 of 3 working sets: Load (kg) 70, 70 (target 70 kg); Reps 6, 5 (target 6; 1 of 2 below target)
 Food: 2,600 kcal eaten (protein 190 g, carbs 280 g, fat 85 g), target 2,400 kcal (protein 180 g, carbs 250 g, fat 80 g): partial, over target
 Wellness: energy 4/10, sleep 4/10, stress 8/10
-Habits: Walk 10k steps, ticked; Water 3 L, ticked
+Habits: Walk 10k steps (planned): done; Water (planned, at least 3 L): 3.2 L, met; Mobility (planned): not done
 
 Tuesday 15 September
 Nothing logged.
 Training: rest day, nothing scheduled
 Food: nothing logged, target 2,400 kcal (protein 180 g, carbs 250 g, fat 80 g)
 Wellness: nothing logged
-Habits: Walk 10k steps, not ticked; Water 3 L, not ticked
+Habits: Walk 10k steps (planned): not done; Water (planned, at least 3 L): 2.1 L, not met, note "Long meetings, forgot my bottle"; Mobility (not planned): done
 
 Wednesday 16 September
 Training: Lower B: missed, not logged
 Food: 2,100 kcal eaten (protein 150 g, carbs 220 g, fat 70 g), no target set
 Wellness: mood 4/5, energy 6/10, sleep 7/10, stress 4/10, soreness 2/10
-Habits: Walk 10k steps, ticked; Water 3 L, ticked
+Habits: Walk 10k steps (planned): done; Water (planned, at least 3 L): 3 L, met; Mobility (planned): not done
 
 Thursday 17 September
 Nothing logged.
 Training: Upper B: missed, not logged
 Food: nothing logged, target 2,400 kcal (protein 180 g, carbs 250 g, fat 80 g)
 Wellness: nothing logged
-Habits: Walk 10k steps, not ticked; Water 3 L, not ticked
+Habits: Walk 10k steps (planned): not done; Water (planned, at least 3 L): nothing entered
 
 CLIENT'S OWN WORDS
 Reflection: "Tough week at work, slept badly midweek."
@@ -268,7 +310,7 @@ describe("buildCheckInReviewPrompt — the fixture week, pinned", () => {
     expect(sunday).toContain("Nothing logged.");
     expect(sunday).toContain("Food: nothing logged, target 2,400 kcal");
     expect(sunday).toContain("Wellness: nothing logged");
-    expect(sunday).toContain("Walk 10k steps, not ticked");
+    expect(sunday).toContain("Walk 10k steps (planned): not done");
     // A day the client logged carries no such line, whatever it lacks.
     const saturday = prompt.slice(prompt.indexOf("\nSaturday 12 September\n"), prompt.indexOf("\nSunday 13 September\n"));
     expect(saturday).not.toContain("Nothing logged.");
@@ -355,6 +397,40 @@ describe("buildCheckInReviewPrompt — the fixture week, pinned", () => {
     expect(prompt).not.toContain("Habits:");
     expect(prompt).not.toContain("Wellness, change");
     expect(prompt).toContain("CLIENT'S OWN WORDS\nThe client wrote nothing this check-in.");
+  });
+
+  it("reads a copy saved before version 3 as tick habits planned on every day they existed, ticked as they were", () => {
+    const copy = readSentSnapshot({
+      version: 2,
+      day: "2026-09-17",
+      readings: { weight: null, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null },
+      standing: { weight: null, bodyFat: null },
+      goal: null,
+      goalProgress: {},
+      nutritionPlan: null,
+      period: {
+        dates: DATES,
+        loggedDates: [],
+        nutrition: [],
+        habits: {
+          rail: [],
+          avgPct: null,
+          daysBelow50: 0,
+          perHabit: [
+            { id: "h-1", name: "Walk 10k steps", eligibleDays: 7, completedDays: 3, pct: 43, rail: [true, false, false, true, false, true, false] },
+            { id: "h-2", name: "Water 3 L", eligibleDays: 4, completedDays: 2, pct: 50, rail: [null, null, null, true, false, true, false] },
+          ],
+        },
+      },
+      questions: [],
+    });
+    const prompt = buildCheckInReviewPrompt({ ...fixture, habitWeek: copy!.period!.habitWeek });
+
+    expect(prompt).toContain(
+      "Habits: 5/11 habit days done\n  Walk 10k steps (Every day): 3/7 days done\n  Water 3 L (Every day): 2/4 days done\n"
+    );
+    expect(prompt).toContain("Habits: Walk 10k steps (planned): done\n\nSaturday 12 September");
+    expect(prompt).toContain("Habits: Walk 10k steps (planned): not done; Water 3 L (planned): not done\n\nWednesday 16 September");
   });
 
   it("says when nothing was prescribed and when no food was logged, never 0 of 0", () => {

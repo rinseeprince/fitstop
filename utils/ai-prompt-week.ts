@@ -1,6 +1,7 @@
 import type { CheckInReviewInput } from "@/types/check-in-review-input";
 import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import { sanitizeForAIPrompt } from "./ai-prompt-sanitizer";
+import { habitWeekLines } from "./ai-prompt-habits";
 import { formatWeight } from "./unit-conversions";
 import { summariseTraining } from "@/lib/training-adherence";
 import {
@@ -18,7 +19,7 @@ import { goalTypeBesideName } from "@/lib/goals/goal-types";
  * and goal as the KPI ribbon and the goal strip show them, and the week's
  * figures as the ribbon and the cards show them — the session count through
  * the one summariser, the week grid's nutrition figures, figure for figure, the
- * wellness changes and the habit counts. Every rule is the page's own
+ * wellness changes and the Habits section's rows. Every rule is the page's own
  * (lib/check-in/review-figures.ts); nothing here is worked out a second way.
  */
 
@@ -171,18 +172,6 @@ export function weekFigures(input: CheckInReviewInput): string[] {
     }
   }
 
-  const habits = habitWeekLine(input.habitWeek);
-  if (habits) lines.push(habits);
+  lines.push(...habitWeekLines(input.habitWeek));
   return lines;
-}
-
-/**
- * The week's habits in one line: each habit planned that week, its days met of
- * its days planned, as the review's Habits section counts them. Null when no
- * habit was planned.
- */
-export function habitWeekLine(habitWeek: CheckInReviewInput["habitWeek"]): string | null {
-  const habits = (habitWeek?.habits ?? []).filter((habit) => habit.figures.planned > 0);
-  if (habits.length === 0) return null;
-  return `Habits: ${habits.map((habit) => `${text(habit.name)} ${habit.figures.met}/${habit.figures.planned} days`).join("; ")}`;
 }

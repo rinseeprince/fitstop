@@ -33,6 +33,11 @@ vi.mock('@/services/daily-log-permissions-service', () => ({
 vi.mock('@/services/check-in-form-service', () => ({
   getClientCheckInForm: vi.fn(),
 }));
+// The period's habit week, from the habit figures service; the route carries
+// it and counts nothing.
+vi.mock('@/services/client-habit-figures-service', () => ({
+  getCheckInHabitWeek: vi.fn(),
+}));
 
 vi.mock('@/lib/supabase-server', () => ({
   createServerSupabaseClient: vi.fn(),
@@ -61,9 +66,11 @@ import {
 import { getDailyLogs } from '@/services/daily-logs-service';
 import { getNutritionPeriod } from '@/services/nutrition-period-service';
 import { getClientCheckInForm } from '@/services/check-in-form-service';
+import { getCheckInHabitWeek } from '@/services/client-habit-figures-service';
 import { getLastSubmittedPeriodEnd } from '@/services/daily-log-permissions-service';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 import { DEFAULT_CHECK_IN_FORM_FIELDS } from '@/lib/check-in/form-fields';
+import type { ClientHabitWeek } from '@/types/habits';
 
 const req = () => new NextRequest('https://t.dev/api/client/check-in-context');
 
@@ -94,6 +101,22 @@ const NUTRITION_SUMMARY = {
   netCaloriesOnJudgedDays: null,
 };
 
+/** The period's habit week as the figures service states it: one habit, planned every day, done on two. */
+const HABIT_WEEK: ClientHabitWeek = {
+  start: '2026-06-08',
+  end: '2026-06-14',
+  dates: ['2026-06-08', '2026-06-09', '2026-06-10', '2026-06-11', '2026-06-12', '2026-06-13', '2026-06-14'],
+  habits: [
+    {
+      habit: { id: 'h-1', name: 'Walk', howTo: null, measure: 'tick', unit: null, direction: null },
+      words: { schedule: 'Every day', target: null },
+      days: [],
+      figures: { planned: 7, done: 2, met: 2 },
+    },
+  ],
+  totals: { planned: 7, done: 2, met: 2 },
+};
+
 const baseClient = {
   id: 'client-123',
   coachId: 'coach-1',
@@ -116,6 +139,7 @@ describe('GET /api/client/check-in-context', () => {
       fields: [...DEFAULT_CHECK_IN_FORM_FIELDS],
       questions: [],
     } as any);
+    vi.mocked(getCheckInHabitWeek).mockResolvedValue(HABIT_WEEK);
   });
 
   it('available → 200 with the full context shape and the parallel fan-out run', async () => {
@@ -147,6 +171,9 @@ describe('GET /api/client/check-in-context', () => {
         // Additive (C6a) — the coach's per-client form. The RN contract allows
         // additive optional keys; removals and renames are not allowed.
         'form',
+        // Additive (habits commit 6) — the period's habit week: the Habits
+        // step's first answer, and whether the wizard has that step.
+        'habitWeek',
         'nutritionContext',
         // Additive (2026-09-11) — the kernel's figures; the wizard renders them.
         'nutritionSummary',
@@ -162,6 +189,9 @@ describe('GET /api/client/check-in-context', () => {
     // wizard shows what the coach's review will.
     expect(getNutritionPeriod).toHaveBeenCalledWith('client-123', body.data.periodStart, body.data.periodEnd);
     expect(body.data.nutritionSummary).toEqual(NUTRITION_SUMMARY);
+    // The habit week over the SAME window, as the figures service states it.
+    expect(getCheckInHabitWeek).toHaveBeenCalledWith('client-123', body.data.periodStart, body.data.periodEnd);
+    expect(body.data.habitWeek).toEqual(HABIT_WEEK);
     // A client with no form row gets the full form — the whole reason this
     // feature needs no backfill, and why every existing client is unaffected.
     expect(body.data.form.fields).toHaveLength(14);
@@ -264,6 +294,7 @@ describe('GET /api/client/check-in-context', () => {
     expect(getCheckInNutritionContext).not.toHaveBeenCalled();
     expect(getTrainingEventDetailsForPeriod).not.toHaveBeenCalled();
     expect(getDailyLogs).not.toHaveBeenCalled();
+    expect(getCheckInHabitWeek).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 

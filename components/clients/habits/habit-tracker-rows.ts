@@ -1,6 +1,6 @@
 import { formatDateOnlyShort } from "@/lib/date-helpers";
-import { habitWords } from "@/lib/habits/habit-words";
-import type { CoachHabit, CoachHabitList, CoachHabitWeek, HabitDayFacts, HabitWeekFigures, HabitWeekRow, HabitWords } from "@/types/habits";
+import { habitWords, wordsLine } from "@/lib/habits/habit-words";
+import type { CoachHabit, CoachHabitList, CoachHabitWeek, HabitDayFacts, HabitWeekFigures, HabitWeekRow } from "@/types/habits";
 
 /**
  * The Habits tab's table, one row per habit: every habit the coach manages —
@@ -32,12 +32,6 @@ export type HabitTrackerRow = {
   /** Stopped or deleted: the name and line 2 read quieter, never the days. */
   quiet: boolean;
 };
-
-/** Days, then target, as every habit line reads. */
-function wordsLine(words: HabitWords): string | null {
-  const parts = [words.schedule, words.target].filter((part): part is string => part !== null);
-  return parts.length > 0 ? parts.join(" · ") : null;
-}
 
 /**
  * A managed habit's line 2. Running: on the week holding the client's today,

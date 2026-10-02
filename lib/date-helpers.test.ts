@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { formatHistoryDate, getTodayDateString, isCalendarDay, parseDateParamOrToday, weekdayOf } from "./date-helpers";
+import { dayOfMonth, formatHistoryDate, getTodayDateString, isCalendarDay, parseDateParamOrToday, weekdayOf } from "./date-helpers";
+
+describe("dayOfMonth", () => {
+  it("reads the day of the month off the date itself, with no leading zero and on any host", () => {
+    expect(dayOfMonth("2026-09-26")).toBe(26);
+    expect(dayOfMonth("2026-10-02")).toBe(2);
+    expect(dayOfMonth("2028-02-29")).toBe(29);
+  });
+});
 
 describe("weekdayOf", () => {
   it("names a calendar date's own weekday in the product's spelling", () => {

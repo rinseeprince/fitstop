@@ -28,7 +28,7 @@ vi.mock("@/hooks/use-client-check-in", () => ({
 }));
 
 vi.mock("@/hooks/use-check-in-form", () => ({
-  useCheckInForm: (_token: string, totalSteps: number) => {
+  useCheckInForm: (_token: string, totalSteps: number | null) => {
     lastTotalSteps = totalSteps;
     return useCheckInFormMock();
   },
@@ -45,6 +45,9 @@ vi.mock("@/components/check-in/step-photos", () => ({
 }));
 vi.mock("@/components/check-in/step-training", () => ({
   StepTraining: () => <div data-testid="step-training" />,
+}));
+vi.mock("@/components/check-in/step-habits", () => ({
+  StepHabits: () => <div data-testid="step-habits" />,
 }));
 vi.mock("@/components/check-in/progress-indicator", () => ({
   ProgressIndicator: () => <div data-testid="progress-indicator" />,
@@ -105,7 +108,7 @@ function setClientCheckIn(
   });
 }
 
-let lastTotalSteps: number | undefined;
+let lastTotalSteps: number | null | undefined;
 
 function setCheckInForm(currentStep = 1) {
   useCheckInFormMock.mockReturnValue({
@@ -143,6 +146,26 @@ const baseContextData = {
 /** The same context with only the named field keys asked. */
 function contextWithFields(fields: string[], questions: { id: string; prompt: string }[] = []) {
   return { ...baseContextData, form: { fields, questions } };
+}
+
+/** The period's habit week as the context carries it: one habit, or none. */
+function habitWeek(withHabit: boolean) {
+  return {
+    start: "2026-05-08",
+    end: "2026-05-14",
+    dates: [],
+    habits: withHabit
+      ? [
+          {
+            habit: { id: "h-1", name: "Walk", howTo: null, measure: "tick", unit: null, direction: null },
+            words: { schedule: "Every day", target: null },
+            days: [],
+            figures: { planned: 7, done: 2, met: 2 },
+          },
+        ]
+      : [],
+    totals: withHabit ? { planned: 7, done: 2, met: 2 } : { planned: 0, done: 0, met: 0 },
+  };
 }
 
 describe("ClientCheckInPage", () => {
@@ -277,6 +300,46 @@ describe("ClientCheckInPage", () => {
     render(<ClientCheckInPage />);
 
     expect(lastTotalSteps).toBe(4);
+  });
+
+  it("appends a Habits step LAST when the week held a habit, and puts Submit on it", () => {
+    setClientCheckIn({ contextData: { ...baseContextData, habitWeek: habitWeek(true) } });
+    setCheckInForm(5);
+    render(<ClientCheckInPage />);
+
+    expect(lastTotalSteps).toBe(5);
+    expect(screen.getByTestId("step-habits")).toBeInTheDocument();
+    expect(screen.queryByTestId("step-training")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /submit check-in/i })).toBeInTheDocument();
+  });
+
+  it("keeps Training on the step it had: Habits comes after it", () => {
+    setClientCheckIn({ contextData: { ...baseContextData, habitWeek: habitWeek(true) } });
+    setCheckInForm(4);
+    render(<ClientCheckInPage />);
+
+    expect(screen.getByTestId("step-training")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /next/i })).toBeInTheDocument();
+  });
+
+  it("has no Habits step in a week that held no habit, or from a server that sends no habit week", () => {
+    setClientCheckIn({ contextData: { ...baseContextData, habitWeek: habitWeek(false) } });
+    setCheckInForm(4);
+    render(<ClientCheckInPage />);
+    expect(lastTotalSteps).toBe(4);
+    expect(screen.getByRole("button", { name: /submit check-in/i })).toBeInTheDocument();
+    cleanup();
+
+    setClientCheckIn({ contextData: baseContextData });
+    render(<ClientCheckInPage />);
+    expect(lastTotalSteps).toBe(4);
+  });
+
+  it("gives the draft no step count until the context has loaded", () => {
+    setClientCheckIn({ isLoadingContext: true });
+    render(<ClientCheckInPage />);
+
+    expect(lastTotalSteps).toBeNull();
   });
 
   it("strips a disabled field out of the submission before it is sent", async () => {

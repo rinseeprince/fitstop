@@ -244,6 +244,50 @@ describe("GET /api/client/check-ins/[id]", () => {
   });
 });
 
+describe("the week's habit figure, from the copy", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(requireClientAuth).mockResolvedValue({ ok: true, clientId: "client-1" });
+    vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([]);
+    vi.mocked(getCheckInAnswers).mockResolvedValue([]);
+    vi.mocked(getTrainingEventDetailsForCheckIn).mockResolvedValue([]);
+  });
+
+  /** A copy saved at version 3 whose habit week froze `totals`. */
+  const withHabitWeek = (totals: { planned: number; done: number; met: number }) => ({
+    ...sentCopy({}),
+    version: 3,
+    period: { dates: ["2026-05-14"], loggedDates: [], nutrition: [], habitWeek: { habits: [], totals } },
+  });
+
+  it("carries the days met over the days planned the check-in froze, and still reads the check-in alone", async () => {
+    mockCheckInRow({ data: fetched({ sent_snapshot: withHabitWeek({ planned: 13, done: 12, met: 11 }) }), error: null });
+
+    const body = await (await GET(req(), params("ci-1"))).json();
+
+    // Met, not done: a day made up past the plan counts once.
+    expect(body.data.habits).toEqual({ met: 11, planned: 13 });
+    expect(fromMock.mock.calls.map((call) => call[0])).toEqual(["check_ins"]);
+  });
+
+  it("says nothing was planned rather than leaving the figure out", async () => {
+    mockCheckInRow({ data: fetched({ sent_snapshot: withHabitWeek({ planned: 0, done: 0, met: 0 }) }), error: null });
+
+    const body = await (await GET(req(), params("ci-1"))).json();
+
+    expect(body.data.habits).toEqual({ met: 0, planned: 0 });
+  });
+
+  it("is null when the copy holds no week", async () => {
+    mockCheckInRow({ data: fetched({ sent_snapshot: sentCopy({}) }), error: null });
+
+    const body = await (await GET(req(), params("ci-1"))).json();
+
+    expect(body.data).toHaveProperty("habits");
+    expect(body.data.habits).toBeNull();
+  });
+});
+
 describe("the stored on-target count's denominator", () => {
   const row = (period_snapshot: unknown) => fetched({ nutrition_days_on_target: 2, period_snapshot });
 

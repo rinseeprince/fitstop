@@ -170,10 +170,14 @@ describe("CheckInFormSheet", () => {
     expect(screen.getByRole("button", { name: /Choose a template/ })).toBeDisabled();
   });
 
-  it("tells the coach what an all-off form still asks", () => {
+  it("tells the coach what an all-off form still asks: the two steps that confirm the week, and Habits in a week with habits", () => {
     setEditor({ fields: [] });
     renderSheet();
-    expect(screen.getByText(/still gets a two-step check-in/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /still gets the Feeling and Training steps, which confirm their week, and the Habits step in a week they have habits\./
+      )
+    ).toBeInTheDocument();
   });
 
   it("disables the commits while a save is in flight, and keeps an exit", () => {

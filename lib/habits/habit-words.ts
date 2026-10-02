@@ -31,14 +31,18 @@ export function directionLabel(direction: HabitDirection | null): string {
   return direction === "at_most" ? "At most" : "At least";
 }
 
+/** A number in the habit's own unit, the coach's word: "6,000 steps", "2.5 L", "3" with no unit. */
+export function habitAmount(habit: { unit: string | null }, value: number): string {
+  return habit.unit ? `${habitNumber(value)} ${habit.unit}` : habitNumber(value);
+}
+
 /** A number habit's target in its direction and unit; null on a tick habit or with no target. */
 export function targetWords(
   habit: { measure: HabitMeasure; unit: string | null; direction: HabitDirection | null },
   target: number | null
 ): string | null {
   if (habit.measure !== "number" || target === null || habit.direction === null) return null;
-  const amount = habit.unit ? `${habitNumber(target)} ${habit.unit}` : habitNumber(target);
-  return `${habit.direction === "at_most" ? "at most" : "at least"} ${amount}`;
+  return `${habit.direction === "at_most" ? "at most" : "at least"} ${habitAmount(habit, target)}`;
 }
 
 /** A week's figure: met of planned, or that nothing was planned. */
@@ -46,9 +50,24 @@ export function weekFigureWords(figures: HabitWeekFigures): string {
   return figures.planned === 0 ? "Nothing planned" : `${figures.met} of ${figures.planned}`;
 }
 
+/**
+ * A figure as the coach's screens write it, a count over the planned —
+ * "8/13": a week's met over its planned, or today's habits done today over
+ * those planned today. Null when nothing was planned, whatever was done.
+ */
+export function figureFraction(count: number, planned: number): string | null {
+  return planned === 0 ? null : `${count}/${planned}`;
+}
+
 /** A week's figure as a whole percentage, met over planned; null when nothing was planned. */
-export function weekFigurePercent(figures: HabitWeekFigures): number | null {
+export function weekFigurePercent<F extends Pick<HabitWeekFigures, "met" | "planned">>(figures: F): number | null {
   return figures.planned === 0 ? null : Math.round((figures.met / figures.planned) * 100);
+}
+
+/** A habit's words on one line, its days then its target ("Every day · at least 3 L"); null with neither. */
+export function wordsLine(words: HabitWords): string | null {
+  const parts = [words.schedule, words.target].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /** A habit's words from a version: its schedule and its target — the day's when given, else the version's. */

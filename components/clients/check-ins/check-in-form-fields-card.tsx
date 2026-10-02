@@ -69,8 +69,9 @@ export function CheckInFormFieldsCard({
 
       {enabled.size === 0 && (
         <p className="mt-3.5 border-t border-[rgba(13,148,136,0.06)] pt-3.5 text-[11px] text-[#93b0b4]">
-          With everything off, {clientName} still gets a two-step check-in
-          confirming their week — there is just nothing to type.
+          With everything off, {clientName} still gets the Feeling and Training
+          steps, which confirm their week, and the Habits step in a week they
+          have habits.
         </p>
       )}
     </div>

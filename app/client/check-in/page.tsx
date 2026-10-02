@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
 import { ArrowLeft, ArrowRight, Send, Clock } from "lucide-react";
@@ -11,6 +11,7 @@ import { StepSubjective } from "@/components/check-in/step-subjective";
 import { StepMetrics } from "@/components/check-in/step-metrics";
 import { StepPhotos } from "@/components/check-in/step-photos";
 import { StepTraining } from "@/components/check-in/step-training";
+import { StepHabits } from "@/components/check-in/step-habits";
 import { FormSuccess } from "@/components/check-in/form-success";
 import {
   PastCheckInsSection,
@@ -19,13 +20,14 @@ import {
 import { useCheckInForm } from "@/hooks/use-check-in-form";
 import { useClientCheckIn } from "@/hooks/use-client-check-in";
 import { useInvalidateClientProfile } from "@/hooks/use-client-profile";
+import { usePendingWrites } from "@/hooks/use-pending-writes";
 import { useUnits } from "@/contexts/units-context";
 import { toCanonicalCheckInSubmission } from "@/utils/check-in-canonical-metrics";
 import {
   CHECK_IN_STEP_LABELS,
   DEFAULT_CHECK_IN_FORM_FIELDS,
   applyCheckInForm,
-  stepsForFields,
+  wizardSteps,
 } from "@/lib/check-in/form-fields";
 import { toast } from "sonner";
 import type { LoggedQuality } from "@/types/training";
@@ -49,10 +51,12 @@ export default function ClientCheckInPage() {
   // The coach's form decides which fields are asked and therefore which steps
   // exist. No form on the payload — an older client app, or a client whose
   // coach has never customised anything — resolves to all 14 keys, which is the
-  // whole backward-compatibility story for this feature.
+  // whole backward-compatibility story for this feature. A week the client had
+  // a habit in adds the Habits step, last; the context read decides it once.
   const fields = contextData?.form?.fields ?? [...DEFAULT_CHECK_IN_FORM_FIELDS];
   const questions = contextData?.form?.questions ?? [];
-  const steps = stepsForFields(fields);
+  const habitWeek = contextData?.habitWeek ?? null;
+  const steps = wizardSteps(fields, (habitWeek?.habits.length ?? 0) > 0);
 
   const {
     currentStep,
@@ -63,53 +67,45 @@ export default function ClientCheckInPage() {
     nextStep,
     prevStep,
     clearSavedData,
-  } = useCheckInForm("client-check-in", steps.length);
+    // The step count is not known until the context has loaded.
+  } = useCheckInForm("client-check-in", contextData ? steps.length : null);
 
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Pin 3: training fill-gap logging is fire-and-flush. Each per-event POST
-  // registers its promise here; handleSubmit FLUSHES + AWAITS all of them before
-  // calling the check-in submit, so the server's submit-time derivation reads
-  // already-updated training_events.
-  const pendingTrainingPosts = useRef<Set<Promise<void>>>(new Set());
+  // Shared by the Training and Habits steps: a workout the client logs on the
+  // Training step and a habit entry made on the Habits step each save on
+  // their own, and Send waits for every one of them, so the server's
+  // submit-time figures and the check-in's frozen copy read the client's week
+  // with them in it.
+  const { track, flush } = usePendingWrites();
 
-  const logTrainingEvent = async (
+  const logTrainingEvent = (
     eventId: string,
     payload: { completionQuality: LoggedQuality; notes?: string }
-  ): Promise<void> => {
-    const post = (async () => {
-      const response = await fetch(`/api/client/training/events/${eventId}/log`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        throw new Error(result.error || "Failed to log session");
-      }
-    })();
-
-    pendingTrainingPosts.current.add(post);
-    try {
-      await post;
-    } finally {
-      pendingTrainingPosts.current.delete(post);
-    }
-  };
+  ): Promise<void> =>
+    track(
+      (async () => {
+        const response = await fetch(`/api/client/training/events/${eventId}/log`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}));
+          throw new Error(result.error || "Failed to log session");
+        }
+      })()
+    );
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setError(null);
 
     try {
-      // Flush + await any in-flight training fill-gap POSTs so the server's
-      // submit-time workouts_completed derivation reads updated training_events.
-      // allSettled: a failed per-event log already surfaced inline on its row;
-      // it must not block the check-in submit.
-      if (pendingTrainingPosts.current.size > 0) {
-        await Promise.allSettled(Array.from(pendingTrainingPosts.current));
-      }
+      // Every workout and habit entry still on its way, first. A write that
+      // failed has said so on its own step; it does not stop the send.
+      await flush();
 
       // Shape the draft to the form the coach actually asks BEFORE converting
       // units. A saved draft can predate a coach's change, and there is no
@@ -262,6 +258,16 @@ export default function ClientCheckInPage() {
                   trainingPeriodStats={contextData.trainingPeriodStats}
                   nutritionSummary={contextData.nutritionSummary ?? null}
                   fields={fields}
+                />
+              )}
+
+              {activeStep === "habits" && habitWeek && (
+                <StepHabits
+                  habitWeek={habitWeek}
+                  clientTimezone={contextData.clientInfo.timezone ?? "UTC"}
+                  logsOpenFrom={contextData.clientInfo.logsOpenFrom ?? null}
+                  trackWrite={track}
+                  disabled={isSubmitting}
                 />
               )}
             </div>

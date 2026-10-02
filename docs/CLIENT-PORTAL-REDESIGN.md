@@ -79,7 +79,7 @@ The old header-only layout (`app/client/layout.tsx`) is replaced with a layout t
 ### Check-in hub (`/client/check-in`)
 
 The Check-in tab is a hub, not a single-purpose submission form. Shows:
-- **Submission form** at top when a check-in is in window. *(Updated 2026-08-30: `clients.expected_check_in_day` was DROPPED by migrations 154+155 — the gate is now `getCheckInGate` over the one stored `clients.next_check_in_due`, and `calculateCheckInPeriod` / `resolveCheckInWindow` still resolve the reported week. See `ARCHITECTURE.md → Check-in System`.)* When not in window, a friendly "Next check-in opens on [date]" notice replaces the form. **The form's step list is no longer fixed** — it derives from the coach's per-client form (migration 157; `stepsForFields`).
+- **Submission form** at top when a check-in is in window. *(Updated 2026-08-30: `clients.expected_check_in_day` was DROPPED by migrations 154+155 — the gate is now `getCheckInGate` over the one stored `clients.next_check_in_due`, and `calculateCheckInPeriod` / `resolveCheckInWindow` still resolve the reported week. See `ARCHITECTURE.md → Check-in System`.)* When not in window, a friendly "Next check-in opens on [date]" notice replaces the form. **The form's step list is no longer fixed** — it derives from the coach's per-client form (migration 157; `stepsForFields`), and a week the client had a habit in ends with a Habits step (`wizardSteps`, the context's `habitWeek`): the week's habits a column a day, each covered day taking its entry through the habit entry route, one write after another per habit, and Submit waiting for every entry and workout log still on its way. See `ARCHITECTURE.md → Check-in System → The Habits step`.
 - **Past check-ins list** below: chronological, newest first. Each row shows date, status badge (pending/ai_processed/reviewed), and a short AI-summary preview.
 - Tapping a past check-in opens a full detail view (`/client/check-in/[id]` already exists per `app/client/progress/check-in/[id]/page.tsx` — reuse it, just route to it from the new hub).
 
@@ -132,7 +132,7 @@ Each summary is minimal: name, logged-state boolean, progress counts. The habits
 - `POST /api/client/training/events/[eventId]/log`: bulk write of `session_logs` plus `exercise_logs` including `prescribed_session_snapshot` and `prescribed_exercise_snapshot`. Updates `training_events.status`. Cascades nutrition.
 - `PATCH /api/client/daily-logs/[date]/nutrition`: kcal plus macros on `nutrition_logs`.
 - `PATCH /api/client/daily-logs/[date]/wellness`: wellness fields on `wellness_logs`.
-- `PUT` / `DELETE /api/client/habits/[habitId]/days/[date]`: a habit's entry for the day, one per habit per day: `{ done }` for a tick habit or `{ value }` for a number habit, with an optional note. Answers with the habit's day and week as they now stand, or `data: null` when the entry is saved but they could not be read back: the page keeps the change and reads the day again. A habit's writes go one after another, whatever day each is for, so each answer's week holds every earlier write; no control waits for one. A request with no answer is settled by reading the day: an entry there matching what was sent was saved.
+- `PUT` / `DELETE /api/client/habits/[habitId]/days/[date]`: a habit's entry for the day, one per habit per day: `{ done }` for a tick habit or `{ value }` for a number habit, with an optional note. Answers with the habit's day and week as they now stand, or `data: null` when the entry is saved but they could not be read back: the screen keeps the change and reads again what it shows — the habits page its day, the check-in's Habits step its week. A habit's writes go one after another, whatever day each is for, so each answer's week holds every earlier write; no control waits for one. A request with no answer, or a `5xx`, is settled by reading the same way: an entry there matching what was sent was saved.
 
 The nutrition `PATCH` populates the log's `nutrition_plan_id` from the version covering that date (`resolvePlanContextForDate`), the one write endpoint that stamps a plan link. All write endpoints enforce the closed-period lock (see "Date edit rules" below) server-side.
 
@@ -242,7 +242,7 @@ Both are imported by every surface that cares (UI detail pages for disabled/noti
 
 **Everything on a day locks together.** Nutrition, wellness, habits and training all belong to the same reporting period, so they answer as one: a habit's entry is refused on a locked day whatever the habit.
 
-**The boundary reaches the app on two wires**, from that one derivation: `GET /api/client/me`, refetched after a submit, and `clientInfo.logsOpenFrom` on `GET /api/client/check-in-context` for the form's training checklist, which never reads the profile.
+**The boundary reaches the app on two wires**, from that one derivation: `GET /api/client/me`, refetched after a submit, and `clientInfo.logsOpenFrom` on `GET /api/client/check-in-context` for the form's training checklist and its Habits step, which never read the profile.
 
 Same pattern for plan context: `resolvePlanContextForDate(clientId, date): { nutritionPlanId, trainingPlanId }` is the single function that resolves a date's plan links; the nutrition log's `PATCH` calls it to stamp `nutrition_plan_id`. Do not duplicate this query per endpoint.
 

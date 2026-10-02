@@ -1,12 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSWRConfig } from "swr";
 import { useAuth } from "@/contexts/auth-context";
+import { checkInHabitWeekKey } from "@/hooks/use-check-in-habit-week";
+import { useReadAfterHabitEntries } from "@/hooks/use-client-habit-entries";
 import type {
   CheckInFormData,
   CheckInClientInfo,
   CheckInContextResponse,
 } from "@/types/check-in";
+
+const fetchUrl = (url: string) => fetch(url);
 
 /**
  * The route's payload, typed off the shared contract rather than a private
@@ -22,6 +27,12 @@ type CheckInContextData = CheckInContextResponse & {
 
 export function useClientCheckIn() {
   const { user } = useAuth();
+  const { mutate } = useSWRConfig();
+  // The context carries the period's habit week, the Habits step's first
+  // answer: read once every habit entry on its way has its answer, it holds
+  // them all, and nothing can land in the step's week between its read and
+  // its arrival — the wizard, and with it the step, waits for the context.
+  const fetchAfterHabitEntries = useReadAfterHabitEntries(fetchUrl);
   const [contextData, setContextData] = useState<CheckInContextData | null>(null);
   const [isLoadingContext, setIsLoadingContext] = useState(true);
   const [contextError, setContextError] = useState<string | null>(null);
@@ -40,7 +51,7 @@ export function useClientCheckIn() {
         setContextError(null);
         setNextDueDate(null);
 
-        const response = await fetch("/api/client/check-in-context");
+        const response = await fetchAfterHabitEntries("/api/client/check-in-context");
         const result = await response.json();
 
         if (!response.ok || !result.success) {
@@ -60,6 +71,12 @@ export function useClientCheckIn() {
         }
 
         setContextData(result.data);
+        // The Habits step's first answer is this visit's week: a week cached
+        // from an earlier visit in this tab may be older than the context.
+        const habitWeek = (result.data as CheckInContextData).habitWeek;
+        if (habitWeek) {
+          void mutate(checkInHabitWeekKey(habitWeek.start, habitWeek.end), { success: true, data: habitWeek }, { revalidate: false });
+        }
       } catch (error) {
         setContextError(error instanceof Error ? error.message : "Failed to load context");
       } finally {
@@ -67,8 +84,8 @@ export function useClientCheckIn() {
       }
     };
 
-    fetchContext();
-  }, [user]);
+    void fetchContext();
+  }, [user, mutate, fetchAfterHabitEntries]);
 
   // Submit check-in function
   const submitCheckIn = async (formData: CheckInFormData): Promise<{ success: boolean; error?: string }> => {

@@ -134,6 +134,7 @@ export const CheckInDetailView = ({
             comparisonData={comparisonData}
             adherence={adherence}
             nutrition={periodAdherence?.nutrition ?? null}
+            habits={periodAdherence?.habitWeek.totals ?? null}
           />
 
           {/* The week, one line per day: its workouts, its calories and macros

@@ -10,6 +10,10 @@ import { cn } from "@/lib/utils";
 interface HabitNumberBoxProps {
   /** The box's id, which the row's name labels. */
   id: string;
+  /** The box's own name, where no label points at it: a day's cell in the check-in's week. */
+  label?: string;
+  /** A size and a width, for a box in a grid of days; the habits page's row takes the default. */
+  className?: string;
   /** The number the day's entry holds, or null. */
   value: number | null;
   /** The coach's word for the unit, shown as typed and never converted. */
@@ -35,7 +39,7 @@ interface HabitNumberBoxProps {
  * box being typed in keeps what is typed: the box is never remounted, so
  * neither a landing nor a refusal takes the focus or a number half typed.
  */
-export function HabitNumberBox({ id, value, unit, disabled, onCommit, onInvalid }: HabitNumberBoxProps) {
+export function HabitNumberBox({ id, label, className, value, unit, disabled, onCommit, onInvalid }: HabitNumberBoxProps) {
   const seed = value === null ? "" : String(value);
   const [box, setBox] = useState({ seed, text: seed, invalid: false });
   if (box.seed !== seed) {
@@ -72,8 +76,9 @@ export function HabitNumberBox({ id, value, unit, disabled, onCommit, onInvalid 
           if (event.key === "Enter") commit();
         }}
         disabled={disabled}
+        aria-label={label}
         aria-invalid={box.invalid || undefined}
-        className={cn("h-9 w-20", MONO_INPUT_CLASS)}
+        className={cn("h-9 w-20", MONO_INPUT_CLASS, className)}
       />
       {unit ? <span className={cn("text-[13px]", TEXT_SECONDARY)}>{unit}</span> : null}
     </div>

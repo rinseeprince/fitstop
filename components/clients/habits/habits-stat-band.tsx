@@ -1,7 +1,7 @@
 "use client";
 
 import { StatBand, type StatBandCell } from "@/components/programs/shared/stat-band";
-import { habitFigure } from "./habit-figure";
+import { figureFraction } from "@/lib/habits/habit-words";
 import type { CoachHabitList, CoachHabitWeek } from "@/types/habits";
 
 /**
@@ -22,8 +22,8 @@ export function HabitsStatBand({
   weekPending: boolean;
   listPending: boolean;
 }) {
-  const thisWeek = week ? habitFigure(week.totals.met, week.totals.planned) : null;
-  const today = week?.today ? habitFigure(week.today.done, week.today.planned) : null;
+  const thisWeek = week ? figureFraction(week.totals.met, week.totals.planned) : null;
+  const today = week?.today ? figureFraction(week.today.done, week.today.planned) : null;
   const cells: StatBandCell[] = [
     { label: "This week", value: thisWeek ?? "—", valueMuted: thisWeek === null, pending: weekPending, sub: null },
     { label: "Today", value: today ?? "—", valueMuted: today === null, pending: weekPending, sub: null },

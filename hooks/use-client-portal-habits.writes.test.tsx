@@ -3,13 +3,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { SWRConfig, type Cache, type State } from "swr";
 import type { ReactNode } from "react";
 
-import {
-  clientHabitDayKey,
-  clientHabitProgressKey,
-  HabitEntryError,
-  useClientHabitDayEntries,
-  useReadAfterHabitEntries,
-} from "./use-client-portal-habits";
+import { HabitEntryError, useReadAfterHabitEntries } from "./use-client-habit-entries";
+import { clientHabitDayKey, clientHabitProgressKey, useClientHabitDayEntries } from "./use-client-portal-habits";
 import { clientDaySummaryKey } from "./use-client-training-data";
 import type { ClientHabitDay, ClientHabitDayItem, HabitEntryResult } from "@/types/habits";
 

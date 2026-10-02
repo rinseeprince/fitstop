@@ -414,8 +414,8 @@ The **plan-based "typical week" / client program-card path** — `buildDailyTarg
 - **The Overview's habit row** (`GET …/adherence`): one dot per day from that day's planned habits done on that day, a dash on a day with nothing planned; the figure is the mean of the judged days' percentages, and the sub-line counts the days under `HABIT_DROPOFF_THRESHOLD_PERCENT`.
 - **The attention feed**: a line per habit missed on `HABIT_MISSED_DAYS` or more of its planned days over the last `HABIT_MISSED_WINDOW_DAYS` days gone by ("Missed Water 4 days"), each dismissed on its own (`alertDismissalKey`); a habit covering a day of the window is prescribed work, and every entry is a logged day (see "Daily logs").
 - **The activation card**: `hasHabits` is a habit running on the client's today or starting later.
-- **The client**: the home card (`habits` on the day summary: how many run that day, how many were planned, how many of those were done that day, and `toDoThisWeek`, how many habit-days the day's week still asks for — its planned less its met, the kernel's `weekToDo`), the habits page (every habit a version covers on the date in three groups — planned that day, any day this week for a habit done N times a week, not planned that day — each with the coach's how-to, its entry, its week and its note, saved on its own; a note is saved with the day's answer, a tick habit's as shown, a number habit's once it has its number) and the Journey (each habit's words, this week's figure and its recent weeks as bars). The page's day read and its entries are one hook (`useClientHabitDayEntries`, `hooks/use-client-portal-habits.ts`) over a ledger of the changes on their way (`lib/habits/habit-entry-ledger.ts`, one per SWR cache, so a write outlives the page that made it): a day shows its own changes over what the server last gave it, and a habit's week — a record of its own — shows every change on its way in that week moved by its day alone (`weekAfterDayChange`), so a change shows at once on every day of its week and stays until its own write settles; a habit's writes go one after another, whatever day each is for, and no control waits for one. An answer lands its habit — the target's words rebuilt from the day it gives — on every day of its week the cache holds, never clearing a day read; a refusal (400, 403) takes back its change alone, a 403 landing the client's day rule, read again, in the same tick; a habit the coach deleted or stopped underneath the write (404, 409), an entry saved but not read back, or no answer at all, reads the day straight from the server and lands the habit as it has it, or without it, and with no answer a read that shows the entry saved settles the write as saved. Making a change clears the Journey, the habit week and every day summary, whose reads wait for the entries on their way (`useReadAfterHabitEntries`), so none shows a figure from before one. The ledger counts its own reads of each day, and a landing over a read still out asks for another.
-- **A sent check-in** freezes the habit week (see "A sent check-in is frozen"); the coach review's Habits section and the AI's lines read the copy.
+- **The client**: the home card (`habits` on the day summary: how many run that day, how many were planned, how many of those were done that day, and `toDoThisWeek`, how many habit-days the day's week still asks for — its planned less its met, the kernel's `weekToDo`), the habits page (every habit a version covers on the date in three groups — planned that day, any day this week for a habit done N times a week, not planned that day — each with the coach's how-to, its entry, its week and its note, saved on its own; a note is saved with the day's answer, a tick habit's as shown, a number habit's once it has its number) and the Journey (each habit's words, this week's figure and its recent weeks as bars). The page's day read and its entries are one hook (`useClientHabitDayEntries`, `hooks/use-client-portal-habits.ts`) over a ledger of the changes on their way (`lib/habits/habit-entry-ledger.ts`, one per SWR cache, so a write outlives the page that made it; `hooks/use-client-habit-entries.ts` holds it with what every screen's entries share — the entry write, each habit's line, the reads that wait for the line and the habit area's invalidator): a day shows its own changes over what the server last gave it, and a habit's week — a record of its own — shows every change on its way in that week moved by its day alone (`weekAfterDayChange`), so a change shows at once on every day of its week and stays until its own write settles; a habit's writes go one after another, whatever day each is for, and no control waits for one. An answer lands its habit — the target's words rebuilt from the day it gives — on every day of its week the cache holds, never clearing a day read; a refusal (400, 403) takes back its change alone, a 403 landing the client's day rule, read again, in the same tick; a habit the coach deleted or stopped underneath the write (404, 409), an entry saved but not read back, or no answer at all, reads the day straight from the server and lands the habit as it has it, or without it, and with no answer a read that shows the entry saved settles the write as saved. Making a change clears the Journey, the habit week and every day summary, whose reads wait for the entries on their way (`useReadAfterHabitEntries`), so none shows a figure from before one. The ledger counts its own reads of each day, and a landing over a read still out asks for another.
+- **The check-in**: the client's wizard ends with a Habits step when the week it reports on held a habit — that week's habits over the check-in's period, an entry on every covered day the day rule leaves open, Send waiting for every one (see "The Habits step"). A sent check-in freezes the habit week (see "A sent check-in is frozen"); the coach review's Habits cell and section, the AI's lines and the client's own sent check-in read the copy.
 
 ---
 
@@ -1006,7 +1006,7 @@ Portal services follow the service-layer default (CONVENTIONS §8): **`supabaseA
 
 **Reads:** `GET /api/client/day-summary?date=` (home payload `{ training[], nutrition, wellness, habits }` — `habits` is `{ plannedToday, doneToday, running, toDoThisWeek }`, the day's habits and what its week still asks, from the habit kernel; `no-store`) · `GET /api/client/training/week?date=` (`ClientTrainingWeek`, `types/client-training-week.ts` — every session in the check-in-anchored week containing `date`, by date and each day's sessions in the day's order, each with a `state` of done / today / upcoming / missed derived against the client's today; a day can hold several, so a week can hold more than seven; `no-store`. Powers the session picker and the week view, and is exactly the set a layout write may touch) · `GET /api/client/training/events/[eventId]` · `GET /api/client/daily-logs/[date]/{wellness,nutrition}` · `GET /api/client/habits/day?date=` (every habit running on the date, planned that day or not, with the day's facts, the week holding it and the words), `GET /api/client/habits/week?start=&end=` (the habit week over dates inside one client week) and `GET /api/client/habits/progress?weeks=` (the Journey) — habits are **not** under `/daily-logs/[date]`; all `no-store` · `GET /api/client/training-plan` (date-resolved; carries `state`/`startsOn`/`endsOn` — see "Client-side plan tier") + `GET /api/client/nutrition-plan` (Program tab) · `GET /api/client/journey` (Program tab's goal card and blocks; carries `currentBlockNotes: { blockId, notes[] } | null` — the coach-note visibility policy is enforced **here on the wire**, not in the renderer, so RN inherits it rather than re-deriving it; see "The two notes" above) · `GET /api/client/training/exercise-history` (bounded full return) · `GET /api/client/check-ins` (**keyset-default**, opaque base64url `{createdAt,id}` cursor via `lib/cursor.ts`; legacy `?offset=` opt-in).
 
-**Writes:** `POST /api/client/training/events/[eventId]/log` (a list present replaces, an absent list leaves alone: `exercises` replaces the log's `exercise_logs` and their snapshots — an empty list clears them — and `groupScores` replaces the timed groups' scores; a payload with neither records the outcome alone; updates `training_events.status`; **400** when the payload records no work, or a score doesn't fit its group; **404** for a score naming a group outside the performed session) · `DELETE` the same path (**Clear log** — one transaction, the log and its rows gone and the workout back to `scheduled`; see "Logging a workout") · `POST /api/client/training/events/layout` (**client week layout** — `{ moves: [{ eventId, fromDate, toDate }] }`, 1–`MAX_WEEK_LAYOUT_MOVES` entries; a single move, a two-day swap and a whole-week rearrangement are the same request at different sizes, applied in one transaction by `move_training_events_atomic` (migrations 150, 179). Policy lives in `services/training-event-layout-service.ts`: only still-`scheduled` sessions move; each stays inside the training week it currently sits in; neither end of a move may fall in a week a check-in has closed (the same day rule the log writes obey). A session moved onto a day that holds some joins it after them, and several moved onto one day land in the order the list gives them (see "Several sessions a day"). `fromDate` is the drift check — a concurrent coach move answers 409 "your week changed", never a half-applied week. Nutrition follows the moved sessions on the next read: a day's target is computed from the sessions on it) · `PATCH /api/client/daily-logs/[date]/{wellness,nutrition}` (both ungated: a meal is refused only by the day rule, and a day no version covers saves with no stamp) · `PUT` / `DELETE /api/client/habits/[habitId]/days/[date]` (the habit's entry for the day, one per habit per day — `{ done }` or `{ value }`, an optional note — on any day the habit runs, planned or not; answers with the habit's day and week, or `data: null` when the entry is saved but they could not be read back (the page keeps the change and reads the day again); **404** not the client's habit, **409** a day the habit is not running, **400** an answer that does not fit the habit, **403** a locked day) · `PATCH /api/client/settings` (`unitPreference`, `timezone` — IANA-validated; `lib/validations/client.ts`. No `weight_unit`: that column is gone and was never accepted here anyway. `reminder_preferences` is a different endpoint. Reachable pre-activation — `getAuthenticatedClientId` gates on `clients.active`, not `onboarding_status` — which is what lets the intake form set a client's units before their coach activates them).
+**Writes:** `POST /api/client/training/events/[eventId]/log` (a list present replaces, an absent list leaves alone: `exercises` replaces the log's `exercise_logs` and their snapshots — an empty list clears them — and `groupScores` replaces the timed groups' scores; a payload with neither records the outcome alone; updates `training_events.status`; **400** when the payload records no work, or a score doesn't fit its group; **404** for a score naming a group outside the performed session) · `DELETE` the same path (**Clear log** — one transaction, the log and its rows gone and the workout back to `scheduled`; see "Logging a workout") · `POST /api/client/training/events/layout` (**client week layout** — `{ moves: [{ eventId, fromDate, toDate }] }`, 1–`MAX_WEEK_LAYOUT_MOVES` entries; a single move, a two-day swap and a whole-week rearrangement are the same request at different sizes, applied in one transaction by `move_training_events_atomic` (migrations 150, 179). Policy lives in `services/training-event-layout-service.ts`: only still-`scheduled` sessions move; each stays inside the training week it currently sits in; neither end of a move may fall in a week a check-in has closed (the same day rule the log writes obey). A session moved onto a day that holds some joins it after them, and several moved onto one day land in the order the list gives them (see "Several sessions a day"). `fromDate` is the drift check — a concurrent coach move answers 409 "your week changed", never a half-applied week. Nutrition follows the moved sessions on the next read: a day's target is computed from the sessions on it) · `PATCH /api/client/daily-logs/[date]/{wellness,nutrition}` (both ungated: a meal is refused only by the day rule, and a day no version covers saves with no stamp) · `PUT` / `DELETE /api/client/habits/[habitId]/days/[date]` (the habit's entry for the day, one per habit per day — `{ done }` or `{ value }`, an optional note — on any day the habit runs, planned or not; answers with the habit's day and week, or `data: null` when the entry is saved but they could not be read back (the screen keeps the change and reads again what it shows: the habits page its day, the check-in's Habits step its week); **404** not the client's habit, **409** a day the habit is not running, **400** an answer that does not fit the habit, **403** a locked day) · `PATCH /api/client/settings` (`unitPreference`, `timezone` — IANA-validated; `lib/validations/client.ts`. No `weight_unit`: that column is gone and was never accepted here anyway. `reminder_preferences` is a different endpoint. Reachable pre-activation — `getAuthenticatedClientId` gates on `clients.active`, not `onboarding_status` — which is what lets the intake form set a client's units before their coach activates them).
 
 The nutrition log's `PATCH` resolves plan context once via `resolvePlanContextForDate(clientId, date)` to stamp its `nutrition_plan_id` — the one client write that stamps a plan link — and every write enforces the closed-period lock server-side (see "Date-edit permissions").
 
@@ -1043,7 +1043,7 @@ A client trains on a day other than prescribed by **moving the session there fir
 
 One rule in `lib/daily-log-permissions.ts` (pure, client-safe). `resolveLogsOpenFrom(client, lastSubmittedPeriodEnd)` is the ONE derivation of the boundary — the later of the start of the window `resolveCheckInWindow` gives for the client's today, and the day after the newest submitted `check_ins.period_end`. Taking the window from the same function the check-in FORM uses is what makes the lock and the form agree about which check-in is outstanding, and it is what makes the roll land on the check-in weekday itself: on that morning the form would submit for the new week, so the old week stops being sendable and its days lock the same day. `null` means no lower bound — a client with no schedule can never check in, so nothing ever closes a week for them (owner, 2026-09-04). `canEditDay(date, logsOpenFrom, clientTimezone)` drives UI disabled state; the server wrapper `assertCanEdit()` (`services/daily-log-permissions-service.ts`) throws `DayLockedError` → 403 carrying the one sentence, "This day is locked." — true of a closed week and of the future alike.
 
-The boundary rides on **two** wires, from that one derivation: `GET /api/client/me` (the client-level read every screen already holds, refetched after a submit through `useInvalidateClientProfile`) and `clientInfo.logsOpenFrom` on `GET /api/client/check-in-context` (the check-in form's training checklist locks per row and that page never reads the profile). `services/training-event-layout-service.ts` applies the same boundary to **both ends** of every move, so a session can be neither dropped into nor lifted out of a week a check-in has reported on.
+The boundary rides on **two** wires, from that one derivation: `GET /api/client/me` (the client-level read every screen already holds, refetched after a submit through `useInvalidateClientProfile`) and `clientInfo.logsOpenFrom` on `GET /api/client/check-in-context` (the check-in form's training checklist locks per row, and its Habits step per day, and that page never reads the profile). `services/training-event-layout-service.ts` applies the same boundary to **both ends** of every move, so a session can be neither dropped into nor lifted out of a week a check-in has reported on.
 
 This REPLACED the "past logged → locked" rule on 2026-09-04 (today editable; a past day editable until it was logged; a never-logged past day open for ever). Gone with it: `DayLogStatus`, the per-resource child-table read and its `RESOURCE_TABLE`, `assertCanEditTrainingDay`, the layout service's `session_logs` backfill read, the `loggedStatus` field on the wellness GET (it had no reader left) and the 201-on-first-log branch on the two daily-log saves, which existed only because that read was already being made. **Nothing on the coach side changed**: the coach never logs for a client, and the frozen-prescription rule on the coach's calendar (`assertSessionUnlogged`) is a different rule.
 
@@ -1566,10 +1566,12 @@ trend as yes or no, which reads as towards or away.
   the goal section and the drift note (`buildCheckInComparison`); the nutrition card — its summary
   and its day-by-day rows — the habit week and
   the days logged (`getCheckInPeriodAdherence`, the Overview kernel's rules over the saved rows, and the saved rows themselves); the
-  AI's food rows (`getCheckInNutritionPeriod`); the answers' wording (`getCheckInAnswers`). The one
+  AI's food rows (`getCheckInNutritionPeriod`); the answers' wording (`getCheckInAnswers`); the
+  client's own single check-in read, whose `habits` is the habit week's days met over its days
+  planned (`sentHabitTotals`). The one
   live answer is whether the goal judged is still the client's goal today (`goalIsCurrent`), which is
   what "Set new goals" asks. The routes that send a check-in to a browser leave the copy off
-  (`withoutSentSnapshot`, `toClientFacingCheckIn`); the client wires keep their shape.
+  (`withoutSentSnapshot`, `toClientFacingCheckIn`).
 - **A sanctioned denormalisation** (CONVENTIONS §8): the copy repeats what the log held for the
   check-in's readings and, for a check-in sent since, the food rows `period_snapshot` freezes too —
   one writer, one statement, one computation, so they cannot disagree at Send, and after it the copy
@@ -1605,8 +1607,9 @@ Feeling step's weekly summary and the Training step's session checklist are
 read-only viewers of the client's own week — and the checklist is a fill-gap
 LOGGER writing to `training_events`, offering Completed or Partial and nothing
 else, whose save records an outcome and leaves the workout's logged sets exactly
-as they are — so they carry no key either, and the two steps are unconditional. With every key off a client still gets a two-step
-"here is your week, confirm it" check-in. (Making those two viewers suppressible
+as they are — so they carry no key either, and the two steps are unconditional. With every key off a client still gets the Feeling
+and Training steps, "here is your week, confirm it", and the Habits step in a week they had a habit
+(see "The Habits step"). (Making those two viewers suppressible
 is a 16th/15th key and a different feature; `TECHNICAL-DEBT.md` records it.)
 
 **A question is a row, not a string copied onto each form.** Rewording it
@@ -1658,7 +1661,9 @@ promises the change lands everywhere.
 **The client's wizard derives its steps from the form**, through
 `stepsForFields`: Feeling and Training are unconditional (they read the client's
 own week back to them), Metrics and Photos appear only if some field on them is
-asked. `applyCheckInForm` runs in the browser too, so a saved draft that
+asked. The Habits step comes after them, last, when the week held a habit
+(`wizardSteps`): the coach's Fields card lists the form's four steps and not it.
+`applyCheckInForm` runs in the browser too, so a saved draft that
 predates a coach's change is shaped before it is sent — the server's own strip,
 after its gate and before the photo uploads, remains the authority.
 
@@ -1679,6 +1684,64 @@ the client's retry meets migration 156's period-unique constraint. Surfacing it
 is deliberate — silently losing a client's typed answers is worse — and closing
 the seam means moving the check-in INSERT itself into an RPC.
 
+### The Habits step
+
+**The client's habit week, last in the wizard, filled in where it has gaps** (see "Habits").
+`GET /api/client/check-in-context` carries `habitWeek`: the habit week over the check-in's period
+(`getCheckInHabitWeek`, the habit figures service) — each habit a version covers on one of its
+days, each day as it happened, each habit's figures and words, and the totals — the answer
+`GET /api/client/habits/week` gives for the same dates. The page reads the context once every habit
+entry on its way has its answer (`useReadAfterHabitEntries`), so the week it carries holds them all;
+nothing can land in the step's week before it arrives, since the step is not drawn until then. A
+week holding a habit gives the wizard its Habits step, appended after the form's steps so a draft,
+which saves its step as a number, keeps its kind. The step list is decided by that one read, and the
+wizard is not drawn until it has arrived:
+the step a draft was saved on is kept as asked and the step shown is derived from it at render,
+pulled into the steps there are (`useCheckInForm`), so a draft left on Habits and restored into a
+week with no habit opens on the last step.
+
+- **The step** (`components/check-in/step-habits.tsx`) is the week in the `Table` primitive, one row
+  per habit — its name, its days then its target, and its week's met of planned — and a column per
+  day: a tick or a number box on every day a version covers, planned or not, locked on a day the day
+  rule closes, a dot under a day the coach planned, and a faint dash on a day no version covers.
+  A note is made on the habits page: a tick, an untick or a new number keeps the day's note, and
+  emptying a number box clears the entry, its note with it, as on the habits page.
+- **Its read** is an SWR read under its own key (`useCheckInHabitWeek`,
+  `hooks/use-check-in-habit-week.ts`) whose first answer is the context's `habitWeek`, laid into
+  that key each time the page reads the context (`useClientCheckIn`) so a week cached on an earlier
+  visit never shows over it; the step draws from its first frame and comes back after Back and Next
+  showing the week as the client left it. It is read again every time the step comes on screen,
+  with no deduping, and every read of it waits for the habit entries on their way
+  (`useReadAfterHabitEntries`), the habits page's included, so none shows a figure from before one;
+  a landing over a read of it still out asks for another.
+- **Its writes** are the habits page's: the entry route, each habit's writes one after another in
+  the line the habits page takes (`useHabitEntryLine`). A change shows at once, its habit's figures
+  and the totals moved by that day alone (`weekWithEntry`, `lib/habits/habit-week-changes.ts`), from
+  a store of the step's changes on their way kept beside the SWR cache (one per cache, like the
+  habits page's ledger). Making a change clears the client's other habit reads and the home's day
+  summaries, none of them on screen beside the step (`useClearClientHabitReads`, the habit area's
+  invalidator, keeping the step's own week): the Journey and the summaries read again once the
+  entries on their way have their answers; the habits page's day, opened while the write is out,
+  shows the day as the server has it until the write settles. When a write settles its change
+  leaves that store in the same tick as the week moves. An answer lands its day and moves that
+  habit's figures over the step's own dates (`weekWithDay`) when it vouches for that
+  (`answerLandsAlone`, `lib/habits/habit-week-changes.ts`): its day is planned as the step holds it,
+  and its week — the whole client week — counts what the moved row counts. Otherwise the week is
+  read again as below: the coach changed the habit underneath, that day or another, or the step
+  holds a first week clamped to the start day, which the answer's whole week cannot vouch for. A
+  refusal (400, 403) only takes the change back; a habit deleted or stopped underneath it (404,
+  409), a 5xx or no answer at all reads the week straight from the server and lands that habit's
+  row as it has it (`weekWithRow`), and after a 5xx or no answer, a read showing the answer sent
+  saved settles the write as saved, whatever the day's note; an entry saved but not read back stays
+  as the change and the week is read again. Every settle reads the habits page's day again in place,
+  in case it was opened while the write was on its way. While Send is on its way the step's
+  controls are off.
+- **Send waits for every write on its way** — a workout the Training step's checklist logged and a
+  habit entry made on this step alike (`usePendingWrites`, `hooks/use-pending-writes.ts`),
+  including one still in its habit's line — so the figures the server derives and the copy it
+  freezes at Send hold them. A write that failed has said so on its own step and does not stop the
+  Send.
+
 ### The coach review surface
 
 `components/clients/check-ins/check-in-detail-view.tsx`, rendered by the Check-ins tab in place of
@@ -1686,7 +1749,7 @@ its list whenever `?checkIn=<id>` is present (the tab's single-owner param — s
 structure").
 
 **One page, no switcher**, read in the order the review runs: the KPI ribbon (Weight, Body Fat,
-Nutrition, Training), then the week grid, Wellness, Habits, Client notes, Goal
+Nutrition, Training, Habits), then the week grid, Wellness, Habits, Client notes, Goal
 progress, the AI review, and last the Reply. The week grid is ONE card for Training and Nutrition —
 the week one line per day — so the page never sets two cards of different heights side by side. **Every
 section renders its own `SectionLabel` rail, inside the
@@ -1767,8 +1830,8 @@ food rows the check-in's copy froze and the kernel over them (`getCheckInNutriti
 week and the logged days from the same copy (`getCheckInPeriodAdherence`), the day-form rows
 (`getDailyLogs`) and the comparison behind the goal strip (`buildCheckInComparison`, the copy's goal
 section). `buildCheckInReviewPrompt`
-(`utils/ai-prompt-builder.ts`, with `utils/ai-prompt-week.ts` and `utils/ai-prompt-day.ts`) writes it
-out. The client's submit (`triggerAISummaryGeneration`) and the coach's Regenerate route both call the
+(`utils/ai-prompt-builder.ts`, with `utils/ai-prompt-week.ts`, `utils/ai-prompt-day.ts` and
+`utils/ai-prompt-habits.ts`) writes it out. The client's submit (`triggerAISummaryGeneration`) and the coach's Regenerate route both call the
 same two functions, so a review written at submit and one regenerated later start from the same week;
 the unit system is the owning coach's, resolved inside the input builder. `generateCheckInReview`
 (`services/ai-service.ts`) sends the brief as the system message and the week as the user message to
@@ -1798,7 +1861,12 @@ the goal's deadline, through `lib/check-in/review-figures.ts`, which the strip a
 import too, so the model and the page cannot word one verdict two ways. Then the week's figures: the
 session count through `summariseTraining` (a partial workout counts as done, the breakdown beside it),
 the week grid's nutrition figures, figure for figure, the wellness changes since the last check-in
-(`formatDeltaValue`), and each habit planned that week, its days met of its days planned (`habitWeekLine`). Then each day of the period: every
+(`formatDeltaValue`), and the habit week as the Habits section shows it, in its words — the week's
+days met over its days planned ("11/13 habit days done", the strip's own words, or "nothing planned
+this week"), then each habit the section lists with its days and its target as they stood, its met
+of its planned ("5/7 days done", or "nothing planned") and a number habit's average
+(`habitWeekLines`, over the section's own rows). Then each day
+of the period: every
 workout on it — a logged one with the quality off its log, its note and one line per logged exercise,
 set by set, target beside result, measure by measure, in the coach's units, naming every measure outside
 its target (`describeLoggedExercise`, `utils/logged-exercise-line.ts`: "Barbell Back Squat — 3 of 3
@@ -1811,8 +1879,11 @@ none of whose exercises were ticked still reaches the review; an exercise in an 
 "per round" rather than as a count of sets done;
 a workout never logged as its name, missed — then the food row the check-in froze (what was eaten beside
 the target, with the kernel's standing), the day's wellness scores, and each habit planned that day or
-entered on it, ticked when met (`habitsOnDay`, from the frozen week, so a habit the client ignored all
-week still appears on its planned days).
+recorded on it (a tick, a number or a note; an untick with no note records nothing) — planned, not
+planned, or "any day of the week" for a habit done N times a week; that day's target;
+the entry against it, done or not, the number met or not, or nothing entered; and the client's note
+(`habitsOnDay`, from the frozen week, so a habit the client ignored all week still appears on its
+planned days, and every habit and note named is one the Habits section shows).
 "Nothing logged" is written wherever nothing was, source by source, and a day with no log by the one
 definition (`loggedDates`, see "Daily Logs") opens with it. Last come the client's own words —
 Reflection, Wins, Challenges, exercise highlights, and the coach's questions with their answers — passed
@@ -1882,7 +1953,11 @@ target is in no ratio, and a period with none reads "No targets set", never
 per-day averages all from the same run, each over its named day set. The KPI
 ribbon's **Nutrition** cell is that fraction. A habit's figure is its week's met
 over its planned (see "Habits"), frozen with the week — never a count the
-renderer makes. **The week grid** (`components/check-in/week-grid.tsx`,
+renderer makes — and written once (`habitFigure`, `lib/check-in/review-figures.ts`), as the
+ribbon's **Habits** cell, the Habits section, the AI's lines and the client's sent check-in all
+write it: the cell is the frozen week's totals, "11/13" with its percentage and "habit days done",
+"No habits planned" when the week planned none, and "Not recorded" on a row whose copy holds no
+week. **The week grid** (`components/check-in/week-grid.tsx`,
 "Day by day"; the owner's design, 2026-09-29) is the week one line per day — the copy's
 `periodAdherence.dates`, oldest first — in the `Table` primitive, under the headings Day, Training,
 Calories (kcal), Protein (g), Carbs (g), Fats (g) and Nutrition. **Training**: each workout
@@ -1913,9 +1988,19 @@ differ on one screen (TECHNICAL-DEBT → "Check-in review surface"). The legend,
 what a glance can't read off the rows: the day's-target tick and the two tints. A legacy row whose copy
 saved no week shows Day and Training alone, over the check-in's own period. The grid takes no log
 rows, folds no figure and words no day of its own (`week-grid.test.tsx` scans it). The habit week
-rides the same wire: the Habits section draws it row by row (`habitSectionRows`,
-`lib/check-in/habit-section-rows.ts`) — each habit planned that week, its met over its planned and a
-mark per day as it happened — so a habit the client ignored all week reads 0 of its planned days. **Training
+rides the same wire: the Habits section (`components/check-in/habits-section.tsx`) draws it row by
+row (`habitSectionRows`, `lib/check-in/habit-section-rows.ts`) in the `Table` primitive, its rail
+carrying the week's total ("11/13 done") — each habit the week planned, or the client recorded
+something on a day it ran (`entryRecordsSomething`: a tick, a number or a note), under its name and
+its days, then its target, as they stood at the week's end; a cell
+per day as it happened: a number habit's number, teal where it met that day's target and muted
+where it fell short, else a dot, filled for done and faint for a planned day missed, else a dash for
+a day with nothing to judge (not planned, any day of a habit done N times a week, not yet added, not
+running); and the week's met over its planned with a number habit's average beside it ("5/7 · avg
+2.8 L", `habitAverage` — the mean of the numbers entered on the days it ran, a day with none
+unknown, never zero, to one decimal and whole from 100 up), or "Nothing planned" for a habit the
+week did not plan — so a habit the client ignored all week reads 0 of its planned days. Under the
+table, the client's notes on those habits' days, oldest first (`habitSectionNotes`). **Training
 is deliberately NOT on that wire**: the review already carries the period's own
 workouts and counts them once with `summariseTraining`, so putting a second
 training figure on this payload would be a second derivation of the same
@@ -2003,9 +2088,11 @@ inline intersection and `hooks/use-client-check-in.ts` kept a third private copy
 both were deleted when the `form` key landed. A payload key with no type is how the wire and this
 document drift apart, and the RN work is read off that type.
 
-Two keys have been added this way: `trainingEventDetails` (Session 6.2) and `form` (the customisable
-form). Until a client app reads `form` it renders the full form and sees no custom questions — which
-is exactly what every client gets today.
+Its additive keys are `nutritionSummary`, `trainingEventDetails`, `form` (the customisable form) and
+`habitWeek` (see "The Habits step"). A client app that does not read `form` renders the full form and
+sees no custom questions — which is exactly what a client whose coach has customised nothing gets;
+one that does not read `habitWeek` shows no Habits step, and the week's habit entries are made on its
+habits screen.
 
 ---
 

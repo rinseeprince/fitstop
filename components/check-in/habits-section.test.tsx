@@ -1,9 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, within } from "@testing-library/react";
 import { HabitsSection } from "./habits-section";
 import { readSentSnapshot, type SentHabitWeek } from "@/lib/check-in/sent-snapshot";
 
-const DATES =["2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30"];
+const DATES = ["2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30"];
+const EVERY_DAY = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+type Habit = SentHabitWeek["habits"][number];
+type Day = Habit["days"][number];
 
 /** A version 2 copy's habits, read through the reader every surface uses. */
 function fromVersion2(
@@ -23,20 +26,151 @@ function fromVersion2(
   return copy!.period!.habitWeek;
 }
 
+const day = (date: string, facts: Partial<Day> = {}): Day => ({
+  date,
+  covered: true,
+  planned: true,
+  target: null,
+  entry: null,
+  met: false,
+  ...facts,
+});
+
+// The plan's review (docs/HABITS-REBUILD-PLAN.md §2.5): the client's week,
+// Thursday 24 to Wednesday 30 September, after they entered Wednesday's.
+const VALUES = [3.1, 3.0, 2.1, 3.2, 2.5, 3.0, 3.0];
+const water: Habit = {
+  id: "water",
+  name: "Water",
+  measure: "number",
+  unit: "L",
+  direction: "at_least",
+  firstStartsOn: "2026-09-01",
+  versions: [{ startsOn: "2026-09-01", endsOn: null, target: 3, timesPerWeek: null, weekdays: [...EVERY_DAY] }],
+  days: DATES.map((date, i) =>
+    day(date, {
+      target: 3,
+      entry: { done: null, value: VALUES[i], note: date === "2026-09-26" ? "Travelling, only had the one bottle" : null },
+      met: VALUES[i] >= 3,
+    })
+  ),
+  figures: { planned: 7, done: 5, met: 5 },
+};
+const mobility: Habit = {
+  id: "mobility",
+  name: "Mobility",
+  measure: "tick",
+  unit: null,
+  direction: null,
+  firstStartsOn: "2026-09-01",
+  versions: [{ startsOn: "2026-09-01", endsOn: null, target: null, timesPerWeek: null, weekdays: ["monday", "wednesday", "friday"] }],
+  days: DATES.map((date) => {
+    const planned = ["2026-09-25", "2026-09-28", "2026-09-30"].includes(date);
+    // Missed the Monday, made it up on the Tuesday.
+    const done = ["2026-09-25", "2026-09-29", "2026-09-30"].includes(date);
+    return day(date, { planned, entry: done ? { done: true, value: null, note: null } : null, met: done });
+  }),
+  figures: { planned: 3, done: 3, met: 3 },
+};
+const sauna: Habit = {
+  id: "sauna",
+  name: "Sauna",
+  measure: "tick",
+  unit: null,
+  direction: null,
+  firstStartsOn: "2026-09-01",
+  versions: [{ startsOn: "2026-09-01", endsOn: null, target: null, timesPerWeek: 3, weekdays: [] }],
+  days: DATES.map((date) => {
+    const done = ["2026-09-25", "2026-09-27", "2026-09-30"].includes(date);
+    return day(date, { planned: false, entry: done ? { done: true, value: null, note: null } : null, met: done });
+  }),
+  figures: { planned: 3, done: 3, met: 3 },
+};
+const PLAN_WEEK: SentHabitWeek = { habits: [water, mobility, sauna], totals: { planned: 13, done: 11, met: 11 } };
+
+/** Long walk, Sundays, added on the Monday: it ran three days of the week and was planned on none. */
+const longWalk = (tuesday: Day["entry"]): Habit => ({
+  id: "walk",
+  name: "Long walk",
+  measure: "tick",
+  unit: null,
+  direction: null,
+  firstStartsOn: "2026-09-28",
+  versions: [{ startsOn: "2026-09-28", endsOn: null, target: null, timesPerWeek: null, weekdays: ["sunday"] }],
+  days: DATES.map((date) =>
+    date < "2026-09-28"
+      ? day(date, { covered: false, planned: false })
+      : day(date, {
+          planned: false,
+          entry: date === "2026-09-29" ? tuesday : null,
+          met: date === "2026-09-29" && tuesday !== null,
+        })
+  ),
+  figures: { planned: 0, done: tuesday ? 1 : 0, met: 0 },
+});
+
+/** The row a habit's name heads. */
+const rowOf = (name: string) => screen.getByText(name).closest("tr")!;
+
 afterEach(cleanup);
 
-describe("HabitsSection", () => {
-  it("scores a habit's week: met over planned", () => {
-    render(
-      <HabitsSection
-        habitWeek={fromVersion2([
-          { id: "h1", name: "Water", eligibleDays: 7, completedDays: 5, pct: 71, rail: [true, true, false, true, true, false, true] },
-        ])}
-      />
-    );
+describe("HabitsSection — the week as it was prescribed and as it happened", () => {
+  it("rails the week's total: the habit days met over the days planned", () => {
+    render(<HabitsSection habitWeek={PLAN_WEEK} />);
 
-    expect(screen.getByText("Water")).toBeInTheDocument();
-    expect(screen.getByText("5/7")).toBeInTheDocument();
+    expect(screen.getByText("Habits")).toBeInTheDocument();
+    expect(screen.getByText("11/13 done")).toBeInTheDocument();
+  });
+
+  it("heads each row with the habit's name and its days, then its target, as they stood", () => {
+    render(<HabitsSection habitWeek={PLAN_WEEK} />);
+
+    expect(within(rowOf("Water")).getByText("Every day · at least 3 L")).toBeInTheDocument();
+    expect(within(rowOf("Mobility")).getByText("Mon, Wed, Fri")).toBeInTheDocument();
+    expect(within(rowOf("Sauna")).getByText("3 times a week")).toBeInTheDocument();
+  });
+
+  it("puts a number habit's numbers in its days, teal where they met the day's target and muted where they fell short", () => {
+    const { container } = render(<HabitsSection habitWeek={PLAN_WEEK} />);
+
+    const saturday = container.querySelector('[data-habit="water"] [data-day="2026-09-26"]')!;
+    expect(saturday).toHaveTextContent("2.1");
+    expect(saturday.querySelector(".text-\\[\\#93b0b4\\]")).not.toBeNull();
+    expect(saturday.querySelector('[title="Missed, target at least 3 L"]')).not.toBeNull();
+    const thursday = container.querySelector('[data-habit="water"] [data-day="2026-09-24"]')!;
+    expect(thursday).toHaveTextContent("3.1");
+    expect(thursday.querySelector(".text-\\[\\#0d9488\\]")).not.toBeNull();
+  });
+
+  it("gives a number habit's week its figure and its average, and a tick habit's its figure alone", () => {
+    const { container } = render(<HabitsSection habitWeek={PLAN_WEEK} />);
+
+    expect(container.querySelector('[data-habit="water"] [data-col="week"]')).toHaveTextContent("5/7 · avg 2.8 L");
+    expect(container.querySelector('[data-habit="mobility"] [data-col="week"]')!.textContent).toBe("3/3");
+    expect(container.querySelector('[data-habit="sauna"] [data-col="week"]')!.textContent).toBe("3/3");
+  });
+
+  it("draws a set-days habit's unplanned days as dashes, and a day made up on one of them as done", () => {
+    const { container } = render(<HabitsSection habitWeek={PLAN_WEEK} />);
+
+    const marks = DATES.map((date) => container.querySelector(`[data-habit="mobility"] [data-day="${date}"] [title]`)!.getAttribute("title"));
+    // Thursday to Wednesday: Monday planned and missed, Tuesday not planned and done.
+    expect(marks).toEqual(["Not planned", "Done", "Not planned", "Not planned", "Missed", "Done", "Done"]);
+  });
+
+  it("titles the days a habit done N times a week was not done \"Any day of the week\", never Not planned", () => {
+    const { container } = render(<HabitsSection habitWeek={PLAN_WEEK} />);
+
+    const marks = DATES.map((date) => container.querySelector(`[data-habit="sauna"] [data-day="${date}"] [title]`)!.getAttribute("title"));
+    const anyDay = "Any day of the week";
+    expect(marks).toEqual([anyDay, "Done", anyDay, "Done", anyDay, anyDay, "Done"]);
+  });
+
+  it("lists the client's notes under the table, the day and the habit beside each", () => {
+    render(<HabitsSection habitWeek={PLAN_WEEK} />);
+
+    const note = screen.getByText("“Travelling, only had the one bottle”").closest("li")!;
+    expect(note).toHaveTextContent("Sat 26 · Water:");
   });
 
   it("shows a habit the client ignored ALL week, at 0/7", () => {
@@ -70,49 +204,6 @@ describe("HabitsSection", () => {
     expect(screen.getAllByTitle("Not yet added")).toHaveLength(3);
   });
 
-  it("draws a set-days habit's unplanned days as dashes, and a day made up on one of them as done", () => {
-    const week: SentHabitWeek = {
-      habits: [
-        {
-          id: "mobility",
-          name: "Mobility",
-          measure: "tick",
-          unit: null,
-          direction: null,
-          firstStartsOn: "2026-09-01",
-          versions: [{ startsOn: "2026-09-01", endsOn: null, target: null, timesPerWeek: null, weekdays: ["monday", "wednesday", "friday"] }],
-          days: DATES.map((date) => {
-            const planned = ["2026-09-25", "2026-09-28", "2026-09-30"].includes(date);
-            // Missed the Monday, made it up on the Tuesday.
-            const done = ["2026-09-25", "2026-09-29"].includes(date);
-            return {
-              date,
-              covered: true,
-              planned,
-              target: null,
-              entry: done ? { done: true, value: null, note: null } : null,
-              met: done,
-            };
-          }),
-          figures: { planned: 3, done: 2, met: 2 },
-        },
-      ],
-      totals: { planned: 3, done: 2, met: 2 },
-    };
-    const { container } = render(<HabitsSection habitWeek={week} />);
-
-    expect(screen.getByText("2/3")).toBeInTheDocument();
-    expect(screen.getAllByTitle("Not planned")).toHaveLength(3);
-    // Done on the Friday and the Tuesday; missed on the Monday and the Wednesday.
-    expect(container.querySelectorAll(".bg-\\[\\#0d9488\\]")).toHaveLength(2);
-    expect(container.querySelectorAll(".rounded-full")).toHaveLength(4);
-    // Day by day, Thursday to Wednesday: each mark on its own day.
-    const marks = [...container.querySelectorAll(".rounded-full, [title]")].map((node) =>
-      node.classList.contains("bg-[#0d9488]") ? "done" : node.classList.contains("rounded-full") ? "missed" : node.getAttribute("title")
-    );
-    expect(marks).toEqual(["Not planned", "done", "Not planned", "Not planned", "missed", "done", "missed"]);
-  });
-
   it("titles the days before a restart inside the week \"Not running\": the habit was added long before it", () => {
     // Added in August and stopped; started again on the Monday, every day.
     const restart = "2026-09-28";
@@ -125,11 +216,11 @@ describe("HabitsSection", () => {
           unit: null,
           direction: null,
           firstStartsOn: "2026-08-03",
-          versions: [{ startsOn: restart, endsOn: null, target: null, timesPerWeek: null, weekdays: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] }],
+          versions: [{ startsOn: restart, endsOn: null, target: null, timesPerWeek: null, weekdays: [...EVERY_DAY] }],
           days: DATES.map((date) =>
             date < restart
-              ? { date, covered: false, planned: false, target: null, entry: null, met: false }
-              : { date, covered: true, planned: true, target: null, entry: { done: true, value: null, note: null }, met: true }
+              ? day(date, { covered: false, planned: false })
+              : day(date, { entry: { done: true, value: null, note: null }, met: true })
           ),
           figures: { planned: 3, done: 3, met: 3 },
         },
@@ -142,16 +233,24 @@ describe("HabitsSection", () => {
     expect(screen.queryByTitle("Not yet added")).not.toBeInTheDocument();
   });
 
-  it("hides a habit with nothing planned that week", () => {
-    render(
-      <HabitsSection
-        habitWeek={fromVersion2([
-          { id: "h1", name: "Water", eligibleDays: 0, completedDays: 0, pct: null, rail: [null, null, null, null, null, null, null] },
-        ])}
-      />
-    );
+  it("hides a habit the week neither planned nor saw entered", () => {
+    render(<HabitsSection habitWeek={{ habits: [water, longWalk(null)], totals: water.figures }} />);
 
-    expect(screen.queryByText("Water")).not.toBeInTheDocument();
+    expect(screen.getByText("Water")).toBeInTheDocument();
+    expect(screen.queryByText("Long walk")).not.toBeInTheDocument();
+  });
+
+  it("shows a habit done on a day the week did not plan: Nothing planned for its week, and its note under the table", () => {
+    // The client's step lists every habit that ran, so a note left on it
+    // reaches the coach here, as it reaches the AI.
+    const walk = longWalk({ done: true, value: null, note: "Hotel gym" });
+    const { container } = render(<HabitsSection habitWeek={{ habits: [water, walk], totals: water.figures }} />);
+
+    expect(container.querySelector('[data-habit="walk"] [data-col="week"]')!.textContent).toBe("Nothing planned");
+    expect(container.querySelector('[data-habit="walk"] [data-day="2026-09-29"] [title]')!.getAttribute("title")).toBe("Done");
+    expect(screen.getByText("“Hotel gym”").closest("li")).toHaveTextContent("Tue 29 · Long walk:");
+    // A habit with nothing planned adds nothing to the week's total.
+    expect(screen.getByText("5/7 done")).toBeInTheDocument();
   });
 
   it("renders nothing when the client has no habits — the rail goes with it", () => {
@@ -170,4 +269,3 @@ describe("HabitsSection", () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
-

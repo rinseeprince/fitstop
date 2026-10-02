@@ -16,7 +16,7 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import { canEditDay } from "@/lib/daily-log-permissions";
 import { clientDaySummaryKey } from "@/hooks/use-client-training-data";
 import { useClientProfile } from "@/hooks/use-client-profile";
-import { useReadAfterHabitEntries } from "@/hooks/use-client-portal-habits";
+import { useReadAfterHabitEntries } from "@/hooks/use-client-habit-entries";
 import {
   getDateDaysFrom,
   getTodayDateString,

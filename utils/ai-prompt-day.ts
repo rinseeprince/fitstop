@@ -1,11 +1,11 @@
 import { format } from "date-fns";
 import { sanitizeForAIPrompt } from "./ai-prompt-sanitizer";
+import { habitOnDay, type ReviewDayHabit } from "./ai-prompt-habits";
 import { loggedDisplayQuality } from "@/lib/training-display-state";
 import { AI_PROMPT_TEXT_LIMIT } from "@/lib/constants";
 import type { CheckInTrainingEventDetail } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { NutritionDay } from "@/types/schedule";
-import type { SentHabitWeek } from "@/lib/check-in/sent-snapshot";
 
 /**
  * One day of the check-in week as the AI reads it: what was prescribed and
@@ -31,23 +31,9 @@ export type ReviewDay = {
   nutrition: NutritionDay | null;
   /** The day-form row: the day's wellness scores. */
   dailyLog: DailyLog | null;
-  /** The habits planned that day, or entered on it, each ticked when met. */
-  habits: { name: string; ticked: boolean }[];
+  /** The habits planned that day, or entered on it (`habitsOnDay`): each with its entry against that day's target, and its note. */
+  habits: ReviewDayHabit[];
 };
-
-/**
- * A day's habits from the habit week the check-in froze: each habit planned
- * that day, or entered on it though not planned, ticked when the day was met.
- * A day a habit was not running, and an unplanned day nothing was entered on,
- * say nothing about it.
- */
-export function habitsOnDay(habitWeek: SentHabitWeek | null, date: string): ReviewDay["habits"] {
-  return (habitWeek?.habits ?? []).flatMap((habit) => {
-    const day = habit.days.find((candidate) => candidate.date === date);
-    if (!day?.covered || (!day.planned && day.entry === null)) return [];
-    return [{ name: habit.name, ticked: day.met }];
-  });
-}
 
 const text = (value: string) => sanitizeForAIPrompt(value, AI_PROMPT_TEXT_LIMIT);
 const kcal = (value: number) => `${value.toLocaleString("en-GB")} kcal`;
@@ -131,10 +117,6 @@ export function describeDay(day: ReviewDay): string {
   lines.push(...trainingLines(day));
   lines.push(foodLine(day.nutrition));
   lines.push(wellnessLine(day.dailyLog));
-  if (day.habits.length > 0) {
-    lines.push(
-      `Habits: ${day.habits.map((habit) => `${text(habit.name)}, ${habit.ticked ? "ticked" : "not ticked"}`).join("; ")}`
-    );
-  }
+  if (day.habits.length > 0) lines.push(`Habits: ${day.habits.map(habitOnDay).join("; ")}`);
   return lines.join("\n");
 }

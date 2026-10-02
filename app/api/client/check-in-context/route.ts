@@ -7,6 +7,7 @@ import {
 } from "@/services/check-in-context-service";
 import { summariseTraining } from "@/lib/training-adherence";
 import { getNutritionPeriod } from "@/services/nutrition-period-service";
+import { getCheckInHabitWeek } from "@/services/client-habit-figures-service";
 import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
     // serial round-trip. (Runs only after gating, so a gated request never reaches
     // getCheckInNutritionContext and its plan-promotion side effect.)
     // supabaseAdmin required: no client-facing SELECT RLS policy exists on coaches table
-    const [coachResult, trainingContext, nutritionContext, dailyLogs, trainingEventDetails, form, lastSubmittedPeriodEnd, nutritionPeriod] = await Promise.all([
+    const [coachResult, trainingContext, nutritionContext, dailyLogs, trainingEventDetails, form, lastSubmittedPeriodEnd, nutritionPeriod, habitWeek] = await Promise.all([
       supabaseAdmin
         .from("coaches")
         .select("name")
@@ -117,7 +118,8 @@ export async function GET(request: NextRequest) {
       // row gets all 14 field keys and no questions, which is exactly what
       // every client got before this key existed.
       getClientCheckInForm(client.id),
-      // The day-rule boundary, for the training checklist's per-row lock. Joined
+      // The day-rule boundary, for the training checklist's per-row lock and the
+      // Habits step's per-day one. Joined
       // to the fan-out so it costs no round trip of its own, and derived from
       // the same function `/api/client/me` uses, so the two wires cannot
       // disagree about which days are open.
@@ -125,6 +127,9 @@ export async function GET(request: NextRequest) {
       // The period's nutrition figures from the ONE kernel, so the wizard
       // renders what the coach's review will show and recounts nothing.
       getNutritionPeriod(client.id, periodStart, periodEnd),
+      // The period's habit week from the habit figures service: the Habits
+      // step's first answer, and whether the wizard has one at all.
+      getCheckInHabitWeek(client.id, periodStart, periodEnd),
     ]);
 
     const coach = coachResult.data;
@@ -149,7 +154,7 @@ export async function GET(request: NextRequest) {
         coachName: coach?.name ?? "Your Coach",
         checkInFrequencyDays: 7,
         // Session 6.4: needed client-side so canEditDay computes "today" in the
-        // client's IANA zone for the editable/locked training rows.
+        // client's IANA zone for the editable/locked training rows and habit days.
         timezone: client.timezone,
         logsOpenFrom: resolveLogsOpenFrom(client, lastSubmittedPeriodEnd),
       },
@@ -167,6 +172,7 @@ export async function GET(request: NextRequest) {
       periodEnd,
       periodDays,
       form,
+      habitWeek,
     };
 
     return NextResponse.json({ success: true, data: { ...response, checkInStatus: checkInGateStatus } });

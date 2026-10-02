@@ -4,7 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { CheckInDetailView } from "./check-in-detail-view";
 import type { Client } from "@/types/check-in";
 
-const { mockDetailData, habitsSectionProps } = vi.hoisted(() => ({ mockDetailData: vi.fn(), habitsSectionProps: vi.fn() }));
+const { mockDetailData, habitsSectionProps, ribbonProps } = vi.hoisted(() => ({
+  mockDetailData: vi.fn(),
+  habitsSectionProps: vi.fn(),
+  ribbonProps: vi.fn(),
+}));
 vi.mock("@/hooks/use-check-in-detail-data", () => ({
   useCheckInDetailData: mockDetailData,
 }));
@@ -23,7 +27,10 @@ vi.mock("./check-in-reply-block", () => ({
   ),
 }));
 vi.mock("@/components/check-in/kpi-ribbon", () => ({
-  KPIRibbon: () => <div data-testid="ribbon" />,
+  KPIRibbon: (props: unknown) => {
+    ribbonProps(props);
+    return <div data-testid="ribbon" />;
+  },
 }));
 vi.mock("@/components/check-in/wellness-section", () => ({ WellnessSection: () => null }));
 vi.mock("@/components/check-in/week-grid", () => ({ WeekGrid: () => null }));
@@ -159,6 +166,20 @@ describe("CheckInDetailView", () => {
     mockDetailData.mockReturnValue({ ...loaded, periodAdherence: null });
     renderView();
     expect(habitsSectionProps).toHaveBeenLastCalledWith({ habitWeek: null });
+  });
+
+  it("hands the strip's Habits cell the frozen week's totals, and none for an unresolved week", () => {
+    const totals = { planned: 13, done: 12, met: 11 };
+    mockDetailData.mockReturnValue({
+      ...loaded,
+      periodAdherence: { ...loaded.periodAdherence, habitWeek: { habits: [], totals } },
+    });
+    renderView();
+    expect(ribbonProps).toHaveBeenLastCalledWith(expect.objectContaining({ habits: totals }));
+
+    mockDetailData.mockReturnValue({ ...loaded, periodAdherence: null });
+    renderView();
+    expect(ribbonProps).toHaveBeenLastCalledWith(expect.objectContaining({ habits: null }));
   });
 
   it("omits the days-logged chip on a legacy row whose period cannot be resolved", () => {

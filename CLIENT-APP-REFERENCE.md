@@ -88,12 +88,13 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 
 - Comprehensive weekly progress submission
 - Includes subjective metrics, training adherence, photos
+- Ends with a **Habits** step when the week it reports on held a habit: the week's habits a column a day, a tick or a number on every day a habit ran, planned or not, while the day is open, the planned days marked; each entry saves on its own, and Submit waits for every entry and workout log still on its way
 - AI-powered summary generation for coaches
 - Authenticated only. The public token ("magic link") form was removed in
   migration 142 — there is no unauthenticated check-in path.
 
 ### 6. Habits
-**Locations**: `/client/habits?date=` (the day's habits), the Journey's Habits pane (`/client/metrics`)
+**Locations**: `/client/habits?date=` (the day's habits), the Journey's Habits pane (`/client/metrics`), and the check-in's Habits step (`/client/check-in`, the week it reports on)
 
 - The coach sets each habit: a tick, or a number with a unit and a target it should be at least or at most, on every day, on chosen weekdays, or a number of times a week
 - The day lists every habit running on it, planned that day or not, in three groups in the coach's order: **Planned today** (the day's `planned`), **Any day this week** (a habit done N times a week — `timesPerWeek` set — which plans no particular day) and **Not planned today** (a set-days habit the day does not plan). "Today" is the client's today on their own calendar (their timezone): on any other day the groups read "Planned" and "Not planned", and on a day of a week that does not hold the client's today the middle group reads "Any day that week". A habit done on Tuesday instead of Monday is entered on Tuesday and counts toward its week
@@ -261,6 +262,40 @@ had both), `netCaloriesOnJudgedDays`. Render these; never recount them from
 history list carry `nutritionTargetedDays` beside `nutritionDaysOnTarget` —
 the days the stored count was taken over (null on a row with no snapshot).
 
+**The period's habits.** `check-in-context` carries `habitWeek` (additive,
+2026-10-02; `ClientHabitWeek`, see Habits): the habit week over the period — each
+habit a version covers on one of its days, each day as it happened, each habit's
+figures and words, and the totals — the same answer as
+`GET /api/client/habits/week?start={periodStart}&end={periodEnd}`. Read the
+context only once every habit entry the app has on its way has its answer, or
+its week can miss one. When it holds a
+habit, the wizard ends with a Habits step, after every other step; when it holds
+none, there is no step. On the step, every day a habit ran (`covered`) takes its
+entry while the day rule leaves it open (`clientInfo.logsOpenFrom`), planned or
+not, through the entry routes (`PUT` / `DELETE /api/client/habits/{habitId}/days/{date}`,
+see Habits), each habit's writes one after another. Land each answer's `day` on
+the step's week and move that habit's figures by that day alone
+(`weekAfterDayChange`) when the answer vouches for it: its `day` is planned as
+the day the step holds (the same `covered`, `planned`, `target` and
+`timesPerWeek`), the step holds the whole client week the answer's `week`
+counts (the same `start` and `end`), and the moved figures equal that `week`'s.
+Otherwise read the week again: the coach changed the habit underneath, that day
+or another, or the step holds a first week clamped to the start day, which the
+answer's whole week cannot vouch for. After a `404`, a
+`409`, a `5xx` or a write with no answer, read the week again (`GET …/habits/week`
+over the period's dates) and take that habit's row from it — after a `5xx` or no
+answer, an entry there holding the answer sent was saved, whatever its note; after a `200` with
+`data: null`, keep the change, which is saved, and read the week again for the
+rest. Read the week only once the entries on their way have their answers, or
+the read can miss one. **Submit only once every entry and every workout log the
+client made in the wizard has its answer**, and take no entry while the submit
+is on its way: the server derives the week's figures and freezes the check-in's
+copy from the logs at submit. `GET /api/client/check-ins/{id}`
+carries `habits: { met, planned } | null` — the habit days met over the days
+planned, as the check-in froze them; `{ met: 0, planned: 0 }` when the week
+planned no habit, `null` when the check-in's copy holds no week. Write it as
+"11/13 habit days done", and nothing when `planned` is 0.
+
 **The customisable form.** `check-in-context` carries
 `form: { fields: string[], questions: [{ id, prompt }] }` — which of the 14
 built-in check-in fields this client's coach asks, and their custom questions in
@@ -308,10 +343,11 @@ stale draft is safe. `GET /api/client/check-ins/{id}` returns
 > kernel (`entryMet`, `lib/habits/habit-entry.ts`), and that habit's week moved by that day
 > alone (`weekAfterDayChange`, `lib/habits/habit-week.ts`: `done` up or down by one, `met`
 > capped at `planned`) on every day of the week the app shows; the answer, or the next read,
-> replaces both. The web app does this.
+> replaces both — on the check-in's Habits step, the answer's day replaces the day and that
+> habit's figures over the step's own dates move by it alone (see Check-ins). The web app does this.
 
 - `GET /api/client/habits/day?date={YYYY-MM-DD}` - Every habit running on the date, planned that day or not, in the coach's order (`ClientHabitDay`): each item carries the habit (`HabitIdentity`), the day (`HabitDayFacts`: `covered`, `planned`, that day's `target`, `edited`, `timesPerWeek` — set on a habit done N times a week, which plans no particular day — the `entry` `{ done, value, note }` or null, and `met`), the client week holding the date with its figures (`week`: `planned`, `done`, `met`, `start`, `end`) and the words (`schedule` "Every day" / "Mon, Wed, Fri" / "3 times a week", `target` "at least 3 L" for the day, `week` "2 of 3"). `400` `"Missing required date parameter"` without `date`, `"Invalid date"` when it is not a real day. `no-store`
-- `PUT /api/client/habits/{habitId}/days/{date}` - The client's entry, one per habit per day: `{ done: boolean }` for a tick habit, or `{ value: number }` for a number habit (zero to 1,000,000, two decimals at most), each with an optional `note` (up to 500 characters; `null` clears it, left out keeps it). `200 { day, week }` (`HabitEntryResult`) — the habit's day and the client week holding it, as they now stand: figures, no words (see the contract above) · `200` with `data: null` when the entry is saved but its day and week could not be read back: keep the change on screen and read the day again · `400` `"Invalid input"` (with `details`) when the body is not exactly one answer — both `done` and `value`, neither, or any other field — or the value is below zero, over 1,000,000 or has more than two decimals, or the note is over 500 characters · `400` `"Invalid date"` when `{date}` is not a real day · `400` an answer that does not fit the habit, body `"This habit is ticked, not counted."` or `"This habit takes a number."` · `403` day locked, body `"This day is locked."` (outside `logsOpenFrom`…today) · `404` not this client's habit, body `"Habit not found."` · `409` a day the habit is not running, body `"That habit isn't running on that day."`. Send a habit's writes one after another, each once the one before it has its answer, whatever day each is for: the answer's `week` then holds every earlier write. The answer's `day.target` is the day's target, which the app writes in the words the server uses (`at least 3 L`). A `404` or `409` means the coach deleted or stopped the habit underneath the write: read the day again, which no longer lists it. A `403` means the day locked underneath the app (a check-in sent elsewhere): read the profile again (`GET /api/client/me`, its `logsOpenFrom`). A request that gets no answer, or a `5xx`, may have saved: read the day again, and an entry there that matches what was sent was saved. An entry moves more than its own day: the habit's `week` on every other day of that week (each day's `GET …/habits/day`), the Journey's figures and the day summaries' `toDoThisWeek` — read them again once the entry has its answer, never while it is on its way, which can miss it
+- `PUT /api/client/habits/{habitId}/days/{date}` - The client's entry, one per habit per day: `{ done: boolean }` for a tick habit, or `{ value: number }` for a number habit (zero to 1,000,000, two decimals at most), each with an optional `note` (up to 500 characters; `null` clears it, left out keeps it). `200 { day, week }` (`HabitEntryResult`) — the habit's day and the client week holding it, as they now stand: figures, no words (see the contract above) · `200` with `data: null` when the entry is saved but its day and week could not be read back: keep the change on screen and read the day again (on the check-in's Habits step, its week: see Check-ins) · `400` `"Invalid input"` (with `details`) when the body is not exactly one answer — both `done` and `value`, neither, or any other field — or the value is below zero, over 1,000,000 or has more than two decimals, or the note is over 500 characters · `400` `"Invalid date"` when `{date}` is not a real day · `400` an answer that does not fit the habit, body `"This habit is ticked, not counted."` or `"This habit takes a number."` · `403` day locked, body `"This day is locked."` (outside `logsOpenFrom`…today) · `404` not this client's habit, body `"Habit not found."` · `409` a day the habit is not running, body `"That habit isn't running on that day."`. Send a habit's writes one after another, each once the one before it has its answer, whatever day each is for: the answer's `week` then holds every earlier write. The answer's `day.target` is the day's target, which the app writes in the words the server uses (`at least 3 L`). A `404` or `409` means the coach deleted or stopped the habit underneath the write: read the day again, which no longer lists it. A `403` means the day locked underneath the app (a check-in sent elsewhere): read the profile again (`GET /api/client/me`, its `logsOpenFrom`). A request that gets no answer, or a `5xx`, may have saved: read the day again, and an entry there that matches what was sent was saved. An entry moves more than its own day: the habit's `week` on every other day of that week (each day's `GET …/habits/day`), the Journey's figures and the day summaries' `toDoThisWeek` — read them again once the entry has its answer, never while it is on its way, which can miss it
 - `DELETE /api/client/habits/{habitId}/days/{date}` - Clears the entry. Answers as `PUT`, `data: null` included; `400` `"Invalid date"`, `403` and `404` as `PUT`
 - `GET /api/client/habits/week?start={YYYY-MM-DD}&end={YYYY-MM-DD}` - The habit week over dates inside one of the client's weeks (`ClientHabitWeek`): each habit's days as they happened, its figures and its `schedule` and `target`, and the totals. `400` `"Missing required start and end parameters"` when either is missing, `"Invalid date"` when one is not a real day, `"The dates must be inside one week."` when they span two weeks or `end` is before `start`. `no-store`
 - `GET /api/client/habits/progress?weeks={1–26}` - The Journey (`ClientHabitProgress`, default 8 weeks): each habit's `schedule` and `target`, the figures of its last `weeks` client weeks (`weeks`, oldest first, the last holding today), those weeks' figures added together (`span`), and its last 28 days as they happened, ending today. `400` `"Invalid weeks"` when `weeks` is not a whole number from 1 to 26. `no-store`
@@ -784,6 +820,10 @@ type CheckIn = {
     performedSessionName?: string | null  // set only on a session swap
   }>
   
+  // Habits — the habit days met over the days planned, as the check-in froze
+  // them; on the single-check-in read only. null: its copy holds no week.
+  habits?: { met: number; planned: number } | null
+
   // Photos
   photoFront?: string // URL
   photoSide?: string // URL
@@ -833,7 +873,8 @@ graph LR
 1. Navigate to `/client/check-in`
 2. Fill multi-step form
 3. Upload progress photos
-4. Submit → AI generates summary
+4. On the Habits step, last when the week held a habit, fill any day missed
+5. Submit, once every entry and workout log made on the way has its answer → AI generates summary
 
 ### 3. Training Session Completion
 

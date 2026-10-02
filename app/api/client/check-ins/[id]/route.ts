@@ -9,6 +9,7 @@ import {
   mapExerciseHighlight,
 } from "@/services/check-in-service";
 import { mapCheckInRow } from "@/lib/mappers";
+import { sentHabitTotals } from "@/lib/check-in/sent-snapshot";
 import type { CheckInExerciseHighlight } from "@/types/check-in";
 
 // GET /api/client/check-ins/[id] - Get specific check-in details for authenticated client
@@ -113,6 +114,9 @@ export async function GET(
         trainingEventDetails,
         exerciseHighlights,
         customAnswers,
+        // The week's habit days met over planned, as the check-in's copy froze
+        // them at Send — the copy is read off the row above, nothing more.
+        habits: sentHabitTotals(sent.sentSnapshot ?? null),
       },
     });
   } catch (error) {

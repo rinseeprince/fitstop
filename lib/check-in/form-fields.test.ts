@@ -8,6 +8,7 @@ import {
   CHECK_IN_STEP_LABELS,
   isCheckInFormFieldKey,
   stepsForFields,
+  wizardSteps,
 } from "./form-fields";
 
 const ALL = [...DEFAULT_CHECK_IN_FORM_FIELDS];
@@ -78,16 +79,40 @@ describe("stepsForFields", () => {
   });
 });
 
+describe("wizardSteps — the form's steps, then Habits", () => {
+  it("appends Habits LAST when the week held a habit, so a saved draft's step number keeps its kind", () => {
+    expect(wizardSteps(ALL, true)).toEqual(["feeling", "metrics", "photos", "training", "habits"]);
+    // Step 4 is Training with or without Habits after it.
+    expect(wizardSteps(ALL, true)[3]).toBe(wizardSteps(ALL, false)[3]);
+  });
+
+  it("has no Habits step in a week with no habit", () => {
+    expect(wizardSteps(ALL, false)).toEqual(stepsForFields(ALL));
+    expect(wizardSteps(ALL, false)).not.toContain("habits");
+  });
+
+  it("follows the form's own steps, the floor included", () => {
+    expect(wizardSteps([], true)).toEqual(["feeling", "training", "habits"]);
+    expect(wizardSteps(["notes", "weight"], true)).toEqual(["feeling", "metrics", "training", "habits"]);
+  });
+
+  it("never makes Habits a form step: the coach's Fields card lists the form's four", () => {
+    expect([...CHECK_IN_FORM_STEPS]).toEqual(["feeling", "metrics", "photos", "training"]);
+    expect(CHECK_IN_FORM_FIELDS.some((field) => (field.step as string) === "habits")).toBe(false);
+  });
+});
+
 describe("CHECK_IN_STEP_LABELS", () => {
-  it("labels every step, because the wizard has no second source", () => {
+  it("labels every step the wizard can show, because it has no second source", () => {
     // One map serves the client's progress indicator AND the coach's field
     // groups; a missing entry would render `undefined` on both.
-    for (const step of CHECK_IN_FORM_STEPS) {
+    for (const step of [...CHECK_IN_FORM_STEPS, "habits" as const]) {
       expect(CHECK_IN_STEP_LABELS[step]).toBeTruthy();
     }
     expect(Object.keys(CHECK_IN_STEP_LABELS).sort()).toEqual(
-      [...CHECK_IN_FORM_STEPS].sort()
+      [...CHECK_IN_FORM_STEPS, "habits"].sort()
     );
+    expect(CHECK_IN_STEP_LABELS.habits).toBe("Habits");
   });
 });
 

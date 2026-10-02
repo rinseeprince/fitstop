@@ -36,15 +36,23 @@ export const CHECK_IN_FORM_STEPS = [
 type CheckInFormStep = (typeof CHECK_IN_FORM_STEPS)[number];
 
 /**
+ * Every step the client's wizard can show: the form's, and Habits — the
+ * client's habit week, which no field key asks and the coach's form does not
+ * list (docs/HABITS-REBUILD-PLAN.md §6, commit 6).
+ */
+type CheckInWizardStep = CheckInFormStep | "habits";
+
+/**
  * ONE label per step, serving BOTH audiences: the client wizard's progress
  * indicator and the coach's field-group headings. Two maps would drift, and a
  * coach toggling "Photos" needs to be looking at the word their client sees.
  */
-export const CHECK_IN_STEP_LABELS: Record<CheckInFormStep, string> = {
+export const CHECK_IN_STEP_LABELS: Record<CheckInWizardStep, string> = {
   feeling: "Feeling",
   metrics: "Metrics",
   photos: "Photos",
   training: "Training",
+  habits: "Habits",
 };
 
 /**
@@ -115,6 +123,22 @@ export function stepsForFields(
   return CHECK_IN_FORM_STEPS.filter(
     (step) => step === "feeling" || step === "training" || hasStep(step)
   );
+}
+
+/**
+ * The client wizard's steps, in order: the form's (`stepsForFields`), then
+ * Habits when the week the check-in reports on held a habit — appended LAST,
+ * so a saved draft, which keeps its step as a number, lands on the same kind
+ * of step it was saved on. `hasHabits` is the check-in context's own answer
+ * (`habitWeek`), read once: what the client does on the step never adds or
+ * removes it.
+ */
+export function wizardSteps(
+  fields: readonly string[],
+  hasHabits: boolean
+): CheckInWizardStep[] {
+  const steps: CheckInWizardStep[] = stepsForFields(fields);
+  return hasHabits ? [...steps, "habits"] : steps;
 }
 
 /** The unit-tagged, strippable slice of a check-in submission. */

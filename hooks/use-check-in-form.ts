@@ -8,14 +8,19 @@ const STORAGE_KEY = "check-in-form-data";
  * The client wizard's draft.
  *
  * `totalSteps` is not a constant any more (C6b): the step list derives from the
- * coach's form (`stepsForFields`), so a client whose coach turned photos off has
- * three steps, not four. It arrives AFTER mount — the context that carries the
- * form is still fetching — which is why the clamp below is an effect rather
- * than a guard inside the restore: a draft saved at step 4 must survive being
- * restored before the real step count is known, and then be pulled into range.
+ * coach's form and the client's habit week (`wizardSteps`), so a client whose
+ * coach turned photos off has three steps, not four, and a week with habits
+ * has one more. It arrives AFTER mount — the context that carries the form and
+ * the habit week is still fetching — and is null until then. The step a draft
+ * was saved on is kept as asked, and the step shown is derived from it at
+ * render, pulled into the steps there are once their count is known: a draft
+ * saved on its last step, Habits, survives being restored before the count is
+ * known, and a draft restored into fewer steps never paints a step past the
+ * last.
  */
-export const useCheckInForm = (token: string, totalSteps: number) => {
-  const [currentStep, setCurrentStep] = useState(1);
+export const useCheckInForm = (token: string, totalSteps: number | null) => {
+  const [askedStep, setAskedStep] = useState(1);
+  const currentStep = totalSteps === null ? askedStep : Math.min(askedStep, Math.max(1, totalSteps));
   // No seeded unit tag. The form holds the client's own display units and
   // toCanonicalCheckInSubmission stamps the wire tags at submit; seeding one
   // here would state a unit before the viewer's preference had been consulted.
@@ -42,7 +47,7 @@ export const useCheckInForm = (token: string, totalSteps: number) => {
         }
         
         setFormData(data);
-        setCurrentStep(parsed.step);
+        setAskedStep(parsed.step);
       } catch (error) {
         console.error("Failed to load saved form data:", error);
       }
@@ -67,29 +72,26 @@ export const useCheckInForm = (token: string, totalSteps: number) => {
     setFormData((prev) => ({ ...prev, ...data }));
   };
 
-  // Pull the restored/current step back into range whenever the form shrinks —
-  // covers both the late-arriving step count and a coach editing the form
-  // between two visits to a saved draft.
-  useEffect(() => {
-    setCurrentStep((prev) => Math.min(prev, Math.max(1, totalSteps)));
-  }, [totalSteps]);
-
+  // Every move is from the step shown. The wizard is not on screen until the
+  // step count is known, so a move before then has nothing to move through.
   const nextStep = () => {
-    setCurrentStep((prev) => Math.min(prev + 1, totalSteps));
+    if (totalSteps === null) return;
+    setAskedStep(Math.min(currentStep + 1, totalSteps));
   };
 
   const prevStep = () => {
-    setCurrentStep((prev) => Math.max(prev - 1, 1));
+    setAskedStep(Math.max(currentStep - 1, 1));
   };
 
   const goToStep = (step: number) => {
-    setCurrentStep(Math.max(1, Math.min(step, totalSteps)));
+    if (totalSteps === null) return;
+    setAskedStep(Math.max(1, Math.min(step, totalSteps)));
   };
 
   const clearSavedData = () => {
     localStorage.removeItem(`${STORAGE_KEY}-${token}`);
     setFormData({});
-    setCurrentStep(1);
+    setAskedStep(1);
   };
 
   return {

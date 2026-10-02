@@ -198,6 +198,15 @@ export async function getClientHabitDay(clientId: string, date: string): Promise
   };
 }
 
+/** The habit week over every date from `start` to `end`: each habit a version covers on one of them, and the totals. */
+async function habitWeekOver(clientId: string, start: string, end: string): Promise<ClientHabitWeek> {
+  const dates = expandDateRange(start, end);
+  const { habits, entries } = await readHabitRange(clientId, start, end);
+
+  const rows = weekRows(habits, entries, dates);
+  return { start, end, dates, habits: rows, totals: sumWeekFigures(rows.map((row) => row.figures)) };
+}
+
 /**
  * The habit week over `start`..`end`, dates inside one client week — the
  * check-in's period, which a partial first week clamps to the client's start
@@ -208,11 +217,18 @@ export async function getClientHabitWeek(clientId: string, start: string, end: s
   if (end < start || getTrainingWeekStart(start, anchor.weekday) !== getTrainingWeekStart(end, anchor.weekday)) {
     throw new HabitWeekRangeError();
   }
-  const dates = expandDateRange(start, end);
-  const { habits, entries } = await readHabitRange(clientId, start, end);
+  return habitWeekOver(clientId, start, end);
+}
 
-  const rows = weekRows(habits, entries, dates);
-  return { start, end, dates, habits: rows, totals: sumWeekFigures(rows.map((row) => row.figures)) };
+/**
+ * The habit week of the check-in the client is filling in, over its period —
+ * `resolveCheckInWindow`'s, inside one client week by construction, so it
+ * reads no anchor and refuses nothing. The same week the habit week route
+ * answers for those dates; a period with no day — a start day after its
+ * check-in day — holds no habit.
+ */
+export function getCheckInHabitWeek(clientId: string, periodStart: string, periodEnd: string): Promise<ClientHabitWeek> {
+  return habitWeekOver(clientId, periodStart, periodEnd);
 }
 
 /**

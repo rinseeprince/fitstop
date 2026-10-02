@@ -31,6 +31,7 @@ import {
 } from "./client-habits-service";
 import { getClientTodayString } from "./today-service";
 import {
+  getCheckInHabitWeek,
   getClientHabitDay,
   getClientHabitProgress,
   getClientHabitWeek,
@@ -161,6 +162,33 @@ describe("getClientHabitWeek", () => {
     await expect(getClientHabitWeek("client-3", "2026-09-30", "2026-10-01")).rejects.toBeInstanceOf(HabitWeekRangeError);
     await expect(getClientHabitWeek("client-3", "2026-09-29", "2026-09-28")).rejects.toBeInstanceOf(HabitWeekRangeError);
     expect(listClientHabits).not.toHaveBeenCalled();
+  });
+});
+
+describe("getCheckInHabitWeek — the habit week of the check-in being filled in", () => {
+  it("is the week the habit week route answers for the period's dates", async () => {
+    const forTheStep = await getCheckInHabitWeek("client-3", "2026-09-24", "2026-09-30");
+    const fromTheRoute = await getClientHabitWeek("client-3", "2026-09-24", "2026-09-30");
+    expect(forTheStep).toEqual(fromTheRoute);
+    expect(forTheStep.dates).toHaveLength(7);
+    expect(forTheStep.habits.map((row) => row.habit.id)).toEqual(["mobility", "water"]);
+  });
+
+  it("reads no week anchor: the period lies inside one client week by construction", async () => {
+    await getCheckInHabitWeek("client-3", "2026-09-24", "2026-09-30");
+    expect(getClientWeekAnchor).not.toHaveBeenCalled();
+    expect(listClientHabits).toHaveBeenCalledWith("client-3", { from: "2026-09-24", to: "2026-09-30" });
+  });
+
+  it("holds no habit over a period with no day — a start day after its check-in day — and refuses nothing", async () => {
+    const week = await getCheckInHabitWeek("client-3", "2026-10-02", "2026-09-30");
+    expect(week).toEqual({
+      start: "2026-10-02",
+      end: "2026-09-30",
+      dates: [],
+      habits: [],
+      totals: { planned: 0, done: 0, met: 0 },
+    });
   });
 });
 

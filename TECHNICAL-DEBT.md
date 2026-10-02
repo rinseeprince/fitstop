@@ -338,11 +338,14 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 | 2 | ~~`app/client/dashboard/page.tsx`~~ | 366 | 250 | 116 (46%) | **Resolved 2026-09-02** — `app/client/dashboard/` was deleted in the client-portal redesign; nothing to split. |
 | 3 | ~~`components/check-in/check-in-detail-modal.tsx`~~ | 352 | 250 | 102 (41%) | **Resolved 2026-08-29** — deleted; the review surface is `components/clients/check-ins/check-in-detail-view.tsx` (234 lines, render only) over the SWR hook `hooks/use-check-in-detail-data.ts` (228 lines) |
 | 4 | `app/api/client/check-ins/route.ts` | 363 | 250 | 113 (45%) | Open — grew in C6a (the form resolve + strip) |
-| 5 | `app/client/check-in/page.tsx` | 290 | 250 | 40 (16%) | Open |
+| 5 | `app/client/check-in/page.tsx` | 335 | 250 | 85 (34%) | Open — grew with the form's steps (C6b) and the Habits step (habits commit 6) |
 | 6 | ~~`components/daily-pulse/daily-pulse.tsx`~~ | 277 | 250 | 27 (11%) | **Resolved 2026-09-02** — the old client-side daily pulse was deleted with the external-activities sprint; nothing to split. |
 | 7 | `components/client/walkthrough/guided-walkthrough.tsx` | 266 | 250 | 16 (6%) | Open |
 | 8 | ~~`lib/date-utils.ts`~~ | 221 | 150 | 71 (47%) | **Resolved 2026-09-02** — `lib/date-utils.ts` no longer exists (date helpers live in `lib/date-helpers.ts`); nothing to split. |
 | 9 | `utils/daily-logs-aggregation.ts` | 185 | 150 | 35 (23%) | Open |
+| 10 | `hooks/use-client-portal-habits.ts` | 332 | 300 | 32 (11%) | Split 2026-10-02 (was 431): the entry write path every screen shares moved to `hooks/use-client-habit-entries.ts`; what is left is one flow, under the 350 split line |
+| 11 | `components/check-in/kpi-ribbon.tsx` | 277 | 250 | 27 (11%) | Open — measured 2026-10-02 |
+| 12 | `lib/check-in/form-fields.ts` | 228 | 150 | 78 (52%) | Open — measured 2026-10-02 |
 
 **Suggested splits:**
 
@@ -354,7 +357,7 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 
 4. **`check-ins/route.ts`** - Extract photo upload handling and AI summary triggering into the check-in service layer. The POST handler has too many inline responsibilities.
 
-5. **`check-in/page.tsx`** - Extract step navigation logic and `canProceed()` validation into a `useCheckInSteps()` hook. **Reshaped by C6b**: the step list stops being a fixed 1-4 and comes from `stepsForFields(form.fields)`, so the hook this suggests would own the derived list, the clamp on a restored draft step, and the Next/Submit switch. Its three hard-coded `4`s go with it.
+5. **`check-in/page.tsx`** - Extract the wizard's step logic into a `useCheckInSteps()` hook: the step list (`wizardSteps` — the coach's form, then Habits in a week with a habit), the draft's step and its clamp (now `useCheckInForm`), and the Next/Submit switch, which the page holds inline.
 
 ~~6. **`daily-pulse.tsx`** - Split into `DailyPulseContainer` (hooks, state, handlers) and `DailyPulseView` (JSX rendering).~~ — **Resolved 2026-09-02**: the file no longer exists.
 
@@ -363,6 +366,14 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 ~~8. **`date-utils.ts`** - Move check-in-specific functions (`calculateCheckInPeriod`, `getCheckInStatus`, `getNextPeriodEnd`) to a new `lib/check-in-date-utils.ts`.~~ — **Resolved 2026-09-02**: the file no longer exists.
 
 9. **`daily-logs-aggregation.ts`** - Split metric averaging into a separate `utils/metric-averages.ts`.
+
+~~10. **`use-client-portal-habits.ts`** - Lift the entry write path the habits page and the check-in's Habits step share into its own module.~~ — **Done 2026-10-02**: `hooks/use-client-habit-entries.ts` holds the entry write, its errors, each habit's line, the reads that wait for it and the habit area's invalidator. The habits page's day hook, its writes and the Journey's read stay: one flow.
+
+11. **`kpi-ribbon.tsx`** - Lift the five cells' figures (each cell's value, delta, accent and words) into a pure `kpi-ribbon-cells.ts`, leaving the strip's layout; the tests then read each cell without rendering it.
+
+12. **`form-fields.ts`** - Lift the wizard's steps (`CHECK_IN_FORM_STEPS`, `CHECK_IN_STEP_LABELS`, `stepsForFields`, `wizardSteps`) into `lib/check-in/wizard-steps.ts`, leaving the form's fields and `applyCheckInForm`.
+
+**Long but cohesive — deliberately left alone** (measured 2026-10-02): `lib/check-in/review-figures.ts` 354 — the words for every figure the check-in review states (the goal rows, the comparison lines, the habit figures), shared by the strip, the sections and the AI input, so one vocabulary stays in one file; split by kind of figure if it grows. `hooks/use-check-in-habit-week.ts` 314 — the Habits step's one read and its writes share the change store and the landing. `lib/habits/habit-week.ts` 156 — the habit week kernel.
 
 ---
 
@@ -643,8 +654,10 @@ The consequence: the route layer **is** the security perimeter. Gaps in route-le
 - **The 14 field keys do not cover the Feeling summary or the Training checklist.**
   A coach can turn off every field the client fills in — reflection, weight, all five
   girths, all three photos, exercise highlights, wins, challenges — and the wizard
-  still shows two steps: the week's wellness summary and the session checklist plus
-  the nutrition summary. Making those suppressible is two more presence keys
+  still shows the two steps that read the client's week back to them: the week's
+  wellness summary, and the session checklist plus the nutrition summary — with the
+  Habits step after them in a week the client had a habit, which no field key asks
+  either. Making those two suppressible is two more presence keys
   (`wellness_summary`, `training_summary`), and `stepsForFields` would stop treating
   Feeling and Training as unconditional.
   **Declined by the owner, 2026-08-30, with the reasoning:** ask #4 is toggles over
@@ -666,6 +679,13 @@ The consequence: the route layer **is** the security perimeter. Gaps in route-le
   coach-delete path: `scripts/seed-scale-client.ts --fullReset`). If a user-facing
   delete is ever built it must translate `23503` to a sentence rather than letting the
   constraint text reach a coach (CONVENTIONS §10).
+
+## Client check-in wizard — open defects
+
+Logged: 2026-10-02 (habits commit 6's review).
+
+- **The wizard's day rule is a copy read once, when the page opens.** Both the Training checklist and the Habits step lock days by the context's `logsOpenFrom`. When this check-in is sent from another tab or device while the wizard is open, the period's days lock underneath it: each step still shows them open, every tick or entry answers 403 ("This day is locked."), and Submit is refused. Fix: on a 403 from either step, read the check-in context again — it then says the check-in is not due, and the page shows the next date in place of the wizard.
+- **The Training step's session checklist still takes a tick while Send is on its way.** Send waits for every write already made (`usePendingWrites`), and the Habits step takes no entry while the check-in is being sent (its `disabled`); the checklist, the last step in a week with no habit, has no such switch. A workout logged once Send's wait has passed races the server's freeze of the week: the sent copy can miss it while the screen showed it done. Fix: hand the checklist the page's `isSubmitting`, as the Habits step has it.
 
 ## Check-in review surface — open defects after the redesign
 

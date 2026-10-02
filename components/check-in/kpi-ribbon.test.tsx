@@ -13,6 +13,8 @@ import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 
 const checkIn = { id: "ci-1", weight: 80, workoutsCompleted: 3 } as unknown as CheckIn;
 const adherence = { completed: 3, planned: 4, full: 3, partial: 0, missed: 1, pct: 75 } as never;
+/** The plan's Wednesday evening: 11 of 13 habit days met, one made up past its plan. */
+const HABITS = { planned: 13, done: 12, met: 11 };
 
 // A ribbon over an arbitrary training summary, for the training-cell cases.
 function renderTraining(summary: Record<string, number | null>) {
@@ -22,8 +24,16 @@ function renderTraining(summary: Record<string, number | null>) {
       comparisonData={null}
       adherence={summary as never}
       nutrition={nutrition()}
+      habits={HABITS}
     />,
   );
+}
+
+/** The strip's cell holding `label`, found by its name rather than its place. */
+function cellNamed(label: string): HTMLElement {
+  const cell = screen.getByText(label).closest<HTMLElement>(".flex.flex-col");
+  if (!cell) throw new Error(`no cell named ${label}`);
+  return cell;
 }
 
 /** The kernel's figures; only the ones the cell reads vary per case. */
@@ -57,13 +67,17 @@ function nutrition(
   };
 }
 
-function renderRibbon(nutritionValue: CheckInPeriodAdherence["nutrition"] | null) {
+function renderRibbon(
+  nutritionValue: CheckInPeriodAdherence["nutrition"] | null,
+  habits: { planned: number; done: number; met: number } | null = HABITS,
+) {
   return render(
     <KPIRibbon
       checkIn={checkIn}
       comparisonData={null}
       adherence={adherence}
       nutrition={nutritionValue}
+      habits={habits}
     />,
   );
 }
@@ -151,14 +165,13 @@ describe("the training cell", () => {
   });
 
   it("still goes amber at 60% — the percentage drives the accent, it is just not printed", () => {
-    const { container } = renderTraining({
+    renderTraining({
       completed: 3, planned: 5, full: 2, partial: 1, missed: 2, pct: 60,
     });
 
     // The dot is the accent. Amber (#d97706) is "attention"; teal is good.
-    const cells = container.querySelectorAll(".flex.flex-col");
-    const training = cells[cells.length - 1];
-    expect(training.querySelector(".bg-\\[\\#d97706\\]")).not.toBeNull();
+    // Found by its name: Habits sits after it now.
+    expect(cellNamed("Training").querySelector(".bg-\\[\\#d97706\\]")).not.toBeNull();
   });
 
   it("says 'All complete' only when nothing was partial OR missed", () => {
@@ -183,5 +196,66 @@ describe("the training cell", () => {
 
     expect(screen.getByText("No sessions prescribed")).toBeInTheDocument();
     expect(screen.queryByText("3")).not.toBeInTheDocument();
+  });
+});
+
+describe("the habits cell", () => {
+  it("sits after Training: five cells, in the order the review reads them", () => {
+    const { container } = renderRibbon(nutrition());
+
+    const labels = [...container.querySelectorAll(".flex.flex-col")].map(
+      (cell) => cell.querySelector(".flex.items-center span:last-child")?.textContent,
+    );
+    expect(labels).toEqual(["Weight", "Body Fat", "Nutrition", "Training", "Habits"]);
+  });
+
+  it("counts the habit days met over the days planned, with its percentage", () => {
+    renderRibbon(nutrition());
+
+    const habits = cellNamed("Habits");
+    // Met, not done: the day made up past its plan counts once — 11, never 12.
+    expect(habits).toHaveTextContent("11/13");
+    expect(habits).toHaveTextContent("85%");
+    expect(habits).toHaveTextContent("habit days done");
+    expect(habits).not.toHaveTextContent("12/13");
+  });
+
+  it("goes teal from 80% exactly, amber below; its percentage reads good from 80%, neutral from 50%, bad below", () => {
+    /** The cell's dot and the colour its percentage is printed in. */
+    const bands = (met: number, planned: number) => {
+      renderRibbon(nutrition(), { planned, done: met, met });
+      const cell = cellNamed("Habits");
+      const percent = [...cell.querySelectorAll("span")].find((span) => /^\d+%$/.test(span.textContent ?? ""))!;
+      const result = {
+        teal: cell.querySelector(".bg-\\[\\#0d9488\\]") !== null,
+        percent: percent.textContent,
+        tone: percent.className.includes("#0d9488") ? "good" : percent.className.includes("#d97706") ? "bad" : "neutral",
+      };
+      cleanup();
+      return result;
+    };
+
+    expect(bands(4, 5)).toEqual({ teal: true, percent: "80%", tone: "good" });
+    expect(bands(79, 100)).toEqual({ teal: false, percent: "79%", tone: "neutral" });
+    expect(bands(1, 2)).toEqual({ teal: false, percent: "50%", tone: "neutral" });
+    expect(bands(49, 100)).toEqual({ teal: false, percent: "49%", tone: "bad" });
+  });
+
+  it("says No habits planned when the week planned none, never 0/0", () => {
+    renderRibbon(nutrition(), { planned: 0, done: 0, met: 0 });
+
+    const habits = cellNamed("Habits");
+    expect(habits).toHaveTextContent("--");
+    expect(habits).toHaveTextContent("No habits planned");
+    expect(habits).not.toHaveTextContent("0/0");
+    expect(habits).not.toHaveTextContent("%");
+  });
+
+  it("reads Not recorded when the check-in's copy holds no week", () => {
+    renderRibbon(null, null);
+
+    const habits = cellNamed("Habits");
+    expect(habits).toHaveTextContent("--");
+    expect(habits).toHaveTextContent("Not recorded");
   });
 });

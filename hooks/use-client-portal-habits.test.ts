@@ -11,10 +11,10 @@ vi.mock("swr", () => ({
 }));
 vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
 
+import { isClientHabitsAreaKey } from "./use-client-habit-entries";
 import {
   clientHabitDayKey,
   clientHabitProgressKey,
-  isClientHabitsAreaKey,
   useClientHabitDayEntries,
   useClientHabitProgress,
 } from "./use-client-portal-habits";

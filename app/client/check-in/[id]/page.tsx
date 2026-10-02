@@ -24,6 +24,7 @@ import {
 import type { CheckInWithDetails } from "@/types/check-in";
 import { useUnits } from "@/contexts/units-context";
 import { formatLength, formatLoad, formatWeight } from "@/utils/unit-conversions";
+import { HABIT_FIGURE_LABEL, habitFigure } from "@/lib/check-in/review-figures";
 
 export default function CheckInDetailPage() {
   const router = useRouter();
@@ -120,6 +121,9 @@ export default function CheckInDetailPage() {
     day: "numeric",
     year: "numeric",
   });
+  // The habit days the check-in froze, met over planned; none when its week
+  // planned no habit or its copy holds no week.
+  const habits = checkIn.habits ? habitFigure(checkIn.habits) : null;
 
   return (
     <div className="space-y-6">
@@ -263,7 +267,7 @@ export default function CheckInDetailPage() {
         </Card>
 
         {/* Training & Nutrition */}
-        {(checkIn.workoutsCompleted || checkIn.adherencePercentage || checkIn.nutritionDaysOnTarget || checkIn.prs || checkIn.challenges) && (
+        {(checkIn.workoutsCompleted || checkIn.adherencePercentage || checkIn.nutritionDaysOnTarget || habits || checkIn.prs || checkIn.challenges) && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -290,6 +294,14 @@ export default function CheckInDetailPage() {
                   <span className="font-medium">
                     {checkIn.nutritionDaysOnTarget}
                     {checkIn.nutritionTargetedDays != null ? `/${checkIn.nutritionTargetedDays}` : ""} days
+                  </span>
+                </div>
+              )}
+              {habits && (
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Habits</span>
+                  <span className="font-medium">
+                    {habits.fraction} {HABIT_FIGURE_LABEL}
                   </span>
                 </div>
               )}

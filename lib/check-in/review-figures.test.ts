@@ -4,6 +4,8 @@ import {
   buildGoalRows,
   describeGoalDeadline,
   describeGoalRail,
+  habitAverage,
+  habitFigure,
   metricComparison,
   resolveGoalFooter,
   resolveGoalRowState,
@@ -328,6 +330,53 @@ describe("resolveGoalFooter — one footer, goals outrank nutrition", () => {
 
   it("says nothing when the weight has stayed near the base weight", () => {
     expect(resolveGoalFooter({ rows: [behind], goalIsCurrent: true, currentWeightKg: 85, nutritionPlanBaseWeightKg: 86, formatWeight: kg })).toBeNull();
+  });
+});
+
+describe("habitFigure — a habit week's figure, one spelling for the strip, the section, the AI and the client", () => {
+  it("writes the days met over the days planned, with its whole percentage", () => {
+    expect(habitFigure({ planned: 13, done: 11, met: 11 })).toEqual({ fraction: "11/13", percent: 85 });
+  });
+
+  it("writes met, not done: a day made up past the plan counts once", () => {
+    expect(habitFigure({ planned: 3, done: 4, met: 3 })).toEqual({ fraction: "3/3", percent: 100 });
+  });
+
+  it("has no figure when nothing was planned, never 0/0", () => {
+    expect(habitFigure({ planned: 0, done: 2, met: 0 })).toBeNull();
+    expect(habitFigure({ planned: 0, met: 0 })).toBeNull();
+  });
+});
+
+describe("habitAverage — a number habit's average, as the review writes it", () => {
+  const water = { measure: "number" as const, unit: "L" };
+  const covered = (value: number | null) => ({ covered: true, entry: value === null ? null : { done: null, value, note: null } });
+
+  it("writes the mean of the numbers entered, to one decimal, in the coach's unit", () => {
+    // 3.1 + 3.0 + 2.1 + 3.2 + 2.5 + 3.0 + 3.0 = 19.9 over seven days: 2.84.
+    expect(habitAverage(water, [3.1, 3.0, 2.1, 3.2, 2.5, 3.0, 3.0].map(covered))).toBe("avg 2.8 L");
+    expect(habitAverage({ measure: "number", unit: "steps" }, [covered(7400), covered(9150)])).toBe("avg 8,275 steps");
+  });
+
+  it("writes it whole from 100 up, where a tenth says nothing, and keeps a tenth below", () => {
+    // 7,400 and 9,151 steps: 8,275.5 is written 8,276, never 8,275.5.
+    expect(habitAverage({ measure: "number", unit: "steps" }, [covered(7400), covered(9151)])).toBe("avg 8,276 steps");
+    expect(habitAverage({ measure: "number", unit: "drinks" }, [covered(2), covered(3)])).toBe("avg 2.5 drinks");
+    expect(habitAverage({ measure: "number", unit: "min" }, [covered(99), covered(100)])).toBe("avg 99.5 min");
+    expect(habitAverage({ measure: "number", unit: "min" }, [covered(100), covered(101)])).toBe("avg 101 min");
+  });
+
+  it("leaves a day with no number out of the mean", () => {
+    expect(habitAverage(water, [covered(3), covered(null), covered(2)])).toBe("avg 2.5 L");
+  });
+
+  it("rounds a mean on a half up: 2.8 and 2.9 L average 2.9, never 2.8", () => {
+    expect(habitAverage(water, [covered(2.8), covered(2.9)])).toBe("avg 2.9 L");
+  });
+
+  it("has nothing to say on a tick habit, or with no number entered", () => {
+    expect(habitAverage({ measure: "tick", unit: null }, [covered(1)])).toBeNull();
+    expect(habitAverage(water, [covered(null), covered(null)])).toBeNull();
   });
 });
 

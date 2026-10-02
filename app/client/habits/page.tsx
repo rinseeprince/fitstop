@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { LockedDayNotice } from "@/components/client-portal/day/locked-day-notice";
 import { habitDayGroups } from "@/components/client-portal/habits/habit-day-groups";
 import { HabitEntryRow } from "@/components/client-portal/habits/habit-entry-row";
+import { toastHabitEntryError } from "@/components/client-portal/habits/habit-entry-toast";
 import { HabitsLoadError } from "@/components/client-portal/habits/habits-load-error";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,7 +18,8 @@ import {
   TRAINING_CARD_BORDER,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { useClientProfile } from "@/hooks/use-client-profile";
-import { HabitEntryError, useClientHabitDayEntries } from "@/hooks/use-client-portal-habits";
+import { HabitEntryError } from "@/hooks/use-client-habit-entries";
+import { useClientHabitDayEntries } from "@/hooks/use-client-portal-habits";
 import { canEditDay } from "@/lib/daily-log-permissions";
 import {
   formatDateOnlyShort,
@@ -53,21 +55,12 @@ function HabitsDay() {
     try {
       await run();
     } catch (err) {
-      if (!(err instanceof HabitEntryError)) {
-        // No answer came back: the browser's own words ("Failed to fetch") are
-        // not the client's, so the page says what the other log pages say.
-        console.error("[habits] entry write failed:", err);
-        toast.error("Couldn't update habit", { description: "Network error. Please try again." });
-      } else if (err.status === 403) {
-        // The day locked underneath us (a check-in sent from another tab): the
-        // hook read the day rule again and landed it with the habit it took
-        // back, so the notice is on screen and the control just pressed is
-        // disabled: the focus goes to the notice.
-        toast.error("This day is locked", { description: err.message });
-        lockNotice.current?.focus();
-      } else {
-        toast.error("Couldn't update habit", { description: err.message });
-      }
+      toastHabitEntryError(err);
+      // The day locked underneath us (a check-in sent from another tab): the
+      // hook read the day rule again and landed it with the habit it took
+      // back, so the notice is on screen and the control just pressed is
+      // disabled: the focus goes to the notice.
+      if (err instanceof HabitEntryError && err.status === 403) lockNotice.current?.focus();
     }
   }
 

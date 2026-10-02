@@ -5,6 +5,7 @@ import type { OnboardingStatus } from "./client-intake";
 import type { LoggedQuality, TrainingEventStatus } from "@/types/training";
 import type { GoalStatus, TrendToGoal } from "@/utils/comparison-utils";
 import type { GoalType } from "@/lib/goals/goal-types";
+import type { ClientHabitWeek } from "@/types/habits";
 
 // Check-in status types
 export type CheckInStatus = "pending" | "ai_processed" | "reviewed";
@@ -548,8 +549,9 @@ export type CheckInClientInfo = {
   timezone?: string;
   /**
    * The day-rule boundary, carried here for the same reason as `timezone`: the
-   * form's training checklist calls `canEditDay` per row, and this page never
-   * reads `/api/client/me`. `null` = no lower bound.
+   * form's training checklist calls `canEditDay` per row and its Habits step
+   * per day, and this page never reads `/api/client/me`. `null` = no lower
+   * bound.
    */
   logsOpenFrom?: string | null;
 };
@@ -654,6 +656,14 @@ export type CheckInContextResponse = {
    * custom questions, which is exactly what every client gets today.
    */
   form?: CheckInFormConfig;
+  /**
+   * Additive (habits commit 6): the period's habit week from the habit figures
+   * service — each habit a version covers on one of the period's days, its
+   * days as they happened, its figures and words, and the totals; what
+   * `GET /api/client/habits/week?start=periodStart&end=periodEnd` answers. A
+   * week holding a habit gives the wizard its Habits step, last.
+   */
+  habitWeek?: ClientHabitWeek;
   errorMessage?: string;
 };
 
@@ -919,4 +929,11 @@ export type CheckInWithDetails = CheckIn & {
    * cannot leak it by default — the allowlist stays fail-closed.
    */
   customAnswers?: CheckInCustomAnswer[];
+  /**
+   * The week's habit figure as the check-in froze it — the days met over the
+   * days planned — on the client's single check-in read alone
+   * (`GET /api/client/check-ins/[id]`), from its copy. Null when the copy holds
+   * no week; `planned: 0` when the week planned no habit.
+   */
+  habits?: { met: number; planned: number } | null;
 };

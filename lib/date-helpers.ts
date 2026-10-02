@@ -256,6 +256,11 @@ export function addDays(date: Date, days: number): Date {
   return result;
 }
 
+/** The day of the month, 26, from a YYYY-MM-DD calendar date: a week's column heading. */
+export function dayOfMonth(dateStr: string): number {
+  return Number(dateStr.slice(8, 10));
+}
+
 /** "31 Jul" from a YYYY-MM-DD calendar date — the coach-facing short date. */
 export function formatDateOnlyShort(dateStr: string): string {
   return new Date(`${dateStr}T00:00:00`).toLocaleDateString("en-AU", {

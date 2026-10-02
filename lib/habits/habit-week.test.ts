@@ -6,6 +6,7 @@ import {
   missedPlannedDates,
   sumWeekFigures,
   weekAfterDayChange,
+  weekAverage,
   weekToDo,
 } from "./habit-week";
 import type { ClientHabit, HabitEntry, HabitVersion } from "@/types/habits";
@@ -244,6 +245,44 @@ describe("habitWeek — the rules", () => {
 
   it("only counts the habit's own entries", () => {
     expect(habitWeek(mobility, [ticked("someone-else", "2026-09-25")], WEEK).figures.done).toBe(0);
+  });
+});
+
+describe("weekAverage — a number habit's average over its week", () => {
+  it("averages the numbers entered on the days a version covers, to the places asked", () => {
+    // 3.1 + 3.0 + 2.1 + 3.2 + 2.5 + 3.0 + 3.0 = 19.9 over seven days: 2.842857…
+    const days = habitWeek(water, WEDNESDAY_EVENING, WEEK).days;
+    expect(weekAverage(days, 2)).toBe(2.84);
+    expect(weekAverage(days, 1)).toBe(2.8);
+    expect(weekAverage(days, 0)).toBe(3);
+  });
+
+  it("rounds a mean that falls on a half up, whichever way it would fall in binary", () => {
+    const days = (values: number[]) => habitWeek(water, values.map((value, i) => number("water", WEEK[i], value)), WEEK).days;
+    // 2.8 and 2.9 average 2.85, which floating point holds as 2.8499999…: still 2.9.
+    expect(weekAverage(days([2.8, 2.9]), 1)).toBe(2.9);
+    expect(weekAverage(days([1.1, 1.2]), 1)).toBe(1.2);
+    expect(weekAverage(days([99, 100]), 0)).toBe(100);
+    expect(weekAverage(days([0.01, 0.02]), 2)).toBe(0.02);
+    // 1.00 and 1.01 average 1.005, held as 1.00499…: dividing the sum down
+    // before rounding would write 1.00.
+    expect(weekAverage(days([1.0, 1.01]), 2)).toBe(1.01);
+  });
+
+  it("leaves a day with no number out: unknown, never zero", () => {
+    // Wednesday morning: six numbers, nothing yet on the Wednesday — 16.9 over six.
+    expect(weekAverage(habitWeek(water, WEDNESDAY_MORNING, WEEK).days, 2)).toBe(2.82);
+  });
+
+  it("counts no number on a day no version covers", () => {
+    const stoppedMonday = { ...water, versions: [version({ target: 3, endsOn: "2026-09-27" })] };
+    // Thursday to Sunday alone: 3.1, 3.0, 2.1 and 3.2 — 11.4 over four.
+    expect(weekAverage(habitWeek(stoppedMonday, WEDNESDAY_MORNING, WEEK).days, 2)).toBe(2.85);
+  });
+
+  it("is null with no number entered, and on a tick habit", () => {
+    expect(weekAverage(habitWeek(water, [], WEEK).days, 1)).toBeNull();
+    expect(weekAverage(habitWeek(mobility, WEDNESDAY_MORNING, WEEK).days, 1)).toBeNull();
   });
 });
 

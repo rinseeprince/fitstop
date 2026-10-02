@@ -4,13 +4,22 @@ import { useCallback, useMemo } from "react";
 import useSWR, { useSWRConfig, type Cache } from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { useClearClientDaySummaries } from "@/hooks/use-client-training-data";
+import {
+  CLIENT_HABITS_AREA,
+  habitEntryLedger,
+  refusedByChange,
+  refusedOutright,
+  sendHabitEntry,
+  useClearClientHabitReads,
+  useReadAfterHabitEntries,
+} from "@/hooks/use-client-habit-entries";
 import { CLIENT_PROFILE_KEY } from "@/lib/client-profile-key";
 import {
-  HabitEntryLedger,
   sameEntry,
   withAnswer,
   withEntry,
   withHabit,
+  type HabitEntryLedger,
   type ItemChange,
 } from "@/lib/habits/habit-entry-ledger";
 import type {
@@ -22,13 +31,14 @@ import type {
   HabitWeekSpan,
 } from "@/types/habits";
 
-// The client's habit reads and the entry write (docs/HABITS-REBUILD-PLAN.md
+// The habits page's day and the Journey's weeks (docs/HABITS-REBUILD-PLAN.md
 // §2.4). Key construction lives here and nowhere else (CONVENTIONS §7): the
 // habits page reads its day under one key, the Journey its weeks under
 // another. The page's day read and its entries are one hook: SWR's day cache
-// is the one store the page shows, and every change to it is one mutate.
+// is the one store the page shows, and every change to it is one mutate. The
+// entry write, its line and the area's invalidator are the client's for every
+// screen (`use-client-habit-entries.ts`).
 
-const CLIENT_HABITS_AREA = "/api/client/habits";
 const DAY_KEY_PREFIX = `${CLIENT_HABITS_AREA}/day?date=`;
 
 /** Every habit a version covers on `date`, with the day, the week holding it and the words. */
@@ -41,14 +51,14 @@ export function clientHabitProgressKey(weeks: number): string {
   return `${CLIENT_HABITS_AREA}/progress?weeks=${weeks}`;
 }
 
-/** Pure matcher for the client's habit area, exported so the area contract is testable without React. */
-export function isClientHabitsAreaKey(key: unknown): boolean {
-  return typeof key === "string" && key.startsWith(`${CLIENT_HABITS_AREA}/`);
-}
-
 /** The date a day read is for, or null for any other key. */
 function habitDayKeyDate(key: unknown): string | null {
   return typeof key === "string" && key.startsWith(DAY_KEY_PREFIX) ? key.slice(DAY_KEY_PREFIX.length) : null;
+}
+
+/** Pure matcher for the habits page's day reads (`clientHabitDayKey`), any date. */
+export function isClientHabitDayKey(key: unknown): boolean {
+  return habitDayKeyDate(key) !== null;
 }
 
 const SWR_CONFIG = {
@@ -60,38 +70,6 @@ const SWR_CONFIG = {
 
 type DayResponse = { success: boolean; data: ClientHabitDay };
 
-// One ledger per SWR cache: the client's writes outlive the page that made
-// them, as the cache they land in does, so a client who leaves the page and
-// comes back while a write is on its way still has it in line and shown.
-const ledgers = new WeakMap<Cache, HabitEntryLedger>();
-
-function ledgerFor(cache: Cache): HabitEntryLedger {
-  const found = ledgers.get(cache);
-  if (found) return found;
-  const ledger = new HabitEntryLedger();
-  ledgers.set(cache, ledger);
-  return ledger;
-}
-
-/**
- * A fetcher for a read whose figures a habit entry moves — the home's day
- * summaries, the Journey: it waits until every entry on its way has settled,
- * so it never reads a figure from before one. An entry clears those reads as
- * it is made (CONVENTIONS §7: each states a count), and their next read
- * waits here.
- */
-export function useReadAfterHabitEntries<T>(fetcher: (url: string) => Promise<T>): (url: string) => Promise<T> {
-  const { cache } = useSWRConfig();
-  const ledger = ledgerFor(cache);
-  return useCallback(
-    async (url: string) => {
-      await ledger.settled();
-      return fetcher(url);
-    },
-    [ledger, fetcher]
-  );
-}
-
 /** The Journey's habits over the last `weeks` client weeks; `retrying` while a read follows a failed one. */
 export function useClientHabitProgress(weeks: number) {
   const fetchProgress = useReadAfterHabitEntries(swrFetcher);
@@ -102,45 +80,6 @@ export function useClientHabitProgress(weeks: number) {
   );
   const retry = useCallback(() => void mutate(), [mutate]);
   return { progress: data?.data ?? null, error, isLoading, retrying: Boolean(error) && isValidating, retry };
-}
-
-/** A write the server refused or could not make: its own sentence, and its status (403: the day locked). */
-export class HabitEntryError extends Error {
-  constructor(
-    message: string,
-    readonly status: number
-  ) {
-    super(message);
-    this.name = "HabitEntryError";
-  }
-}
-
-/** A refusal made before anything was saved, on a habit that still runs that day: the day stands as it was. */
-const refusedOutright = (error: unknown): error is HabitEntryError =>
-  error instanceof HabitEntryError && (error.status === 400 || error.status === 403);
-
-/** The coach deleted the habit (404) or stopped it (409) underneath the write: nothing was saved. */
-const refusedByChange = (error: unknown) => error instanceof HabitEntryError && (error.status === 404 || error.status === 409);
-
-/**
- * The entry write. Answers with the habit's day and week as they now stand,
- * or null when the entry is saved but the server could not read them back.
- * A refusal throws a `HabitEntryError`; a request that never got an answer
- * throws what `fetch` threw.
- */
-async function sendEntry(method: "PUT" | "DELETE", habitId: string, date: string, body?: unknown): Promise<HabitEntryResult | null> {
-  const response = await fetch(`${CLIENT_HABITS_AREA}/${habitId}/days/${date}`, {
-    method,
-    credentials: "include",
-    ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-  });
-  const json = (await response.json().catch(() => null)) as
-    | { success?: boolean; data?: HabitEntryResult | null; error?: string }
-    | null;
-  if (!response.ok || !json?.success) {
-    throw new HabitEntryError(json?.error ?? "Please try again.", response.status);
-  }
-  return json.data ?? null;
 }
 
 /**
@@ -163,11 +102,12 @@ type EntryEnv = {
   cache: Cache;
   mutate: ReturnType<typeof useSWRConfig>["mutate"];
   ledger: HabitEntryLedger;
+  clearHabitReads: ReturnType<typeof useClearClientHabitReads>;
   clearDaySummaries: () => unknown;
 };
 
 /** The entry writes for the habits on `date`: `save` and `clear`. */
-function entryWrites({ cache, mutate, ledger, clearDaySummaries }: EntryEnv, date: string) {
+function entryWrites({ cache, mutate, ledger, clearHabitReads, clearDaySummaries }: EntryEnv, date: string) {
   /**
    * A change to a day read, in one commit. A day the cache holds no data for
    * has nothing on screen to change: a read out for it is asked again, so
@@ -214,7 +154,7 @@ function entryWrites({ cache, mutate, ledger, clearDaySummaries }: EntryEnv, dat
    * the page on screen would unmount its rows.
    */
   const clearAround = () => {
-    void mutate((key) => isClientHabitsAreaKey(key) && habitDayKeyDate(key) === null, undefined, { revalidate: true });
+    void clearHabitReads(isClientHabitDayKey);
     void clearDaySummaries();
   };
 
@@ -339,10 +279,10 @@ function entryWrites({ cache, mutate, ledger, clearDaySummaries }: EntryEnv, dat
             value: "value" in answer ? answer.value : null,
             note: note === undefined ? (found.day.entry?.note ?? null) : note,
           }),
-        () => sendEntry("PUT", item.habit.id, date, note === undefined ? answer : { ...answer, note })
+        () => sendHabitEntry("PUT", item.habit.id, date, note === undefined ? answer : { ...answer, note })
       ),
     clear: (item: ClientHabitDayItem) =>
-      write(item, (found) => withEntry(found, null), () => sendEntry("DELETE", item.habit.id, date)),
+      write(item, (found) => withEntry(found, null), () => sendHabitEntry("DELETE", item.habit.id, date)),
   };
 }
 
@@ -375,8 +315,9 @@ function entryWrites({ cache, mutate, ledger, clearDaySummaries }: EntryEnv, dat
  */
 export function useClientHabitDayEntries(date: string) {
   const { cache, mutate } = useSWRConfig();
+  const clearHabitReads = useClearClientHabitReads();
   const clearDaySummaries = useClearClientDaySummaries();
-  const ledger = ledgerFor(cache);
+  const ledger = habitEntryLedger(cache);
   const fetchDay = useCallback((url: string) => readDay(ledger, url), [ledger]);
   const { data, error, isValidating, mutate: revalidateDay } = useSWR<DayResponse>(clientHabitDayKey(date), fetchDay, {
     ...SWR_CONFIG,
@@ -384,8 +325,8 @@ export function useClientHabitDayEntries(date: string) {
   });
   const retry = useCallback(() => void revalidateDay(), [revalidateDay]);
   const writes = useMemo(
-    () => entryWrites({ cache, mutate, ledger, clearDaySummaries }, date),
-    [cache, mutate, ledger, clearDaySummaries, date]
+    () => entryWrites({ cache, mutate, ledger, clearHabitReads, clearDaySummaries }, date),
+    [cache, mutate, ledger, clearHabitReads, clearDaySummaries, date]
   );
   return { day: data?.data ?? null, error, retry, retrying: Boolean(error) && isValidating, ...writes };
 }

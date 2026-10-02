@@ -49,7 +49,7 @@ const { toastMock } = vi.hoisted(() => ({
 }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 
-import { HabitEntryError } from "@/hooks/use-client-portal-habits";
+import { HabitEntryError } from "@/hooks/use-client-habit-entries";
 
 // The plan's Tuesday (docs/HABITS-REBUILD-PLAN.md §2.5), in a client week
 // running Thursday 24 to Wednesday 30 September.

@@ -12,7 +12,8 @@ import type { TrainingAdherence } from "@/lib/training-adherence";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
-import { metricComparison } from "@/lib/check-in/review-figures";
+import { HABIT_FIGURE_LABEL, habitFigure, metricComparison } from "@/lib/check-in/review-figures";
+import type { HabitWeekFigures } from "@/types/habits";
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
@@ -30,6 +31,12 @@ type KPIRibbonProps = {
    * state rather than falling back to a second, client-side definition.
    */
   nutrition: CheckInPeriodAdherence["nutrition"] | null;
+  /**
+   * The habit week's totals as the check-in froze them — every habit's days
+   * met over its days planned. `null` when the copy holds no week, as for
+   * `nutrition`.
+   */
+  habits: HabitWeekFigures | null;
 };
 
 type Accent = "success" | "warning" | "destructive" | "neutral";
@@ -71,12 +78,32 @@ function accentFromDelta(comparison: { delta: DeltaInfo } | null): Accent {
   return "neutral";
 }
 
+// The rates' bands, one rule for the Nutrition, Training and Habits cells: a
+// rate from GOOD up reads good, from ATTENTION up asks attention, below it
+// reads bad.
+const RATE_GOOD_PERCENT = 80;
+const RATE_ATTENTION_PERCENT = 50;
+
+/** A rate's accent; nothing to rate is neutral. */
+function accentForRate(pct: number | null): Accent {
+  if (pct === null) return "neutral";
+  if (pct >= RATE_GOOD_PERCENT) return "success";
+  return pct >= RATE_ATTENTION_PERCENT ? "warning" : "destructive";
+}
+
+/** A rate printed as the cell's delta, coloured by the same bands. */
+function rateDelta(pct: number): DeltaInfo {
+  const type = pct >= RATE_GOOD_PERCENT ? "positive" : pct >= RATE_ATTENTION_PERCENT ? "neutral" : "negative";
+  return { text: `${pct}%`, type };
+}
+
 export const KPIRibbon = ({
   checkIn,
 
   comparisonData,
   nutrition,
   adherence,
+  habits,
 }: KPIRibbonProps) => {
   const { preference } = useUnits();
   const changes = comparisonData?.comparison?.changes;
@@ -94,10 +121,7 @@ export const KPIRibbon = ({
   const nutritionDenominator = nutrition?.targetedDays ?? 0;
   const hasNutrition = nutrition !== null && nutritionDenominator > 0;
   const nutritionPct = nutrition?.daysOnTargetPct ?? null;
-  const nutritionAccent: Accent =
-    !hasNutrition || nutritionPct === null ? "neutral" :
-    nutritionPct >= 80 ? "success" :
-    nutritionPct >= 50 ? "warning" : "destructive";
+  const nutritionAccent: Accent = hasNutrition ? accentForRate(nutritionPct) : "neutral";
 
   // Training comes from `summariseTraining` (`lib/training-adherence.ts`) —
   // completed (full + PARTIAL) over planned. One derivation feeds this cell, the
@@ -126,10 +150,13 @@ export const KPIRibbon = ({
         ]
           .filter(Boolean)
           .join(" · ") || "All complete";
-  const trainingAccent: Accent =
-    trainingPct === null ? "neutral" :
-    trainingPct >= 80 ? "success" :
-    trainingPct >= 50 ? "warning" : "destructive";
+  const trainingAccent = accentForRate(trainingPct);
+
+  // The habit days the client met over the days their habits planned, as the
+  // check-in froze them — the Habits section's total, written by the same
+  // rule (lib/check-in/review-figures.ts). A week that planned no habit has
+  // no fraction to show, never 0/0.
+  const habitWeek = habits ? habitFigure(habits) : null;
 
   const weightComparison = metricComparison({
     current: checkIn.weight,
@@ -174,10 +201,7 @@ export const KPIRibbon = ({
       label: "Nutrition",
       value: hasNutrition ? `${onTarget}/${nutritionDenominator}` : "--",
       valueMuted: !hasNutrition,
-      delta: hasNutrition && nutritionPct !== null ? {
-        text: `${nutritionPct}%`,
-        type: nutritionPct >= 80 ? "positive" : nutritionPct >= 50 ? "neutral" : "negative",
-      } : undefined,
+      delta: hasNutrition && nutritionPct !== null ? rateDelta(nutritionPct) : undefined,
       subText: hasNutrition ? "days on target" : nutrition !== null ? "No targets set" : "No nutrition logs",
       accent: nutritionAccent,
     },
@@ -190,10 +214,18 @@ export const KPIRibbon = ({
       subText: trainingSubText,
       accent: trainingAccent,
     },
+    {
+      label: "Habits",
+      value: habitWeek ? habitWeek.fraction : "--",
+      valueMuted: !habitWeek,
+      delta: habitWeek ? rateDelta(habitWeek.percent) : undefined,
+      subText: habitWeek ? HABIT_FIGURE_LABEL : habits !== null ? "No habits planned" : "Not recorded",
+      accent: habitWeek ? accentForRate(habitWeek.percent) : "neutral",
+    },
   ];
 
   return (
-    <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-4">
+    <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-5">
       {cards.map((card, i) => (
         <div
           key={card.label}

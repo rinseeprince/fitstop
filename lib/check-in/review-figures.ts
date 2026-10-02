@@ -3,7 +3,10 @@ import { formatDeltaValue, type DeltaInfo } from "@/components/check-in/delta-fo
 import { shouldShowRegenerationBanner } from "@/utils/nutrition-helpers";
 import { dateStringToDayNumber } from "@/lib/date-helpers";
 import { GOAL_TYPE_SETTINGS, type GoalType } from "@/lib/goals/goal-types";
+import { weekAverage } from "@/lib/habits/habit-week";
+import { figureFraction, habitAmount, weekFigurePercent } from "@/lib/habits/habit-words";
 import type { GoalPosition, GoalProgress, GoalProgressRows } from "@/types/check-in";
+import type { HabitDayFacts, HabitMeasure, HabitWeekFigures } from "@/types/habits";
 
 /**
  * The review page's figure rules, spelled once. The KPI ribbon and the goal
@@ -277,6 +280,47 @@ export function resolveGoalFooter(input: {
     };
   }
   return null;
+}
+
+/**
+ * A habit week's figure as the review writes it — the days met over the days
+ * planned, "11/13", the habit week's own count (see ARCHITECTURE → "Habits") —
+ * and its whole percentage. Null when nothing was planned: a week that asked
+ * for nothing has no fraction, never 0/0. The strip's Habits cell, the Habits
+ * section, the AI's week line and the client's sent check-in all write it
+ * through here, in the fraction the Habits tab writes too (`figureFraction`).
+ */
+export function habitFigure<F extends Pick<HabitWeekFigures, "met" | "planned">>(
+  figures: F
+): { fraction: string; percent: number } | null {
+  const fraction = figureFraction(figures.met, figures.planned);
+  const percent = weekFigurePercent(figures);
+  if (fraction === null || percent === null) return null;
+  return { fraction, percent };
+}
+
+/** What a habit week's figure counts, as the strip and the client's sent check-in name it. */
+export const HABIT_FIGURE_LABEL = "habit days done";
+
+/** From here up a habit's average is written whole: a tenth of a step or a calorie says nothing. */
+const AVERAGE_WHOLE_FROM = 100;
+
+/**
+ * A number habit's average over its week, as the review writes it: the mean
+ * of the numbers the client entered on the days it ran, in the coach's unit,
+ * to one decimal ("avg 2.8 L", "avg 2.5 drinks"), whole from 100 up ("avg
+ * 8,457 steps"). Null on a tick habit, and with no number entered: a day with
+ * none is unknown, never zero.
+ */
+export function habitAverage(
+  habit: { measure: HabitMeasure; unit: string | null },
+  days: readonly Pick<HabitDayFacts, "covered" | "entry">[]
+): string | null {
+  if (habit.measure !== "number") return null;
+  const tenths = weekAverage(days, 1);
+  const whole = weekAverage(days, 0);
+  if (tenths === null || whole === null) return null;
+  return `avg ${habitAmount(habit, tenths >= AVERAGE_WHOLE_FROM ? whole : tenths)}`;
 }
 
 /**

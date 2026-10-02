@@ -5,6 +5,7 @@ import {
   readSentSnapshot,
   reportedReadings,
   SENT_SNAPSHOT_VERSION,
+  sentHabitTotals,
 } from "./sent-snapshot";
 import type { HabitPeriodWeek } from "@/types/habits";
 
@@ -596,6 +597,22 @@ describe("readSentSnapshot — a version 1 copy reads in the current shape", () 
   it("is held to version 1's shape: a word for its trend is refused, as is a yes or no in version 2", () => {
     expect(() => readSentSnapshot({ ...version2Copy(), version: 1 })).toThrow(/isOnTrack/);
     expect(() => readSentSnapshot({ ...version1Copy(), version: 2 })).toThrow(/trend/);
+  });
+});
+
+describe("sentHabitTotals — the client's habit figure, from the copy", () => {
+  it("is the frozen week's days met over its days planned", () => {
+    expect(sentHabitTotals(parseSentSnapshot(canonicalCopy()))).toEqual({ met: 2, planned: 3 });
+  });
+
+  it("reads a version 2 copy's week as it reads every other", () => {
+    // 10k steps 1 of 2 and Read 0 of 1: Later was never eligible.
+    expect(sentHabitTotals(readSentSnapshot(version2Copy()))).toEqual({ met: 1, planned: 3 });
+  });
+
+  it("is null when the copy holds no week, or there is no copy", () => {
+    expect(sentHabitTotals(parseSentSnapshot({ ...canonicalCopy(), period: null }))).toBeNull();
+    expect(sentHabitTotals(null)).toBeNull();
   });
 });
 

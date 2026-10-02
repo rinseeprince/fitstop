@@ -5,15 +5,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { HABIT_HOW_TO_MAX } from "@/lib/constants";
-import { directionLabel } from "@/lib/habits/habit-words";
+import { directionLabel, wordsLine } from "@/lib/habits/habit-words";
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
 import { HabitScheduleFields } from "./habit-schedule-fields";
 import type { ChoiceDraft } from "./add-habits-draft";
 import type { HabitChoice } from "@/types/habits";
-
-/** Days, then target, as every habit line reads. */
-const choiceLine = (choice: HabitChoice) =>
-  [choice.words.schedule, choice.words.target].filter((part): part is string => part !== null).join(" · ");
 
 /**
  * One of the coach's habits in the Add habits sheet: its name and, under it,
@@ -58,7 +54,7 @@ export function HabitChoiceRow({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium text-[#0c1a1e]">{choice.name}</span>
-          <span className="mt-0.5 block truncate text-xs text-[#5a7d82]">{choiceLine(choice)}</span>
+          <span className="mt-0.5 block truncate text-xs text-[#5a7d82]">{wordsLine(choice.words)}</span>
         </span>
       </button>
 

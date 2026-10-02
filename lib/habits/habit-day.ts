@@ -24,8 +24,11 @@ export function versionsOver(habit: Pick<ClientHabit, "versions">, from: string,
   return habit.versions.filter((version) => version.startsOn <= to && (version.endsOn === null || version.endsOn >= from));
 }
 
+/** A version as far as its days go: a client's, or one a sent check-in froze. */
+type DatedVersion = Pick<HabitVersion, "startsOn" | "endsOn">;
+
 /** The version covering `date`, or null. A habit's versions never overlap, so there is at most one. */
-export function versionOn(habit: Pick<ClientHabit, "versions">, date: string): HabitVersion | null {
+export function versionOn<V extends DatedVersion>(habit: { versions: readonly V[] }, date: string): V | null {
   return habit.versions.find((version) => versionCovers(version, date)) ?? null;
 }
 
@@ -77,9 +80,10 @@ export function habitStatus(habit: Pick<ClientHabit, "versions">, today: string)
 /**
  * The version a habit's words are read from on `day`: the one covering it,
  * else the last to start on or before it (a stopped habit's last), else the
- * first after it (a habit that has not started).
+ * first after it (a habit that has not started). A sent check-in's frozen
+ * versions are read the same way.
  */
-export function versionForWords(habit: Pick<ClientHabit, "versions">, day: string): HabitVersion | null {
+export function versionForWords<V extends DatedVersion>(habit: { versions: readonly V[] }, day: string): V | null {
   const covering = versionOn(habit, day);
   if (covering) return covering;
   const sorted = [...habit.versions].sort((a, b) => (a.startsOn < b.startsOn ? -1 : 1));

@@ -7,7 +7,7 @@ import {
   TEXT_SECONDARY,
   TRAINING_CARD_BORDER,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { weekFigureWords } from "@/lib/habits/habit-words";
+import { weekFigureWords, wordsLine } from "@/lib/habits/habit-words";
 import { cn } from "@/lib/utils";
 import { HabitWeekBars } from "./habit-week-bars";
 import type { HabitProgressRow } from "@/types/habits";
@@ -21,7 +21,7 @@ import type { HabitProgressRow } from "@/types/habits";
 export function HabitProgressCard({ row }: { row: HabitProgressRow }) {
   const { habit, words, weeks } = row;
   const thisWeek = weeks[weeks.length - 1] ?? null;
-  const describe = [words.schedule, words.target].filter((part): part is string => part !== null).join(" · ");
+  const describe = wordsLine(words);
   const figure = thisWeek ? weekFigureWords(thisWeek) : "Nothing planned";
 
   return (

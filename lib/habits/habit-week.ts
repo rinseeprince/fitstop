@@ -100,6 +100,25 @@ export function weekAfterDayChange(figures: HabitWeekFigures, wasMet: boolean, i
   return { planned: figures.planned, done, met: Math.min(done, figures.planned) };
 }
 
+/**
+ * A number habit's average over its days, to `decimals` places: the mean of
+ * the numbers entered on the days a version covers, rounded half up. Worked
+ * in hundredths — a number is stored to two decimals at most — so a mean on a
+ * half rounds up whichever way it would fall in binary: 2.8 and 2.9 average
+ * 2.9 to one place, never 2.8. A day with no number is unknown, never zero,
+ * and an entry on a day no version covers is in no figure. Null when no number
+ * was entered — always, on a tick habit.
+ */
+export function weekAverage(days: readonly Pick<HabitDayFacts, "covered" | "entry">[], decimals: 0 | 1 | 2): number | null {
+  const hundredths = days.flatMap((day) =>
+    day.covered && day.entry !== null && day.entry.value !== null ? [Math.round(day.entry.value * 100)] : []
+  );
+  if (hundredths.length === 0) return null;
+  const total = hundredths.reduce((sum, value) => sum + value, 0);
+  // One division of whole numbers, so a mean that falls exactly on a half is exact.
+  return Math.round(total / (hundredths.length * 10 ** (2 - decimals))) / 10 ** decimals;
+}
+
 /** Several habits' weeks added together; each habit is judged on its own first. */
 export function sumWeekFigures(figures: readonly HabitWeekFigures[]): HabitWeekFigures {
   return figures.reduce(
