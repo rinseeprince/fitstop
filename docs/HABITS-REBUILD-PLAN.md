@@ -572,7 +572,7 @@ plain words, no database edits and no faked dates.
 
 ### Commit 6 — `feat(check-ins): habits in the check-in — the client's Habits step, and the coach's Habits cell, week and AI lines`
 
-**STATUS: not started.**
+**STATUS: SHIPPED `49f27d80` 2026-10-02.** No migration; DEV stays at 207, and PROD at 184 owes 185–207. The owner's smoke is owed; decisions the plan left open are in the commit body.
 
 - **Client.** `GET /api/client/check-in-context` gains `habitWeek` — the period's habit week from the figures service (additive; `CheckInContextResponse` and the route test's exact key set updated deliberately). The wizard appends a **Habits** step after Training when `habitWeek` holds a habit — appended last, so a restored draft's step index keeps its kind; the step list is decided by that one read. The step (§2.5) uses commit 5's entry controls and the entry route; each write joins the page's pending writes, which Send flushes (the training checklist's "Pin 3", now shared by both steps and **tested**); the step's figures survive Back and Next — the week is an SWR read (`/api/client/habits/week`, key builder and invalidator) whose first answer is the context's `habitWeek`, each write's answer seeded into it in the same tick — so the training checklist's stale-row gap is not copied. The coach's check-in Fields card keeps looping the form's steps, which do not gain one; its all-off line changes (§2.5).
 - **The client's sent check-in.** `GET /api/client/check-ins/[id]` gains `habits: { met, planned } | null` from the copy (additive; the route still reads `check_ins` alone); the card shows Habits.
