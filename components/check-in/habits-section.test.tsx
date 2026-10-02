@@ -142,12 +142,37 @@ describe("HabitsSection — the week as it was prescribed and as it happened", (
     expect(thursday.querySelector(".text-\\[\\#0d9488\\]")).not.toBeNull();
   });
 
-  it("gives a number habit's week its figure and its average, and a tick habit's its figure alone", () => {
+  it("gives a number habit's week its figure with its average under it, and a tick habit's its figure alone", () => {
     const { container } = render(<HabitsSection habitWeek={PLAN_WEEK} />);
 
-    expect(container.querySelector('[data-habit="water"] [data-col="week"]')).toHaveTextContent("5/7 · avg 2.8 L");
-    expect(container.querySelector('[data-habit="mobility"] [data-col="week"]')!.textContent).toBe("3/3");
-    expect(container.querySelector('[data-habit="sauna"] [data-col="week"]')!.textContent).toBe("3/3");
+    const lines = (habitId: string) =>
+      [...container.querySelector(`[data-habit="${habitId}"] [data-col="week"]`)!.children].map((line) => line.textContent);
+    expect(lines("water")).toEqual(["5/7", "avg 2.8 L"]);
+    expect(lines("mobility")).toEqual(["3/3"]);
+    expect(lines("sauna")).toEqual(["3/3"]);
+  });
+
+  it("sets the average in the type of the habit's words under its name: a phrase, not a bare number", () => {
+    const { container } = render(<HabitsSection habitWeek={PLAN_WEEK} />);
+
+    const average = container.querySelector('[data-habit="water"] [data-col="week"]')!.lastElementChild!;
+    const words = within(rowOf("Water")).getByText("Every day · at least 3 L");
+    for (const type of ["text-xs", "text-[#93b0b4]"]) {
+      expect(words).toHaveClass(type);
+      expect(average).toHaveClass(type);
+    }
+    expect(average.className).not.toMatch(/font-mono|text-\[12\.5px\]/);
+  });
+
+  it("gives the habit and the week set widths, and the seven days the rest of the card in equal shares", () => {
+    const { container } = render(<HabitsSection habitWeek={PLAN_WEEK} />);
+
+    expect(container.querySelector("table")).toHaveClass("table-fixed");
+    const headings = [...container.querySelectorAll("thead th")];
+    expect(headings[0]).toHaveClass("w-[220px]");
+    expect(headings.at(-1)).toHaveClass("w-[140px]");
+    // No day sets its own width: in a fixed layout they share what is left equally.
+    for (const day of headings.slice(1, -1)) expect(day.className).not.toMatch(/\bw-|min-w-/);
   });
 
   it("draws a set-days habit's unplanned days as dashes, and a day made up on one of them as done", () => {

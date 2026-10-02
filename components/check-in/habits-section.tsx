@@ -85,10 +85,11 @@ function HabitDayMark({ mark, value, target }: CellProps) {
  * The coach review's Habits section (docs/HABITS-REBUILD-PLAN.md §2.5): the
  * week as it was prescribed and as it happened, from the check-in's frozen
  * copy — each habit's words as they stood, a cell per day, the week's figure
- * and a number habit's average, and the client's notes under the table — for
- * each habit the week planned or the client entered on a day it ran
- * (`habitIsListed`), the habits the AI is told about. Renders nothing, its
- * rail included, when the week said nothing about any habit.
+ * with a number habit's average under it, and the client's notes under the
+ * table — for each habit the week planned or the client recorded something
+ * for on a day it ran (`habitIsListed`), the habits the AI is told about.
+ * Renders nothing, its rail included, when the week said nothing about any
+ * habit.
  */
 export const HabitsSection = ({ habitWeek }: HabitsSectionProps) => {
   const rows = habitSectionRows(habitWeek);
@@ -101,41 +102,46 @@ export const HabitsSection = ({ habitWeek }: HabitsSectionProps) => {
     <div>
       <SectionLabel label="Habits" meta={totals ? `${totals.fraction} done` : undefined} />
       <div className="rounded-[6px] bg-white px-5 pb-3 pt-2">
-        <Table>
+        {/* Fixed layout: the habit and week columns hold set widths and the
+            seven days share the rest of the card equally. The minimum keeps a
+            day wide enough for a five-figure number; a narrower card scrolls. */}
+        <Table className="min-w-[800px] table-fixed">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="min-w-[180px] pl-0">Habit</TableHead>
+              <TableHead className="w-[220px] pl-0">Habit</TableHead>
               {dates.map((date) => (
                 // normal-case/tracking-normal: these headers hold a mixed-case
                 // day ("Thu"), not a label — the Habits tab's columns.
-                <TableHead key={date} className="min-w-[44px] text-center normal-case tracking-normal">
+                <TableHead key={date} className="text-center normal-case tracking-normal">
                   <div className="text-[10px] font-medium text-[#93b0b4]">{SHORT_WEEKDAY[weekdayOf(date)]}</div>
                   <div className={cn(MONO, "text-[12px] text-[#5a7d82]")}>{dayOfMonth(date)}</div>
                 </TableHead>
               ))}
-              <TableHead className="pr-0 text-right">Week</TableHead>
+              <TableHead className="w-[140px] pr-0 text-right">Week</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id} data-habit={row.id}>
                 <TableCell className="pl-0">
-                  <p className={cn("max-w-[260px] truncate text-[13px] font-semibold", TEXT_PRIMARY)}>{row.name}</p>
-                  {row.words && <p className={cn("mt-0.5 max-w-[260px] truncate text-xs", TEXT_MUTED)}>{row.words}</p>}
+                  <p className={cn("truncate text-[13px] font-semibold", TEXT_PRIMARY)}>{row.name}</p>
+                  {row.words && <p className={cn("mt-0.5 truncate text-xs", TEXT_MUTED)}>{row.words}</p>}
                 </TableCell>
                 {row.cells.map((cell) => (
                   <TableCell key={cell.date} data-day={cell.date} className="text-center">
                     <HabitDayMark mark={cell.mark} value={cell.value} target={cell.target} />
                   </TableCell>
                 ))}
-                <TableCell data-col="week" className="whitespace-nowrap pr-0 text-right">
+                {/* The week's figure, a number habit's average under it — a
+                    phrase like the habit's words, so in their type. */}
+                <TableCell data-col="week" className="pr-0 text-right">
                   {row.figure ? (
-                    <span className={cn(MONO_CELL_CLASS, "font-semibold", TEXT_PRIMARY)}>{row.figure}</span>
+                    <p className={cn(MONO_CELL_CLASS, "font-semibold", TEXT_PRIMARY)}>{row.figure}</p>
                   ) : (
-                    // Entered on a day the week did not plan: nothing to judge.
-                    <span className={cn("text-[12px]", TEXT_MUTED)}>Nothing planned</span>
+                    // Recorded on a day the week did not plan: nothing to judge.
+                    <p className={cn("text-[12px]", TEXT_MUTED)}>Nothing planned</p>
                   )}
-                  {row.average && <span className={cn(MONO_CELL_CLASS, TEXT_MUTED)}>{` · ${row.average}`}</span>}
+                  {row.average && <p className={cn("mt-0.5 text-xs", TEXT_MUTED)}>{row.average}</p>}
                 </TableCell>
               </TableRow>
             ))}

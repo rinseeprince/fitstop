@@ -1989,16 +1989,18 @@ what a glance can't read off the rows: the day's-target tick and the two tints. 
 saved no week shows Day and Training alone, over the check-in's own period. The grid takes no log
 rows, folds no figure and words no day of its own (`week-grid.test.tsx` scans it). The habit week
 rides the same wire: the Habits section (`components/check-in/habits-section.tsx`) draws it row by
-row (`habitSectionRows`, `lib/check-in/habit-section-rows.ts`) in the `Table` primitive, its rail
-carrying the week's total ("11/13 done") — each habit the week planned, or the client recorded
+row (`habitSectionRows`, `lib/check-in/habit-section-rows.ts`) in the `Table` primitive, laid out
+fixed — the habit and week columns at set widths, the seven days sharing the rest of the card
+equally — its rail carrying the week's total ("11/13 done") — each habit the week planned, or the client recorded
 something on a day it ran (`entryRecordsSomething`: a tick, a number or a note), under its name and
 its days, then its target, as they stood at the week's end; a cell
 per day as it happened: a number habit's number, teal where it met that day's target and muted
 where it fell short, else a dot, filled for done and faint for a planned day missed, else a dash for
 a day with nothing to judge (not planned, any day of a habit done N times a week, not yet added, not
-running); and the week's met over its planned with a number habit's average beside it ("5/7 · avg
-2.8 L", `habitAverage` — the mean of the numbers entered on the days it ran, a day with none
-unknown, never zero, to one decimal and whole from 100 up), or "Nothing planned" for a habit the
+running); and the week's met over its planned with a number habit's average under it, in the type
+of the habit's words ("5/7" over "avg 2.8 L", `habitAverage` — the mean of the numbers entered on
+the days it ran, a day with none unknown, never zero, to one decimal and whole from 100 up), or
+"Nothing planned" for a habit the
 week did not plan — so a habit the client ignored all week reads 0 of its planned days. Under the
 table, the client's notes on those habits' days, oldest first (`habitSectionNotes`). **Training
 is deliberately NOT on that wire**: the review already carries the period's own
