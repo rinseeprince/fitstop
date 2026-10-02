@@ -6,6 +6,7 @@ import type { LoggedQuality, TrainingEventStatus } from "@/types/training";
 import type { GoalStatus, TrendToGoal } from "@/utils/comparison-utils";
 import type { GoalType } from "@/lib/goals/goal-types";
 import type { ClientHabitWeek } from "@/types/habits";
+import type { CheckInGateStatus } from "@/lib/check-in-schedule";
 
 // Check-in status types
 export type CheckInStatus = "pending" | "ai_processed" | "reviewed";
@@ -664,6 +665,13 @@ export type CheckInContextResponse = {
    * week holding a habit gives the wizard its Habits step, last.
    */
   habitWeek?: ClientHabitWeek;
+  /**
+   * The gate's answer for a check-in the client can fill in: due now
+   * ("available") or past its due date ("overdue"). A client with no schedule,
+   * or whose check-in is not due yet, is refused with a 403 before any payload
+   * is built.
+   */
+  checkInStatus?: Extract<CheckInGateStatus, "available" | "overdue">;
   errorMessage?: string;
 };
 

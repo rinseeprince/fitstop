@@ -173,9 +173,10 @@ export async function GET(request: NextRequest) {
       periodDays,
       form,
       habitWeek,
+      checkInStatus: checkInGateStatus,
     };
 
-    return NextResponse.json({ success: true, data: { ...response, checkInStatus: checkInGateStatus } });
+    return NextResponse.json({ success: true, data: response });
   } catch (error) {
     console.error("Error fetching check-in context:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
