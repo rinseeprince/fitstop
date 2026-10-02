@@ -630,7 +630,7 @@ edits and no faked dates.
 
 ### Commit 7 — `feat(goals): the goals table lists the habits added, changed and stopped during each goal`
 
-**STATUS: not started.**
+**STATUS: SHIPPED `b7b8cc3e` 2026-10-02.** No migration; DEV stays at 207, and PROD at 184 owes 185–207. The owner's smoke is owed; decisions the plan left open are in the commit body.
 
 - `getGoalHistory` reads the client's habit versions over the goals' span (one read); `goalHistoryRows` gives each goal the lines whose day falls in its days — a habit **added** (its first version), **changed** (a version following one without a gap: target or days), **stopped** (a version ending with nothing after), **started again** (a version after a gap) — worded by `lib/habits/habit-words.ts`, ranked with the other lines of a day; `goal-lines.tsx`'s label map gains the kinds.
 - Every habit writer clears the goals table (`useClearClientGoalHistory`; the writers scan in `hooks/use-client-goals.test.ts` holds it).
