@@ -11,11 +11,14 @@ vi.mock("@/lib/auth-client", () => ({
   },
 }));
 vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
+// A full page load jsdom cannot make: recorded instead.
+vi.mock("@/lib/load-fresh-page", () => ({ loadFreshPage: vi.fn() }));
 
 import { AuthProvider, useAuth } from "./auth-context";
 import { authClient } from "@/lib/auth-client";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { AuthRefusal } from "@/lib/auth-error-messages";
+import { loadFreshPage } from "@/lib/load-fresh-page";
 
 const ME = { success: true, data: { profile: { role: "trainer" }, coach: { name: "Sam" } } };
 const USER = { id: "user-1", email: "coach@example.com", name: "Sam" };
@@ -100,5 +103,26 @@ describe("AuthProvider on Better Auth's session", () => {
     });
     expect(authClient.signOut).toHaveBeenCalledTimes(1);
     expect(authClient.signOut).toHaveBeenCalledWith();
+  });
+
+  it("logout then loads the login page fresh, which says it worked: nothing of the account stays in the browser", async () => {
+    vi.mocked(loadFreshPage).mockClear();
+    vi.mocked(authClient.signOut).mockResolvedValue({ data: { success: true }, error: null } as never);
+    mount();
+    await act(async () => {
+      await auth.logout();
+    });
+    expect(loadFreshPage).toHaveBeenCalledTimes(1);
+    expect(loadFreshPage).toHaveBeenCalledWith("/login?logged-out=1");
+    expect(vi.mocked(authClient.signOut).mock.invocationCallOrder.at(-1)).toBeLessThan(vi.mocked(loadFreshPage).mock.invocationCallOrder[0]);
+  });
+
+  it("a refused logout throws Better Auth's refusal for the button to word, and goes nowhere", async () => {
+    vi.mocked(loadFreshPage).mockClear();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(authClient.signOut).mockResolvedValue({ data: null, error: { status: 403, code: "INVALID_ORIGIN" } } as never);
+    mount();
+    await expect(auth.logout()).rejects.toBeInstanceOf(AuthRefusal);
+    expect(loadFreshPage).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Home, BarChart3, Dumbbell, BookOpen, LogOut, Settings } from "lucide-react";
 import type { SessionUser } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
@@ -36,12 +36,11 @@ function getInitials(client: Client | null, user: SessionUser): string {
 }
 
 export function ClientTopBar({ client, user }: ClientTopBarProps) {
-  const router = useRouter();
   const { logout } = useAuth();
 
+  // Sign out loads the login page fresh (contexts/auth-context.tsx).
   const handleSignOut = async () => {
     await logout();
-    router.push("/login");
   };
 
   const initials = getInitials(client, user);

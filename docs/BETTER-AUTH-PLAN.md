@@ -1188,6 +1188,11 @@ instead of the email step. The browser smoke is mine.
   `better_auth.verification`. So proof 5 cannot read "the approval token" or "the confirmation token" from the table
   as §5 says, and `auth:last-link` prints neither: the proof takes each link from the email Better Auth hands
   `sendChangeEmailConfirmation` and `sendVerificationEmail`, and §7.3's two addresses must both receive real email.
+- Found after commit 4 (2026-10-09): every way out of a session loads the login page fresh, never an in-app push.
+  Next 16 keeps a proxy redirect for an address for up to five minutes, and an in-app trip to `/login` then landed
+  back on the dashboard; the old page also kept the previous account's data for the next sign-in. `logout()`
+  (`contexts/auth-context.tsx`) does it through `loadFreshPage` (`lib/load-fresh-page.ts`), and Sign out everywhere
+  must do the same after `revokeSessions`.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,

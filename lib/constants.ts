@@ -300,3 +300,7 @@ export const SET_PASSWORD_PAGE = "/set-password";
 // The delete-account confirmation's landing (rule 10): the delete dialog
 // asks Better Auth for it, and the login page says the account went.
 export const ACCOUNT_DELETED_PAGE = "/login?deleted=1";
+// Where Log out lands (contexts/auth-context.tsx), loaded as a fresh page, and
+// the marker that has the login page say "Logged out successfully".
+export const LOGGED_OUT_PARAM = "logged-out";
+export const LOGGED_OUT_PAGE = `/login?${LOGGED_OUT_PARAM}=1`;

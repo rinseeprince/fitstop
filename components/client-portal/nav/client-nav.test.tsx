@@ -201,16 +201,16 @@ describe("ClientTopBar", () => {
     expect(screen.getByRole("menuitem", { name: /sign out/i })).toBeInTheDocument();
   });
 
-  it("calls logout and routes to /login when Sign out is selected", async () => {
+  it("calls logout when Sign out is selected, and leaves the way to /login to it", async () => {
+    // logout() loads the login page fresh itself (contexts/auth-context.tsx):
+    // an in-app trip here could land on a route Next remembered while signed in.
     const user = userEvent.setup();
     logoutMock.mockResolvedValue(undefined);
 
     render(<ClientTopBar client={makeClient()} user={makeUser()} />);
     await user.click(screen.getByRole("menuitem", { name: /sign out/i }));
 
-    expect(logoutMock).toHaveBeenCalled();
-    await waitFor(() => {
-      expect(pushMock).toHaveBeenCalledWith("/login");
-    });
+    await waitFor(() => expect(logoutMock).toHaveBeenCalledTimes(1));
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });

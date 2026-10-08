@@ -4,6 +4,8 @@ import { createContext, useContext, type ReactNode } from "react"
 import useSWR, { useSWRConfig } from "swr"
 import { authClient, type SessionUser } from "@/lib/auth-client"
 import { AuthRefusal } from "@/lib/auth-error-messages"
+import { LOGGED_OUT_PAGE } from "@/lib/constants"
+import { loadFreshPage } from "@/lib/load-fresh-page"
 import type { Coach } from "@/types/check-in"
 import type { Profile, UserRole } from "@/types/auth"
 import { swrFetcher } from "@/lib/swr-fetcher"
@@ -103,7 +105,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return userRole
   }
 
-  /** Sign out this device only (D14); every other device stays signed in. */
+  /**
+   * Sign out this device only (D14); every other device stays signed in. Then
+   * the login page loads fresh, which says "Logged out successfully". A fresh
+   * page keeps nothing of the account that signed out: not the data this page
+   * holds, which whoever signs in next on this browser would see first, nor
+   * Next's remembered routes, which could send the way to the login page back
+   * to the dashboard. A refused sign-out throws and goes nowhere.
+   */
   const logout = async () => {
     try {
       const { error } = await authClient.signOut()
@@ -116,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // user's profile never lingers in memory.
       await globalMutate(isMeKey, undefined, { revalidate: false })
     }
+    loadFreshPage(LOGGED_OUT_PAGE)
   }
 
   return (

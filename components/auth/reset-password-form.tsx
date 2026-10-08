@@ -70,6 +70,24 @@ function ExpiredLink() {
   );
 }
 
+/**
+ * Whoever is signed in on this browser is signed out once the password is
+ * saved, so the login page shows its form: it sends a signed-in visitor to
+ * their own dashboard, which, after a reset done where another account is
+ * signed in, is that other account's. Nobody signed in is fine. A sign-out
+ * that fails is logged and the person still goes on: the password is set.
+ * The page needs no fresh load: it opens from the email's link, so Next
+ * remembers no route and holds no account's data.
+ */
+async function signOutThisBrowser(): Promise<void> {
+  try {
+    const { error } = await authClient.signOut();
+    if (error) console.error("Sign-out after the password was saved was refused:", error);
+  } catch (error) {
+    console.error("Sign-out after the password was saved failed:", error);
+  }
+}
+
 /** The new password, twice. With no token yet (the pending frame) it is shown and can't be used. */
 export function NewPasswordFields({ token, landing }: { token: string | null; landing: PasswordLinkLanding }) {
   const wording = PASSWORD_LINK_WORDING[landing];
@@ -92,6 +110,7 @@ export function NewPasswordFields({ token, landing }: { token: string | null; la
         setError("root.reset", { message: authErrorSentence(error) });
         return;
       }
+      await signOutThisBrowser();
       toast.success(wording.done);
       router.push("/login");
     } catch (error) {

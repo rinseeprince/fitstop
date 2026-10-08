@@ -26,13 +26,11 @@ export function PersistentSidebar() {
   const { coach, logout, loading } = useAuth()
   const router = useRouter()
 
+  // Log out loads the login page fresh, which says it worked
+  // (contexts/auth-context.tsx); only a refusal is said here.
   const handleLogout = async () => {
     try {
       await logout()
-      toast.success("Logged out successfully", {
-        description: "See you next time!",
-      })
-      router.push("/login")
     } catch {
       toast.error("Error", {
         description: "Failed to log out",
