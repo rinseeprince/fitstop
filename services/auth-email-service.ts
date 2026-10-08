@@ -1,4 +1,6 @@
 import { render } from "@react-email/render"
+import ApproveEmailChangeEmail from "@/emails/approve-email-change-email"
+import ConfirmNewEmailEmail from "@/emails/confirm-new-email-email"
 import ResetPasswordEmail from "@/emails/reset-password-email"
 import SetPasswordEmail from "@/emails/set-password-email"
 import { captureApiError } from "@/lib/error-handler"
@@ -11,9 +13,26 @@ import { EMAIL_SENDER, resend } from "@/services/email-service"
  * app's Resend client, from the app's sender.
  */
 
-type PasswordLink = { user: { email: string; name: string }; url: string }
+type Recipient = { email: string; name: string }
+
+type PasswordLink = { user: Recipient; url: string }
 
 type Email = { subject: string; html: string; text: string }
+
+/**
+ * Renders one email and sends it to `to`. It never throws: Better Auth sends
+ * its emails after the answer has gone (lib/auth.ts, runAfterAnswer), so no
+ * one waits on the send, and a failure goes to Sentry instead, as `source`.
+ */
+async function sendAuthEmail(source: string, to: string, compose: () => Promise<Email>): Promise<void> {
+  try {
+    const { subject, html, text } = await compose()
+    const { error } = await resend.emails.send({ from: EMAIL_SENDER, to, subject, html, text })
+    if (error) throw new Error(`Resend refused the "${subject}" email: ${error.message}`)
+  } catch (error) {
+    captureApiError(error, { source })
+  }
+}
 
 /**
  * Whether Better Auth's password link lands on /set-password. The page the
@@ -69,11 +88,48 @@ The CoachHub Team`,
  * Sentry instead, and the person can ask again.
  */
 export async function sendPasswordLinkEmail(link: PasswordLink): Promise<void> {
-  try {
-    const { subject, html, text } = await passwordLinkEmail(link)
-    const { error } = await resend.emails.send({ from: EMAIL_SENDER, to: link.user.email, subject, html, text })
-    if (error) throw new Error(`Resend refused the "${subject}" email: ${error.message}`)
-  } catch (error) {
-    captureApiError(error, { source: "sendPasswordLinkEmail" })
-  }
+  await sendAuthEmail("sendPasswordLinkEmail", link.user.email, () => passwordLinkEmail(link))
+}
+
+/**
+ * Better Auth's sendChangeEmailConfirmation (rule 6): "Approve your email
+ * change", to the address the coach signs in with now (`user.email`), naming
+ * the new one. Its link (/api/auth/verify-email, one hour) changes nothing: it
+ * has Better Auth send the "Confirm your new email" email to the new address.
+ */
+export async function sendApproveEmailChangeEmail({ user, newEmail, url }: { user: Recipient; newEmail: string; url: string }): Promise<void> {
+  await sendAuthEmail("sendApproveEmailChangeEmail", user.email, async () => ({
+    subject: "Approve your email change",
+    html: await render(ApproveEmailChangeEmail({ name: user.name, newEmail, approveUrl: url })),
+    text: `Hi ${user.name},
+
+Someone asked to change the email you sign in to CoachHub with to ${newEmail}. Open this link to approve the change: ${url}
+
+We'll then email ${newEmail} a link to confirm it, and your email changes once that link is opened. This link expires in one hour. If you didn't ask for this, you can ignore this email: your email stays as it is.
+
+Best regards,
+The CoachHub Team`,
+  }))
+}
+
+/**
+ * Better Auth's sendVerificationEmail, which it calls once the current
+ * address approved a change (rule 6): "Confirm your new email", to the new
+ * address, which Better Auth hands over as `user.email`. Opening its link
+ * (/api/auth/verify-email, one hour) is what changes the address. No login is
+ * ever unverified (D4), so nothing else asks for this email.
+ */
+export async function sendConfirmNewEmailEmail({ user, url }: { user: Recipient; url: string }): Promise<void> {
+  await sendAuthEmail("sendConfirmNewEmailEmail", user.email, async () => ({
+    subject: "Confirm your new email",
+    html: await render(ConfirmNewEmailEmail({ name: user.name, confirmUrl: url })),
+    text: `Hi ${user.name},
+
+Open this link to confirm this address: ${url}
+
+Once you do, you sign in to CoachHub with this email. This link expires in one hour. If you didn't ask for this, you can ignore this email: nothing changes.
+
+Best regards,
+The CoachHub Team`,
+  }))
 }

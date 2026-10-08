@@ -8,8 +8,10 @@ import type { UserRole } from "@/types/auth";
 
 /**
  * The two paths that make a login (D9), and the only writers of profiles and
- * of the login side of coaches and clients: the owner's coach command
- * (createCoachLogin) and the client invite (acceptClientInvitation). Each
+ * of the login side of coaches and clients, but for a coach's email, which
+ * follows the login's address once made (services/account-service.ts): the
+ * owner's coach command (createCoachLogin) and the client invite
+ * (acceptClientInvitation). Each
  * makes the login through the admin plugin's create-user, the one path
  * lib/auth.ts's guard lets make one, then writes the app's rows for it in the
  * same request, so the role comes from the path and nothing races to make a

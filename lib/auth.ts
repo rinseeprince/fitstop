@@ -1,4 +1,4 @@
-import { betterAuth } from "better-auth"
+import { betterAuth, type GenericEndpointContext } from "better-auth"
 import { APIError, createAuthMiddleware, isAPIError } from "better-auth/api"
 import { verifyPassword } from "better-auth/crypto"
 import { admin, bearer } from "better-auth/plugins"
@@ -10,6 +10,7 @@ import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/constants"
 import { captureApiError } from "@/lib/error-handler"
 import { landsOnSetPassword } from "@/lib/password-link"
 import { supabaseConnection } from "@/lib/supabase-connection"
+import type * as AuthEmailService from "@/services/auth-email-service"
 
 /**
  * Better Auth, the one betterAuth(...) in the tree (docs/BETTER-AUTH-PLAN.md
@@ -101,7 +102,7 @@ const REQUEST_PASSWORD_RESET_PATH = "/request-password-reset"
  * with a login the new-coach email. A request asking for that landing is
  * refused before any address is looked up: every address gets one answer.
  */
-export const refuseSetPasswordLandingOverHttp = createAuthMiddleware((ctx) => {
+function refuseSetPasswordLandingOverHttp(ctx: GenericEndpointContext): void {
   const overHttp = ctx.request !== undefined || ctx.headers !== undefined
   const redirectTo: unknown = (ctx.body as { redirectTo?: unknown } | undefined)?.redirectTo
   if (
@@ -110,9 +111,46 @@ export const refuseSetPasswordLandingOverHttp = createAuthMiddleware((ctx) => {
     typeof redirectTo === "string" &&
     landsOnSetPassword(redirectTo, ctx.context.baseURL)
   ) {
-    return Promise.reject(new APIError("FORBIDDEN", { message: "The set-password link is sent by the owner's command alone." }))
+    throw new APIError("FORBIDDEN", { message: "The set-password link is sent by the owner's command alone." })
   }
-  return Promise.resolve()
+}
+
+/** Change email's endpoint. */
+const CHANGE_EMAIL_PATH = "/change-email"
+
+/**
+ * Only a coach changes the email they sign in with (D18). A client's address
+ * is the one their coach invited, which the coach's roster shows
+ * (clients.email), and nothing keeps that copy in step with the login, so a
+ * change asked for by any other login is refused before Better Auth looks up
+ * the new address or sends anything. The client's Account card has no Change
+ * email; this holds for a call made without it, a bearer token's included.
+ *
+ * Who is asking is read as the proxy and the seam read it (readSessionUserId):
+ * the session the cookie or the bearer token names. This hook runs before the
+ * bearer plugin's, and every before hook is handed the request as it came, so
+ * the request's own cookie would miss a bearer token, and would name the
+ * wrong login when a bearer token rides beside a cookie. A request with no
+ * session is the endpoint's own to answer (401). The session and the role
+ * are read on this path alone: readSessionUserId's own get-session call
+ * passes through this hook too, and must go straight on. A session or a role
+ * that cannot be read refuses the change.
+ */
+async function refuseEmailChangeUnlessCoach(ctx: GenericEndpointContext): Promise<void> {
+  if (ctx.path !== CHANGE_EMAIL_PATH) return
+  const headers = ctx.headers ?? ctx.request?.headers
+  const userId = headers ? await readSessionUserId(headers) : null
+  if (!userId) return
+  const { isCoachLogin } = await import("@/services/account-service")
+  if (!(await isCoachLogin(userId))) {
+    throw new APIError("FORBIDDEN", { message: "Only a coach changes the email they sign in with." })
+  }
+}
+
+/** Better Auth's before hook: each refusal guards its own endpoint and lets every other request through. */
+export const refuseBeforeEndpoint = createAuthMiddleware(async (ctx) => {
+  refuseSetPasswordLandingOverHttp(ctx)
+  await refuseEmailChangeUnlessCoach(ctx)
 })
 
 /**
@@ -167,6 +205,43 @@ export async function backgroundWorkSettled(): Promise<void> {
 }
 
 /**
+ * Runs one of services/auth-email-service.ts's senders, imported when a link
+ * is sent, not with this module: the proxy loads this file on every request
+ * and needs neither React Email nor Resend, and an email misconfiguration
+ * must never take sign-in down with it. The senders report their own
+ * failures; this reports the module failing to load (a missing
+ * RESEND_API_KEY throws at import), as `source`, the callback's name.
+ */
+async function sendWithEmailService(source: string, send: (emails: typeof AuthEmailService) => Promise<void>): Promise<void> {
+  try {
+    await send(await import("@/services/auth-email-service"))
+  } catch (error) {
+    captureApiError(error, { source })
+  }
+}
+
+/**
+ * After Better Auth updates a login, the coach row's email follows its
+ * address (D18, services/account-service.ts). Better Auth has written the
+ * login by then, and the update that changes an address is the second link
+ * of a change of email, a page the coach opened from an email: a throw here
+ * would answer them with a raw error, the address changed all the same. So a
+ * copy that fails goes to Sentry with the login's id, and the coach row keeps
+ * the old address until it is repaired by hand: nothing else updates a
+ * coach's login in this app. No screen reads the copy (the Account card and
+ * the coach menus show the session's address).
+ */
+export async function mirrorLoginEmail(user: { id: string; email: string } | null): Promise<void> {
+  if (!user) return
+  try {
+    const { mirrorEmailToCoachRow } = await import("@/services/account-service")
+    await mirrorEmailToCoachRow(user)
+  } catch (error) {
+    captureApiError(error, { source: "mirrorLoginEmail", userId: user.id })
+  }
+}
+
+/**
  * Better Auth turns an error its endpoint throws into the endpoint's answer
  * before onAPIError could see it, its own 500s included (a database fault
  * behind /get-session answers 500 FAILED_TO_GET_SESSION). An after hook reads
@@ -199,18 +274,23 @@ export const auth = betterAuth({
     maxPasswordLength: PASSWORD_MAX_LENGTH,
     revokeSessionsOnPasswordReset: true, // a reset signs every other device out
     password: { verify: verifyBcryptOrScrypt },
-    // Imported when a link is sent, not with this module: the proxy loads
-    // this file on every request and needs neither React Email nor Resend,
-    // and an email misconfiguration must never take sign-in down with it.
-    sendResetPassword: async (data) => {
-      try {
-        const { sendPasswordLinkEmail } = await import("@/services/auth-email-service")
-        await sendPasswordLinkEmail(data)
-      } catch (error) {
-        // The send reports its own failures; this is the module failing to
-        // load (a missing RESEND_API_KEY throws at import).
-        captureApiError(error, { source: "sendResetPassword" })
-      }
+    sendResetPassword: (data) => sendWithEmailService("sendResetPassword", (emails) => emails.sendPasswordLinkEmail(data)),
+  },
+  // Change email's second email, "Confirm your new email" (rule 6): Better
+  // Auth sends it to the new address once the current one approved, and its
+  // link is what changes the address. Each of the two links lasts an hour.
+  emailVerification: {
+    sendVerificationEmail: (data) => sendWithEmailService("sendVerificationEmail", (emails) => emails.sendConfirmNewEmailEmail(data)),
+    expiresIn: 60 * 60,
+  },
+  user: {
+    // A coach changes the email they sign in with (D18): "Approve your email
+    // change" goes to the current address first. A client doesn't
+    // (refuseEmailChangeUnlessCoach).
+    changeEmail: {
+      enabled: true,
+      sendChangeEmailConfirmation: (data) =>
+        sendWithEmailService("sendChangeEmailConfirmation", (emails) => emails.sendApproveEmailChangeEmail(data)),
     },
   },
   // Better Auth's defaults, written down: a session lasts seven days from its
@@ -221,9 +301,9 @@ export const auth = betterAuth({
   // on in production, off under next dev (D16).
   rateLimit: { storage: "database" },
   databaseHooks: {
-    user: { create: { before: refuseUnlessOwnerOrInvite } },
+    user: { create: { before: refuseUnlessOwnerOrInvite }, update: { after: mirrorLoginEmail } },
   },
-  hooks: { before: refuseSetPasswordLandingOverHttp, after: reportEndpointFailure },
+  hooks: { before: refuseBeforeEndpoint, after: reportEndpointFailure },
   onAPIError: { onError: (error) => reportUnexpectedAuthError(error) },
   // The database makes every new id (uuid, gen_random_uuid()), and a copied
   // login kept its Supabase one: every login's id has the type of the user_id

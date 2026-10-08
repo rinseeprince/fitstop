@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+// The Account card's Change password: its dialog calls Better Auth's client.
+vi.mock("@/lib/auth-client", () => ({ authClient: { changePassword: vi.fn() } }));
+
 import SettingsPage from "./page";
+import { authClient } from "@/lib/auth-client";
 import type { Client } from "@/types/check-in";
 
 // Radix RadioGroup measures its indicator via @radix-ui/react-use-size, which
@@ -102,6 +106,16 @@ describe("SettingsPage", () => {
     const { container } = render(<SettingsPage />);
     expect(container.querySelector('[aria-label="Loading settings"]')).not.toBeNull();
     expect(screen.queryByText("Settings")).toBeNull();
+  });
+
+  it("the skeleton holds a card for each card the page draws, so nothing moves when it lands", () => {
+    setSWR({ isLoading: true });
+    const { container } = render(<SettingsPage />);
+    const pending = container.querySelectorAll('[aria-label="Loading settings"] [data-slot="card"]').length;
+    cleanup();
+    setSWR({ data: { success: true, data: makeClient() } });
+    render(<SettingsPage />);
+    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(pending);
   });
 
   it("renders an error state with a Try again button on fetch failure", async () => {
@@ -229,6 +243,36 @@ describe("SettingsPage", () => {
       }),
     );
     expect(mutateMock).not.toHaveBeenCalled();
+  });
+
+  it("puts the Account card between Profile and Units, with Change password and nothing to change the email (rule 13, D18)", () => {
+    render(<SettingsPage />);
+    const titles = screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent);
+    expect(titles).toEqual(["Profile", "Account", "Units", "Timezone"]);
+    expect(screen.getByRole("button", { name: "Change password" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /change email/i })).toBeNull();
+  });
+
+  it("Change password opens its dialog, and neither it nor the dialog's own submit reaches the settings form", async () => {
+    vi.mocked(authClient.changePassword).mockResolvedValue({ data: { token: "t", user: {} }, error: null } as never);
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    render(<SettingsPage />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Change password" })).toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText("Current password"), "my current password");
+    await user.type(within(dialog).getByLabelText("New password"), "a brand new password");
+    await user.type(within(dialog).getByLabelText("Confirm new password"), "a brand new password");
+    await user.click(within(dialog).getByRole("button", { name: "Change password" }));
+
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Password changed"));
+    expect(authClient.changePassword).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(toastMock.success).not.toHaveBeenCalledWith("Settings saved");
+    expect(toastMock.error).not.toHaveBeenCalled();
   });
 
 });

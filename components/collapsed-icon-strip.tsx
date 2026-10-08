@@ -22,7 +22,9 @@ import {
 export function CollapsedIconStrip() {
   const pathname = usePathname()
   const router = useRouter()
-  const { coach, logout, loading } = useAuth()
+  // The footer's name and email are the login's own, from the session, as the
+  // Settings Account card shows them: a change of email shows on both at once.
+  const { user, logout } = useAuth()
   const [optimisticHref, setOptimisticHref] = useState<string | null>(null)
   const attentionCount = useClientAttentionCount()
 
@@ -101,9 +103,9 @@ export function CollapsedIconStrip() {
           <DropdownMenuContent align="center" side="right" className="w-56">
             <DropdownMenuLabel>
               <div className="flex flex-col">
-                <span>{loading ? "Loading..." : coach?.name || "Coach"}</span>
+                <span>{user?.name ?? "Loading..."}</span>
                 <span className="text-xs font-normal text-muted-foreground">
-                  {loading ? "" : coach?.email || ""}
+                  {user?.email ?? ""}
                 </span>
               </div>
             </DropdownMenuLabel>

@@ -11,6 +11,7 @@ import {
   updateSettingsSchema,
   type UpdateSettingsInput,
 } from "@/lib/validations/client";
+import { ClientAccountCard } from "@/components/client-portal/account-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -37,7 +38,8 @@ function SettingsSkeleton() {
   return (
     <div className="flex flex-col gap-4 py-4" aria-label="Loading settings">
       <Skeleton className="h-8 w-32" />
-      {[0, 1, 2].map((i) => (
+      {/* One per card: Profile, Account, Units, Timezone. */}
+      {[0, 1, 2, 3].map((i) => (
         <Card key={i}>
           <CardContent className="p-4 space-y-3">
             <Skeleton className="h-5 w-24" />
@@ -143,26 +145,30 @@ function SettingsForm({
     <div className="flex flex-col gap-4 py-4">
       <h1 className="text-2xl font-semibold">Settings</h1>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Profile</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Name</span>
+            <span className="font-medium">{client.name}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Email</span>
+            <span className="font-medium">{client.email}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Outside the settings form: its dialog has a form of its own, and a
+          submit there would reach this one through React's tree. */}
+      <ClientAccountCard />
+
       <form
         onSubmit={form.handleSubmit(onSubmit, onInvalid)}
         className="flex flex-col gap-4"
       >
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Profile</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Name</span>
-              <span className="font-medium">{client.name}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Email</span>
-              <span className="font-medium">{client.email}</span>
-            </div>
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Units</CardTitle>

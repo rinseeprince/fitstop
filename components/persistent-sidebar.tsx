@@ -20,10 +20,12 @@ import { toast } from "sonner"
  * app/(coach)/ boundary plus the proxy decide that the viewer is a coach — so
  * this component decides nothing: no route classification, no role check, no
  * wait on auth. It renders on first paint. Only the footer's name and email are
- * user data, and they fill in when the profile resolves.
+ * user data, and they fill in when the session resolves: the login's own, as
+ * the Settings Account card shows them, so a change of email shows on both
+ * at once.
  */
 export function PersistentSidebar() {
-  const { coach, logout, loading } = useAuth()
+  const { user, logout } = useAuth()
   const router = useRouter()
 
   // Log out loads the login page fresh, which says it worked
@@ -61,9 +63,9 @@ export function PersistentSidebar() {
           <DropdownMenuContent align="center" side="right" className="w-56">
             <DropdownMenuLabel>
               <div className="flex flex-col">
-                <span>{loading ? "Loading..." : coach?.name || "Coach"}</span>
+                <span>{user?.name ?? "Loading..."}</span>
                 <span className="text-xs font-normal text-muted-foreground">
-                  {loading ? "" : coach?.email || ""}
+                  {user?.email ?? ""}
                 </span>
               </div>
             </DropdownMenuLabel>

@@ -6,7 +6,7 @@ vi.mock("@/services/email-service", () => ({
 }));
 vi.mock("@/lib/error-handler", () => ({ captureApiError: vi.fn() }));
 
-import { sendPasswordLinkEmail } from "./auth-email-service";
+import { sendApproveEmailChangeEmail, sendConfirmNewEmailEmail, sendPasswordLinkEmail } from "./auth-email-service";
 import { resend } from "@/services/email-service";
 import { captureApiError } from "@/lib/error-handler";
 
@@ -82,5 +82,74 @@ describe("the email a password link goes out as (D17): picked by the page the li
     const { message } = await sentFor(query);
     expect(message.subject).toBe("Reset your password");
     expect(message.html).not.toContain("Your coach account on CoachHub is ready.");
+  });
+});
+
+/** Change email's two links, as Better Auth builds them (a token it signs, landing on the coach's Settings). */
+const APPROVE_URL = "http://localhost:3000/api/auth/verify-email?token=eyJ.approve.sig&callbackURL=%2Fsettings";
+const CONFIRM_URL = "http://localhost:3000/api/auth/verify-email?token=eyJ.confirm.sig&callbackURL=%2Fsettings";
+
+/** The one email sent, and its html and text together. */
+function sentEmail() {
+  expect(resend.emails.send).toHaveBeenCalledTimes(1);
+  const [message] = vi.mocked(resend.emails.send).mock.calls[0];
+  return { message, both: `${message.html}${message.text}` };
+}
+
+describe("change email's first email: Approve your email change, to the address the coach signs in with now (rule 6)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("goes to the current address from the app's sender, names the new one, and carries Better Auth's link", async () => {
+    vi.mocked(resend.emails.send).mockResolvedValue({ data: { id: "e1" }, error: null } as never);
+    await sendApproveEmailChangeEmail({ user: { email: "coach@example.com", name: "Sam" }, newEmail: "new@example.com", url: APPROVE_URL });
+    const { message, both } = sentEmail();
+    expect(message).toMatchObject({ from: "CoachHub <no-reply@example.com>", to: "coach@example.com", subject: "Approve your email change" });
+    expect(message.html).toContain("Approve your email change");
+    expect(message.html).toContain(APPROVE_URL.replace(/&/g, "&amp;"));
+    expect(message.text).toContain(APPROVE_URL);
+    // React marks where a value meets its sentence (<!-- -->) in the html; the text reads it whole.
+    expect((message.html ?? "").replace(/<!-- -->/g, "")).toContain("CoachHub with to new@example.com.");
+    expect(message.text).toContain("CoachHub with to new@example.com.");
+    expect(both).toContain("This link expires in one hour.");
+    expect(both).not.toContain("Confirm your new email");
+    expect(both).not.toContain("—");
+    expect(captureApiError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Resend refuses it", () => vi.mocked(resend.emails.send).mockResolvedValue({ data: null, error: { message: "sandbox" } } as never)],
+    ["the send throws", () => vi.mocked(resend.emails.send).mockRejectedValue(new Error("network"))],
+  ])("never throws when %s: it runs after the answer, and the failure reaches Sentry", async (_label, failIt) => {
+    failIt();
+    await expect(
+      sendApproveEmailChangeEmail({ user: { email: "coach@example.com", name: "Sam" }, newEmail: "new@example.com", url: APPROVE_URL })
+    ).resolves.toBeUndefined();
+    expect(captureApiError).toHaveBeenCalledWith(expect.any(Error), { source: "sendApproveEmailChangeEmail" });
+  });
+});
+
+describe("change email's second email: Confirm your new email, to the new address (rule 6)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("goes to the address Better Auth hands over, the new one, and carries its link", async () => {
+    vi.mocked(resend.emails.send).mockResolvedValue({ data: { id: "e2" }, error: null } as never);
+    await sendConfirmNewEmailEmail({ user: { email: "new@example.com", name: "Sam" }, url: CONFIRM_URL });
+    const { message, both } = sentEmail();
+    expect(message).toMatchObject({ from: "CoachHub <no-reply@example.com>", to: "new@example.com", subject: "Confirm your new email" });
+    expect(message.html).toContain("Confirm your new email");
+    expect(message.html).toContain(CONFIRM_URL.replace(/&/g, "&amp;"));
+    expect(message.text).toContain(CONFIRM_URL);
+    expect(message.html).toContain("Once you do, you sign in to CoachHub with this email.");
+    expect(message.text).toContain("Once you do, you sign in to CoachHub with this email.");
+    expect(both).toContain("This link expires in one hour.");
+    expect(both).not.toContain("Approve your email change");
+    expect(both).not.toContain("—");
+    expect(captureApiError).not.toHaveBeenCalled();
+  });
+
+  it("never throws when Resend refuses it, and the failure reaches Sentry", async () => {
+    vi.mocked(resend.emails.send).mockResolvedValue({ data: null, error: { message: "sandbox" } } as never);
+    await expect(sendConfirmNewEmailEmail({ user: { email: "new@example.com", name: "Sam" }, url: CONFIRM_URL })).resolves.toBeUndefined();
+    expect(captureApiError).toHaveBeenCalledWith(expect.any(Error), { source: "sendConfirmNewEmailEmail" });
   });
 });

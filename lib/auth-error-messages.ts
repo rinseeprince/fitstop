@@ -1,18 +1,21 @@
 /**
- * What a sign-in screen says when Better Auth refuses (docs/BETTER-AUTH-PLAN.md
- * 2.2, "Errors"): its codes mapped to the rules' sentences, and nothing raw.
- * Every other refusal says the one generic sentence.
+ * What a sign-in screen or an Account dialog says when Better Auth refuses
+ * (docs/BETTER-AUTH-PLAN.md 2.2, "Errors"): its codes mapped to the rules'
+ * sentences, and nothing raw. Every other refusal says the one generic
+ * sentence.
  */
 export const AUTH_ERROR_SENTENCES = {
   wrongPassword: "Wrong email or password.",
+  wrongCurrentPassword: "Wrong password.",
   tooManyAttempts: "Too many attempts. Wait a moment and try again.",
   expiredLink: "This link has expired. Request a new one.",
   generic: "Something went wrong. Try again.",
 } as const;
 
-/** Better Auth's codes, and the sentence each shows (rules 1 and 4). */
+/** Better Auth's codes, and the sentence each shows (rules 1, 4 and 6). */
 const SENTENCE_BY_CODE = new Map<string, string>([
   ["INVALID_EMAIL_OR_PASSWORD", AUTH_ERROR_SENTENCES.wrongPassword],
+  ["INVALID_PASSWORD", AUTH_ERROR_SENTENCES.wrongCurrentPassword],
   ["INVALID_TOKEN", AUTH_ERROR_SENTENCES.expiredLink],
   ["TOKEN_EXPIRED", AUTH_ERROR_SENTENCES.expiredLink],
 ]);

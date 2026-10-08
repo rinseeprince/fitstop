@@ -1,20 +1,23 @@
+import { Suspense } from "react"
 import { AppLayout } from "@/components/app-layout"
 import { PageHeader } from "@/components/page-header"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+import { CoachAccountCard } from "@/components/coach/account-card"
+import { ChangeEmailLinkNotice } from "@/components/coach/change-email-link-notice"
+import {
+  SETTINGS_CARD_CLASS,
+  SETTINGS_CARD_HEADER_CLASS,
+  SETTINGS_CARD_TITLE_CLASS,
+} from "@/components/coach/settings-card-classes"
 import { SettingsUnitsCard } from "@/components/coach/settings-units-card"
 
-// NOTE: the Profile and Business cards below are still an unwired mock — no
-// fetch, no save handler, hardcoded values. Only the Units card is real
-// (units canonicalization Phase 4). Do not read the mock cards as a working
-// pattern to copy.
+// NOTE: the Business card below is still an unwired mock — no fetch, no save
+// handler, hardcoded values. The Account and Units cards are real. Do not
+// read the mock card as a working pattern to copy.
 
-const cardClass = "bg-white border-0 shadow-none rounded-[6px]"
-const headerClass = "px-5 py-4 border-b border-[rgba(13,148,136,0.08)] flex items-center justify-between min-h-[64px]"
-const titleClass = "text-[15px] font-semibold tracking-tight text-[#0c1a1e]"
 const helperClass = "text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium"
 const labelClass = "text-[12px] font-medium text-[#0c1a1e]"
 const inputClass = "border-[rgba(13,148,136,0.08)] rounded-[6px] text-[#0c1a1e] placeholder:text-[#93b0b4] focus:border-[#0d9488] focus:ring-[#0d9488]/20"
@@ -30,35 +33,19 @@ export default function SettingsPage() {
 
   return (
     <AppLayout pageHeader={pageHeader}>
+      {/* Says when a change-of-email link failed. Its own Suspense boundary:
+          the reader of ?error= must not deopt the page's prerender. */}
+      <Suspense fallback={null}>
+        <ChangeEmailLinkNotice />
+      </Suspense>
       <div className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Profile Settings */}
-          <Card className={cardClass}>
-            <CardHeader className={headerClass}>
-              <h3 className={titleClass}>Profile Information</h3>
-              <span className={helperClass}>Update your personal details</span>
-            </CardHeader>
-            <CardContent className="space-y-4 p-5">
-              <div className="space-y-2">
-                <Label htmlFor="name" className={labelClass}>Full Name</Label>
-                <Input id="name" defaultValue="Coach Name" className={inputClass} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email" className={labelClass}>Email</Label>
-                <Input id="email" type="email" defaultValue="coach@example.com" className={inputClass} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bio" className={labelClass}>Bio</Label>
-                <Textarea id="bio" placeholder="Tell clients about yourself..." className={inputClass} />
-              </div>
-              <Button className={primaryButtonClass}>Save Changes</Button>
-            </CardContent>
-          </Card>
+          <CoachAccountCard />
 
           {/* Business Settings */}
-          <Card className={cardClass}>
-            <CardHeader className={headerClass}>
-              <h3 className={titleClass}>Business Information</h3>
+          <Card className={SETTINGS_CARD_CLASS}>
+            <CardHeader className={SETTINGS_CARD_HEADER_CLASS}>
+              <h3 className={SETTINGS_CARD_TITLE_CLASS}>Business Information</h3>
               <span className={helperClass}>Configure your business details</span>
             </CardHeader>
             <CardContent className="space-y-4 p-5">

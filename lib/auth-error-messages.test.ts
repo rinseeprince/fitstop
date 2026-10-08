@@ -6,6 +6,11 @@ describe("authErrorSentence", () => {
     expect(authErrorSentence({ status: 401, code: "INVALID_EMAIL_OR_PASSWORD" })).toBe("Wrong email or password.");
   });
 
+  it("a wrong current password on an Account dialog says so (rule 6)", () => {
+    expect(authErrorSentence({ status: 400, code: "INVALID_PASSWORD" })).toBe("Wrong password.");
+    expect(AUTH_ERROR_SENTENCES.wrongCurrentPassword).toBe("Wrong password.");
+  });
+
   it("a used or expired reset link says it has expired (rule 4)", () => {
     expect(authErrorSentence({ status: 400, code: "INVALID_TOKEN" })).toBe("This link has expired. Request a new one.");
     expect(authErrorSentence({ status: 400, code: "TOKEN_EXPIRED" })).toBe("This link has expired. Request a new one.");

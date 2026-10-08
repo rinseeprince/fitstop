@@ -1252,6 +1252,13 @@ smoke is mine.
   landing, so `auth:last-link` prints a delete-account link with that constant, and the two must stay one.
 - `scripts/delete-account-proof.ts` (§5, proof 6).
 - The smoke seed (§7.4): a throwaway coach "Smoke · delete coach" with two clients and the records the steps name.
+- Found by commit 5: `services/account-service.ts` exists (`isCoachLogin`, `mirrorEmailToCoachRow`), so `deleteAccountRecords`
+  joins it. Both Account cards host their dialogs with `useDialogSubject` over a dialog kind (`CoachAccountCard`'s
+  `AccountDialog`, `ClientAccountCard`'s): the Delete account dialog joins those, keyed by `openKey`. `lib/auth.ts` sends
+  every Better Auth email through `sendWithEmailService`, and its one before hook is `refuseBeforeEndpoint`. A hook that
+  must know who is asking reads `readSessionUserId(ctx.headers)`, never the request's own cookie: every before hook is
+  handed the request as it came, before the bearer plugin turns a bearer token into the session cookie (commit 5's
+  review found a client changing email by bearer token that way).
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -1319,6 +1326,10 @@ arrives or the auth:last-link command. The browser smoke is mine.
   `app/login/page.tsx` wired to `signIn.social`; the two notices on `components/auth/login-notice.tsx` (rule 8).
 - No proof script can drive Google; the tests cover the config, the button's call and the notices, and §7.5 is
   the evidence.
+- Found by commit 5: Better Auth's change password needs the login's password row (`findCredentialAccount`); a coach
+  who never used the "Set your password" link and signs in with Google has none, and Change password answers
+  `CREDENTIAL_ACCOUNT_NOT_FOUND`, which the dialog words as "Something went wrong. Try again." Every update of a login
+  runs `mirrorLoginEmail` (a no-op unless its address changed).
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -1375,6 +1386,11 @@ mine.
   (`readSessionUserId`, `disableRefresh`), so a session is renewed only by `GET /api/auth/get-session`. The app
   must call it (the Expo client's `useSession()` does) or its session ends seven days after sign-in; the proof
   shows a bearer session past `updateAge` renewed there.
+- Found by commit 5: a Better Auth before hook sees the request before the bearer plugin's hook turns its token into
+  the session cookie, so a guard reading the request's own cookie misses a bearer request, or names the cookie's login
+  when a bearer token rides beside it. The coach-only change of email (`refuseEmailChangeUnlessCoach`) reads who is
+  asking through `readSessionUserId`, and `scripts/account-proof.ts` step 3 proves a client's bearer token refused;
+  this commit's review of what a bearer request may do covers every before-hook guard the same way.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -1423,7 +1439,8 @@ shipped and the proof's output. There is no browser smoke for this commit.
 
 - `docs/ARCHITECTURE.md`: "Auth Model" complete for the account features, Google, the bearer path, the delete
   paths; the Settings pages' Account cards under their pages; the emails list; the "Client Onboarding Flow" line
-  for the invite; current shape only.
+  for the invite; current shape only. Commit 5 wrote "Account changes" (change password, change email and the
+  `coaches.email` copy, sign out everywhere): it is completed, not restarted.
 - `CONVENTIONS.md`: the rules §4 marks for rewriting that commit 2 didn't take (§9's tiers, §6's map, §19's env
   list, the soft-delete exception, the packages line, the "additive over breaking" line).
 - `TECHNICAL-DEBT.md`: the entries §4 closes, each deleted or marked with the hash, and with them the open P2 rows

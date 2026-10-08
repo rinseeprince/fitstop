@@ -304,3 +304,6 @@ export const ACCOUNT_DELETED_PAGE = "/login?deleted=1";
 // the marker that has the login page say "Logged out successfully".
 export const LOGGED_OUT_PARAM = "logged-out";
 export const LOGGED_OUT_PAGE = `/login?${LOGGED_OUT_PARAM}=1`;
+// Where both of change email's emailed links land (rule 6): the coach's
+// Settings, whose Account card shows the address the coach signs in with.
+export const COACH_SETTINGS_PAGE = "/settings";

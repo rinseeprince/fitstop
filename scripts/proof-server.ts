@@ -2,10 +2,12 @@
  * The next dev a request-level proof runs against: its own, started on a free
  * port, never :3000, which belongs to whoever runs a dev server there. Better
  * Auth's base URL and the app URL name that port, so the session cookie, the
- * CSRF check and Better Auth's origin check all read one origin. The server
- * sends no email (Resend points at a closed port) and reports nothing to
- * Sentry. It runs in its own process group, so stopping it stops nothing
- * else, and any exit of the script stops it, an interrupt included.
+ * CSRF check and Better Auth's origin check all read one origin. No email the
+ * server sends leaves the machine: Resend points at a closed port, or at the
+ * proof's own mailbox (scripts/proof-mailbox.ts) when the proof reads its
+ * emails. It reports nothing to Sentry. It runs in its own process group, so
+ * stopping it stops nothing else, and any exit of the script stops it, an
+ * interrupt included.
  *
  * next dev holds a lock on this folder: one proof at a time, and none while
  * another next dev runs here.
@@ -43,9 +45,10 @@ async function freePort(): Promise<number> {
 
 /**
  * Starts this run's next dev, waits until /login answers, and points the
- * request helpers (scripts/proof-session.ts) at it.
+ * request helpers (scripts/proof-session.ts) at it. Its email goes to
+ * `emailTo`, a proof's mailbox on this machine, when one is given.
  */
-export async function startProofServer(): Promise<ProofServer> {
+export async function startProofServer({ emailTo = NO_EMAIL }: { emailTo?: string } = {}): Promise<ProofServer> {
   if (running) return running.server;
   const port = await freePort();
   const base = `http://localhost:${port}`;
@@ -59,7 +62,7 @@ export async function startProofServer(): Promise<ProofServer> {
       PORT: String(port),
       BETTER_AUTH_URL: base,
       NEXT_PUBLIC_APP_URL: base,
-      RESEND_BASE_URL: NO_EMAIL,
+      RESEND_BASE_URL: emailTo,
       SENTRY_DSN: "",
     },
   });
