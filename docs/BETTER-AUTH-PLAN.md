@@ -944,7 +944,7 @@ this commit: the proof is the evidence.
 
 ### Commit 2 — `feat(auth): every sign-in runs on Better Auth: the proxy, the seam, the login, forgot and reset pages, the invite; migration 209 moves the user keys`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `9f136a30` 2026-10-08.**
 
 - `middleware.ts` → `proxy.ts` and `proxy.test.ts` (§2.2: `/api/auth/` and `/set-password` public, `auth.api.getSession`,
   401 JSON under `/api/`, the fail-closed role check, `redirectPreservingCookies` gone). `lib/auth-helpers.ts` on
