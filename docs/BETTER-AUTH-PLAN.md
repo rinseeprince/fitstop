@@ -1112,7 +1112,7 @@ shipped and each script's result. There is no browser smoke for this commit.
 
 ### Commit 4 — `feat(auth): the owner creates a coach: npm run coach:create and the "Set your password" email`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `de807bd1`, 2026-10-09.**
 
 - `scripts/create-coach.ts` → `npm run coach:create -- --project <ref> --email … --name "…"` (§2.3): refuses to
   run unless `--project`, the linked ref and `DATABASE_URL` agree, calls `createCoachLogin`, prints the user id and
