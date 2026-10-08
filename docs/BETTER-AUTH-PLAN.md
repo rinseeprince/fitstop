@@ -6,8 +6,8 @@ password hashes copied in (1); every sign-in, the invite, forgot password and re
 keys move (2); the seed and proof scripts make their logins through Better Auth (3). **The account features are
 commits 4–8:** the owner creates a coach and the coach sets a password from an email (4); change password, change
 email, sign out everywhere (5); delete account (6); Continue with Google (7); the server ready for the client app
-(8). **Commit 9** writes the docs and the PROD runbook. DEV is at migration 207 and this plan adds 208, 209 and
-210; PROD is at 184 owing 185–207, and the three join that queue (§8). **Billing is not here:** Better Auth's
+(8). **Commit 9** writes the docs and the PROD runbook. This plan adds migrations 208, 209 and 210: DEV and PROD
+hold 208 and 209 (PROD since 2026-10-08), and PROD takes 210 by §8.2. **Billing is not here:** Better Auth's
 Stripe plugin later adds one column and one table and touches nothing this plan builds (D27). Every file and line
 named here was grepped on 2026-10-07 at `d5f23299`; every Better Auth fact is from its docs and source at
 **1.7.7** (§2.9), the version commit 1 pins.
@@ -768,8 +768,8 @@ the trigger at 1225, the public list at 1231, `auth.getUser()` and Edge at 1235,
 bootstrap at 1252, the session-client bullet at 1259, `supabase_auth_admin` at 1261); 1298 ("creates Supabase
 auth account"); in commit 9: the Settings pages, the delete paths, the RN contract. `CLIENT-APP-REFERENCE.md`
 :36, :153-157 and :164 ("Login/logout are Supabase client SDK calls") in commit 9. `TECHNICAL-DEBT.md`: :470
-closed by commit 2; :256, :281, :306-307, :468 closed by 2; :679 closed by 6; :454's PROD ordering gains 208–210;
-:282 and :632-637 stay open, said so.
+closed by commit 2; :256, :281, :306-307, :468 closed by 2; :679 closed by 6; :282 and :632-637 stay open, said
+so.
 
 ---
 
@@ -1404,12 +1404,11 @@ shipped and the proof's output. There is no browser smoke for this commit.
 - `TECHNICAL-DEBT.md`: the entries §4 closes, each deleted or marked with the hash, and with them the open P2 rows
   commit 2's deletions and rewrites closed, which §4 does not name (:302 the server-client factories, :310 `error: any`
   in the auth pages, :311 their missing zod, :312 the browser client's cookie parsing, :314 the callback's metadata
-  check); :313 stays open without `app/signup/page.tsx`; :454 gains 208–210 and §8.2's order; new entries for what this plan leaves (no per-account lockout; two pools; `removeUser` needs an admin
+  check); :313 stays open without `app/signup/page.tsx`; new entries for what this plan leaves (no per-account lockout; two pools; `removeUser` needs an admin
   session so compensation deletes through the pool; the Supabase retirement steps still owed until the owner does
   them, §9.1).
 - `CLIENT-APP-REFERENCE.md` :36 and :153-157, and :148-149 ("Middleware Protection", `middleware.ts`, now `proxy.ts`).
-- §8.2's runbook stays in this file until PROD has switched (it is deleted with the file); `TECHNICAL-DEBT.md`'s
-  migration-201 entry (:454) points here for the order.
+- §8.2's runbook stays in this file until PROD has switched (it is deleted with the file).
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then the code
@@ -1551,10 +1550,11 @@ session prints.
 
 ### 8.2 PROD
 
-PROD is `etezzztgafcotyahgijk`, at migration 184, owing 185–207 today and 208–210 after this plan; the app's PROD
-deployment and its env live wherever the owner runs it (no file in the repo describes it). The runbook holds for
-any number of logins in PROD's `auth.users`; the session that runs it counts them first (as of 2026-08-04 the
-project held none: it serves the marketing site's waitlist alone).
+PROD is `etezzztgafcotyahgijk`. It took 185–209 on 2026-10-08 with no app deployed against it, holding no logins
+(208 copied none) and no coaching data: it serves the marketing site's waitlist alone. It owes 210; the app's PROD
+deployment and its env will live wherever the owner runs it (no file in the repo describes it). The session that
+runs this counts PROD's `auth.users` first: with no app on PROD none should appear, and a login found there is
+copied by rerunning 209's section 1 (idempotent) before the deploy.
 
 1. **Before, the owner (§9.1 "before PROD"):** PROD's `DATABASE_URL`, a new `BETTER_AUTH_SECRET`,
    `BETTER_AUTH_URL` = the coaches' https address, `EMAIL_FROM` on the verified domain, Google's PROD redirect URI,
@@ -1563,12 +1563,10 @@ project held none: it serves the marketing site's waitlist alone).
    chain, set `advanced.ipAddress` (the header, or the trusted proxies) in `lib/auth.ts` first, or every caller
    shares one count per path and three sign-ins in ten seconds lock everyone out.
 2. `npx supabase link --project-ref etezzztgafcotyahgijk < /dev/null`; `npx supabase migration list --linked`
-   (expect 185–210 pending, nothing else); count `auth.users`, `profiles`, `coaches`, `clients` with
+   (expect 210 pending, nothing else); count `auth.users`, `profiles`, `coaches`, `clients` with
    `db query --linked` and write the numbers in the handover.
-3. `npx supabase db push --dry-run`, read it, then `npx supabase db push`. Every pending migration lands in order:
-   201's lock before the code that reads through the seam is live on PROD, so **steps 3 and 4 run in one sitting**;
-   between them a sign-in on the old deploy fails closed to "We couldn't load your account" on `/login` — minutes,
-   not hours. 208 copies PROD's logins; 209 moves the keys; 210 adds the functions.
+3. `npx supabase db push --dry-run`, read it, then the owner runs `npx supabase db push` (Claude Code's auto mode
+   refuses a push to PROD): 210 adds the functions.
 4. Deploy `main` with the env of step 1.
 5. If PROD held logins, each person signs in again (D8). If it held none, `npm run coach:create -- --project
    etezzztgafcotyahgijk …` with PROD's `DATABASE_URL` in the shell for the owner's own coach, set the password from
