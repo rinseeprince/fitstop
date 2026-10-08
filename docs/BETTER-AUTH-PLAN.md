@@ -1173,7 +1173,7 @@ instead of the email step. The browser smoke is mine.
 
 ### Commit 5 — `feat(account): change password, change email and sign out everywhere, on the coach's and the client's Settings`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `444403f8` 2026-10-09.**
 
 - `components/coach/account-card.tsx` on the coach's Settings in place of the mock Profile card: name, email,
   Change password, Change email, Sign out everywhere (Delete account arrives in commit 6); the dialogs (§2.4,
