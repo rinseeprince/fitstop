@@ -4,6 +4,7 @@ import { verifyPassword } from "better-auth/crypto"
 import { admin, bearer } from "better-auth/plugins"
 import bcrypt from "bcryptjs"
 import { PostgresDialect } from "kysely"
+import { after } from "next/server"
 import { Pool, TypeOverrides, types } from "pg"
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/constants"
 import { captureApiError } from "@/lib/error-handler"
@@ -11,10 +12,11 @@ import { supabaseConnection } from "@/lib/supabase-connection"
 
 /**
  * Better Auth, the one betterAuth(...) in the tree (docs/BETTER-AUTH-PLAN.md
- * 2.2). It answers under /api/auth (app/api/auth/[...all]/route.ts) and keeps
- * its logins in schema better_auth (migration 208), on the user ids profiles,
- * coaches and clients carry. No screen signs in through it: every sign-in
- * runs on Supabase Auth.
+ * 2.2). Every sign-in runs on it: it answers under /api/auth
+ * (app/api/auth/[...all]/route.ts), the proxy and the auth seam read its
+ * session (readSessionUserId), and it keeps its logins in schema better_auth
+ * (migration 208), whose ids are the user_id that profiles, coaches and
+ * clients point at (migration 209).
  */
 
 function requiredEnv(name: string): string {
@@ -108,6 +110,36 @@ export function reportUnexpectedAuthError(error: unknown, endpoint = ""): void {
 }
 
 /**
+ * Better Auth's background work, its emails among it, runs after the answer
+ * has gone out. Forgot password then answers an address with an account as
+ * fast as one without, so its timing tells nobody which addresses have one.
+ * In a request, Next's after() keeps the work alive past the answer; outside
+ * one (a script) after() refuses, and the work, already running, runs on and
+ * is kept for backgroundWorkSettled.
+ */
+export function runAfterAnswer(task: Promise<unknown>): void {
+  try {
+    after(task)
+  } catch (refusal) {
+    console.debug("Better Auth background task outside a request: it runs on.", refusal)
+    outsideRequest.add(task)
+    void task.finally(() => outsideRequest.delete(task))
+  }
+}
+
+/** Background work started outside a request, which no after() keeps alive. */
+const outsideRequest = new Set<Promise<unknown>>()
+
+/**
+ * Settles when every piece of Better Auth's background work started outside
+ * a request has: a script that makes a login awaits it before it exits, or the
+ * email the login asked for may be cut off mid-send.
+ */
+export async function backgroundWorkSettled(): Promise<void> {
+  await Promise.allSettled([...outsideRequest])
+}
+
+/**
  * Better Auth turns an error its endpoint throws into the endpoint's answer
  * before onAPIError could see it, its own 500s included (a database fault
  * behind /get-session answers 500 FAILED_TO_GET_SESSION). An after hook reads
@@ -140,6 +172,19 @@ export const auth = betterAuth({
     maxPasswordLength: PASSWORD_MAX_LENGTH,
     revokeSessionsOnPasswordReset: true, // a reset signs every other device out
     password: { verify: verifyBcryptOrScrypt },
+    // Imported when a link is sent, not with this module: the proxy loads
+    // this file on every request and needs neither React Email nor Resend,
+    // and an email misconfiguration must never take sign-in down with it.
+    sendResetPassword: async (data) => {
+      try {
+        const { sendPasswordLinkEmail } = await import("@/services/auth-email-service")
+        await sendPasswordLinkEmail(data)
+      } catch (error) {
+        // The send reports its own failures; this is the module failing to
+        // load (a missing RESEND_API_KEY throws at import).
+        captureApiError(error, { source: "sendResetPassword" })
+      }
+    },
   },
   // Better Auth's defaults, written down: a session lasts seven days from its
   // last renewal, and a use a day or more after that renews it. No cookie
@@ -156,7 +201,35 @@ export const auth = betterAuth({
   // The database makes every new id (uuid, gen_random_uuid()), and a copied
   // login kept its Supabase one: every login's id has the type of the user_id
   // columns that point at it.
-  advanced: { database: { generateId: "uuid" } },
+  advanced: { database: { generateId: "uuid" }, backgroundTasks: { handler: runAfterAnswer } },
   plugins: [admin({ adminUserIds }), bearer()],
   telemetry: { enabled: false },
 })
+
+/**
+ * Who a request is signed in as: the user id of the live session its cookie,
+ * or its bearer token (the bearer plugin), names; null for none. The proxy,
+ * the auth seam and GET /api/auth/me ask here.
+ *
+ * The read never renews the session (disableRefresh). A renewal moves the
+ * session's expiry and answers with a new cookie, and only Better Auth's own
+ * GET /api/auth/get-session, which the browser's useSession() calls, hands
+ * that cookie back. Renewed here, the row's expiry would move while the
+ * browser kept a cookie set to lapse a week after sign-in, and someone using
+ * the app every day would be signed out at the week's end.
+ *
+ * Throws when the session cannot be read (a database fault), and the caller
+ * treats the request as signed out. Every such fault reaches Sentry once:
+ * Better Auth's own 500 through the after hook, and here a throw from before
+ * its endpoint ran (its schema check, when a fresh instance cannot reach the
+ * database), which no hook sees.
+ */
+export async function readSessionUserId(headers: Headers): Promise<string | null> {
+  try {
+    const session = await auth.api.getSession({ headers, query: { disableRefresh: true } })
+    return session?.user.id ?? null
+  } catch (error) {
+    if (!isAPIError(error)) captureApiError(error, { source: "readSessionUserId" })
+    throw error
+  }
+}

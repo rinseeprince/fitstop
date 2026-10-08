@@ -6,7 +6,7 @@ const route = vi.hoisted(() => ({ pathname: "/dashboard" }))
 
 // The context in its FIRST-PAINT shape: session not resolved, nothing known.
 // The rail must not care. (ARCHITECTURE → "Coach route group": the viewer's
-// role was settled by middleware before the page was sent; the rail has
+// role was settled by the proxy before the page was sent; the rail has
 // nothing to wait for and nothing to decide.)
 vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({

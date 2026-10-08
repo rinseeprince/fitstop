@@ -83,7 +83,7 @@ async function sideDoor(
     method,
     headers: {
       apikey: ANON_KEY,
-      Authorization: `Bearer ${session.accessToken}`,
+      Authorization: session.headers.Authorization,
       "Content-Type": "application/json",
       Prefer: "return=minimal",
     },

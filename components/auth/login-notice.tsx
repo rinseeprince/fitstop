@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LOGIN_ERROR_PROFILE_UNAVAILABLE } from "@/lib/constants";
 
 /**
- * The login page's notice for a visitor the middleware sent here because
+ * The login page's notice for a visitor the proxy sent here because
  * their role could not be read (a failed read, or no profile row). The ONLY
  * reader of `?error=`. `useSearchParams` bails static prerendering out to the
  * nearest Suspense boundary, so the page hosts this leaf behind one of its

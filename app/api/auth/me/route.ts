@@ -1,29 +1,34 @@
 import { createHash } from "crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { apiRateLimit } from "@/lib/rate-limit";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { getOrCreateProfileAndCoach } from "@/services/auth-profile-service";
+import { readSessionUserId } from "@/lib/auth";
+import { getProfileAndCoach } from "@/services/auth-profile-service";
 
 /**
  * Session bootstrap for the browser AuthProvider. Serves BOTH roles: trainers
- * get `{ profile, coach }`, clients get `{ profile, coach: null }`.
+ * get `{ profile, coach }`, clients get `{ profile, coach: null }`. A pure
+ * read, keyed on the user id of the session Better Auth validates.
  *
  * apiRateLimit (60/min/IP), not authRateLimit (5/15min): this fires on every
  * app load for every logged-in user, so the auth tier would lock out normal
- * usage — same reasoning as the /auth/callback precedent.
+ * usage.
  */
 export async function GET(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
+  let userId: string | null;
+  let sessionReadFailed = false;
+  try {
+    userId = await readSessionUserId(request.headers);
+  } catch (error) {
+    console.error("GET /api/auth/me: session read failed:", error);
+    userId = null;
+    sessionReadFailed = true;
+  }
 
-  if (userError || !user) {
-    // The middleware leaves /api/auth/ to its routes, so this is the answer a
+  if (!userId) {
+    // The proxy leaves /api/auth/ to its routes, so this is the answer a
     // signed-out request gets. Mirrors lib/auth-helpers' auth_failure log
     // shape (role unknown here — this endpoint resolves the role).
     const forwarded = request.headers.get("x-forwarded-for");
@@ -31,7 +36,7 @@ export async function GET(request: NextRequest) {
     console.warn("auth_failure", {
       timestamp: new Date().toISOString(),
       role: "unknown",
-      reason: userError ? "invalid_session" : "missing_session",
+      reason: sessionReadFailed ? "invalid_session" : "missing_session",
       route: "/api/auth/me",
       ipHash: ip
         ? createHash("sha256").update(ip).digest("hex").slice(0, 12)
@@ -44,7 +49,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const data = await getOrCreateProfileAndCoach(user);
+    const data = await getProfileAndCoach(userId);
     return NextResponse.json(
       { success: true, data },
       { headers: { "Cache-Control": "no-store" } }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -9,20 +9,20 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
 import { motion } from "framer-motion";
-import { Chrome, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { loginSchema, type LoginFormData } from "@/lib/validations/auth";
+import { authErrorSentence } from "@/lib/auth-error-messages";
 import { LoginNotice } from "@/components/auth/login-notice";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, loginWithGoogle } = useAuth();
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const { login } = useAuth();
 
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -36,24 +36,9 @@ export default function LoginPage() {
       const redirectTo = role === "client" ? "/client" : "/dashboard";
       router.push(redirectTo);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Invalid email or password";
-      toast.error("Login failed", {
-        description: message,
-      });
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setGoogleLoading(true);
-    try {
-      await loginWithGoogle();
-      // Redirect will be handled by Supabase
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Could not sign in with Google";
-      toast.error("Login failed", {
-        description: message,
-      });
-      setGoogleLoading(false);
+      // Shown under the form: a wrong pair, too many attempts, or the generic
+      // sentence (rules 1 and 15); never Better Auth's own words.
+      setError("root.signIn", { message: authErrorSentence(error) });
     }
   };
 
@@ -116,44 +101,12 @@ export default function LoginPage() {
             </motion.p>
           </div>
 
-          {/* The middleware's reason for sending a signed-in visitor here, if
+          {/* The proxy's reason for sending a signed-in visitor here, if
               any. Its own Suspense boundary: the reader must not deopt the
               page's static prerender (CONVENTIONS §7). */}
           <Suspense fallback={null}>
             <LoginNotice />
           </Suspense>
-
-          {/* Google OAuth */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="mb-6"
-          >
-            <Button
-              variant="outline"
-              className="w-full rounded-xs h-11"
-              onClick={handleGoogleLogin}
-              disabled={googleLoading}
-            >
-              {googleLoading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Chrome className="h-4 w-4 mr-2" />
-              )}
-              Continue with Google
-            </Button>
-          </motion.div>
-
-          {/* Divider */}
-          <div className="relative mb-6">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
-            </div>
-          </div>
 
           {/* Email/Password form */}
           <motion.form
@@ -170,7 +123,7 @@ export default function LoginPage() {
                 type="email"
                 placeholder="coach@example.com"
                 className="rounded-xs h-11"
-                disabled={isSubmitting || googleLoading}
+                disabled={isSubmitting}
                 {...register("email")}
               />
               {errors.email && (
@@ -185,7 +138,7 @@ export default function LoginPage() {
                   href="/forgot-password"
                   className="text-xs text-primary hover:underline"
                 >
-                  Forgot password?
+                  Forgot your password?
                 </Link>
               </div>
               <Input
@@ -193,7 +146,7 @@ export default function LoginPage() {
                 type="password"
                 placeholder="••••••••"
                 className="rounded-xs h-11"
-                disabled={isSubmitting || googleLoading}
+                disabled={isSubmitting}
                 {...register("password")}
               />
               {errors.password && (
@@ -204,7 +157,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               className="w-full rounded-xs h-11 bg-primary hover:bg-primary/90 transition-colors"
-              disabled={isSubmitting || googleLoading}
+              disabled={isSubmitting}
             >
               {isSubmitting ? (
                 <>
@@ -215,20 +168,13 @@ export default function LoginPage() {
                 "Sign in"
               )}
             </Button>
-          </motion.form>
 
-          {/* Sign up link */}
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="text-center text-sm text-muted-foreground mt-6"
-          >
-            Don't have an account?{" "}
-            <Link href="/signup" className="text-primary hover:underline font-medium">
-              Sign up
-            </Link>
-          </motion.p>
+            {errors.root?.signIn && (
+              <p role="alert" className="text-sm text-destructive">
+                {errors.root.signIn.message}
+              </p>
+            )}
+          </motion.form>
         </div>
       </motion.div>
     </div>

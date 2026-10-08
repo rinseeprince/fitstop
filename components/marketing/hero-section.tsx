@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, CheckCircle } from "lucide-react"
+import { CheckCircle } from "lucide-react"
 import { motion } from "framer-motion"
 
 const BENEFITS = [
@@ -57,12 +57,6 @@ export function HeroSection() {
             transition={{ duration: 0.5, delay: 0.3 }}
             className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center"
           >
-            <Button size="lg" asChild>
-              <Link href="/signup">
-                Start Free Trial
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
             <Button size="lg" variant="outline" asChild>
               <Link href="/login">Log in to your account</Link>
             </Button>

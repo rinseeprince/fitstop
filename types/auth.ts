@@ -61,16 +61,17 @@ export type AcceptInvitationResponse = {
   error?: string
 }
 
+/** What GET /api/invitations/[token] shows whoever holds the link: never the full address or the client's name. */
+export type InvitationDetails = {
+  coachName: string
+  /** The invited address with the middle of its local part hidden (lib/mask-email.ts). */
+  emailMasked: string
+  expiresAt: string | null
+}
+
 export type InvitationDetailsResponse = {
   success: boolean
-  invitation?: {
-    id: string
-    clientName: string
-    clientEmail: string
-    coachName: string
-    expiresAt: string | null
-    status: string
-  }
+  invitation?: InvitationDetails
   error?: string
 }
 

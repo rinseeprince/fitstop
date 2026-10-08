@@ -2,36 +2,45 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useAuth } from "@/contexts/auth-context";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { ArrowLeft, Loader2, Mail } from "lucide-react";
+import { authClient } from "@/lib/auth-client";
+import { authErrorSentence } from "@/lib/auth-error-messages";
+import { forgotPasswordSchema, type ForgotPasswordFormData } from "@/lib/validations/auth";
 
 export default function ForgotPasswordPage() {
-  const { resetPassword } = useAuth();
-  const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
-  const [email, setEmail] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<ForgotPasswordFormData>({
+    resolver: zodResolver(forgotPasswordSchema),
+    defaultValues: { email: "" },
+  });
 
+  const onSubmit = async ({ email }: ForgotPasswordFormData) => {
+    // Better Auth answers every address alike, so the card says the same
+    // whatever was typed (rule 4); only a refusal, such as too many requests,
+    // says otherwise.
     try {
-      await resetPassword(email);
+      const { error } = await authClient.requestPasswordReset({ email, redirectTo: "/reset-password" });
+      if (error) {
+        toast.error("Couldn't send the link", { description: authErrorSentence(error) });
+        return;
+      }
       setEmailSent(true);
-      toast.success("Email sent!", {
-        description: "Check your inbox for a password reset link.",
-      });
-    } catch (error: any) {
-      toast.error("Failed to send email", {
-        description: error.message || "Please try again",
-      });
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      console.error("Password reset request failed:", error);
+      toast.error("Couldn't send the link", { description: authErrorSentence(error) });
     }
   };
 
@@ -96,7 +105,7 @@ export default function ForgotPasswordPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4 }}
-              onSubmit={handleSubmit}
+              onSubmit={handleSubmit(onSubmit)}
               className="space-y-4"
             >
               <div className="space-y-2">
@@ -106,19 +115,20 @@ export default function ForgotPasswordPage() {
                   type="email"
                   placeholder="coach@example.com"
                   className="rounded-xs h-11"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={loading}
+                  disabled={isSubmitting}
+                  {...register("email")}
                 />
+                {errors.email && (
+                  <p className="text-xs text-destructive">{errors.email.message}</p>
+                )}
               </div>
 
               <Button
                 type="submit"
                 className="w-full rounded-xs h-11 bg-primary hover:bg-primary/90 transition-colors"
-                disabled={loading}
+                disabled={isSubmitting}
               >
-                {loading ? (
+                {isSubmitting ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     Sending...
@@ -142,12 +152,15 @@ export default function ForgotPasswordPage() {
               </div>
               <h2 className="text-lg font-semibold mb-2">Check your email</h2>
               <p className="text-muted-foreground text-sm mb-6">
-                We've sent a password reset link to <strong>{email}</strong>
+                If that address has an account, we've emailed a link.
               </p>
               <Button
                 variant="outline"
                 className="rounded-xs"
-                onClick={() => setEmailSent(false)}
+                onClick={() => {
+                  reset();
+                  setEmailSent(false);
+                }}
               >
                 Send another email
               </Button>

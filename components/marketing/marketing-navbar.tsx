@@ -19,9 +19,6 @@ export function MarketingNavbar() {
           <Button variant="ghost" asChild>
             <Link href="/login">Log in</Link>
           </Button>
-          <Button asChild>
-            <Link href="/signup">Start Free Trial</Link>
-          </Button>
         </div>
       </div>
     </header>

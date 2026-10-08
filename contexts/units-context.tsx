@@ -47,8 +47,8 @@ export function UnitsProvider({ children }: { children: ReactNode }) {
   // client (or a coach whose /me failed) needs the route. The `!authLoading`
   // gate costs the client one serialized round trip and buys never firing a
   // request a coach will discard; it also keeps us from fetching before a
-  // session exists, where middleware answers /api/me/** with a 307 to /login
-  // and the fetcher would try to parse login HTML as JSON.
+  // session exists, where the proxy answers /api/me/** with a 401 and the
+  // fetch could only fail.
   const key = user && !authLoading && !coach ? unitPreferenceKey(user.id) : null
 
   const {

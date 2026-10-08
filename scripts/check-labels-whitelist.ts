@@ -26,7 +26,6 @@ export const LABEL_WHITELIST: readonly string[] = [
   "app/(coach)/crm/page.tsx",
   "components/lead-card.tsx",
   "app/login/page.tsx",
-  "app/signup/page.tsx",
   "app/(coach)/settings/page.tsx",
   "app/invite/",
   "app/(marketing)/",

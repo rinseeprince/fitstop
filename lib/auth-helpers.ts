@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
+import { headers } from "next/headers";
 import type { NextRequest } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { readSessionUserId } from "@/lib/auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getCachedClientId, getCachedCoachId } from "@/lib/auth-cache";
 
@@ -15,7 +16,7 @@ type AuthFailureReason =
  * Emit a structured auth-failure log. Called on every 401-equivalent path
  * in this module so a probe campaign is visible in local logs / Sentry
  * breadcrumbs. Intentionally never logs PII (no user_id, no email, no
- * JWT contents). IPs are hashed via SHA-256 so repeated failures from
+ * session token). IPs are hashed via SHA-256 so repeated failures from
  * the same source group without revealing the address.
  *
  * `route` and `ipHash` fall back to "unknown" when no `request` is passed
@@ -49,9 +50,30 @@ function logAuthFailure(opts: {
 }
 
 /**
- * Gets the authenticated coach ID from the current session: the session
- * client validates it (`auth.getUser()`), and the coaches row is read by the
- * validated user id.
+ * The user id of the request's session, or null with the reason logged:
+ * Better Auth reads the session the cookie or a bearer token names
+ * (`readSessionUserId`, lib/auth.ts). The request's own headers when the
+ * route passes it, else the incoming request's through `headers()`.
+ */
+async function sessionUserId(
+  role: "coach" | "client",
+  request?: NextRequest
+): Promise<string | null> {
+  let userId: string | null;
+  try {
+    userId = await readSessionUserId(request?.headers ?? (await headers()));
+  } catch (error) {
+    console.error("Session read failed:", error);
+    logAuthFailure({ role, reason: "invalid_session", request });
+    return null;
+  }
+  if (!userId) logAuthFailure({ role, reason: "missing_session", request });
+  return userId;
+}
+
+/**
+ * Gets the authenticated coach ID from the current session: Better Auth
+ * validates the session, and the coaches row is read by its user id.
  * @param request Optional NextRequest used for structured auth-failure logging
  *   (route + hashed IP). Coach-side callers can omit it; failures will log
  *   "unknown" for route/IP but still record the reason and timestamp.
@@ -61,28 +83,15 @@ export async function getAuthenticatedCoachId(
   request?: NextRequest
 ): Promise<string | null> {
   try {
-    const supabase = await createServerSupabaseClient();
+    const userId = await sessionUserId("coach", request);
+    if (!userId) return null;
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      logAuthFailure({ role: "coach", reason: "invalid_session", request });
-      return null;
-    }
-    if (!user) {
-      logAuthFailure({ role: "coach", reason: "missing_session", request });
-      return null;
-    }
-
-    return await getCachedCoachId(user.id, async () => {
+    return await getCachedCoachId(userId, async () => {
       // Use maybeSingle() to avoid throwing PGRST116 when no coach found
       const { data: coach, error } = await supabaseAdmin
         .from("coaches")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .maybeSingle();
 
       if (error) {
@@ -105,9 +114,9 @@ export async function getAuthenticatedCoachId(
 }
 
 /**
- * Gets the authenticated client ID from the current session: the session
- * client validates it, and the clients row is read by the validated user id,
- * active clients only.
+ * Gets the authenticated client ID from the current session: Better Auth
+ * validates the session, and the clients row is read by its user id, active
+ * clients only.
  * @param request Optional NextRequest used for structured auth-failure logging.
  * @returns The client ID if authenticated as a client, null otherwise.
  */
@@ -115,30 +124,17 @@ export async function getAuthenticatedClientId(
   request?: NextRequest
 ): Promise<string | null> {
   try {
-    const supabase = await createServerSupabaseClient();
+    const userId = await sessionUserId("client", request);
+    if (!userId) return null;
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      logAuthFailure({ role: "client", reason: "invalid_session", request });
-      return null;
-    }
-    if (!user) {
-      logAuthFailure({ role: "client", reason: "missing_session", request });
-      return null;
-    }
-
-    const clientId = await getCachedClientId(user.id, async () => {
+    const clientId = await getCachedClientId(userId, async () => {
       // Use maybeSingle() to avoid throwing PGRST116 when no client found.
       // active=true excludes deactivated clients (H6); the cache is busted on
       // deactivation so a previously-cached mapping cannot outlive it past the TTL.
       const { data: client, error } = await supabaseAdmin
         .from("clients")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .eq("active", true)
         .maybeSingle();
 

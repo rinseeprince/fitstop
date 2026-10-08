@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Home, BarChart3, Dumbbell, BookOpen, LogOut, Settings } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
-
+import type { SessionUser } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,10 +20,10 @@ import type { Client } from "@/types/check-in";
 
 type ClientTopBarProps = {
   client: Client | null;
-  user: User;
+  user: SessionUser;
 };
 
-function getInitials(client: Client | null, user: User): string {
+function getInitials(client: Client | null, user: SessionUser): string {
   if (client?.name) {
     const tokens = client.name.trim().split(/\s+/);
     const initials = tokens

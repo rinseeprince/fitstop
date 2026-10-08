@@ -5,10 +5,12 @@ import InvitationEmail from '@/emails/invitation-email'
 import ActivationEmail from '@/emails/activation-email'
 
 // Initialize Resend client
-const resend = new Resend(process.env.RESEND_API_KEY)
+export const resend = new Resend(process.env.RESEND_API_KEY)
 
-const FROM_EMAIL = 'onboarding@resend.dev'
-const FROM_NAME = 'CoachHub'
+// The sender of every email the app sends (D30), as "Name <address>". Set
+// EMAIL_FROM to an address on a domain verified in Resend; until then Resend's
+// sandbox sender, which delivers to the Resend account's own address alone.
+export const EMAIL_SENDER = process.env.EMAIL_FROM || 'CoachHub <onboarding@resend.dev>'
 
 /**
  * Send an invitation email to a client
@@ -40,7 +42,7 @@ export async function sendInvitationEmail(
 
     // Send the email
     const { error } = await resend.emails.send({
-      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      from: EMAIL_SENDER,
       to: clientEmail,
       subject: `You're invited to join CoachHub by ${coachName}`,
       html: emailHtml,
@@ -100,7 +102,7 @@ export async function sendActivationEmail(
     )
 
     const { error } = await resend.emails.send({
-      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      from: EMAIL_SENDER,
       to: clientEmail,
       subject: `${coachName} has set up your plan on CoachHub`,
       html: emailHtml,

@@ -56,11 +56,12 @@ export async function getCachedClientId(
  * Read-through cache for the user -> coach-id mapping.
  *
  * As immutable as the client mapping above, and for the same reason: the only
- * writer that can create the row upserts on `user_id` with `ignoreDuplicates`
- * (services/auth-profile-service.ts), and the coach settings update is keyed by
- * `id` and touches only `timezone`. Nothing re-points an existing user at a
- * different coach row. Null is never cached, so a coach whose row is bootstrapped
- * mid-session resolves on the very next call rather than waiting out the TTL.
+ * writer that creates the row makes it with the login, in the same request
+ * (createCoachLogin, services/login-service.ts), coaches.user_id is unique,
+ * and the coach settings update is keyed by `id` and touches only `timezone`.
+ * Nothing re-points an existing user at a different coach row. Null is never
+ * cached, so a lookup that found no row is retried on the very next call
+ * rather than waiting out the TTL.
  */
 export async function getCachedCoachId(
   userId: string,

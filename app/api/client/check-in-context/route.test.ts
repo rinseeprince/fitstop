@@ -39,10 +39,6 @@ vi.mock('@/services/client-habit-figures-service', () => ({
   getCheckInHabitWeek: vi.fn(),
 }));
 
-vi.mock('@/lib/supabase-server', () => ({
-  createServerSupabaseClient: vi.fn(),
-}));
-
 vi.mock('@/services/supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn(() => ({
@@ -68,28 +64,10 @@ import { getNutritionPeriod } from '@/services/nutrition-period-service';
 import { getClientCheckInForm } from '@/services/check-in-form-service';
 import { getCheckInHabitWeek } from '@/services/client-habit-figures-service';
 import { getLastSubmittedPeriodEnd } from '@/services/daily-log-permissions-service';
-import { createServerSupabaseClient } from '@/lib/supabase-server';
 import { DEFAULT_CHECK_IN_FORM_FIELDS } from '@/lib/check-in/form-fields';
 import type { ClientHabitWeek } from '@/types/habits';
 
 const req = () => new NextRequest('https://t.dev/api/client/check-in-context');
-
-// A server-supabase stub whose check_ins query resolves to `lastCheckIn`.
-function mockServerSupabase(lastCheckIn: unknown) {
-  vi.mocked(createServerSupabaseClient).mockResolvedValue({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          order: vi.fn(() => ({
-            limit: vi.fn(() => ({
-              maybeSingle: vi.fn(() => Promise.resolve({ data: lastCheckIn, error: null })),
-            })),
-          })),
-        })),
-      })),
-    })),
-  } as any);
-}
 
 /** One week, nothing logged, a target on every day — as the kernel states it. */
 const NUTRITION_SUMMARY = {
@@ -152,7 +130,6 @@ describe('GET /api/client/check-in-context', () => {
       nextCheckInDue: '2026-06-14',
       checkInFrequency: 'weekly',
     } as any);
-    mockServerSupabase(null); // first check-in
 
     const res = await GET(req());
     const body = await res.json();
@@ -226,7 +203,6 @@ describe('GET /api/client/check-in-context', () => {
       nextCheckInDue: '2026-06-14',
       checkInFrequency: 'weekly',
     } as any);
-    mockServerSupabase(null);
     const workout = (over: Record<string, unknown>) => ({
       eventId: 'e', date: '2026-06-10', sessionName: 'S', status: 'scheduled',
       logStatus: 'not_logged', completionQuality: null, trainingSessionId: 'ts',
@@ -259,7 +235,6 @@ describe('GET /api/client/check-in-context', () => {
       ...baseClient,
       nextCheckInDue: undefined,
     } as any);
-    mockServerSupabase(null);
 
     const res = await GET(req());
     const body = await res.json();
@@ -281,7 +256,6 @@ describe('GET /api/client/check-in-context', () => {
       nextCheckInDue: '2026-06-14',
       checkInFrequency: 'weekly',
     } as any);
-    mockServerSupabase({ period_end: '2024-01-10', created_at: '2024-01-10T00:00:00Z' });
 
     const res = await GET(req());
     const body = await res.json();
@@ -315,7 +289,6 @@ describe('GET /api/client/check-in-context', () => {
         checkInFrequency: 'weekly',
         timezone: 'Europe/London',
       } as any);
-      mockServerSupabase({ period_end: '2026-08-26', created_at: '2026-08-27T10:00:00Z' });
 
       const res = await GET(req());
       const body = await res.json();
@@ -332,7 +305,6 @@ describe('GET /api/client/check-in-context', () => {
 
   it('client not found → 404', async () => {
     vi.mocked(getClientById).mockResolvedValue(null as any);
-    mockServerSupabase(null);
 
     const res = await GET(req());
     expect(res.status).toBe(404);
@@ -352,7 +324,6 @@ describe('GET /api/client/check-in-context', () => {
         nextCheckInDue: '2026-06-10', // a Wednesday
         timezone: 'Europe/London',
       } as any);
-      mockServerSupabase(null);
 
       const res = await GET(req());
       const body = await res.json();

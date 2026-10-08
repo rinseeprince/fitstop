@@ -1,60 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
+import { Suspense } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Check } from "lucide-react";
+import { NewPasswordFields, ResetPasswordForm } from "@/components/auth/reset-password-form";
 
 export default function ResetPasswordPage() {
-  const router = useRouter();
-  const { updatePassword } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    password: "",
-    confirmPassword: "",
-  });
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (formData.password !== formData.confirmPassword) {
-      toast.error("Passwords don't match", {
-        description: "Please make sure both passwords are the same",
-      });
-      return;
-    }
-
-    if (formData.password.length < 8) {
-      toast.error("Password too short", {
-        description: "Password must be at least 8 characters",
-      });
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      await updatePassword(formData.password);
-      toast.success("Password updated!", {
-        description: "You can now sign in with your new password.",
-      });
-      setTimeout(() => {
-        router.push("/login");
-      }, 2000);
-    } catch (error: any) {
-      toast.error("Failed to update password", {
-        description: error.message || "Please try again",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
       {/* Subtle background gradient */}
@@ -102,68 +52,11 @@ export default function ResetPasswordPage() {
             </motion.p>
           </div>
 
-          <motion.form
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            onSubmit={handleSubmit}
-            className="space-y-4"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="password">New Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                className="rounded-xs h-11"
-                value={formData.password}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-                required
-                minLength={8}
-                disabled={loading}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="••••••••"
-                className="rounded-xs h-11"
-                value={formData.confirmPassword}
-                onChange={(e) =>
-                  setFormData({ ...formData, confirmPassword: e.target.value })
-                }
-                required
-                minLength={8}
-                disabled={loading}
-              />
-              <p className="text-xs text-muted-foreground">
-                At least 8 characters
-              </p>
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full rounded-xs h-11 bg-primary hover:bg-primary/90 transition-colors"
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Updating password...
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Update password
-                </>
-              )}
-            </Button>
-          </motion.form>
+          {/* The link's token is read in a leaf behind its own boundary, so
+              the page stays statically prerendered (CONVENTIONS §7). */}
+          <Suspense fallback={<NewPasswordFields token={null} />}>
+            <ResetPasswordForm />
+          </Suspense>
         </div>
       </motion.div>
     </div>

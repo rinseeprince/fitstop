@@ -21,11 +21,10 @@ import { resolveViewerUnitPreference } from "@/lib/viewer-preferences";
  * a failure to its caller, so it must, rather than serving a guessed unit under
  * a 200 that no client can tell apart from a real answer.
  *
- * 401 on an unresolved principal — including the narrow signup window where the
- * session exists but the coach row does not yet. /api/auth/me self-heals that
- * case because it owns row creation; replicating it here would put a write path
- * inside a read route. The client bootstraps its preference from /api/auth/me
- * anyway, so a brand-new coach never depends on this endpoint.
+ * 401 on an unresolved principal: a session with no coach or client row behind
+ * it, which the paths that make a login never leave (services/login-service.ts
+ * writes the rows with the login). A coach's preference arrives on
+ * /api/auth/me anyway, so a coach never depends on this endpoint.
  */
 export async function GET(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);

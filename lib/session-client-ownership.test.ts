@@ -3,33 +3,33 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 /**
- * A session client — a client built from the public key and the caller's own
- * login, or the browser's — is used for `auth.*` alone: it validates the
- * session (`auth.getUser()`), exchanges a code, signs in and out, and touches
- * no table. Every query, every database function call and every storage call
- * the app makes has `supabaseAdmin` as its receiver, filtered in code by the
- * coach or client id the seam verified (docs/DATA-ACCESS-LOCKDOWN-PLAN.md
- * commits 2–5). No rule in the database stands behind an app read, so a query
- * on a session client would have nothing to lean on; this scan fails the first
- * one.
+ * Who the caller is comes from Better Auth alone: lib/auth.ts holds the one
+ * betterAuth(…) and the one pool to its tables, lib/auth-client.ts the one
+ * createAuthClient(…), and no file builds a Supabase session client (a client
+ * from the public key and a login) or imports one. Every query, every database
+ * function call and every storage call the app makes has `supabaseAdmin` as
+ * its receiver, filtered in code by the coach or client id the seam verified
+ * (docs/DATA-ACCESS-LOCKDOWN-PLAN.md commits 2–5). No rule in the database
+ * stands behind an app read, so a query through any other client would have
+ * nothing to lean on; this scan fails the first one.
  *
  * In the shape of `lib/measurements/baseline-ownership.test.ts`: every file
  * under SCAN is read for a query — `.from(…)` then a read or a write — a
  * function call (`.rpc(`) or a storage call (`.storage`) whose receiver's root
  * is anything but `supabaseAdmin`, or a name the same file binds to it
- * (`const db = supabaseAdmin`). The content library's routes take their caller
- * from the auth seam (`lib/auth-helpers.ts`), so none of them builds a session
- * client at all.
+ * (`const db = supabaseAdmin`).
  */
 const ROOT = join(__dirname, "..");
-const SCAN: string[] = ["app", "components", "contexts", "hooks", "lib", "services", "utils", "middleware.ts"];
+const SCAN: string[] = ["app", "components", "contexts", "hooks", "lib", "services", "utils", "proxy.ts"];
 
-// Builds a session client (the two server factories, the browser's), or
-// imports the browser's.
+// Builds a Supabase session client (@supabase/ssr's two factories, or the
+// app's own wrappers of them), or imports one.
 const SESSION_CLIENT =
-  /\b(createServerClient|createServerSupabaseClient|createBrowserClient)\s*(<[^>]*>)?\s*\(|from\s+["']@\/services\/supabase-client["']/;
+  /\b(createServerClient|createServerSupabaseClient|createBrowserClient)\s*(<[^>]*>)?\s*\(|from\s+["'](@supabase\/ssr|@\/services\/supabase-client|@\/lib\/supabase-server)["']/;
 
-const CONTENT_ROUTES = "app/api/content";
+// Better Auth's server and its own connection; its browser client.
+const BETTER_AUTH_SERVER = /\bbetterAuth\s*\(|\bnew\s+Pool\s*\(/;
+const BETTER_AUTH_CLIENT = /\bcreateAuthClient\s*(<[^>]*>)?\s*\(/;
 
 // The receiver (a dotted name, or a closing paren for anything computed), the
 // table and the verb of a query — `.from(…)` then a read or a write.
@@ -125,15 +125,42 @@ function sessionClientFiles(): Map<string, string> {
   return files;
 }
 
-describe("a session client is used for auth.* alone", () => {
-  it("no file that builds a session client, or holds the browser's, touches a table, a function or storage through it", () => {
-    const offenders: string[] = [];
-    for (const [rel, src] of sessionClientFiles()) {
-      for (const access of notThroughTheServer(src)) offenders.push(`${rel} — ${access}`);
-    }
-    expect(offenders).toEqual([]);
+/** The scanned files whose code matches `pattern`, comments aside. */
+function filesMatching(pattern: RegExp): string[] {
+  return [...scannedFiles()].filter(([, src]) => pattern.test(stripComments(src))).map(([rel]) => rel);
+}
+
+describe("who the caller is comes from Better Auth alone", () => {
+  it("no file builds a Supabase session client or imports one", () => {
+    expect([...sessionClientFiles().keys()]).toEqual([]);
   });
 
+  it("lib/auth.ts holds the one betterAuth(…) and the one pool", () => {
+    expect(filesMatching(BETTER_AUTH_SERVER)).toEqual(["lib/auth.ts"]);
+  });
+
+  it("lib/auth-client.ts holds the one createAuthClient(…)", () => {
+    expect(filesMatching(BETTER_AUTH_CLIENT)).toEqual(["lib/auth-client.ts"]);
+  });
+
+  it("each pattern reads real code: a session client, Better Auth's server and its client are spotted however they are spelled", () => {
+    for (const src of [
+      'const supabase = createServerClient(url, key, { cookies })',
+      "createBrowserClient<Database>(url, key)",
+      "const supabase = await createServerSupabaseClient()",
+      'import { createServerClient } from "@supabase/ssr"',
+      'import { supabase } from "@/services/supabase-client"',
+    ]) {
+      expect(SESSION_CLIENT.test(src)).toBe(true);
+    }
+    expect(SESSION_CLIENT.test('import { createClient } from "@supabase/supabase-js"')).toBe(false);
+    expect(BETTER_AUTH_SERVER.test("export const auth = betterAuth({ secret })")).toBe(true);
+    expect(BETTER_AUTH_SERVER.test("const pool = new Pool({ max: 4 })")).toBe(true);
+    expect(BETTER_AUTH_CLIENT.test("export const authClient = createAuthClient()")).toBe(true);
+  });
+});
+
+describe("every access goes through the service role", () => {
   it("every query, function call and storage call in the app is supabaseAdmin's", () => {
     const offenders: string[] = [];
     for (const [rel, src] of scannedFiles()) {
@@ -142,35 +169,15 @@ describe("a session client is used for auth.* alone", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("no content route builds a session client: the caller comes from the auth seam", () => {
-    const builders = filesUnder(CONTENT_ROUTES)
-      .filter((file) => SESSION_CLIENT.test(stripComments(readFileSync(file, "utf8"))))
-      .map((file) => relative(ROOT, file));
-    expect(builders).toEqual([]);
-  });
-
   it("scans a real tree — the guard is worthless if the glob is empty", () => {
     const files = scannedFiles();
     expect(files.size).toBeGreaterThan(200);
-    expect([...sessionClientFiles().keys()]).toEqual(
-      expect.arrayContaining([
-        "middleware.ts",
-        "app/auth/callback/route.ts",
-        "app/api/auth/me/route.ts",
-        "lib/auth-helpers.ts",
-        "services/supabase-client.ts",
-        "contexts/auth-context.tsx",
-      ])
+    expect([...files.keys()]).toEqual(
+      expect.arrayContaining(["proxy.ts", "lib/auth.ts", "lib/auth-client.ts", "lib/auth-helpers.ts", "contexts/auth-context.tsx"])
     );
     // The query pattern reads real code: the service role's own queries are found.
     const served = [...files.values()].filter((src) => accesses(src).some((a) => a.root === "supabaseAdmin"));
     expect(served.length).toBeGreaterThan(20);
-    expect(filesUnder(CONTENT_ROUTES).map((file) => relative(ROOT, file))).toEqual(
-      expect.arrayContaining([
-        "app/api/content/download/[contentId]/route.ts",
-        "app/api/content/upload/route.ts",
-      ])
-    );
   });
 
   it("reads a receiver across a chain, however the client came back, and only a real access", () => {

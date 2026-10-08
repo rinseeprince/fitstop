@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NextRequest } from "next/server";
 
-vi.mock("@/lib/supabase-server", () => ({
-  createServerSupabaseClient: vi.fn(),
+vi.mock("@/lib/auth", () => ({
+  readSessionUserId: vi.fn(),
+}));
+
+vi.mock("next/headers", () => ({
+  headers: vi.fn(),
 }));
 
 vi.mock("@/services/supabase-admin", () => ({
@@ -17,7 +22,8 @@ import {
   getAuthenticatedClientId,
   getAuthenticatedCoachId,
 } from "./auth-helpers";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { readSessionUserId } from "@/lib/auth";
+import { headers } from "next/headers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import {
   getCachedClientId,
@@ -26,20 +32,17 @@ import {
 
 type MaybeSingleResult = { data: unknown; error: unknown };
 
+/** The headers of the incoming request, as next/headers hands them to a route that passes none. */
+const INCOMING = new Headers({ cookie: "better-auth.session_token=incoming" });
+
 /**
- * The session client: `auth.getUser()` resolves to `user`, and its `from` is
- * a spy that must never be called — the session validates the session and
- * reads nothing.
+ * The session Better Auth reads from the request: `user` is whose it is,
+ * null for none; `userError` makes the read itself fail (a database fault).
  */
 function makeSession(opts: { user: { id: string } | null; userError?: unknown }) {
-  const getUser = vi.fn().mockResolvedValue({
-    data: { user: opts.user },
-    error: opts.userError ?? null,
-  });
-  const from = vi.fn();
-  const supabase = { auth: { getUser }, from };
-  vi.mocked(createServerSupabaseClient).mockResolvedValue(supabase as never);
-  return { getUser, sessionFrom: from };
+  vi.mocked(headers).mockResolvedValue(INCOMING as never);
+  if (opts.userError) vi.mocked(readSessionUserId).mockRejectedValue(opts.userError);
+  else vi.mocked(readSessionUserId).mockResolvedValue(opts.user?.id ?? null);
 }
 
 /**
@@ -67,33 +70,70 @@ function captureLoader(cache: typeof getCachedClientId | typeof getCachedCoachId
   return captured;
 }
 
-describe("getAuthenticatedClientId", () => {
+const routeRequest = (init: Record<string, string>) =>
+  new NextRequest("http://localhost:3000/api/client/me", { headers: init });
+
+describe.each([
+  ["getAuthenticatedClientId", getAuthenticatedClientId, getCachedClientId, "client"],
+  ["getAuthenticatedCoachId", getAuthenticatedCoachId, getCachedCoachId, "coach"],
+] as const)("%s reads Better Auth's session", (_name, getAuthenticated, cache, role) => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  it("returns null and reads nothing when there is no user", async () => {
-    const { getUser, sessionFrom } = makeSession({ user: null });
-    const admin = makeAdmin();
+  it("from the request's own headers when the route passes it, a bearer token's included", async () => {
+    makeSession({ user: { id: "user-1" } });
+    vi.mocked(cache).mockResolvedValue("row-1");
 
-    const result = await getAuthenticatedClientId();
-
-    expect(result).toBeNull();
-    expect(getUser).toHaveBeenCalledTimes(1);
-    expect(getCachedClientId).not.toHaveBeenCalled();
-    expect(admin.from).not.toHaveBeenCalled();
-    expect(sessionFrom).not.toHaveBeenCalled();
+    const withBearer = routeRequest({ authorization: "Bearer app-token" });
+    expect(await getAuthenticated(withBearer)).toBe("row-1");
+    expect(readSessionUserId).toHaveBeenCalledWith(withBearer.headers);
+    expect(vi.mocked(readSessionUserId).mock.calls[0][0].get("authorization")).toBe("Bearer app-token");
+    expect(headers).not.toHaveBeenCalled();
   });
 
-  it("returns null and reads nothing when the session is invalid", async () => {
-    makeSession({ user: null, userError: new Error("bad jwt") });
+  it("from the incoming request's headers when the route passes none", async () => {
+    makeSession({ user: { id: "user-1" } });
+    vi.mocked(cache).mockResolvedValue("row-1");
+
+    expect(await getAuthenticated()).toBe("row-1");
+    expect(readSessionUserId).toHaveBeenCalledWith(INCOMING);
+  });
+
+  it("no session: null, the reason logged with the route, and the cache never consulted", async () => {
+    makeSession({ user: null });
     const admin = makeAdmin();
 
-    expect(await getAuthenticatedClientId()).toBeNull();
-    expect(getCachedClientId).not.toHaveBeenCalled();
+    expect(await getAuthenticated(routeRequest({}))).toBeNull();
+    expect(cache).not.toHaveBeenCalled();
     expect(admin.from).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith(
+      "auth_failure",
+      expect.objectContaining({ role, reason: "missing_session", route: "/api/client/me" })
+    );
+  });
+
+  it("a session that cannot be read: null, logged as an invalid session, nothing read", async () => {
+    makeSession({ user: null, userError: new Error("database unreachable") });
+    const admin = makeAdmin();
+
+    expect(await getAuthenticated()).toBeNull();
+    expect(cache).not.toHaveBeenCalled();
+    expect(admin.from).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith(
+      "auth_failure",
+      expect.objectContaining({ role, reason: "invalid_session" })
+    );
+  });
+});
+
+describe("getAuthenticatedClientId", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   it("returns the cached client id on the happy path", async () => {
@@ -106,8 +146,8 @@ describe("getAuthenticatedClientId", () => {
     expect(getCachedClientId).toHaveBeenCalledWith("user-31", expect.any(Function));
   });
 
-  it("the cache loader reads the clients row through the server, keyed on the verified user id and active", async () => {
-    const { sessionFrom } = makeSession({ user: { id: "user-31" } });
+  it("the cache loader reads the clients row through the server, keyed on the session's user id and active", async () => {
+    makeSession({ user: { id: "user-31" } });
     const admin = makeAdmin({ data: { id: "client-52" }, error: null });
     const captured = captureLoader(getCachedClientId);
 
@@ -120,8 +160,6 @@ describe("getAuthenticatedClientId", () => {
     expect(admin.eq).toHaveBeenCalledWith("active", true);
     expect(admin.eq).toHaveBeenCalledTimes(2); // the two filters, and no third
     expect(admin.maybeSingle).toHaveBeenCalledTimes(1);
-    // The session client validated the session and read nothing.
-    expect(sessionFrom).not.toHaveBeenCalled();
   });
 
   it("resolves null for a login with no active client row, so nothing is cached", async () => {
@@ -156,28 +194,6 @@ describe("getAuthenticatedCoachId", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  it("returns null and reads nothing when there is no user", async () => {
-    const { getUser, sessionFrom } = makeSession({ user: null });
-    const admin = makeAdmin();
-
-    const result = await getAuthenticatedCoachId();
-
-    expect(result).toBeNull();
-    expect(getUser).toHaveBeenCalledTimes(1);
-    expect(getCachedCoachId).not.toHaveBeenCalled();
-    expect(admin.from).not.toHaveBeenCalled();
-    expect(sessionFrom).not.toHaveBeenCalled();
-  });
-
-  it("returns null and reads nothing when the session is invalid", async () => {
-    makeSession({ user: null, userError: new Error("bad jwt") });
-    const admin = makeAdmin();
-
-    expect(await getAuthenticatedCoachId()).toBeNull();
-    expect(getCachedCoachId).not.toHaveBeenCalled();
-    expect(admin.from).not.toHaveBeenCalled();
-  });
-
   it("returns the cached coach id on the happy path", async () => {
     makeSession({ user: { id: "user-64" } });
     vi.mocked(getCachedCoachId).mockResolvedValue("coach-77");
@@ -188,8 +204,8 @@ describe("getAuthenticatedCoachId", () => {
     expect(getCachedCoachId).toHaveBeenCalledWith("user-64", expect.any(Function));
   });
 
-  it("the cache loader reads the coaches row through the server, keyed on the verified user id alone", async () => {
-    const { sessionFrom } = makeSession({ user: { id: "user-64" } });
+  it("the cache loader reads the coaches row through the server, keyed on the session's user id alone", async () => {
+    makeSession({ user: { id: "user-64" } });
     const admin = makeAdmin({ data: { id: "coach-77" }, error: null });
     const captured = captureLoader(getCachedCoachId);
 
@@ -201,7 +217,6 @@ describe("getAuthenticatedCoachId", () => {
     expect(admin.eq).toHaveBeenCalledWith("user_id", "user-64");
     expect(admin.eq).toHaveBeenCalledTimes(1); // the one filter, and no active one
     expect(admin.maybeSingle).toHaveBeenCalledTimes(1);
-    expect(sessionFrom).not.toHaveBeenCalled();
   });
 
   it("resolves null when the coach row is missing, so nothing is cached", async () => {
@@ -209,8 +224,8 @@ describe("getAuthenticatedCoachId", () => {
     makeAdmin({ data: null, error: null });
     captureLoader(getCachedCoachId);
 
-    // A freshly-signed-up coach has no row until /api/auth/me bootstraps one.
-    // getCachedAuthValue never caches null, so the next call re-reads the DB.
+    // A client's login has no coach row. getCachedAuthValue never caches
+    // null, so the next call re-reads the DB.
     expect(await getAuthenticatedCoachId()).toBeNull();
     expect(console.warn).toHaveBeenCalledWith(
       "auth_failure",

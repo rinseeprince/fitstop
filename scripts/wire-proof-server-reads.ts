@@ -63,7 +63,7 @@ function proofDir(label: string): string {
 /** The whole response a browser receives, as one text: status, headers that matter, body. */
 async function capture(session: ProofSession, path: string): Promise<{ status: number; text: string }> {
   const res = await fetch(`${PROOF_BASE}${path}`, {
-    headers: { Cookie: session.cookie, Origin: PROOF_BASE, Accept: "application/json" },
+    headers: { ...session.headers, Origin: PROOF_BASE, Accept: "application/json" },
     redirect: "manual",
   });
   const body = await res.text();

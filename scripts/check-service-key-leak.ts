@@ -25,8 +25,8 @@
  * A grep that finds nothing and a grep that is silently broken look identical.
  * So clause 1 asserts its closure still reaches app/api routes (if module
  * resolution breaks, the closure collapses to 1 and the "no client components"
- * result becomes meaningless), and clause 2 asserts the anon key IS present in
- * the bundle (if it is not, the scan is not reading real chunks). A failed
+ * result becomes meaningless), and clause 2 asserts the Sentry DSN IS present
+ * in the bundle (if it is not, the scan is not reading real chunks). A failed
  * control reports INCONCLUSIVE (exit 2) — never a pass.
  *
  * WHY THIS EXISTS
@@ -70,6 +70,13 @@ const SEEDS = [
 
 /** A secret shorter than this could match unrelated bundle text, so a zero-hit scan for it would prove nothing. */
 const MIN_SCANNABLE_SECRET = 16;
+
+/**
+ * Clause 2's positive control: a public value every browser bundle carries
+ * (D35). instrumentation-client.ts inlines the Sentry DSN, public by design;
+ * the browser holds no Supabase client, so the anon key is no longer in it.
+ */
+export const CONTROL_VAR = "NEXT_PUBLIC_SENTRY_DSN";
 
 /** Browser-served build output, most-authoritative first. */
 const BUNDLE_DIRS = [
@@ -386,8 +393,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   console.info("\n[2/2] bundle scan         .next/static");
 
   const serviceKey = readEnvVar("SUPABASE_SERVICE_ROLE_KEY");
-  const control =
-    readEnvVar("NEXT_PUBLIC_SUPABASE_ANON_KEY") ?? readEnvVar("NEXT_PUBLIC_SUPABASE_URL");
+  const control = readEnvVar(CONTROL_VAR);
   const { needles: otherSecrets, unscannable } = otherSecretNeedles(
     readEnvVar("DATABASE_URL"),
     readEnvVar("BETTER_AUTH_SECRET")
@@ -414,7 +420,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
     console.error("  Cannot search for a value the gate cannot read.");
     inconclusive = true;
   } else if (!control) {
-    console.error("  INCONCLUSIVE — no NEXT_PUBLIC_* control value available.");
+    console.error(`  INCONCLUSIVE — ${CONTROL_VAR}, the control value, is not set and not in .env.local.`);
     console.error("  Without a positive control a zero-hit scan proves nothing.");
     inconclusive = true;
   } else if (unscannable.length > 0) {
@@ -426,11 +432,11 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
     console.info(`  scanned ${scan.filesScanned} files in ${relative(ROOT, scan.dir)} (${scan.kind} build)`);
 
     if (scan.controlHits.length === 0) {
-      console.error("  CONTROL FAILED — the public anon value was not found in the bundle.");
+      console.error(`  CONTROL FAILED — ${CONTROL_VAR}'s value was not found in the bundle.`);
       console.error("  The scan is not reading real chunks; a zero-hit result is meaningless.");
       inconclusive = true;
     } else {
-      console.info(`  positive control (anon key): found in ${scan.controlHits.length} chunk(s)   OK`);
+      console.info(`  positive control (Sentry DSN): found in ${scan.controlHits.length} chunk(s)   OK`);
     }
 
     const report = (label: string, hits: string[]) => {

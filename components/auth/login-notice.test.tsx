@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({
 import { LoginNotice } from "./login-notice";
 
 describe("LoginNotice", () => {
-  it("shows the message the middleware sent the visitor here with", () => {
+  it("shows the message the proxy sent the visitor here with", () => {
     search = new URLSearchParams("error=profile_unavailable");
     render(<LoginNotice />);
     expect(screen.getByRole("alert")).toHaveTextContent(

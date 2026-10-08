@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   try {
     // Scope is explicit and server-derived: auth.clientId comes from
     // requireClientAuth -> getAuthenticatedClientId(request), which resolves
-    // clients.id from the server-validated JWT. It is never user-supplied, and
+    // clients.id from the session Better Auth validates. It is never user-supplied, and
     // this .eq() is what keeps the admin write narrow now that RLS no longer
     // constrains it.
     const { error } = await supabaseAdmin

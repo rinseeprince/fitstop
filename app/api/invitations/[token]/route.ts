@@ -5,7 +5,9 @@ import { authRateLimit } from "@/lib/rate-limit"
 
 /**
  * GET /api/invitations/[token]
- * Fetch invitation details by token (public endpoint)
+ * What the invite page shows of the invitation a token opens (public: the link
+ * is the credential): `{ coachName, emailMasked, expiresAt }`. Never the full
+ * address or the client's name (D11).
  */
 export async function GET(
   request: NextRequest,

@@ -5,8 +5,8 @@ import { CoachHistoryTracker } from "@/components/coach/coach-history-tracker"
 
 /**
  * The coach application boundary. Everything under app/(coach)/ is trainer
- * territory: middleware has proved the viewer's role before this renders, and
- * `trainerRoutes` (middleware.ts) is bound to this folder by test.
+ * territory: the proxy has proved the viewer's role before this renders, and
+ * `trainerRoutes` (proxy.ts) is bound to this folder by test.
  *
  * This layout owns only what belongs to the whole coach application — the
  * concerns that must run on every coach page whichever shell it uses. It

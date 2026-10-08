@@ -206,7 +206,7 @@ async function main(): Promise<void> {
     check("no session is sent to /login before the route runs", noSession.status === 307 && (noSession.headers.get("location") ?? "").endsWith("/login"), noSession.status);
     const noOrigin = await fetch(`${PROOF_BASE}${habitsOf(A)}/${water}/stop`, {
       method: "POST",
-      headers: { Cookie: coachSession.cookie, "Content-Type": "application/json" },
+      headers: { ...coachSession.headers, "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
     check("a write without the Origin is refused", noOrigin.status === 403, noOrigin.status);
@@ -427,7 +427,7 @@ async function main(): Promise<void> {
     check("a locked day: 403, \"This day is locked.\"", locked.status === 403 && locked.body.error === "This day is locked.", locked);
     const clientNoOrigin = await fetch(`${PROOF_BASE}${entryPath(stretch, pToday)}`, {
       method: "PUT",
-      headers: { Cookie: client.cookie, "Content-Type": "application/json" },
+      headers: { ...client.headers, "Content-Type": "application/json" },
       body: JSON.stringify({ done: false }),
     });
     check("an entry without the Origin is refused", clientNoOrigin.status === 403, clientNoOrigin.status);
@@ -493,7 +493,7 @@ async function main(): Promise<void> {
     const withoutOrigin = (method: string, path: string, body?: unknown) =>
       fetch(`${PROOF_BASE}${path}`, {
         method,
-        headers: { Cookie: coachSession.cookie, "Content-Type": "application/json" },
+        headers: { ...coachSession.headers, "Content-Type": "application/json" },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     const noOriginWrites = await Promise.all([

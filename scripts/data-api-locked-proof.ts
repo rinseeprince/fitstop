@@ -242,8 +242,8 @@ async function main(): Promise<void> {
     console.info(`1. Every table and view in public, through the Data API (${mode} the push)`);
     const callers: Array<{ label: string; token: string | null }> = [
       { label: "public key", token: null },
-      { label: "client token", token: clientSession.accessToken },
-      { label: "coach token", token: coachSession.accessToken },
+      { label: "client token", token: clientSession.headers.Authorization.slice("Bearer ".length) },
+      { label: "coach token", token: coachSession.headers.Authorization.slice("Bearer ".length) },
     ];
     const matrix: Record<string, Record<string, Cell>> = {};
     for (const caller of callers) {

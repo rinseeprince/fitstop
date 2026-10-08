@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -19,58 +18,37 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { toast } from "sonner"
-import { 
-  Loader2, 
-  CheckCircle, 
-  Lock, 
+import {
+  Loader2,
+  CheckCircle,
+  Lock,
   AlertTriangle,
   Mail,
   User
 } from "lucide-react"
-import { supabase } from "@/services/supabase-client"
 import { motion } from "framer-motion"
-import type { InvitationDetailsResponse } from "@/types/auth"
-
-// Validation schema for signup form
-const signupSchema = z
-  .object({
-    email: z.string().email("Please enter a valid email address"),
-    password: z
-      .string()
-      .min(8, "Password must be at least 8 characters")
-      .max(72, "Password must be at most 72 characters"),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords don't match",
-    path: ["confirmPassword"],
-  })
-
-type SignupFormData = z.infer<typeof signupSchema>
-
-interface InvitationDetails {
-  id: string
-  clientName: string
-  clientEmail: string
-  coachName: string
-  expiresAt: string | null
-  status: string
-}
+import { authClient } from "@/lib/auth-client"
+import { PASSWORD_MIN_LENGTH } from "@/lib/constants"
+import { newPasswordSchema, type NewPasswordFormData } from "@/lib/validations/auth"
+import type { AcceptInvitationResponse, InvitationDetails, InvitationDetailsResponse } from "@/types/auth"
 
 export default function InvitePage() {
   const params = useParams()
   const router = useRouter()
   const token = params.token as string
+  // The invite's answer sets the session cookie; the shared session store
+  // learns of it here, before the client's pages read it.
+  const { refetch: refetchSession } = authClient.useSession()
 
   const [invitation, setInvitation] = useState<InvitationDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const form = useForm<SignupFormData>({
-    resolver: zodResolver(signupSchema),
+  // The password the client chooses, twice (rule 11)
+  const form = useForm<NewPasswordFormData>({
+    resolver: zodResolver(newPasswordSchema),
     defaultValues: {
-      email: "",
       password: "",
       confirmPassword: "",
     },
@@ -96,8 +74,6 @@ export default function InvitePage() {
         }
 
         setInvitation(data.invitation)
-        // Pre-fill email and make it read-only
-        form.setValue("email", data.invitation.clientEmail)
       } catch (err) {
         console.error("Error loading invitation:", err)
         setError("Failed to load invitation details")
@@ -107,70 +83,41 @@ export default function InvitePage() {
     }
 
     loadInvitation()
-  }, [token, form])
+  }, [token])
 
-  const onSubmit = async (data: SignupFormData) => {
+  const onSubmit = async (data: NewPasswordFormData) => {
     if (!invitation) return
 
     setIsSubmitting(true)
 
     try {
-      // Create Supabase user with standard signup
-      const { data: authData, error: signupError } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          data: {
-            name: invitation.clientName,
-            role: "client",
-            invitation_token: token, // Store token in user metadata for linking
-          },
-        },
-      })
-
-      if (signupError) {
-        console.error("Signup error:", signupError)
-        
-        // Handle specific Supabase errors
-        if (signupError.message?.includes("already registered")) {
-          throw new Error("This email is already registered. Please sign in instead.")
-        }
-        
-        throw new Error(signupError.message || "Failed to create account")
-      }
-
-      if (!authData.user) {
-        throw new Error("Account creation failed - no user returned")
-      }
-
-      // Accept the invitation by linking the new user to the client
-      const acceptResponse = await fetch("/api/invitations/accept", {
+      // The server makes the login on the invited address and signs it in.
+      const response = await fetch("/api/invitations/accept", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          token,
-          userId: authData.user.id,
-        }),
+        body: JSON.stringify({ token, password: data.password }),
       })
+      const result: AcceptInvitationResponse = await response.json()
 
-      if (!acceptResponse.ok) {
-        console.error("Failed to accept invitation:", acceptResponse.status)
-        // Don't fail the entire flow - user account is created successfully
-        console.warn("User account created but invitation linking failed")
+      if (!response.ok || !result.success) {
+        toast.error("Couldn't create your account", {
+          description: result.error ?? "Something went wrong. Try again.",
+        })
+        return
       }
 
+      await refetchSession()
       toast.success("Account created successfully! Welcome to CoachHub.")
-      
-      // Redirect to client home (smart router handles onboarding vs walkthrough)
-      router.push("/client")
 
+      // The client home sends a new client on to their intake form
+      router.push("/client")
     } catch (error) {
-      console.error("Error during signup:", error)
-      toast.error(
-        error instanceof Error ? error.message : "Failed to create account"
-      )
+      console.error("Error accepting invitation:", error)
+      toast.error("Couldn't create your account", {
+        description: "Something went wrong. Try again.",
+      })
     } finally {
       setIsSubmitting(false)
     }
@@ -277,7 +224,7 @@ export default function InvitePage() {
                 <Mail className="h-4 w-4 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">Your Email</p>
-                  <p className="text-sm text-muted-foreground">{invitation?.clientEmail}</p>
+                  <p className="text-sm text-muted-foreground">{invitation?.emailMasked}</p>
                 </div>
               </div>
             </div>
@@ -288,37 +235,15 @@ export default function InvitePage() {
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
                   This invitation expires on{" "}
-                  {new Date(invitation.expiresAt).toLocaleDateString()}. 
+                  {new Date(invitation.expiresAt).toLocaleDateString()}.
                   Create your account now to get started.
                 </AlertDescription>
               </Alert>
             )}
 
-            {/* Signup form */}
+            {/* Password form */}
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email Address</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="email"
-                          readOnly
-                          className="bg-muted/50 cursor-not-allowed"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        This email address was provided by your coach
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
                 <FormField
                   control={form.control}
                   name="password"
@@ -338,7 +263,7 @@ export default function InvitePage() {
                         </div>
                       </FormControl>
                       <FormDescription>
-                        Must be at least 8 characters long
+                        Must be at least {PASSWORD_MIN_LENGTH} characters long
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

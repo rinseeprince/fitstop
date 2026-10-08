@@ -58,7 +58,7 @@ export function useUnreviewedCheckInClientCount(): number {
  *
  * TRAINER-ONLY by placement, not by a check: both call sites are the rails,
  * only the coach shells mount a rail, and those render only under app/(coach)/
- * — territory middleware has already restricted to trainers. Both endpoints
+ * — territory the proxy has already restricted to trainers. Both endpoints
  * are coach-scoped besides. The rails render before the auth context resolves,
  * so these fire on first paint against the session cookie. There is
  * deliberately no `enabled` flag: both halves ride app-wide fetches that cannot

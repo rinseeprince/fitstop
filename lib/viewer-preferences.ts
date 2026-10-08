@@ -72,7 +72,7 @@ async function readClientPreference(clientId: string): Promise<UnitSystem | null
  * Coach-first: the coach surface is the primary app and Phase 3's server-side
  * consumers (AI prompt strings, calculator warnings) are coach-facing, so it is
  * the branch worth resolving in one hop. A client caller pays an extra
- * getUser() + an uncached coaches miss first; acceptable at one request per app
+ * session read + an uncached coaches miss first; acceptable at one request per app
  * load, and the order is a one-line change if that stops being true.
  *
  * `request` is always passed through so auth failures log route + hashed IP.

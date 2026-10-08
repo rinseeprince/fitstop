@@ -263,7 +263,7 @@ async function main(): Promise<void> {
     );
     const noOrigin = await fetch(`${PROOF_BASE}${url(A)}`, {
       method: "POST",
-      headers: { Cookie: session.cookie, "Content-Type": "application/json" },
+      headers: { ...session.headers, "Content-Type": "application/json" },
       body: JSON.stringify({ metricKey: "weight", value: 80.3, recordedOn: today }),
     });
     check("a write without the Origin → 403", noOrigin.status === 403, noOrigin.status);

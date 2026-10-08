@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { User } from "@supabase/supabase-js";
+import type { SessionUser } from "@/lib/auth-client";
 import type { ReactNode } from "react";
 
 import { ClientTopBar, ClientBottomTabBar } from "./client-nav";
@@ -58,12 +58,12 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   ),
 }));
 
-function makeUser(overrides: Partial<User> = {}): User {
+function makeUser(overrides: Partial<SessionUser> = {}): SessionUser {
   return {
     id: "user-1",
     email: "alice@example.com",
     ...overrides,
-  } as User;
+  } as SessionUser;
 }
 
 function makeClient(overrides: Partial<Client> = {}): Client {

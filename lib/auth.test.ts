@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, vi, afterAll } from "vitest"
+import { describe, it, expect, vi, afterAll, afterEach } from "vitest"
 import bcrypt from "bcryptjs"
 import type { BetterAuthOptions } from "better-auth"
 import { hashPassword } from "better-auth/crypto"
@@ -26,17 +26,29 @@ vi.hoisted(() => {
 })
 vi.mock("better-auth", () => ({ betterAuth: vi.fn((options: unknown) => ({ options })) }))
 vi.mock("@/lib/error-handler", () => ({ captureApiError: vi.fn() }))
+vi.mock("@/services/auth-email-service", () => ({ sendPasswordLinkEmail: vi.fn() }))
+// Better Auth's background work goes to Next's after(), which keeps it alive
+// past the answer; here it only records the work, which runs on regardless.
+vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after: vi.fn() }))
 
 import { APIError } from "better-auth/api"
 import {
   auth,
   authPool,
+  backgroundWorkSettled,
+  readSessionUserId,
+  runAfterAnswer,
   refuseUnlessOwnerOrInvite,
   reportEndpointFailure,
   reportUnexpectedAuthError,
   verifyBcryptOrScrypt,
 } from "./auth"
 import { captureApiError } from "@/lib/error-handler"
+import { sendPasswordLinkEmail } from "@/services/auth-email-service"
+import { after } from "next/server"
+
+/** Every piece of background work handed to after() so far, settled. */
+const backgroundSettled = () => Promise.all(vi.mocked(after).mock.calls.map(([task]) => task as Promise<unknown>))
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/constants"
 import { SUPABASE_ROOT_CA } from "@/lib/supabase-connection"
 
@@ -310,5 +322,232 @@ describe("what reaches Sentry", () => {
     db.session = Object.freeze([]) as unknown as Row[]
     expect((await signIn(instance, PASSWORD)).status).toBe(500)
     expect(captureApiError).toHaveBeenCalledTimes(1)
+  })
+})
+
+type LiveInstance = Awaited<ReturnType<typeof liveAuth>>["instance"]
+
+/** A sign-in posted to the live handler, as the login page posts it. */
+const postSignIn = (instance: LiveInstance, email: string, password: string) =>
+  instance.handler(
+    new Request("http://localhost:3000/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    })
+  )
+
+const sessionCookie = (response: Response) =>
+  response.headers.getSetCookie().find((c) => c.startsWith("better-auth.session_token="))?.split(";")[0]
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+describe("who a request is signed in as (readSessionUserId: the proxy, the seam, /api/auth/me)", () => {
+  /** A signed-in login, with lib/auth.ts's `auth` answering through the live instance. */
+  async function signedIn() {
+    const { instance, db } = await liveAuth()
+    const id = seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const answer = await postSignIn(instance, "client@example.com", PASSWORD)
+    Object.assign(auth, { api: instance.api })
+    return { instance, db, id, cookie: sessionCookie(answer)!, token: answer.headers.get("set-auth-token")! }
+  }
+
+  afterEach(() => {
+    delete (auth as { api?: unknown }).api
+  })
+
+  it("is the session the cookie names, or the bearer token's, and nobody without either", async () => {
+    const { id, cookie, token } = await signedIn()
+    expect(await readSessionUserId(new Headers({ cookie }))).toBe(id)
+    expect(await readSessionUserId(new Headers({ authorization: `Bearer ${token}` }))).toBe(id)
+    expect(await readSessionUserId(new Headers())).toBeNull()
+    expect(await readSessionUserId(new Headers({ authorization: "Bearer forged.token" }))).toBeNull()
+  })
+
+  it("never renews the session: one due for renewal keeps its expiry, which only get-session moves", async () => {
+    const { instance, db, cookie } = await signedIn()
+    // Renewed two days ago: past updateAge (a day), so a renewing read would move it.
+    const due = new Date(Date.now() + 5 * DAY_MS)
+    db.session[0].expiresAt = due
+    await readSessionUserId(new Headers({ cookie }))
+    expect(db.session[0].expiresAt).toEqual(due)
+    // The control: Better Auth's own read renews it, and answers with the new cookie.
+    const renewing = await instance.handler(new Request("http://localhost:3000/api/auth/get-session", { headers: { cookie } }))
+    expect((db.session[0].expiresAt as Date).getTime()).toBeGreaterThan(due.getTime())
+    expect(sessionCookie(renewing)).toBeDefined()
+  })
+
+  it("throws when the session cannot be read, Better Auth's 500 having reached Sentry once", async () => {
+    vi.mocked(captureApiError).mockClear()
+    const { db, cookie } = await signedIn()
+    db.session = new Proxy([], {
+      get() {
+        throw new Error("database fault")
+      },
+    }) as unknown as Row[]
+    await expect(readSessionUserId(new Headers({ cookie }))).rejects.toMatchObject({ statusCode: 500 })
+    expect(captureApiError).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("the reset link (rule 4)", () => {
+  it("is emailed for a login and for no unknown address, and both get the same answer", async () => {
+    vi.mocked(sendPasswordLinkEmail).mockClear()
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const known = await instance.api.requestPasswordReset({ body: { email: "client@example.com", redirectTo: "/reset-password" } })
+    const unknown = await instance.api.requestPasswordReset({ body: { email: "nobody@example.com", redirectTo: "/reset-password" } })
+    expect(unknown).toEqual(known)
+    await backgroundSettled()
+    expect(sendPasswordLinkEmail).toHaveBeenCalledTimes(1)
+    const [{ user, url }] = vi.mocked(sendPasswordLinkEmail).mock.calls[0]
+    expect(user.email).toBe("client@example.com")
+    const token = /^http:\/\/localhost:3000\/api\/auth\/reset-password\/([A-Za-z0-9]+)\?callbackURL=%2Freset-password$/.exec(url)?.[1]
+    expect(token).toBeDefined()
+    expect(db.verification.map((row) => row.identifier)).toEqual([`reset-password:${token}`])
+  })
+
+  it("lands on /reset-password with its token, sets the password once, signs every device out, and then lands with the error", async () => {
+    vi.mocked(sendPasswordLinkEmail).mockClear()
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    await postSignIn(instance, "client@example.com", PASSWORD)
+    expect(db.session).toHaveLength(1)
+    await instance.api.requestPasswordReset({ body: { email: "client@example.com", redirectTo: "/reset-password" } })
+    await backgroundSettled()
+    const [{ url }] = vi.mocked(sendPasswordLinkEmail).mock.calls[0]
+    const token = new URL(url).pathname.split("/").pop()!
+
+    const click = await instance.handler(new Request(url))
+    expect(click.headers.get("location")).toBe(`http://localhost:3000/reset-password?token=${token}`)
+    await instance.api.resetPassword({ body: { newPassword: "a brand new password", token } })
+    expect(db.session).toEqual([])
+    expect((await postSignIn(instance, "client@example.com", PASSWORD)).status).toBe(401)
+    expect((await postSignIn(instance, "client@example.com", "a brand new password")).status).toBe(200)
+
+    const again = await instance.handler(new Request(url))
+    expect(again.headers.get("location")).toBe("http://localhost:3000/reset-password?error=INVALID_TOKEN")
+    await expect(instance.api.resetPassword({ body: { newPassword: "another password", token } })).rejects.toMatchObject({
+      body: { code: "INVALID_TOKEN" },
+    })
+  })
+})
+
+describe("forgot password's timing tells nothing (Better Auth's background work)", () => {
+  it("answers before its email is sent: the send is handed to after(), which keeps it alive past the answer", async () => {
+    vi.mocked(after).mockClear()
+    vi.mocked(sendPasswordLinkEmail).mockClear()
+    vi.mocked(sendPasswordLinkEmail).mockReturnValue(new Promise<void>(() => {}))
+    try {
+      const { instance, db } = await liveAuth()
+      seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+      await expect(
+        instance.api.requestPasswordReset({ body: { email: "client@example.com", redirectTo: "/reset-password" } })
+      ).resolves.toEqual({ status: true, message: expect.any(String) })
+      expect(after).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(after).mock.calls[0][0]).toBeInstanceOf(Promise)
+    } finally {
+      // The send never settles: forget it, so no later test waits on it.
+      vi.mocked(after).mockClear()
+      vi.mocked(sendPasswordLinkEmail).mockReset()
+    }
+  })
+
+  it("outside a request after() refuses: the work runs on, and backgroundWorkSettled waits for it", async () => {
+    vi.mocked(after).mockImplementationOnce(() => {
+      throw new Error("`after` was called outside a request scope")
+    })
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {})
+    let finish!: () => void
+    const task = new Promise<void>((resolve) => (finish = resolve))
+    try {
+      expect(() => runAfterAnswer(task)).not.toThrow()
+      expect(debug).toHaveBeenCalledTimes(1)
+      let settled = false
+      const waiting = backgroundWorkSettled().then(() => (settled = true))
+      // Every microtask runs before a timer: an empty wait would have settled by now.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(settled).toBe(false)
+      finish()
+      await waiting
+      expect(settled).toBe(true)
+    } finally {
+      debug.mockRestore()
+    }
+  })
+
+  it("a send that fails before it starts, the email module failing to load, reaches Sentry", async () => {
+    vi.mocked(captureApiError).mockClear()
+    const failed = new Error("Missing API key")
+    vi.mocked(sendPasswordLinkEmail).mockRejectedValueOnce(failed)
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    await instance.api.requestPasswordReset({ body: { email: "client@example.com", redirectTo: "/reset-password" } })
+    await backgroundSettled()
+    expect(captureApiError).toHaveBeenCalledWith(failed, { source: "sendResetPassword" })
+  })
+})
+
+describe("a session read that fails before Better Auth's endpoint runs", () => {
+  afterEach(() => {
+    delete (auth as { api?: unknown }).api
+  })
+
+  it("reaches Sentry from readSessionUserId; Better Auth's own errors are its after hook's", async () => {
+    vi.mocked(captureApiError).mockClear()
+    const unreachable = new Error("connect ECONNREFUSED")
+    Object.assign(auth, { api: { getSession: vi.fn().mockRejectedValue(unreachable) } })
+    await expect(readSessionUserId(new Headers())).rejects.toBe(unreachable)
+    expect(captureApiError).toHaveBeenCalledWith(unreachable, { source: "readSessionUserId" })
+
+    vi.mocked(captureApiError).mockClear()
+    const answered = new APIError("INTERNAL_SERVER_ERROR")
+    Object.assign(auth, { api: { getSession: vi.fn().mockRejectedValue(answered) } })
+    await expect(readSessionUserId(new Headers())).rejects.toBe(answered)
+    expect(captureApiError).not.toHaveBeenCalled()
+  })
+})
+
+describe("making a login as services/login-service.ts does", () => {
+  it("create-user, on the server with no session, makes a verified login with its password; the address again is refused", async () => {
+    const { instance, db } = await liveAuth()
+    const made = await instance.api.createUser({
+      body: { email: "Client@Example.com", name: "Client", password: PASSWORD, data: { emailVerified: true } },
+    })
+    expect(db.user).toEqual([expect.objectContaining({ id: made.user.id, email: "client@example.com", emailVerified: true, role: "user" })])
+    expect(db.account).toEqual([expect.objectContaining({ userId: made.user.id, providerId: "credential" })])
+    await expect(
+      instance.api.createUser({ body: { email: "client@example.com", name: "Again", password: PASSWORD, data: { emailVerified: true } } })
+    ).rejects.toMatchObject({ body: { code: "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL" } })
+    expect(db.user).toHaveLength(1)
+  })
+
+  it("sign-in on the server hands back the session cookie for the route to forward", async () => {
+    const { instance } = await liveAuth()
+    const made = await instance.api.createUser({
+      body: { email: "client@example.com", name: "Client", password: PASSWORD, data: { emailVerified: true } },
+    })
+    const { headers, response } = await instance.api.signInEmail({
+      body: { email: "client@example.com", password: PASSWORD },
+      returnHeaders: true,
+    })
+    expect(response.user.id).toBe(made.user.id)
+    const cookie = headers.getSetCookie().find((c) => c.startsWith("better-auth.session_token="))
+    expect(cookie).toMatch(/HttpOnly/i)
+    expect(cookie).toMatch(/SameSite=Lax/i)
+    expect(cookie).toMatch(/Path=\//)
+  })
+
+  it("a coach's login has no password until the set-password link, which makes one", async () => {
+    vi.mocked(sendPasswordLinkEmail).mockClear()
+    const { instance, db } = await liveAuth()
+    const made = await instance.api.createUser({ body: { email: "coach@example.com", name: "Coach", data: { emailVerified: true } } })
+    expect(db.account).toEqual([])
+    await instance.api.requestPasswordReset({ body: { email: "coach@example.com", redirectTo: "/set-password" } })
+    await backgroundSettled()
+    const [{ url }] = vi.mocked(sendPasswordLinkEmail).mock.calls[0]
+    expect(url).toMatch(/\?callbackURL=%2Fset-password$/)
+    await instance.api.resetPassword({ body: { newPassword: PASSWORD, token: new URL(url).pathname.split("/").pop()! } })
+    expect(db.account).toEqual([expect.objectContaining({ userId: made.user.id, providerId: "credential" })])
   })
 })

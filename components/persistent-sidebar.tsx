@@ -17,7 +17,7 @@ import { toast } from "sonner"
 /**
  * The full 80px coach rail. Mounted by AppLayout — the shell decides that a
  * surface gets this rail rather than the 52px CollapsedIconStrip, and the
- * app/(coach)/ boundary plus middleware decide that the viewer is a coach — so
+ * app/(coach)/ boundary plus the proxy decide that the viewer is a coach — so
  * this component decides nothing: no route classification, no role check, no
  * wait on auth. It renders on first paint. Only the footer's name and email are
  * user data, and they fill in when the profile resolves.

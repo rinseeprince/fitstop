@@ -8,31 +8,29 @@ import { getMiddlewareRouteMatcher } from "next/dist/shared/lib/router/utils/mid
 import type { ProxyMatcher } from "next/dist/build/analysis/get-page-static-info"
 import type { MiddlewareRouteMatch } from "next/dist/shared/lib/router/utils/middleware-route-matcher"
 
-// The session client (validates the session) and the service role (reads the
-// role). services/supabase-admin.ts builds its client at import and throws
-// without the env, so it is mocked before middleware.ts loads.
-vi.mock("@supabase/ssr", () => ({ createServerClient: vi.fn() }))
+// Better Auth's session read (who is signed in) and the service role (reads
+// the role). Both build their clients at import and throw without the env,
+// so they are mocked before proxy.ts loads.
+vi.mock("@/lib/auth", () => ({ readSessionUserId: vi.fn() }))
 vi.mock("@/services/supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }))
-// GET /api/auth/me's own chain, for the answer it gives once the middleware
+// GET /api/auth/me's own chain, for the answer it gives once the proxy
 // leaves the /api/auth/ prefix to its routes.
 vi.mock("@/lib/rate-limit", () => ({ apiRateLimit: vi.fn().mockResolvedValue(null) }))
-vi.mock("@/lib/supabase-server", () => ({ createServerSupabaseClient: vi.fn() }))
-vi.mock("@/services/auth-profile-service", () => ({ getOrCreateProfileAndCoach: vi.fn() }))
+vi.mock("@/services/auth-profile-service", () => ({ getProfileAndCoach: vi.fn() }))
 
-import { config, middleware, trainerRoutes } from "./middleware"
+import { config, proxy, trainerRoutes } from "./proxy"
 import { GET as getMe } from "./app/api/auth/me/route"
-import { createServerClient } from "@supabase/ssr"
+import { readSessionUserId } from "@/lib/auth"
 import { supabaseAdmin } from "@/services/supabase-admin"
-import { createServerSupabaseClient } from "@/lib/supabase-server"
-import { getOrCreateProfileAndCoach } from "@/services/auth-profile-service"
+import { getProfileAndCoach } from "@/services/auth-profile-service"
 
 /**
- * Guards the middleware matcher against auth bypasses.
+ * Guards the proxy matcher against auth bypasses.
  *
  * Route segments are wildcards, so a path is not a static asset just because it
  * ends in an image extension: /clients/abc.png resolves to app/(coach)/clients/[id] with
  * id="abc.png". A matcher that excludes on the trailing extension alone skips
- * middleware for that page -- no auth check, no role redirect. Before this was
+ * the proxy for that page -- no auth check, no role redirect. Before this was
  * fixed, a logged-out GET /clients/abc.png returned 200 with the rendered app
  * shell.
  *
@@ -64,7 +62,7 @@ const match = getMiddlewareRouteMatcher(getMiddlewareMatchers(config.matcher, {}
  */
 const INERT_REQUEST = {} as Parameters<MiddlewareRouteMatch>[1]
 const INERT_QUERY = {} as Parameters<MiddlewareRouteMatch>[2]
-const runsMiddleware = (pathname: string) =>
+const runsProxy = (pathname: string) =>
   match(pathname, INERT_REQUEST, INERT_QUERY)
 
 // Every file in /public. It has no nested folders -- if that ever changes, the
@@ -79,12 +77,12 @@ const PUBLIC_ASSETS = [
 
 const IMAGE_EXTENSIONS = ["svg", "png", "jpg", "jpeg", "gif", "webp"]
 
-describe("middleware matcher", () => {
+describe("proxy matcher", () => {
   describe("runs on routes wearing an asset extension", () => {
     it.each(IMAGE_EXTENSIONS)(
       "/clients/abc.%s is app/(coach)/clients/[id], not an asset",
       (ext) => {
-        expect(runsMiddleware(`/clients/abc.${ext}`)).toBe(true)
+        expect(runsProxy(`/clients/abc.${ext}`)).toBe(true)
       }
     )
 
@@ -96,7 +94,7 @@ describe("middleware matcher", () => {
       "/api/clients/abc.png",
       "/_next/data/development/clients/abc.png.json",
     ])("%s", (pathname) => {
-      expect(runsMiddleware(pathname)).toBe(true)
+      expect(runsProxy(pathname)).toBe(true)
     })
   })
 
@@ -108,19 +106,19 @@ describe("middleware matcher", () => {
       "/client",
       "/clients/3f0c1a22-0000-4000-8000-000000000000",
     ])("%s", (pathname) => {
-      expect(runsMiddleware(pathname)).toBe(true)
+      expect(runsProxy(pathname)).toBe(true)
     })
   })
 
   describe("skips genuine static assets", () => {
     it.each(PUBLIC_ASSETS)("%s", (pathname) => {
-      expect(runsMiddleware(pathname)).toBe(false)
+      expect(runsProxy(pathname)).toBe(false)
     })
 
     it.each(["/favicon.ico", "/_next/static/chunks/main.js", "/_next/image"])(
       "%s",
       (pathname) => {
-        expect(runsMiddleware(pathname)).toBe(false)
+        expect(runsProxy(pathname)).toBe(false)
       }
     )
   })
@@ -128,8 +126,8 @@ describe("middleware matcher", () => {
   it("does not treat the favicon exclusion as a wildcard or a prefix", () => {
     // An unescaped dot matches any character; without an anchor it matches as a
     // prefix. Both would hand a real route a free pass.
-    expect(runsMiddleware("/faviconXico")).toBe(true)
-    expect(runsMiddleware("/favicon.ico-anything")).toBe(true)
+    expect(runsProxy("/faviconXico")).toBe(true)
+    expect(runsProxy("/favicon.ico-anything")).toBe(true)
   })
 })
 
@@ -138,11 +136,10 @@ describe("middleware matcher", () => {
  *
  * "Is this a coach route?" has two representations that cannot share a source:
  * the folder app/(coach)/ (what Next renders) and `trainerRoutes` (what the
- * Edge middleware protects). Middleware cannot read the filesystem and Next's
- * route manifest is a build output, so the list has to be a literal — this scan
- * is what keeps the two from drifting. A top-level folder without an entry is
- * an UNPROTECTED coach route, so that direction is the one that matters; the
- * reverse catches an entry that protects nothing.
+ * proxy protects). Next's route manifest is a build output, so the list has to
+ * be a literal — this scan is what keeps the two from drifting. A top-level
+ * folder without an entry is an UNPROTECTED coach route, so that direction is
+ * the one that matters; the reverse catches an entry that protects nothing.
  */
 describe("trainerRoutes is bound to app/(coach)/", () => {
   const COACH_GROUP = join(__dirname, "app", "(coach)")
@@ -168,7 +165,7 @@ describe("trainerRoutes is bound to app/(coach)/", () => {
 })
 
 /**
- * Binds the public /api/auth/ prefix to the routes beneath it. The middleware
+ * Binds the public /api/auth/ prefix to the routes beneath it. The proxy
  * leaves every path under the prefix to its route, so a route added there is
  * reached signed out with nothing checking it: the folder holds Better Auth's
  * catch-all and the app's /me, which answers its own 401, and nothing else
@@ -189,31 +186,15 @@ describe("the public /api/auth/ prefix is bound to app/api/auth/", () => {
 })
 
 /**
- * The decisions the middleware makes on every request, with the session
- * client validating the session and the service role reading the role. A
- * request carries a cookie so the session client is built; the stubs below
- * decide who the caller is and what row they have.
+ * The decisions the proxy makes on every request, with Better Auth reading
+ * the session and the service role reading the role. The stubs below decide
+ * who the caller is and what row they have.
  */
-type SessionCookies = {
-  setAll: (cookies: Array<{ name: string; value: string; options?: Record<string, unknown> }>) => void
-}
 
-/** A session whose getUser() answers `user`; `refreshed` cookies are written during it, as a rotation would. */
-function session(
-  user: { id: string } | null,
-  refreshed: Array<{ name: string; value: string }> = []
-) {
-  const sessionFrom = vi.fn()
-  vi.mocked(createServerClient).mockImplementation(((_url: string, _key: string, options: { cookies: SessionCookies }) => ({
-    auth: {
-      getUser: vi.fn(() => {
-        if (refreshed.length > 0) options.cookies.setAll(refreshed.map((c) => ({ ...c, options: { path: "/" } })))
-        return Promise.resolve({ data: { user }, error: null })
-      }),
-    },
-    from: sessionFrom,
-  })) as never)
-  return { sessionFrom }
+/** The session the request names: a user id, none, or a read that fails. */
+function session(userId: string | null | Error) {
+  if (userId instanceof Error) vi.mocked(readSessionUserId).mockRejectedValue(userId)
+  else vi.mocked(readSessionUserId).mockResolvedValue(userId)
 }
 
 /** The service role's profiles read resolving to `result`. */
@@ -226,19 +207,27 @@ function profile(result: { data: { role: string } | null; error: unknown }) {
 }
 
 const request = (pathname: string, headers: Record<string, string> = {}) =>
-  new NextRequest(`http://localhost:3000${pathname}`, { headers: { cookie: "sb-test-auth-token=x", ...headers } })
+  new NextRequest(`http://localhost:3000${pathname}`, { headers: { cookie: "better-auth.session_token=x", ...headers } })
 
 const passesThrough = (response: Response) => response.status === 200 && response.headers.get("x-middleware-next") === "1"
 const redirectsTo = (response: Response) => (response.status === 307 ? new URL(response.headers.get("location")!) : null)
+const UNAUTHORIZED = { success: false, error: "Unauthorized" }
 
-describe("middleware decisions", () => {
+async function answersUnauthorizedJson(response: Response): Promise<boolean> {
+  return (
+    response.status === 401 &&
+    (response.headers.get("content-type") ?? "").includes("application/json") &&
+    JSON.stringify(await response.json()) === JSON.stringify(UNAUTHORIZED)
+  )
+}
+
+describe("proxy decisions", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.spyOn(console, "error").mockImplementation(() => {})
   })
 
   it.each([
-    "/auth/callback",
     "/forgot-password",
     "/reset-password",
     "/invite/abc",
@@ -249,13 +238,22 @@ describe("middleware decisions", () => {
     "/api/auth/admin/create-user",
     "/api/auth/me",
   ])(
-    "%s skips auth entirely: no session is built, nothing is read",
+    "%s skips auth entirely: no session is read, nothing is read",
     async (pathname) => {
       session(null)
       const read = profile({ data: null, error: null })
-      expect(passesThrough(await middleware(request(pathname)))).toBe(true)
-      expect(createServerClient).not.toHaveBeenCalled()
+      expect(passesThrough(await proxy(request(pathname)))).toBe(true)
+      expect(readSessionUserId).not.toHaveBeenCalled()
       expect(read.from).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each(["/forgot-password/x", "/reset-passwords", "/auth/callback", "/signup"])(
+    "%s is no public page: signed out, it is sent to /login",
+    async (pathname) => {
+      session(null)
+      profile({ data: null, error: null })
+      expect(redirectsTo(await proxy(request(pathname)))?.pathname).toBe("/login")
     }
   )
 
@@ -264,83 +262,106 @@ describe("middleware decisions", () => {
     async (pathname) => {
       session(null)
       profile({ data: null, error: null })
-      expect(redirectsTo(await middleware(request(pathname)))?.pathname).toBe("/login")
+      expect(await answersUnauthorizedJson(await proxy(request(pathname)))).toBe(true)
+      expect(readSessionUserId).toHaveBeenCalledTimes(1)
     }
   )
 
-  it("/api/auth/me, left to the route, answers a signed-out request with its own 401 and makes nothing", async () => {
+  it("/api/auth/me, left to the route, answers a signed-out request with its own 401 and reads nothing more", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {})
-    const getUser = vi.fn().mockResolvedValue({ data: { user: null }, error: null })
-    vi.mocked(createServerSupabaseClient).mockResolvedValue({ auth: { getUser } } as never)
+    session(null)
     const signedOut = new NextRequest("http://localhost:3000/api/auth/me")
-    expect(passesThrough(await middleware(signedOut))).toBe(true)
+    expect(passesThrough(await proxy(signedOut))).toBe(true)
+    expect(readSessionUserId).not.toHaveBeenCalled()
     const answer = await getMe(signedOut)
     expect(answer.status).toBe(401)
-    expect(await answer.json()).toEqual({ success: false, error: "Unauthorized" })
-    expect(getUser).toHaveBeenCalledTimes(1)
-    expect(getOrCreateProfileAndCoach).not.toHaveBeenCalled()
+    expect(await answer.json()).toEqual(UNAUTHORIZED)
+    expect(readSessionUserId).toHaveBeenCalledTimes(1)
+    expect(getProfileAndCoach).not.toHaveBeenCalled()
   })
 
-  it.each(["/dashboard", "/clients/abc", "/client", "/client/training", "/api/clients", "/api/client/me"])(
-    "%s with no session redirects to /login, and the role is never read",
+  it.each(["/dashboard", "/clients/abc", "/client", "/client/training", "/settings"])(
+    "%s with no session redirects to /login, bare, and the role is never read",
     async (pathname) => {
       session(null)
       const read = profile({ data: null, error: null })
-      const response = await middleware(request(pathname))
+      const response = await proxy(request(pathname))
       expect(redirectsTo(response)?.pathname).toBe("/login")
       expect(redirectsTo(response)?.search).toBe("")
       expect(read.from).not.toHaveBeenCalled()
     }
   )
 
-  it("reads the role through the server, keyed on the id the session validated, and never through the session client", async () => {
-    const { sessionFrom } = session({ id: "user-7" })
+  it.each(["/api/clients", "/api/client/me", "/api/dashboard/attention-feed", "/api/me/unit-preference"])(
+    "%s with no session answers 401 JSON, never the login page, and the role is never read (rule 16)",
+    async (pathname) => {
+      session(null)
+      const read = profile({ data: null, error: null })
+      const response = await proxy(request(pathname))
+      expect(await answersUnauthorizedJson(response)).toBe(true)
+      expect(response.headers.get("location")).toBeNull()
+      expect(read.from).not.toHaveBeenCalled()
+    }
+  )
+
+  it("reads the session from the request's own headers, whichever carries it", async () => {
+    session("user-7")
+    profile({ data: { role: "trainer" }, error: null })
+    const withCookie = request("/dashboard")
+    await proxy(withCookie)
+    expect(readSessionUserId).toHaveBeenLastCalledWith(withCookie.headers)
+    const withBearer = new NextRequest("http://localhost:3000/api/client/me", { headers: { authorization: "Bearer t" } })
+    await proxy(withBearer)
+    expect(readSessionUserId).toHaveBeenLastCalledWith(withBearer.headers)
+  })
+
+  it("reads the role through the server, keyed on the session's user id", async () => {
+    session("user-7")
     const read = profile({ data: { role: "trainer" }, error: null })
-    expect(passesThrough(await middleware(request("/dashboard")))).toBe(true)
+    expect(passesThrough(await proxy(request("/dashboard")))).toBe(true)
     expect(read.from).toHaveBeenCalledWith("profiles")
     expect(read.select).toHaveBeenCalledWith("role")
     expect(read.eq).toHaveBeenCalledWith("user_id", "user-7")
     expect(read.eq).toHaveBeenCalledTimes(1)
     expect(read.single).toHaveBeenCalledTimes(1)
-    expect(sessionFrom).not.toHaveBeenCalled()
   })
 
   it.each(["/dashboard", "/clients/abc", "/crm", "/automation", "/settings/profile", "/api/clients", "/api/client/me", "/dashboard/programs"])(
     "a trainer on %s passes through",
     async (pathname) => {
-      session({ id: "user-7" })
+      session("user-7")
       profile({ data: { role: "trainer" }, error: null })
-      expect(passesThrough(await middleware(request(pathname)))).toBe(true)
+      expect(passesThrough(await proxy(request(pathname)))).toBe(true)
     }
   )
 
   it.each(["/client", "/client/training", "/client/check-in", "/api/client/me", "/api/clients"])(
     "a client on %s passes through",
     async (pathname) => {
-      session({ id: "user-8" })
+      session("user-8")
       profile({ data: { role: "client" }, error: null })
-      expect(passesThrough(await middleware(request(pathname)))).toBe(true)
+      expect(passesThrough(await proxy(request(pathname)))).toBe(true)
     }
   )
 
   it.each(trainerRoutes)("a client on the coach route %s is sent to their own home", async (route) => {
-    session({ id: "user-8" })
+    session("user-8")
     profile({ data: { role: "client" }, error: null })
-    expect(redirectsTo(await middleware(request(route)))?.pathname).toBe("/client")
-    expect(redirectsTo(await middleware(request(`${route}/anything`)))?.pathname).toBe("/client")
+    expect(redirectsTo(await proxy(request(route)))?.pathname).toBe("/client")
+    expect(redirectsTo(await proxy(request(`${route}/anything`)))?.pathname).toBe("/client")
   })
 
   it.each(["/client", "/client/training"])("a trainer on the client route %s is sent to the dashboard", async (pathname) => {
-    session({ id: "user-7" })
+    session("user-7")
     profile({ data: { role: "trainer" }, error: null })
-    expect(redirectsTo(await middleware(request(pathname)))?.pathname).toBe("/dashboard")
+    expect(redirectsTo(await proxy(request(pathname)))?.pathname).toBe("/dashboard")
   })
 
   it("a coach route's prefix is a whole segment: /clientside is neither route", async () => {
-    session({ id: "user-8" })
+    session("user-8")
     profile({ data: { role: "client" }, error: null })
-    expect(passesThrough(await middleware(request("/clientside")))).toBe(true)
-    expect(passesThrough(await middleware(request("/dashboards")))).toBe(true)
+    expect(passesThrough(await proxy(request("/clientside")))).toBe(true)
+    expect(passesThrough(await proxy(request("/dashboards")))).toBe(true)
   })
 
   it.each([
@@ -348,82 +369,75 @@ describe("middleware decisions", () => {
     ["a failed read", { data: null, error: { message: "connection refused" } }],
     ["a row with no role", { data: { role: "" }, error: null }],
   ] as const)("a session with %s fails closed: /login?error=profile_unavailable, never a role", async (_label, result) => {
-    session({ id: "user-7" })
+    session("user-7")
     profile(result as { data: { role: string } | null; error: unknown })
-    const target = redirectsTo(await middleware(request("/dashboard")))
+    const target = redirectsTo(await proxy(request("/dashboard")))
     expect(target?.pathname).toBe("/login")
     expect(target?.searchParams.get("error")).toBe("profile_unavailable")
-    expect(redirectsTo(await middleware(request("/client")))?.searchParams.get("error")).toBe("profile_unavailable")
+    expect(redirectsTo(await proxy(request("/client")))?.searchParams.get("error")).toBe("profile_unavailable")
     expect(console.error).toHaveBeenCalledWith("Profile lookup failed for authenticated user:", "user-7")
   })
 
-  it.each(["/", "/login", "/signup"])("a signed-in trainer on %s is sent to the dashboard, by a role read through the server", async (pathname) => {
-    const { sessionFrom } = session({ id: "user-7" })
+  it.each(["/", "/login"])("a signed-in trainer on %s is sent to the dashboard, by a role read through the server", async (pathname) => {
+    session("user-7")
     const read = profile({ data: { role: "trainer" }, error: null })
-    expect(redirectsTo(await middleware(request(pathname)))?.pathname).toBe("/dashboard")
+    expect(redirectsTo(await proxy(request(pathname)))?.pathname).toBe("/dashboard")
     expect(read.from).toHaveBeenCalledWith("profiles")
     expect(read.eq).toHaveBeenCalledWith("user_id", "user-7")
-    expect(sessionFrom).not.toHaveBeenCalled()
   })
 
-  it.each(["/", "/login", "/signup"])("a signed-in client on %s is sent to their home", async (pathname) => {
-    session({ id: "user-8" })
+  it.each(["/", "/login"])("a signed-in client on %s is sent to their home", async (pathname) => {
+    session("user-8")
     profile({ data: { role: "client" }, error: null })
-    expect(redirectsTo(await middleware(request(pathname)))?.pathname).toBe("/client")
+    expect(redirectsTo(await proxy(request(pathname)))?.pathname).toBe("/client")
   })
 
   it.each([
     ["no profile row", { data: null, error: null }],
     ["a failed read", { data: null, error: { message: "connection refused" } }],
     ["a row with no role", { data: { role: "" }, error: null }],
-  ] as const)("a signed-in visitor with %s on a public page sees the page: no guessed home", async (_label, result) => {
-    for (const pathname of ["/", "/login", "/signup", "/login?error=profile_unavailable"]) {
-      session({ id: "user-7" }, [{ name: "sb-test-auth-token", value: "rotated" }])
+  ] as const)("a signed-in visitor with %s on an entry page sees the page: no guessed home", async (_label, result) => {
+    for (const pathname of ["/", "/login", "/login?error=profile_unavailable"]) {
+      session("user-7")
       const read = profile(result as { data: { role: string } | null; error: unknown })
-      const response = await middleware(request(pathname))
-      expect(passesThrough(response)).toBe(true)
-      // The pass-through is the cookie carrier, so a session rotated during getUser() is kept.
-      expect(response.cookies.get("sb-test-auth-token")?.value).toBe("rotated")
+      expect(passesThrough(await proxy(request(pathname)))).toBe(true)
       expect(read.eq).toHaveBeenCalledWith("user_id", "user-7")
     }
     expect(console.error).toHaveBeenCalledWith("Profile lookup failed for authenticated user:", "user-7")
   })
 
-  it("the guarded branch's fail-closed answer is a page the public branch shows, so nothing loops", async () => {
-    session({ id: "user-7" })
+  it("the guarded branch's fail-closed answer is a page the entry branch shows, so nothing loops", async () => {
+    session("user-7")
     profile({ data: null, error: { message: "connection refused" } })
-    const sentTo = redirectsTo(await middleware(request("/dashboard")))
+    const sentTo = redirectsTo(await proxy(request("/dashboard")))
     expect(sentTo?.pathname).toBe("/login")
-    expect(passesThrough(await middleware(request(`${sentTo!.pathname}${sentTo!.search}`)))).toBe(true)
+    expect(passesThrough(await proxy(request(`${sentTo!.pathname}${sentTo!.search}`)))).toBe(true)
   })
 
-  it.each(["/", "/login", "/signup"])("%s with no session passes through, and the role is never read", async (pathname) => {
+  it.each(["/", "/login"])("%s with no session passes through, and the role is never read", async (pathname) => {
     session(null)
     const read = profile({ data: null, error: null })
-    expect(passesThrough(await middleware(request(pathname)))).toBe(true)
+    expect(passesThrough(await proxy(request(pathname)))).toBe(true)
     expect(read.from).not.toHaveBeenCalled()
   })
 
-  it("a cookie the session rotated during getUser() rides on the redirect", async () => {
-    session(null, [{ name: "sb-test-auth-token", value: "rotated" }])
-    profile({ data: null, error: null })
-    const response = await middleware(request("/dashboard"))
-    expect(redirectsTo(response)?.pathname).toBe("/login")
-    expect(response.cookies.get("sb-test-auth-token")?.value).toBe("rotated")
-
-    session({ id: "user-8" }, [{ name: "sb-test-auth-token", value: "rotated-again" }])
-    profile({ data: { role: "client" }, error: null })
-    const roleRedirect = await middleware(request("/dashboard"))
-    expect(redirectsTo(roleRedirect)?.pathname).toBe("/client")
-    expect(roleRedirect.cookies.get("sb-test-auth-token")?.value).toBe("rotated-again")
+  it("a session that cannot be read fails closed: a page goes to /login, an API answers 401, an entry page shows", async () => {
+    const fault = new Error("database unreachable")
+    session(fault)
+    const read = profile({ data: { role: "trainer" }, error: null })
+    expect(redirectsTo(await proxy(request("/dashboard")))?.pathname).toBe("/login")
+    expect(await answersUnauthorizedJson(await proxy(request("/api/clients")))).toBe(true)
+    expect(passesThrough(await proxy(request("/login")))).toBe(true)
+    expect(read.from).not.toHaveBeenCalled()
+    expect(console.error).toHaveBeenCalledWith("Session read failed:", fault)
   })
 
-  it("marks a rotated cookie Secure over https and not over plain http", async () => {
-    session({ id: "user-7" }, [{ name: "sb-test-auth-token", value: "r" }])
-    profile({ data: { role: "trainer" }, error: null })
-    const secure = await middleware(request("/dashboard", { "x-forwarded-proto": "https" }))
-    expect(secure.cookies.get("sb-test-auth-token")?.secure).toBe(true)
-    const plain = await middleware(request("/dashboard"))
-    expect(plain.cookies.get("sb-test-auth-token")?.secure).toBeFalsy()
+  it("never sets a cookie: the session's renewal is Better Auth's own /api/auth/get-session's", async () => {
+    session("user-8")
+    profile({ data: { role: "client" }, error: null })
+    const responses = [await proxy(request("/dashboard")), await proxy(request("/client")), await proxy(request("/login"))]
+    session(null)
+    responses.push(await proxy(request("/dashboard")), await proxy(request("/api/clients")))
+    for (const response of responses) expect(response.headers.getSetCookie()).toEqual([])
   })
 })

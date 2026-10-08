@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
-import type { User } from "@supabase/supabase-js";
+import type { SessionUser as User } from "@/lib/auth-client";
 
 import ClientLayout from "./layout";
 import type { Client } from "@/types/check-in";

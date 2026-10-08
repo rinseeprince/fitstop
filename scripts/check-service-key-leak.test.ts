@@ -1,9 +1,9 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { databasePasswordForms, otherSecretNeedles, scanBundle } from "./check-service-key-leak"
+import { CONTROL_VAR, databasePasswordForms, otherSecretNeedles, scanBundle } from "./check-service-key-leak"
 
 /**
  * The bundle clause's search for lib/auth.ts's secrets, against a bundle made
@@ -96,5 +96,18 @@ describe("the secrets the gate cannot search for (INCONCLUSIVE, never a pass)", 
   it("names each form too short to mean anything, the decoded one included", () => {
     // 16 characters as written, 8 decoded.
     expect(otherSecretNeedles(pooler("ab%40%40%40%40cd"), AUTH_SECRET).unscannable).toEqual(["database password, decoded"])
+  })
+})
+
+describe("the bundle clause's positive control (D35)", () => {
+  it("is the Sentry DSN, the public value the browser's own Sentry init inlines into every bundle", () => {
+    expect(CONTROL_VAR).toBe("NEXT_PUBLIC_SENTRY_DSN")
+    const browserInit = readFileSync(join(__dirname, "..", "instrumentation-client.ts"), "utf8")
+    expect(browserInit).toContain(`process.env.${CONTROL_VAR}`)
+  })
+
+  it("is no Supabase key: the browser holds no Supabase client", () => {
+    const gate = readFileSync(join(__dirname, "check-service-key-leak.ts"), "utf8")
+    expect(gate).not.toMatch(/readEnvVar\(\s*["']NEXT_PUBLIC_SUPABASE/)
   })
 })

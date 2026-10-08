@@ -9,7 +9,7 @@ import { auth } from "@/lib/auth"
  * trusted origin; a sign-in or sign-up is also refused when it names another
  * origin or arrives as another site's form) and its own answers, its
  * unexpected errors reported to Sentry. /api/auth/me is a more specific
- * segment, so Next routes it to its own file, never here. The middleware
- * leaves the prefix to these routes: they are reached signed out.
+ * segment, so Next routes it to its own file, never here. The proxy leaves
+ * the prefix to these routes: they are reached signed out.
  */
 export const { GET, POST } = toNextJsHandler(auth)

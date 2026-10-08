@@ -1,27 +1,18 @@
 "use client"
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react"
+import { createContext, useContext, type ReactNode } from "react"
 import useSWR, { useSWRConfig } from "swr"
-import { supabase } from "@/services/supabase-client"
-import type { User } from "@supabase/supabase-js"
+import { authClient, type SessionUser } from "@/lib/auth-client"
+import { AuthRefusal } from "@/lib/auth-error-messages"
 import type { Coach } from "@/types/check-in"
 import type { Profile, UserRole } from "@/types/auth"
 import { swrFetcher } from "@/lib/swr-fetcher"
 
-// Session lifecycle lives here (supabase.auth only — auth API calls never
-// touch PostgREST). Profile/coach come from GET /api/auth/me via SWR; the
-// browser never reads the profiles/coaches tables directly (CONVENTIONS §8).
-// The onAuthStateChange callback MUST stay synchronous: supabase-js holds an
-// origin-wide Navigator lock while it runs, and any awaited supabase query
-// inside it deadlocks against that lock. Middleware remains the server-side
-// backstop for session validity on every navigation.
+// Who is signed in is Better Auth's session, read by authClient.useSession()
+// (lib/auth-client.ts), which also renews the session's cookie. Profile/coach
+// come from GET /api/auth/me via SWR, keyed on the session's user id; the
+// browser never reads the profiles/coaches tables (CONVENTIONS §8). The proxy
+// remains the server-side backstop for session validity on every navigation.
 
 const ME_URL = "/api/auth/me"
 
@@ -48,7 +39,7 @@ export const isMeKey = (key: unknown): boolean =>
   Array.isArray(key) && key[0] === ME_URL
 
 interface AuthContextType {
-  user: User | null
+  user: SessionUser | null
   coach: Coach | null
   profile: Profile | null
   role: UserRole | null
@@ -56,21 +47,14 @@ interface AuthContextType {
   isTrainer: boolean
   isClient: boolean
   login: (email: string, password: string) => Promise<UserRole | null>
-  loginWithGoogle: () => Promise<void>
-  signup: (email: string, password: string, name: string) => Promise<void>
   logout: () => Promise<void>
-  resetPassword: (email: string) => Promise<void>
-  updatePassword: (newPassword: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [sessionResolved, setSessionResolved] = useState(false)
-  // login() fetches /me itself and primes the SWR cache before setting user;
-  // suppressing the SIGNED_IN echo during that window keeps it to one fetch.
-  const loginInFlightRef = useRef(false)
+  const { data: session, isPending } = authClient.useSession()
+  const user = session?.user ?? null
   const { mutate: globalMutate } = useSWRConfig()
 
   const { data: me, error: meError } = useSWR<MeResponse>(
@@ -91,141 +75,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const role = profile?.role ?? null
   const isTrainer = role === "trainer"
   const isClient = role === "client"
-  // False as soon as the first /me attempt settles; background retries must
-  // not strobe consumer gates, so this deliberately isn't SWR's isLoading.
+  // useSession's isPending holds while it reads a session with none in hand:
+  // the first read, and a signed-out page's re-read on focus. A signed-in
+  // person's re-reads and renewals leave it false, so their gates never strobe.
   const loading =
-    !sessionResolved || (user !== null && me === undefined && meError === undefined)
+    isPending || (user !== null && me === undefined && meError === undefined)
 
-  useEffect(() => {
-    // Subscribe before getSession so no auth event slips between the two.
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (loginInFlightRef.current && event === "SIGNED_IN") return
-      setUser(session?.user ?? null)
-      setSessionResolved(true)
-    })
-
-    void supabase.auth
-      .getSession()
-      .then(({ data }) => setUser(data.session?.user ?? null))
-      .catch((error) => console.error("[Auth] getSession failed:", error))
-      .finally(() => setSessionResolved(true))
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  /** Login with email and password — returns the role for redirect */
+  /** Sign in with email and password; returns the role for the redirect. */
   const login = async (
     email: string,
     password: string
   ): Promise<UserRole | null> => {
-    loginInFlightRef.current = true
+    const { data, error } = await authClient.signIn.email({ email, password })
+    if (error) throw new AuthRefusal(error)
+
+    let userRole: UserRole | null = null
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) throw error
-      if (!data.user) return null
-
-      let userRole: UserRole | null = null
-      try {
-        const meResponse = (await swrFetcher(ME_URL)) as MeResponse
-        await globalMutate(meKey(data.user.id), meResponse, { revalidate: false })
-        userRole = meResponse.data.profile?.role ?? null
-      } catch (meFailure) {
-        // Auth succeeded — never sign out or fail the login over a profile
-        // read. Null role sends the user to /dashboard; middleware corrects
-        // clients to /client, and the mounted SWR key retries.
-        console.error("[Auth] /api/auth/me failed after login:", meFailure)
-      }
-
-      setUser(data.user)
-      setSessionResolved(true)
-      return userRole
-    } finally {
-      loginInFlightRef.current = false
+      const meResponse = (await swrFetcher(ME_URL)) as MeResponse
+      await globalMutate(meKey(data.user.id), meResponse, { revalidate: false })
+      userRole = meResponse.data.profile?.role ?? null
+    } catch (meFailure) {
+      // Auth succeeded — never sign out or fail the login over a profile
+      // read. Null role sends the user to /dashboard; the proxy corrects
+      // clients to /client, and the mounted SWR key retries.
+      console.error("[Auth] /api/auth/me failed after login:", meFailure)
     }
+    return userRole
   }
 
-  // Login with Google OAuth
-  const loginWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
-
-    if (error) throw error
-  }
-
-  // Sign up with email and password (trainers only)
-  const signup = async (email: string, password: string, name: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          name,
-          // Display metadata only — the signup trigger (migration 107)
-          // derives the real role from server state and ignores this key.
-          role: "trainer",
-        },
-      },
-    })
-
-    if (error) {
-      if (error.status === 422 || error.message?.includes("already registered")) {
-        throw new Error("This email is already registered. Please log in instead.")
-      }
-      throw error
-    }
-
-    // Supabase returns a user with an empty identities array for emails that
-    // already have an account.
-    if (data.user && data.user.identities && data.user.identities.length === 0) {
-      throw new Error("This email is already registered. Please log in instead.")
-    }
-
-    // The database trigger creates the profile/coach rows; /api/auth/me
-    // fetches them once the session lands.
-  }
-
-  // Logout
+  /** Sign out this device only (D14); every other device stays signed in. */
   const logout = async () => {
     try {
-      const { error } = await supabase.auth.signOut({ scope: "global" })
+      const { error } = await authClient.signOut()
       if (error) {
         console.error("Logout error:", error)
-        throw error
+        throw new AuthRefusal(error)
       }
     } finally {
-      // Clear local state even if signOut partially fails, and purge the /me
-      // cache so the previous user's profile never lingers in memory.
-      setUser(null)
+      // Purge the /me cache even if sign-out partially fails, so the previous
+      // user's profile never lingers in memory.
       await globalMutate(isMeKey, undefined, { revalidate: false })
     }
-  }
-
-  // Send password reset email
-  const resetPassword = async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    })
-
-    if (error) throw error
-  }
-
-  // Update password
-  const updatePassword = async (newPassword: string) => {
-    const { error } = await supabase.auth.updateUser({
-      password: newPassword,
-    })
-
-    if (error) throw error
   }
 
   return (
@@ -239,11 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isTrainer,
         isClient,
         login,
-        loginWithGoogle,
-        signup,
         logout,
-        resetPassword,
-        updatePassword,
       }}
     >
       {children}

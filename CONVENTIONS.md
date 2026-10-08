@@ -218,7 +218,7 @@
   ## 6. File Structure
   ```
   /app           - Next.js App Router pages and API routes
-    /(coach)       - The coach application boundary: every trainer-facing page, under `app/(coach)/layout.tsx` (ARCHITECTURE → "Coach route group"); `trainerRoutes` in `middleware.ts` is bound to this folder by test
+    /(coach)       - The coach application boundary: every trainer-facing page, under `app/(coach)/layout.tsx` (ARCHITECTURE → "Coach route group"); `trainerRoutes` in `proxy.ts` is bound to this folder by test
     /client        - The client portal, under `app/client/layout.tsx`
   /components    - React components
     /clients       - Coach-facing: a coach viewing their clients' data (plural)
@@ -498,7 +498,7 @@
 
   The consequence: the route layer **is** the security perimeter. Gaps in route-level auth are not caught by a second line of defense. Treat the route's auth chain and the service function's scoping parameter as non-optional.
 
-  Auth bootstrap follows the same shape: the browser fetches its identity via `GET /api/auth/me` (`services/auth-profile-service.ts`); the browser anon-key client is `supabase.auth`-only and never reads `profiles`/`coaches`.
+  Auth bootstrap follows the same shape: the browser fetches its identity via `GET /api/auth/me` (`services/auth-profile-service.ts`); the browser holds Better Auth's `authClient` (`lib/auth-client.ts`) alone, never a Supabase client, and never reads `profiles`/`coaches`.
 
   #### Route-level auth chain (mandatory, in this order)
 
@@ -522,9 +522,9 @@
   - **Never pass a user-provided `clientId` straight to a service.** The route takes `clientId` from the URL path (or request body) and MUST run an ownership check against the authed principal before handing it to a service. See the IDOR chain in step 4 above.
   - **Cross-user reads are legitimate.** Coach dashboard reads aggregate across all of a coach's clients; attention feed, library browsing, etc. These pass `coachId` to services that fan out; the service filters on `coach_id` rather than `client_id`. Same rule: caller-verified scope, service filters on it.
 
-  #### When to use `createServerSupabaseClient()`
+  #### Who the caller is
 
-  To validate the session, and for nothing else. A session client — `createServerSupabaseClient()` in a route, the same `@supabase/ssr` client the middleware and `/auth/callback` build, the browser's in `services/supabase-client.ts` — calls `auth.*` alone: `auth.getUser()` to learn who the caller is (§9 — never `getSession()`), the code exchange, sign-in and sign-out. It never reads or writes a table, calls a database function or touches storage. Every one of those goes through `supabaseAdmin`, filtered on the id the session validated, and `lib/session-client-ownership.test.ts` fails the first that does not — no rule in the database stands behind an app read, so a query on the session client would have nothing to lean on.
+  No Supabase session client exists, and none is built. Who the caller is comes from Better Auth: `readSessionUserId` (`lib/auth.ts`) reads the session the request's cookie or bearer token names, without renewing it, for the proxy, the auth seam (`lib/auth-helpers.ts`) and `GET /api/auth/me`; the browser's `authClient` (`lib/auth-client.ts`) signs in and out and reads its own session. Every table read, database function call and storage call goes through `supabaseAdmin`, filtered on the user id the session names, and `lib/session-client-ownership.test.ts` fails the first that does not — no rule in the database stands behind an app read, so a query through any other client would have nothing to lean on. The same test holds `betterAuth(…)` and its pool to `lib/auth.ts`, `createAuthClient(…)` to `lib/auth-client.ts`, and fails a file that builds or imports a Supabase session client.
 
   #### RLS policies
 
@@ -540,7 +540,7 @@
     GRANT ALL ON TABLE public.new_thing TO service_role;
     ```
     Put it in the migration, never in the dashboard — a grant made in Studio is invisible to source and drifts, which is how migration 125's `DROP POLICY` became a silent no-op. A policy, or an `anon`/`authenticated` grant, is added only when a specific non-`service_role` caller provably needs the table — then scoped to the owner, named in `check:rls`'s allowlist with that caller beside it, and shaped with care: never `TO authenticated USING (true)` (a platform-wide cross-tenant read and write; migrations 091 and 101 wrote it and 125 dropped it); always an explicit `TO` clause (no `TO` is PUBLIC, which includes `anon`, and only a qual keyed on `auth.uid()` fails closed without a JWT — a no-`TO` policy whose qual ignores the caller exposed the private progress-photos bucket until migration 126); one policy with a single qual rather than two permissive ones OR'd together, because a sublink under an `OR` never pulls up to a semi-join.
-  - **A database function the app calls is `SECURITY DEFINER`, executable by `service_role` alone**: `REVOKE ALL ON FUNCTION … FROM PUBLIC, anon, authenticated; GRANT EXECUTE … TO service_role` in its migration, in migration 106's shape. Postgres grants EXECUTE on a new function to PUBLIC by default, so a function without the REVOKE is callable through `/rest/v1/rpc` with the public key and runs as the table owner. The one exception is the auth trigger `handle_new_user()`, which `supabase_auth_admin` also executes.
+  - **A database function the app calls is `SECURITY DEFINER`, executable by `service_role` alone**: `REVOKE ALL ON FUNCTION … FROM PUBLIC, anon, authenticated; GRANT EXECUTE … TO service_role` in its migration, in migration 106's shape. Postgres grants EXECUTE on a new function to PUBLIC by default, so a function without the REVOKE is callable through `/rest/v1/rpc` with the public key and runs as the table owner.
   - **Views need `WITH (security_invoker = on)`.** Postgres defaults a view to owner-rights, which launders past the RLS on its base tables. The measurement views (`client_measurements_live`, `client_current_measurements`, `client_baseline_measurements`; migrations 158 and 160) carry it in source, and `check:rls` clause 3 holds every view to it.
   - **Never change a policy or a grant in the Supabase Studio SQL editor.** Drift is not theoretical here: it has silently renamed a policy (making a later `DROP POLICY IF EXISTS` a no-op) and silently added two anon-reachable ones that appeared in no migration. Verify every change against the live catalog — `npm run check:rls`, or `npx supabase db query --linked` — not against `db push` exiting 0.
 
@@ -673,8 +673,9 @@
   probe that justifies it **against prod**, not only against dev. A successful `db push`
   proves the migration applied; it proves nothing about whether the two databases agree, and
   both databases have drifted from the migration tree, in both directions: dumped on 2026-09-14,
-  Dev carried a unique key on `coaches.user_id` and `TO authenticated` clauses on two `daily_logs`
-  policies that no migration creates, and Prod carried a Supabase helper function Dev lacks. Dev is
+  Dev carried a unique key on `coaches.user_id` (migration 209 adds it where it is missing) and `TO authenticated`
+  clauses on two `daily_logs` policies that no migration creates, and Prod carried a Supabase helper function
+  Dev lacks. Dev is
   `aeaphsslctwcmebldrzx`, prod is `etezzztgafcotyahgijk`; `npx supabase db query --linked`
   gives password-free read access to whichever is linked. Row counts, "no client has X",
   "zero duplicates exist" and `pg_depend = 0` are **per-database facts** and do not travel.
@@ -710,7 +711,7 @@
 
   ## 9. Security
   - Auth: Check on every protected route/component
-  - Middleware auth: Uses `getUser()` which validates JWT server-side, NOT `getSession()` (which only reads the cookie without verification, making it susceptible to tampered tokens)
+  - Proxy and seam auth: who the caller is comes from Better Auth's `auth.api.getSession` (through `readSessionUserId`), which looks the session up in `better_auth.session` on every request, so a revoked or expired one ends at once. Never trust `getSessionCookie` (a cookie's presence proves nothing), and never switch on Better Auth's cookie cache, which would let a revoked session live on
   - Input sanitization: All user inputs
   - Rate limiting: **MANDATORY** - Every API route must include rate limiting as the first check
   - CSRF protection: **MANDATORY** - All mutating API routes (POST/PUT/PATCH/DELETE) must call `requireCSRFProtection(request)` from `lib/csrf-protection.ts` as the second check after rate limiting
@@ -748,7 +749,7 @@
   ```
 
   #### When to Use Each Type:
-  - **authRateLimit**: `/api/invitations/*`. No app route serves login, signup or password reset: those call Supabase Auth from the browser. The one `/api/auth/*` route, `/api/auth/me`, is a per-app-load bootstrap GET for both roles, on `apiRateLimit` per the `/auth/callback` precedent
+  - **authRateLimit**: `/api/invitations/*`. No app route serves login or password reset: those are Better Auth's endpoints under `/api/auth/*`, limited by its own limiter. The one app route under `/api/auth/*`, `/api/auth/me`, is a per-app-load bootstrap GET for both roles, on `apiRateLimit`: the auth tier would lock out normal use
   - **coachApiRateLimit**: `/api/clients/*` (coach viewing/managing client data)
   - **clientApiRateLimit**: `/api/client/*` (client portal endpoints)
   - **checkInRateLimit**: none today (see above)
@@ -878,7 +879,7 @@
 
   ## 19. Configuration
   - .env files: .env.local
-  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` with the optional `AUTH_ADMIN_USER_IDS` (all four at their read site in `lib/auth.ts`), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY`, `NEXT_PUBLIC_APP_URL`, and `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`. If you create `.env.example`, backfill it from those.
+  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` with the optional `AUTH_ADMIN_USER_IDS` (all four at their read site in `lib/auth.ts`), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY` with the optional `EMAIL_FROM` (the sender, at its read site in `services/email-service.ts`), `NEXT_PUBLIC_APP_URL`, and `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`. If you create `.env.example`, backfill it from those.
   - Secrets: Never in code, use vault/secrets manager for prod
   ## 20. Units
 

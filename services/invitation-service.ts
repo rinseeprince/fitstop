@@ -1,11 +1,12 @@
 import { supabaseAdmin } from "@/services/supabase-admin"
 import { sendInvitationEmail, generateInviteToken } from "@/services/email-service"
 import type {
-  ClientInvitation,
   ClientInvitationRow,
+  InvitationDetails,
   SendInvitationResponse,
 } from "@/types/auth"
 import { toClientInvitation } from "@/types/auth"
+import { maskEmail } from "@/lib/mask-email"
 
 const INVITATION_EXPIRY_DAYS = 7
 
@@ -14,88 +15,71 @@ const invitationsTable = "client_invitations"
 const clientsTable = "clients"
 const _coachesTable = "coaches"
 
+/** A pending invitation a token opens: what accepting it needs. Server-side only. */
+export type LiveInvitation = {
+  id: string
+  clientId: string
+  /** The address the invitation went to, and the one the client's login is made with. */
+  email: string
+  clientName: string
+  coachName: string
+  expiresAt: string | null
+}
+
+/** Why a token opens no invitation, each with the sentence the invite page shows. */
+export const INVITATION_REFUSALS = {
+  invalid: "Invalid invitation link",
+  expired: "This invitation has expired",
+  used: "This invitation has already been used",
+} as const
+
+type InvitationRefusal = keyof typeof INVITATION_REFUSALS
+
 /**
- * Get invitation by token (public - no auth required)
+ * The pending invitation a token opens, or why it opens none: no invitation
+ * holds the token, it has expired, or it was accepted. Throws when the read
+ * fails, which is not a refusal.
+ */
+export async function findLiveInvitation(
+  token: string
+): Promise<{ invitation: LiveInvitation } | { refusal: InvitationRefusal }> {
+  const { data, error } = await supabaseAdmin
+    .from(invitationsTable)
+    .select("id, client_id, email, status, expires_at, client:client_id ( name, coach:coach_id ( name ) )")
+    .eq("token", token)
+    .maybeSingle()
+
+  if (error) throw new Error(`Failed to read the invitation: ${error.message}`)
+  if (!data?.client?.coach) return { refusal: "invalid" }
+  if (data.expires_at && new Date(data.expires_at) < new Date()) return { refusal: "expired" }
+  if (data.status === "accepted") return { refusal: "used" }
+
+  return {
+    invitation: {
+      id: data.id,
+      clientId: data.client_id,
+      email: data.email,
+      clientName: data.client.name,
+      coachName: data.client.coach.name,
+      expiresAt: data.expires_at,
+    },
+  }
+}
+
+/**
+ * What the invite page shows of the invitation a token opens (public, no auth
+ * required): the coach's name and the invited address with its middle hidden
+ * (D11). Neither the full address nor the client's name travels to whoever
+ * holds the link.
  */
 export async function getInvitationByToken(
   token: string
-): Promise<{
-  success: boolean
-  invitation?: {
-    id: string
-    clientName: string
-    clientEmail: string
-    coachName: string
-    expiresAt: string | null
-    status: string
-  }
-  error?: string
-}> {
+): Promise<{ success: boolean; invitation?: InvitationDetails; error?: string }> {
   try {
-    // Query invitation with client and coach info
-    const { data: invitationData, error: invitationError } = await supabaseAdmin
-      .from(invitationsTable)
-      .select(`
-        *,
-        client:client_id (
-          id,
-          name,
-          email,
-          coach:coach_id (
-            id,
-            name
-          )
-        )
-      `)
-      .eq("token", token)
-      .single()
-
-    if (invitationError || !invitationData) {
-      return {
-        success: false,
-        error: "Invalid invitation link"
-      }
-    }
-
-    const invitation = invitationData as ClientInvitationRow & {
-      client: {
-        id: string
-        name: string
-        email: string
-        coach: {
-          id: string
-          name: string
-        }
-      }
-    }
-
-    // Check if invitation has expired
-    if (invitation.expires_at && new Date(invitation.expires_at) < new Date()) {
-      return {
-        success: false,
-        error: "This invitation has expired"
-      }
-    }
-
-    // Check if invitation is already accepted
-    if (invitation.status === "accepted") {
-      return {
-        success: false,
-        error: "This invitation has already been used"
-      }
-    }
-
-    return {
-      success: true,
-      invitation: {
-        id: invitation.id,
-        clientName: invitation.client.name,
-        clientEmail: invitation.client.email,
-        coachName: invitation.client.coach.name,
-        expiresAt: invitation.expires_at,
-        status: invitation.status
-      }
-    }
+    const found = await findLiveInvitation(token)
+    if ("refusal" in found) return { success: false, error: INVITATION_REFUSALS[found.refusal] }
+    const { coachName, email, expiresAt } = found.invitation
+    return { success: true, invitation: { coachName, emailMasked: maskEmail(email), expiresAt } }
   } catch (error) {
     console.error("Error fetching invitation by token:", error)
     return {
@@ -248,119 +232,4 @@ export async function sendInvitation(
       error: error instanceof Error ? error.message : "Failed to send invitation"
     }
   }
-}
-
-/**
- * Accept invitation by token and link user to client (server-side only)
- */
-export async function acceptInvitationByToken(
-  token: string,
-  userId: string
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    // Get invitation by token
-    const { data: invitationData, error: invitationError } = await supabaseAdmin
-      .from(invitationsTable)
-      .select("*")
-      .eq("token", token)
-      .single()
-
-    if (invitationError || !invitationData) {
-      return {
-        success: false,
-        error: "Invalid invitation token"
-      }
-    }
-
-    const invitation = invitationData as ClientInvitationRow
-
-    // Check if invitation has expired
-    if (invitation.expires_at && new Date(invitation.expires_at) < new Date()) {
-      return {
-        success: false,
-        error: "This invitation has expired"
-      }
-    }
-
-    // Check if invitation is already accepted
-    if (invitation.status === "accepted") {
-      return {
-        success: false,
-        error: "This invitation has already been used"
-      }
-    }
-
-    // Update invitation status
-    const { error: updateError } = await supabaseAdmin
-      .from(invitationsTable)
-      .update({
-        status: "accepted",
-        accepted_at: new Date().toISOString()
-      })
-      .eq("token", token)
-
-    if (updateError) {
-      console.error("Error updating invitation status:", updateError)
-      return {
-        success: false,
-        error: "Failed to accept invitation"
-      }
-    }
-
-    // Link user_id to client record
-    const { error: linkError } = await supabaseAdmin
-      .from(clientsTable)
-      .update({ user_id: userId })
-      .eq("id", invitation.client_id)
-
-    if (linkError) {
-      console.error("Error linking user to client:", linkError)
-      return {
-        success: false,
-        error: "Failed to link user to client"
-      }
-    }
-
-    console.warn("Successfully accepted invitation")
-    return { success: true }
-  } catch (error) {
-    console.error("Error in acceptInvitationByToken:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Failed to accept invitation"
-    }
-  }
-}
-
-/**
- * Legacy function: Mark invitation as accepted by clientId (for backward compatibility)
- *
- * SECURITY: this performs an UNCHECKED client<->user link (no token, no email
- * match). Its ONLY safe caller is the legacy clientId branch of
- * POST /api/invitations/accept, which verifies invitedUser.email ===
- * invitation.email BEFORE calling it. The unauthenticated /auth/callback caller
- * was removed (it was an account-takeover vector). Do NOT call this from any path
- * that has not already proven the userId's email matches the invitation.
- * @deprecated Use acceptInvitationByToken instead
- */
-export async function acceptInvitation(
-  clientId: string,
-  userId: string
-): Promise<void> {
-  console.warn("acceptInvitation is deprecated, use acceptInvitationByToken instead")
-  
-  // Update invitation status
-  await supabaseAdmin
-    .from(invitationsTable)
-    .update({
-      status: "accepted",
-      accepted_at: new Date().toISOString()
-    })
-    .eq("client_id", clientId)
-
-  // Link user_id to client record
-  await supabaseAdmin
-    .from(clientsTable)
-    .update({ user_id: userId })
-    .eq("id", clientId)
 }

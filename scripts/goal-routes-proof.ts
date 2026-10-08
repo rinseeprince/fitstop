@@ -278,7 +278,7 @@ async function main(): Promise<void> {
     console.info("13. CSRF");
     const noOrigin = await fetch(`${PROOF_BASE}${goals}`, {
       method: "POST",
-      headers: { Cookie: session.cookie, "Content-Type": "application/json" },
+      headers: { ...session.headers, "Content-Type": "application/json" },
       body: JSON.stringify({ type: "maintain" }),
     });
     check("a write without the Origin is refused", noOrigin.status === 403, noOrigin.status);

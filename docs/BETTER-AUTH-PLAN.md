@@ -1054,6 +1054,15 @@ the exact route, what I should see in plain words. The browser smoke is mine.
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` has no reader left: removed from CONVENTIONS' env list (line 881) and from
   `README.md:75`; grep proves it; the owner removes it from `.env.local`.
 - Each moved script run once on DEV; no product code changes.
+- What commit 2 left for this commit: `@supabase/ssr` leaves `package.json` here (D26's route), with the four scripts
+  that still import it for their own Supabase sessions (`measurement-edit-proof.ts`, `clear-training-log-proof.ts`,
+  `wire-proof-measurements.ts`, `check-in-as-of-proof.ts`). `scripts/proof-session.ts` is D34's already:
+  `ProofSession` is `{ label, headers }` (`mintSession` gives `Authorization: Bearer`, `signInOverHttp` the session
+  cookie) and `endSession` removes a minted row; the scripts that read `.cookie` now spread `session.headers`. The
+  two data-API proofs' "login token" arm now sends a Better Auth session token, which PostgREST cannot read as a
+  JWT: decide what that arm proves. `measurement-create-proof.ts`'s signed-out check expects the old 307; the proxy
+  answers `/api/**` with 401 JSON. `better-auth-standup-proof.ts` was deleted with commit 2 (its proof belonged to
+  the window between 208 and 209).
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then
@@ -1101,6 +1110,11 @@ shipped and each script's result. There is no browser smoke for this commit.
 - `app/set-password/page.tsx` (rule 9; the reset page's component with its own wording), public in the proxy;
   `emails/set-password-email.tsx`; `sendPasswordLinkEmail` picks by the landing page (D17).
 - `scripts/create-coach-proof.ts` (§5, proof 4).
+- What commit 2 left for this commit: `createCoachLogin` exists and is tested (its undo covers the coach row and the
+  link request); `sendPasswordLinkEmail` never throws, because forgot password must answer every address alike, so
+  `coach:create` cannot learn of a failed send from it (the command can say where `auth:last-link` finds the link).
+  Better Auth's emails go out in the background (`advanced.backgroundTasks`, `runAfterAnswer`); in a script nothing
+  keeps that work alive, so `coach:create` awaits `backgroundWorkSettled()` (`lib/auth.ts`) before it exits.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -1332,6 +1346,10 @@ mine.
 - `scripts/bearer-proof.ts` (§2.8's proof). `CLIENT-APP-REFERENCE.md:164`'s sentence rewritten here (it is the
   app's contract): sign-in is `POST /api/auth/sign-in/email`, the token is `set-auth-token`, every `/api/client/**`
   call carries `Authorization: Bearer`, a dead token is 401 JSON.
+- What commit 2 left for this commit: the proxy and the seam read a session without renewing it
+  (`readSessionUserId`, `disableRefresh`), so a session is renewed only by `GET /api/auth/get-session`. The app
+  must call it (the Expo client's `useSession()` does) or its session ends seven days after sign-in; the proof
+  shows a bearer session past `updateAge` renewed there.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -1383,11 +1401,13 @@ shipped and the proof's output. There is no browser smoke for this commit.
   for the invite; current shape only.
 - `CONVENTIONS.md`: the rules §4 marks for rewriting that commit 2 didn't take (§9's tiers, §6's map, §19's env
   list, the soft-delete exception, the packages line, the "additive over breaking" line).
-- `TECHNICAL-DEBT.md`: the entries §4 closes, each deleted or marked with the hash; :454 gains 208–210 and §8.2's
-  order; new entries for what this plan leaves (no per-account lockout; two pools; `removeUser` needs an admin
+- `TECHNICAL-DEBT.md`: the entries §4 closes, each deleted or marked with the hash, and with them the open P2 rows
+  commit 2's deletions and rewrites closed, which §4 does not name (:302 the server-client factories, :310 `error: any`
+  in the auth pages, :311 their missing zod, :312 the browser client's cookie parsing, :314 the callback's metadata
+  check); :313 stays open without `app/signup/page.tsx`; :454 gains 208–210 and §8.2's order; new entries for what this plan leaves (no per-account lockout; two pools; `removeUser` needs an admin
   session so compensation deletes through the pool; the Supabase retirement steps still owed until the owner does
   them, §9.1).
-- `CLIENT-APP-REFERENCE.md` :36 and :153-157.
+- `CLIENT-APP-REFERENCE.md` :36 and :153-157, and :148-149 ("Middleware Protection", `middleware.ts`, now `proxy.ts`).
 - §8.2's runbook stays in this file until PROD has switched (it is deleted with the file); `TECHNICAL-DEBT.md`'s
   migration-201 entry (:454) points here for the order.
 
