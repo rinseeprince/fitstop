@@ -206,9 +206,9 @@ export async function countRowsByCoachId(
 /**
  * Run ANALYZE on every table the run touched.
  *
- * ANALYZE cannot go through PostgREST, and there is no DATABASE_URL in this
- * repo, so this shells out to the Supabase CLI — the same password-free path
- * (`supabase db query`) the benchmark uses for EXPLAIN.
+ * ANALYZE cannot go through PostgREST, so this shells out to the Supabase CLI
+ * — the same password-free path (`supabase db query`) the benchmark uses for
+ * EXPLAIN.
  *
  * This is a hard prerequisite, not a nicety: without fresh planner statistics
  * after a ~1.6M-row load, EXPLAIN reports plans chosen from stale row estimates

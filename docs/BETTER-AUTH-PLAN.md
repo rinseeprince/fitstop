@@ -154,6 +154,10 @@ Columns are Better Auth's camelCase (its docs, CLI and plugins assume them; the 
 through PostgREST, so CONVENTIONS' snake_case examples don't apply, §4). `"user"` is a reserved word and is quoted
 in every statement.
 
+208 shipped in commit 1 as `supabase/migrations/208_better_auth_schema.sql`, the record from here: the sketch
+below plus an explicit REVOKE of every role on the five tables and a closing check that the copy matches
+`auth.users` and nothing but postgres holds a privilege; `npm run check:rls` clause 6 holds the lock since.
+
 ```sql
 -- 208_better_auth_schema.sql: Better Auth's tables, and today's logins copied in (docs/BETTER-AUTH-PLAN.md 2.1).
 -- Additive: nothing reads these tables until migration 209 lands with commit 2. Pure ASCII.
@@ -216,11 +220,10 @@ CREATE TABLE IF NOT EXISTS better_auth.verification (
 CREATE INDEX IF NOT EXISTS verification_identifier_idx ON better_auth.verification (identifier);
 CREATE TABLE IF NOT EXISTS better_auth."rateLimit" (        -- rateLimit.storage = "database" (D16)
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  key           text NOT NULL,
+  key           text NOT NULL UNIQUE,           -- the limiter's first-insert race re-reads on the violation
   count         integer NOT NULL,
   "lastRequest" bigint NOT NULL
 );
-CREATE INDEX IF NOT EXISTS rate_limit_key_idx ON better_auth."rateLimit" (key);
 ALTER TABLE better_auth."user"       ENABLE ROW LEVEL SECURITY;   -- uniform with public; postgres owns and bypasses
 ALTER TABLE better_auth.session      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE better_auth.account      ENABLE ROW LEVEL SECURITY;
@@ -271,6 +274,18 @@ END $$;
 ```sql
 -- 209_better_auth_switch.sql: the user keys point at Better Auth's logins; Supabase's sign-up trigger goes (2.1).
 -- Lands with commit 2's code (section 8.1). The undo is section 8.3. Pure ASCII.
+
+-- Logins Supabase made, and passwords it changed, after 208 ran (on DEV the days between commits 1 and 2; on
+-- PROD 208 and 209 land in one push and this changes nothing): 208's section 2 again, verbatim, then every
+-- copied bcrypt hash brought level with Supabase's. A scrypt password set through Better Auth is never touched.
+--   <208's two copy INSERTs, as supabase/migrations/208_better_auth_schema.sql holds them>
+UPDATE better_auth.account a SET password = u.encrypted_password, "updatedAt" = now()
+  FROM auth.users u
+ WHERE a."userId" = u.id AND a."providerId" = 'credential' AND a.password LIKE '$2%'
+   AND coalesce(u.encrypted_password, '') <> '' AND a.password IS DISTINCT FROM u.encrypted_password;
+-- From this commit the admin plugin's create-user (the invite) makes logins, with role 'user'.
+COMMENT ON COLUMN better_auth."user".role IS
+  'The admin plugin''s role: user for a login it makes, empty for a copied one. The app''s role is public.profiles.role.';
 
 DO $$
 DECLARE r record;
@@ -353,7 +368,12 @@ Neither function deletes the caller's own login row: Better Auth does that itsel
 
 **`lib/auth.ts`** is the one `betterAuth(...)` in the tree; `lib/auth-client.ts` the one `createAuthClient(...)`.
 Commit 1 writes the first with the options below that have no email or screen behind them yet; later commits add
-theirs where marked. Every option name is from §2.9.
+theirs where marked. Every option name is from §2.9. Commit 1's file is the record from here, and adds what the
+sketch lacks: the pool's TLS verified against Supabase's root and a `DATABASE_URL` with parameters refused
+(`lib/supabase-connection.ts`, which scripts that reach the pool's database use too), a ten-second connect timeout,
+idle-connection errors and every unexpected Better Auth error sent to Sentry (`onAPIError` and an after hook), bigints read as
+numbers, `database.transaction: true`, the password lengths as `PASSWORD_MIN_LENGTH` / `PASSWORD_MAX_LENGTH`
+(`lib/constants.ts`), and a refusal to start when `BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL` name different origins.
 
 ```ts
 import { betterAuth } from "better-auth"
@@ -365,7 +385,7 @@ import bcrypt from "bcryptjs"
 import { Pool } from "pg"
 import { PostgresDialect } from "kysely"
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 4 })   // Supabase's transaction pooler (D28)
+const pool = new Pool({ ...supabaseConnection(process.env.DATABASE_URL!), max: 4 })   // Supabase's transaction pooler (D28), TLS verified
 const adminUserIds = (process.env.AUTH_ADMIN_USER_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean)   // D24
 
 export const auth = betterAuth({
@@ -470,7 +490,9 @@ Two functions, both server-only, both the only writers of `profiles` and the log
 - **Compensation (D10):** if any app row fails after `createUser`, the function deletes the login it just made
   (`auth.api.removeUser` needs an admin session, so it deletes through the pool: `DELETE FROM better_auth."user"
   WHERE id = $1`, the one SQL statement the app runs against that schema outside migrations) and throws. Nothing
-  is left half-made; the proof forces each failure in turn.
+  is left half-made; the proof forces each failure in turn. At 1.7.7 the admin plugin's `createUser` writes the
+  login and then its credential as two statements, in no transaction (`plugins/admin/routes.mjs`), so a
+  `createUser` that throws may already have made the login: the compensation then deletes by the invited address.
 - **The guard** `refuseUnlessOwnerOrInvite` (§2.2) refuses every user creation whose path is not
   `/admin/create-user`: public sign-up is off, Google can't sign up, and nothing else makes a login. The copy in
   migration 208 is SQL and never meets the hook.
@@ -483,7 +505,8 @@ Better Auth 1.7.7 writes: `reset-password:`, the change-email and delete-account
 commit 4's session and pinned by a test on Better Auth's memory adapter) and prints the link the email would
 carry.
 
-`POST /api/invitations/accept` (`authRateLimit`, CSRF, zod `{ token: 64 hex, password: 8–128 }`) calls the second
+`POST /api/invitations/accept` (`authRateLimit`, CSRF, zod `{ token: 64 hex, password: PASSWORD_MIN_LENGTH–PASSWORD_MAX_LENGTH }`,
+the two in `lib/constants.ts` that `lib/auth.ts` holds Better Auth to, as do the reset and set-password pages) calls the second
 function and forwards its cookies. The legacy `{ clientId, userId }` branch (`route.ts:42-81`) and
 `acceptInvitation` (`invitation-service.ts:346-366`) are deleted. `GET /api/invitations/[token]` answers
 `{ coachName, emailMasked, expiresAt }` (D11: the full address and the client's name stop travelling to whoever
@@ -664,7 +687,7 @@ can be vetoed before its commit starts.
 | D12 | The proxy (`proxy.ts`, Node) validates the session with Better Auth on every request and keeps today's fail-closed role check; signed-out `/api/…` requests get `401` JSON, pages the 307. | Same posture as today with one database read instead of one call to Supabase's auth server; the client app needs JSON, not a login page. |
 | D13 | `/api/auth/me` keeps its shape and becomes a pure read; the create-on-read branches and `deriveRole` are deleted. | The creation paths write the rows in the same request; nothing races them. |
 | D14 | "Log out" ends this device's session; "Sign out everywhere" ends all of them, this one included. | Today's `signOut({ scope: "global" })` signed out everywhere on every log out; Better Auth separates the two, and the owner asked for both. |
-| D15 | Sessions last seven days, extended by a day on use (Better Auth's defaults); no cookie cache. | Revocation, deletion and sign-out-everywhere take effect on the next request. |
+| D15 | Sessions last seven days from their last renewal, and a use a day or more after it renews them (Better Auth's defaults); no cookie cache. | Revocation, deletion and sign-out-everywhere take effect on the next request. |
 | D16 | Better Auth's limiter, stored in its own table, on in production only (its default); the app's Upstash limiter and tiers are untouched. | No Redis coupling for the auth endpoints; the proofs run under `next dev` where it is off. Per-account lockout stays unbuilt (TECHNICAL-DEBT :282). |
 | D17 | "Set your password" and "Reset your password" are one Better Auth flow with two templates, told apart by the page the link lands on (`/set-password` vs `/reset-password`). | No user column, no hook, no flag to clear; the owner's command simply asks for the other landing page. |
 | D18 | A coach's email change is two emails (approve at the current address, confirm at the new); `coaches.email` follows the login's address through a hook. Clients don't change email. | Better Auth's flow at 1.7.7; the owner's list gives clients no change-email. |
@@ -675,7 +698,7 @@ can be vetoed before its commit starts.
 | D23 | Google is sign-in only, linked by email to the existing login (trusted provider); an unknown address lands on `/login` with "There's no account for that Google email."; the button exists only once the keys do (commit 7). | `disableSignUp` plus `trustedProviders`; today's button never worked, so showing it before commit 7 is a lie. |
 | D24 | The admin plugin is on for `createUser`; `adminUserIds` is read from `AUTH_ADMIN_USER_IDS` (the owner's user id) for the admin endpoints that need a session later. | The owner's command needs `createUser` alone, which 1.7.7 allows without a session. |
 | D25 | `bearer()` and `expo()` are on; the scheme is `atletafit://`; the CSRF check passes bearer requests; no app code. | The audit's first priority before any RN build; the scheme must be chosen now or it is a server change later. |
-| D26 | Packages: `better-auth` pinned at `1.7.7`, `pg`, `kysely`, `bcryptjs`, `@better-auth/expo`; `@supabase/ssr` removed. Approved by the owner's go on this plan (CONVENTIONS "ask before npm install"). | The adapter form with `schemaName` takes a Kysely dialect; bcryptjs is pure JS (no native build on the host); `pg` is Better Auth's peer. |
+| D26 | Packages: `better-auth` pinned at `1.7.7`, `pg`, `kysely`, `bcryptjs`, `@better-auth/expo`; `@supabase/ssr` removed. Approved by the owner's go on this plan (CONVENTIONS "ask before npm install"). npm's resolver refuses `better-auth` here (its optional SvelteKit peer wants Vite 8; vitest has Vite 7), so commit 1 resolved it lockfile-only in a scratch copy (`npm install --package-lock-only --force`), checked the lockfile gained only better-auth's own packages, copied it in and ran a plain `npm install`; removing `@supabase/ssr` (3) and adding `@better-auth/expo` (8) take the same route. `--legacy-peer-deps` is never the answer: it drops the 53 peer-installed packages, `@testing-library/dom` among them. | The adapter form with `schemaName` takes a Kysely dialect; bcryptjs is pure JS (no native build on the host); `pg` is Better Auth's peer. |
 | D27 | Billing's room: Better Auth's Stripe plugin later adds `user.stripeCustomerId` and a `subscription` table in the same schema by its own migration; nothing here is shaped for it and nothing blocks it. | The owner's "leave room … build nothing of it". |
 | D28 | `DATABASE_URL` is Supabase's transaction pooler string for the `postgres` user; one pool of four per bundle (the proxy's and the routes' are separate bundles). | Serverless-safe; `postgres` owns the schema, so RLS never bites Better Auth; a direct connection is IPv6-only on Supabase. |
 | D29 | Env: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (= `NEXT_PUBLIC_APP_URL`), `DATABASE_URL`, `AUTH_ADMIN_USER_IDS`, `EMAIL_FROM`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`; `NEXT_PUBLIC_SUPABASE_ANON_KEY` has no reader after commit 3 and leaves `.env.local`. | Documented per CONVENTIONS 852 (no `.env.example`): at the read site and in §19's list. |
@@ -710,7 +733,7 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | `services/auth-profile-service.ts`, `app/api/auth/me/route.ts` | create-on-read, `deriveRole` | `services/login-service.ts` (`createCoachLogin`, `acceptClientInvitation`); `/me` reads only | 2, 4 |
 | `services/email-service.ts`, `services/auth-email-service.ts`, `/emails/*` | two templates, sender constant | five new templates; `EMAIL_FROM` | 2, 4, 5, 6 |
 | `components/persistent-sidebar.tsx:29-41`, `components/collapsed-icon-strip.tsx:35-47`, `components/client-portal/nav/client-nav.tsx:43-46,81-84` | `logout()` → `/login` | unchanged callers; `logout()` is this device only | 2 |
-| `lib/session-client-ownership.test.ts` | positive control requires the Supabase session clients | no file may build a Supabase session client; `lib/auth.ts` the only `betterAuth(`/`new Pool(`; `lib/auth-client.ts` the only `createAuthClient(`; the receiver rule stays | 2 |
+| `lib/session-client-ownership.test.ts` | positive control requires the Supabase session clients | no file may build a Supabase session client; `lib/auth.ts` the only `betterAuth(`/`new Pool(` (test files aside: `lib/auth.test.ts` builds one over the memory adapter); `lib/auth-client.ts` the only `createAuthClient(`; the receiver rule stays | 2 |
 | `scripts/check-service-key-leak.ts` | anon key as the bundle control | Sentry DSN as the control (D35) | 2 |
 | `scripts/proof-session.ts` and every script that mints a Supabase session or login (`sign-in-proof.ts`, `measurement-edit-proof.ts`, `content-access-proof.ts`, `data-api-locked-proof.ts`, `data-api-writes-proof.ts`, `habit-routes-proof.ts`, `clear-training-log-proof.ts`, `wire-proof-measurements.ts`, `check-in-as-of-proof.ts`, `seed/teardown.ts`, `seed-scale.ts`, `seed-scale-client.ts`) | `generateLink`/`verifyOtp`/`auth.admin.createUser` | `mintSession` (bearer) and `createThrowawayLogin` / `deleteThrowawayLogin` from `scripts/auth-fixtures.ts` | 2 (`proof-session.ts`), 3 (the rest) |
 | `scripts/create-coach.ts`, `scripts/auth-last-link.ts`, `package.json` scripts | none | `coach:create`, `auth:last-link` | 4 |
@@ -732,7 +755,13 @@ limiter; `/me` and the invite routes as today); §9 lines 729–757 (the tiers g
 (`lib/auth.ts`, `lib/auth-client.ts`, `proxy.ts`, `services/login-service.ts`, `services/account-service.ts`,
 `services/auth-email-service.ts`, `app/api/auth/[...all]/`); lines 880–882's env list (D29); line 581's soft-delete
 rule (a fourth hard-delete exception: an account deletion is an erasure, §2.6); lines 66–67 (the packages, approved
-here); lines 168–170 ("additive over breaking": the switch replaces by design, on the owner's plan). **ARCHITECTURE
+here); lines 168–170 ("additive over breaking": the switch replaces by design, on the owner's plan); §2 line
+104, §8 lines 503–514, §9 lines 715, 716 and 721, §10 lines 762 and 766–775, and §12 line 810 (the review's write-route item,
+the route-level chain, the rate limit as the first check, the `requireCSRFProtection` call, the `{ success, data }`
+answer, the handler order and the route's own try/catch → an exception for Better Auth's catch-all
+`app/api/auth/[...all]`: its own limiter, origin check, error handling and answers; `/api/auth/me` keeps the app's
+chain, and §12 line 812 holds, its unexpected errors reaching Sentry through `onAPIError` and an after hook; owner, 2026-10-08, at
+commit 1). **ARCHITECTURE
 lines that describe the old shape** and change in commit 2: 1222–1261 ("Auth Model" through "Database clients":
 the trigger at 1225, the public list at 1231, `auth.getUser()` and Edge at 1235, the helpers at 1247, the session
 bootstrap at 1252, the session-client bullet at 1259, `supabase_auth_admin` at 1261); 1298 ("creates Supabase
@@ -826,7 +855,7 @@ nothing a coach or client sees changes until commit 2, and from commit 2 every s
   `plugins: [admin({ adminUserIds }), bearer()]`; telemetry off. No `sendResetPassword` yet (nothing calls it).
 - `app/api/auth/[...all]/route.ts`. In `middleware.ts`, the prefix `/api/auth/` joins the skip list (its test
   asserts it, and that `/api/auth/me` still answers its own 401).
-- Migration 208 (§2.1) on DEV, checked against `npx auth@latest generate` run to a scratch file before the push
+- Migration 208 (§2.1) on DEV, checked against `npx auth@1.7.7 generate` (the CLI at the pinned version) run to a scratch file before the push
   (every column the CLI expects exists with a compatible type; the deliberate differences are the uuid ids and
   the NOT NULL defaults); `types/database.ts` regenerated and read (expected: no change — the schema is not
   `public`).
@@ -1486,7 +1515,10 @@ project held none: it serves the marketing site's waitlist alone).
 
 1. **Before, the owner (§9.1 "before PROD"):** PROD's `DATABASE_URL`, a new `BETTER_AUTH_SECRET`,
    `BETTER_AUTH_URL` = the coaches' https address, `EMAIL_FROM` on the verified domain, Google's PROD redirect URI,
-   all set where the app runs. `AUTH_ADMIN_USER_IDS` stays empty until step 5.
+   all set where the app runs. `AUTH_ADMIN_USER_IDS` stays empty until step 5. Better Auth's limiter reads the
+   caller's address from `x-forwarded-for` only when it holds one address (Vercel's shape); on a host that sends a
+   chain, set `advanced.ipAddress` (the header, or the trusted proxies) in `lib/auth.ts` first, or every caller
+   shares one count per path and three sign-ins in ten seconds lock everyone out.
 2. `npx supabase link --project-ref etezzztgafcotyahgijk < /dev/null`; `npx supabase migration list --linked`
    (expect 185–210 pending, nothing else); count `auth.users`, `profiles`, `coaches`, `clients` with
    `db query --linked` and write the numbers in the handover.
@@ -1587,7 +1619,7 @@ the connector is built, on Better Auth 1.7.7:
   plugin never enables registration by itself.
 - A migration (the next free number after this plan's; the chat plan's "208" is renumbered when built) for the
   plugin's tables in `better_auth`: `oauthClient`, `oauthAccessToken`, `oauthRefreshToken`, `oauthConsent`,
-  `oauthClientAssertion`, and jwt's `jwks`; from `npx auth@latest generate`, ids as `uuid` like §2.1.
+  `oauthClientAssertion`, and jwt's `jwks`; from `npx auth@<the installed better-auth version> generate`, ids as `uuid` like §2.1.
 - The authorization server is the app itself: `/.well-known/oauth-authorization-server` and
   `/.well-known/oauth-protected-resource` are served by the plugin (no `app/.well-known/...` route; the proxy's
   skip list gains `/.well-known/`); `/oauth2/authorize`, `/oauth2/token`, `/oauth2/userinfo` are Better Auth's

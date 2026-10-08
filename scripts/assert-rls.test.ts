@@ -8,6 +8,8 @@ import {
   policies,
   publicRoleGrants,
   serviceRoleGrants,
+  betterAuthBreaches,
+  betterAuthFailures,
 } from "./assert-rls";
 
 /**
@@ -269,5 +271,90 @@ describe("clause 5 — no anon, authenticated or PUBLIC privilege on a public re
   it("sanity: still sees the service role's grants in a locked dump, so a dump without privileges cannot pass silently", () => {
     expect(serviceRoleGrants(POST_LOCK_PUBLIC, "public")).toBe(2);
     expect(serviceRoleGrants(PRE_FIX_PUBLIC, "public")).toBe(0);
+  });
+});
+
+// DEV's better_auth as `supabase db dump --schema better_auth` wrote it on
+// 2026-10-08, trimmed to two tables: owner lines, RLS lines, no GRANT at all.
+const LOCKED_BETTER_AUTH = `
+CREATE SCHEMA IF NOT EXISTS "better_auth";
+ALTER SCHEMA "better_auth" OWNER TO "postgres";
+CREATE TABLE IF NOT EXISTS "better_auth"."rateLimit" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "key" "text" NOT NULL
+);
+ALTER TABLE "better_auth"."rateLimit" OWNER TO "postgres";
+CREATE TABLE IF NOT EXISTS "better_auth"."user" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "email" "text" NOT NULL
+);
+ALTER TABLE "better_auth"."user" OWNER TO "postgres";
+ALTER TABLE "better_auth"."rateLimit" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "better_auth"."user" ENABLE ROW LEVEL SECURITY;
+`;
+
+// Every way the logins could come within reach of another role, each in pg_dump's own spelling.
+const BREACHED_BETTER_AUTH =
+  LOCKED_BETTER_AUTH.replace('ALTER TABLE "better_auth"."rateLimit" ENABLE ROW LEVEL SECURITY;\n', "").replace(
+    'ALTER TABLE "better_auth"."user" OWNER TO "postgres";',
+    'ALTER TABLE "better_auth"."user" OWNER TO "supabase_admin";'
+  ) +
+  `
+CREATE POLICY "read own" ON "better_auth"."user" TO "authenticated" USING (("id" = "auth"."uid"()));
+GRANT USAGE ON SCHEMA "better_auth" TO "authenticated";
+GRANT ALL ON TABLE "better_auth"."user" TO "service_role";
+GRANT SELECT("email") ON TABLE "better_auth"."user" TO PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "better_auth" GRANT ALL ON TABLES TO "anon";
+`;
+
+describe("clause 6 — better_auth is postgres's alone", () => {
+  it("reports nothing on the locked shape, camelCase table names included", () => {
+    expect(createdTables(LOCKED_BETTER_AUTH, "better_auth")).toEqual(new Set(["rateLimit", "user"]));
+    expect(betterAuthBreaches(LOCKED_BETTER_AUTH)).toEqual([]);
+  });
+
+  it("flags a table without RLS, another owner, a policy, a grant on the schema, a table or a column, and a default privilege", () => {
+    expect(betterAuthBreaches(BREACHED_BETTER_AUTH)).toEqual([
+      "better_auth.rateLimit has no RLS",
+      "better_auth.user is owned by supabase_admin, not postgres",
+      'better_auth.user -> "read own" exists',
+      "better_auth -> authenticated: USAGE",
+      "better_auth.user -> service_role: ALL",
+      'better_auth.user -> PUBLIC: SELECT("email")',
+      "better_auth default -> anon: ALL ON TABLES",
+    ]);
+  });
+
+  it("flags a table whose owner the dump does not name, and does not flag the owner's own grant", () => {
+    const unnamed = LOCKED_BETTER_AUTH.replace('ALTER TABLE "better_auth"."user" OWNER TO "postgres";\n', "");
+    const ownGrant = `${LOCKED_BETTER_AUTH}GRANT ALL ON TABLE "better_auth"."user" TO "postgres";\n`;
+    expect(betterAuthBreaches(unnamed)).toEqual(["better_auth.user is owned by no one the dump names, not postgres"]);
+    expect(betterAuthBreaches(ownGrant)).toEqual([]);
+  });
+});
+
+describe("clause 6's verdict, on a database with and without better_auth", () => {
+  it("fails a database without the schema (no dump to read) on one sanity line, and nothing else", () => {
+    const [failure, ...rest] = betterAuthFailures(null);
+    expect(failure).toMatchObject({ clause: "sanity" });
+    expect(failure.detail).toContain("could not dump schema better_auth");
+    expect(rest).toEqual([]);
+  });
+
+  it("passes the locked shape", () => {
+    expect(betterAuthFailures(LOCKED_BETTER_AUTH)).toEqual([]);
+  });
+
+  it("reports every breach as clause 6", () => {
+    const failures = betterAuthFailures(BREACHED_BETTER_AUTH);
+    expect(failures).toHaveLength(betterAuthBreaches(BREACHED_BETTER_AUTH).length);
+    expect(failures.every(({ clause }) => clause === "6 (better_auth locked)")).toBe(true);
+    expect(failures[0].detail).toMatch(/^better_auth\.rateLimit has no RLS — /);
+  });
+
+  it("fails a dump that holds no table: the parser or the dump format changed", () => {
+    expect(betterAuthFailures('CREATE SCHEMA IF NOT EXISTS "better_auth";\nALTER SCHEMA "better_auth" OWNER TO "postgres";\n')).toEqual([
+      expect.objectContaining({ clause: "sanity", detail: expect.stringContaining("parsed zero tables from the better_auth dump") }),
+    ]);
   });
 });

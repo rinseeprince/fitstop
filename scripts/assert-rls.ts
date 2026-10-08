@@ -1,5 +1,5 @@
 /**
- * Schema-security gate. Asserts five invariants against the LIVE database and
+ * Schema-security gate. Asserts six invariants against the LIVE database and
  * exits non-zero on any violation.
  *
  *   npx tsx scripts/assert-rls.ts          (or: npm run check:rls)
@@ -12,6 +12,9 @@
  *   5. `anon`, `authenticated` and PUBLIC hold no privilege on any table, view
  *      or sequence in `public`, and postgres's default privileges hand a new
  *      one nothing.
+ *   6. Schema `better_auth` is postgres's alone: the schema and every table
+ *      owned by postgres, RLS on every table, no policy, and no privilege or
+ *      default privilege for any other role.
  *
  * WHY THIS EXISTS
  * Five core tables shipped with no RLS and stayed that way for 47 migrations
@@ -40,12 +43,12 @@
  *
  * WHY IT READS A DUMP
  * PostgREST exposes `public` only and cannot reach pg_catalog, so a REST query
- * is impossible without adding an RPC (more attack surface for a dev tool). No
- * DATABASE_URL / DB password exists in this repo either. `supabase db dump`
- * uses the existing `--linked` credentials and needs neither, so it is the one
- * mechanism that actually works here. It also covers the `storage` schema, which
- * a public-only check would miss -- and storage is exactly where the
- * unauthenticated progress-photos hole lived (migration 126).
+ * is impossible without adding an RPC (more attack surface for a dev tool).
+ * `supabase db dump` uses the existing `--linked` credentials, so the gate
+ * needs no database password of its own, and it reads every schema it is
+ * asked for: the `storage` schema, which a public-only check would miss -- and
+ * storage is exactly where the unauthenticated progress-photos hole lived
+ * (migration 126) -- and `better_auth`, which PostgREST never serves.
  *
  * Requires the Supabase CLI to be linked (`npx supabase link`).
  */
@@ -68,16 +71,22 @@ function dumpSchema(schema: string, outFile: string): string {
   return readFileSync(outFile, "utf8");
 }
 
+/**
+ * A table's name as pg_dump quotes it. Better Auth's own names are camelCase
+ * (`"rateLimit"`), so capitals are part of a name.
+ */
+const TABLE_NAME = "[A-Za-z0-9_]+";
+
 /** Tables created in the dump, by schema-qualified name. */
 export function createdTables(sql: string, schema: string): Set<string> {
-  const re = new RegExp(`CREATE TABLE (?:IF NOT EXISTS )?"${schema}"\\."([a-z0-9_]+)"`, "g");
+  const re = new RegExp(`CREATE TABLE (?:IF NOT EXISTS )?"${schema}"\\."(${TABLE_NAME})"`, "g");
   return new Set([...sql.matchAll(re)].map((m) => m[1]));
 }
 
 /** Tables with RLS switched on. */
 export function rlsEnabled(sql: string, schema: string): Set<string> {
   const re = new RegExp(
-    `ALTER TABLE (?:ONLY )?"${schema}"\\."([a-z0-9_]+)" ENABLE ROW LEVEL SECURITY`,
+    `ALTER TABLE (?:ONLY )?"${schema}"\\."(${TABLE_NAME})" ENABLE ROW LEVEL SECURITY`,
     "g",
   );
   return new Set([...sql.matchAll(re)].map((m) => m[1]));
@@ -230,12 +239,96 @@ export function serviceRoleGrants(sql: string, schema: string): number {
   return [...sql.matchAll(re)].length;
 }
 
+/**
+ * Clause 6: schema `better_auth`, where Better Auth keeps every login,
+ * session, one-time token and password hash (migration 208). Nothing reaches
+ * it but Better Auth's own connection, the postgres user, which owns it: the
+ * schema and every table are postgres's, every table has RLS on, no policy
+ * exists, and no other role holds a privilege on the schema or anything in
+ * it, nor is handed a new table by a default privilege. pg_dump writes nothing
+ * for an owner's own privileges, so the locked dump holds no GRANT at all;
+ * clause 5's sanity line proves in the same run that a dump carries grants
+ * where they exist.
+ */
+const BETTER_AUTH_SCHEMA = "better_auth";
+const BETTER_AUTH_OWNER = "postgres";
+
+export function betterAuthBreaches(sql: string): string[] {
+  const schema = BETTER_AUTH_SCHEMA;
+  const hits: string[] = [];
+
+  const tables = [...createdTables(sql, schema)].sort();
+  const enabled = rlsEnabled(sql, schema);
+  for (const table of tables) {
+    if (!enabled.has(table)) hits.push(`${schema}.${table} has no RLS`);
+  }
+
+  const owners = new Map<string, string>();
+  const owner = new RegExp(`^ALTER (SCHEMA|TABLE) "${schema}"(?:\\."(${TABLE_NAME})")? OWNER TO "([^"]+)";`, "gm");
+  for (const [, kind, table, role] of sql.matchAll(owner)) owners.set(kind === "SCHEMA" ? "" : table, role);
+  for (const relation of ["", ...tables]) {
+    const role = owners.get(relation);
+    if (role !== BETTER_AUTH_OWNER) {
+      const name = relation === "" ? `schema ${schema}` : `${schema}.${relation}`;
+      hits.push(`${name} is owned by ${role ?? "no one the dump names"}, not ${BETTER_AUTH_OWNER}`);
+    }
+  }
+
+  for (const policy of policies(sql, schema, new Set())) hits.push(`${policy} exists`);
+
+  const grant = new RegExp(`^GRANT ([^\\n]+?) ON (?:TABLE|SEQUENCE|SCHEMA|FUNCTION) "${schema}"([^\\n]*?) TO ([^\\n;]+);`, "gm");
+  for (const [, privileges, target, grantees] of sql.matchAll(grant)) {
+    for (const grantee of grantees.split(",").map((g) => g.trim().replace(/"/g, ""))) {
+      if (grantee !== BETTER_AUTH_OWNER) hits.push(`${schema}${target.replace(/"/g, "")} -> ${grantee}: ${privileges}`);
+    }
+  }
+
+  const defaults = new RegExp(`^ALTER DEFAULT PRIVILEGES FOR ROLE "[^"]+" IN SCHEMA "${schema}" GRANT ([^\\n]+?) TO ([^\\n;]+);`, "gm");
+  for (const [, privileges, grantees] of sql.matchAll(defaults)) {
+    hits.push(`${schema} default -> ${grantees.replace(/"/g, "")}: ${privileges}`);
+  }
+
+  return hits;
+}
+
+/**
+ * Clause 6's verdict on the better_auth dump, or the sanity failure when there
+ * is no dump to read: pg_dump refuses a schema the database does not have
+ * ("no matching schemas were found"), as on a database migration 208 has not
+ * reached. Clauses 1 to 5 still report on such a database; the gate fails on
+ * this line all the same.
+ */
+export function betterAuthFailures(sql: string | null): Failure[] {
+  if (sql === null) {
+    return [
+      {
+        clause: "sanity",
+        detail: "could not dump schema better_auth — migration 208 is not on this database, or the dump failed (its error is above)",
+      },
+    ];
+  }
+  const failures: Failure[] = [];
+  if (createdTables(sql, BETTER_AUTH_SCHEMA).size === 0) {
+    failures.push({
+      clause: "sanity",
+      detail: "parsed zero tables from the better_auth dump — the schema is missing (migration 208), or the parser or the dump format changed",
+    });
+  }
+  for (const hit of betterAuthBreaches(sql)) {
+    failures.push({
+      clause: "6 (better_auth locked)",
+      detail: `${hit} — only Better Auth's own connection, as postgres, may reach the logins; fix it with a migration`,
+    });
+  }
+  return failures;
+}
+
 function parsePolicies(
   sql: string,
   schema: string,
 ): Array<{ name: string; table: string; body: string }> {
   const re = new RegExp(
-    `CREATE POLICY "([^"]+)" ON "${schema}"\\."([a-z0-9_]+)"([^;]*);`,
+    `CREATE POLICY "([^"]+)" ON "${schema}"\\."(${TABLE_NAME})"([^;]*);`,
     "g",
   );
   return [...sql.matchAll(re)].map((m) => ({
@@ -269,6 +362,13 @@ function main(): void {
   try {
     const publicSql = dumpSchema("public", join(dir, "public.sql"));
     const storageSql = dumpSchema("storage", join(dir, "storage.sql"));
+    // A database without the schema fails the dump; clause 6 reports that, and clauses 1 to 5 still run.
+    let betterAuthSql: string | null = null;
+    try {
+      betterAuthSql = dumpSchema(BETTER_AUTH_SCHEMA, join(dir, "better_auth.sql"));
+    } catch (error) {
+      console.error(`Could not dump schema ${BETTER_AUTH_SCHEMA}: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
     // --- Clause 1: RLS on every public table -------------------------------
     const tables = createdTables(publicSql, "public");
@@ -337,8 +437,13 @@ function main(): void {
       });
     }
 
+    // --- Clause 6: better_auth is postgres's alone -------------------------
+    const betterAuthTables = betterAuthSql === null ? 0 : createdTables(betterAuthSql, BETTER_AUTH_SCHEMA).size;
+    failures.push(...betterAuthFailures(betterAuthSql));
+
     console.info(
-      `Checked ${tables.size} public tables, ${enabled.size} with RLS; ${policyCount} policies and ${grantCount} public-role grants found.`,
+      `Checked ${tables.size} public tables, ${enabled.size} with RLS; ${policyCount} policies and ${grantCount} public-role grants found; ` +
+        `${betterAuthTables} better_auth tables checked.`,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

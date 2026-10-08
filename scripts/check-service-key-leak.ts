@@ -1,20 +1,25 @@
 /**
- * Service-role key containment gate. Asserts that SUPABASE_SERVICE_ROLE_KEY
- * cannot reach the browser, and exits non-zero if it can.
+ * Server-secret containment gate. Asserts that the server's secrets cannot
+ * reach the browser, and exits non-zero if one can: SUPABASE_SERVICE_ROLE_KEY,
+ * held by services/supabase-admin.ts, and the database password and
+ * BETTER_AUTH_SECRET, held by lib/auth.ts.
  *
  *   npx tsx scripts/check-service-key-leak.ts                  (or: npm run check:service-key)
  *   npx tsx scripts/check-service-key-leak.ts --require-bundle (pre-deploy: demands a prod build)
  *
  * TWO CLAUSES
  *   1. Import graph (no build required). Walks the reverse import graph upward
- *      from services/supabase-admin.ts following ONLY value imports, and fails
- *      if any "use client" module is reachable. Type-only edges are excluded
- *      because tsc/swc erase them — a client component doing
+ *      from each module that holds a secret, following ONLY value imports, and
+ *      fails if any "use client" module is reachable. Type-only edges are
+ *      excluded because tsc/swc erase them — a client component doing
  *      `import type { Foo } from "@/services/some-service"` does NOT pull that
  *      service (or its supabaseAdmin import) into a bundle.
  *   2. Bundle scan (requires a build). Greps the browser-served static output
- *      for the key's value, the key's bare JWT signature segment (in case the
- *      value is re-encoded or chunk-split), and the literal env-var name.
+ *      for the service key's value, its bare JWT signature segment (in case the
+ *      value is re-encoded or chunk-split) and its literal env-var name, and for
+ *      the values of the database password (as DATABASE_URL writes it, and
+ *      decoded) and BETTER_AUTH_SECRET (their names are not scanned: Better
+ *      Auth's own browser code may spell them).
  *
  * EVERY CLAUSE CARRIES A POSITIVE CONTROL
  * A grep that finds nothing and a grep that is silently broken look identical.
@@ -57,8 +62,14 @@ const SKIP_DIRS = new Set([
   "scratchpad",
 ]);
 
-/** The module that holds the service-role client. */
-const SEED = join(ROOT, "services/supabase-admin.ts");
+/** The modules that hold a server secret, each the root of clause 1's walk. */
+const SEEDS = [
+  { path: join(ROOT, "services/supabase-admin.ts"), holds: "the service-role client" },
+  { path: join(ROOT, "lib/auth.ts"), holds: "the database password and Better Auth's signing secret" },
+] as const;
+
+/** A secret shorter than this could match unrelated bundle text, so a zero-hit scan for it would prove nothing. */
+const MIN_SCANNABLE_SECRET = 16;
 
 /** Browser-served build output, most-authoritative first. */
 const BUNDLE_DIRS = [
@@ -158,8 +169,10 @@ export type GraphResult = {
   reachesApiRoute: boolean;
 };
 
-/** BFS upward from the seed following value imports only. */
-export function buildValueClosure(): GraphResult {
+export type ImportGraph = { source: Map<string, string>; importers: Map<string, Set<string>> };
+
+/** Every module's source and, for each module, the modules that value-import it. */
+export function buildImportGraph(): ImportGraph {
   const files = collectFiles(ROOT);
   const source = new Map<string, string>();
   const importers = new Map<string, Set<string>>();
@@ -182,8 +195,13 @@ export function buildValueClosure(): GraphResult {
     }
   }
 
-  const seen = new Set([SEED]);
-  const queue = [SEED];
+  return { source, importers };
+}
+
+/** BFS upward from the seed following value imports only. */
+export function buildValueClosure(seed: string, { source, importers }: ImportGraph): GraphResult {
+  const seen = new Set([seed]);
+  const queue = [seed];
   const parent = new Map<string, string>();
   const clientModules: string[] = [];
 
@@ -235,13 +253,16 @@ export type BundleResult = {
   valueHits: string[];
   signatureHits: string[];
   nameHits: string[];
+  /** One entry per other secret: the files holding its value. */
+  secretHits: Array<{ label: string; hits: string[] }>;
 };
 
 export function scanBundle(
   dir: string,
   kind: "production" | "development",
   serviceKey: string,
-  control: string
+  control: string,
+  otherSecrets: ReadonlyArray<{ label: string; value: string }> = []
 ): BundleResult {
   const files = collectBundleFiles(dir);
   const signature = serviceKey.split(".")[2] ?? "";
@@ -254,6 +275,7 @@ export function scanBundle(
     valueHits: [],
     signatureHits: [],
     nameHits: [],
+    secretHits: otherSecrets.map(({ label }) => ({ label, hits: [] })),
   };
 
   for (const file of files) {
@@ -269,9 +291,50 @@ export function scanBundle(
     if (signature.length >= 20 && text.includes(signature)) result.signatureHits.push(rel);
     if (text.includes("SUPABASE_SERVICE_ROLE_KEY")) result.nameHits.push(rel);
     if (text.includes(control)) result.controlHits.push(rel);
+    otherSecrets.forEach(({ value }, i) => {
+      if (text.includes(value)) result.secretHits[i].hits.push(rel);
+    });
   }
 
   return result;
+}
+
+/**
+ * The database password in every form a bundle could carry it: as the
+ * connection string writes it (percent-encoded, as an inlined DATABASE_URL
+ * would hold it) and decoded, once when the two are the same. Empty when the
+ * string holds no password, is not a URL, or escapes it badly (pg could not
+ * read it either).
+ */
+export function databasePasswordForms(databaseUrl: string): string[] {
+  try {
+    const written = new URL(databaseUrl).password;
+    return written ? [...new Set([written, decodeURIComponent(written)])] : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * What the bundle scan searches for besides the service key: each form of the
+ * database password, and BETTER_AUTH_SECRET's value. A secret that is missing,
+ * a password with no form, and any form shorter than MIN_SCANNABLE_SECRET are
+ * named in `unscannable` instead: a zero-hit scan for them would prove nothing.
+ */
+export function otherSecretNeedles(
+  databaseUrl: string | null,
+  authSecret: string | null
+): { needles: Array<{ label: string; value: string }>; unscannable: string[] } {
+  const passwordForms = databaseUrl ? databasePasswordForms(databaseUrl) : [];
+  const needles = [
+    ...passwordForms.map((value, i) => ({ label: i === 0 ? "database password" : "database password, decoded", value })),
+    { label: "BETTER_AUTH_SECRET value", value: authSecret ?? "" },
+  ];
+  const unscannable = [
+    ...(passwordForms.length === 0 ? ["database password"] : []),
+    ...needles.filter(({ value }) => value.length < MIN_SCANNABLE_SECRET).map(({ label }) => label),
+  ];
+  return { needles, unscannable };
 }
 
 // --------------------------------------------------------------------- main
@@ -281,36 +344,41 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   const problems: string[] = [];
   let inconclusive = false;
 
-  console.info("Service-role key containment gate\n");
+  console.info("Server-secret containment gate\n");
 
   // ---- clause 1: import graph -------------------------------------------
   console.info("[1/2] import graph        (no build required)");
 
-  if (!existsSync(SEED)) {
-    console.error(`  INCONCLUSIVE — seed module not found: ${relative(ROOT, SEED)}`);
-    console.error("  (was services/supabase-admin.ts renamed? update SEED in this script)");
+  const missingSeed = SEEDS.find((seed) => !existsSync(seed.path));
+  if (missingSeed) {
+    console.error(`  INCONCLUSIVE — seed module not found: ${relative(ROOT, missingSeed.path)}`);
+    console.error("  (was it renamed? update SEEDS in this script)");
     return 2;
   }
 
-  const graph = buildValueClosure();
-  console.info(`  value-import closure from ${relative(ROOT, SEED)}: ${graph.closureSize} files`);
+  const importGraph = buildImportGraph();
+  for (const seed of SEEDS) {
+    const graph = buildValueClosure(seed.path, importGraph);
+    console.info(`  value-import closure from ${relative(ROOT, seed.path)} (${seed.holds}): ${graph.closureSize} files`);
 
-  if (!graph.reachesApiRoute) {
-    console.error("  CONTROL FAILED — closure reaches no app/api route.");
-    console.error("  Module resolution is broken, so 'no client modules' proves nothing.");
-    inconclusive = true;
-  }
-
-  console.info(`  "use client" files in closure: ${graph.clientModules.length}`);
-  if (graph.clientModules.length > 0) {
-    for (const hit of graph.clientModules) {
-      const chain = graph.chains.get(hit) ?? [];
-      console.error(`\n  !! ${chain.join("\n       <- ")}`);
+    if (!graph.reachesApiRoute) {
+      console.error("  CONTROL FAILED — closure reaches no app/api route.");
+      console.error("  Module resolution is broken, so 'no client modules' proves nothing.");
+      inconclusive = true;
     }
-    problems.push(
-      `${graph.clientModules.length} client module(s) value-import the service-role client`
-    );
-  } else if (!inconclusive) {
+
+    console.info(`  "use client" files in closure: ${graph.clientModules.length}`);
+    if (graph.clientModules.length > 0) {
+      for (const hit of graph.clientModules) {
+        const chain = graph.chains.get(hit) ?? [];
+        console.error(`\n  !! ${chain.join("\n       <- ")}`);
+      }
+      problems.push(
+        `${graph.clientModules.length} client module(s) value-import ${relative(ROOT, seed.path)}, which holds ${seed.holds}`
+      );
+    }
+  }
+  if (problems.length === 0 && !inconclusive) {
     console.info("  PASS");
   }
 
@@ -320,6 +388,10 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   const serviceKey = readEnvVar("SUPABASE_SERVICE_ROLE_KEY");
   const control =
     readEnvVar("NEXT_PUBLIC_SUPABASE_ANON_KEY") ?? readEnvVar("NEXT_PUBLIC_SUPABASE_URL");
+  const { needles: otherSecrets, unscannable } = otherSecretNeedles(
+    readEnvVar("DATABASE_URL"),
+    readEnvVar("BETTER_AUTH_SECRET")
+  );
 
   const available = BUNDLE_DIRS.filter((b) => existsSync(b.path));
   // --require-bundle demands a PRODUCTION build; a dev bundle never satisfies the gate.
@@ -345,8 +417,12 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
     console.error("  INCONCLUSIVE — no NEXT_PUBLIC_* control value available.");
     console.error("  Without a positive control a zero-hit scan proves nothing.");
     inconclusive = true;
+  } else if (unscannable.length > 0) {
+    console.error(`  INCONCLUSIVE — ${unscannable.join(" and ")} not set, or shorter than ${MIN_SCANNABLE_SECRET} characters.`);
+    console.error("  Cannot search for a value the gate cannot read, or one that unrelated text could match.");
+    inconclusive = true;
   } else {
-    const scan = scanBundle(target.path, target.kind, serviceKey, control);
+    const scan = scanBundle(target.path, target.kind, serviceKey, control, otherSecrets);
     console.info(`  scanned ${scan.filesScanned} files in ${relative(ROOT, scan.dir)} (${scan.kind} build)`);
 
     if (scan.controlHits.length === 0) {
@@ -366,12 +442,14 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
     report("service key value    ", scan.valueHits);
     report("JWT signature segment", scan.signatureHits);
     report("SUPABASE_SERVICE_ROLE_KEY", scan.nameHits);
+    for (const { label, hits } of scan.secretHits) report(label, hits);
 
     const leaked =
       scan.valueHits.length + scan.signatureHits.length + scan.nameHits.length;
-    if (leaked > 0) {
-      problems.push(`${leaked} service-role reference(s) in browser-served output`);
-    } else if (scan.controlHits.length > 0) {
+    const otherLeaked = scan.secretHits.reduce((sum, { hits }) => sum + hits.length, 0);
+    if (leaked > 0) problems.push(`${leaked} service-role reference(s) in browser-served output`);
+    if (otherLeaked > 0) problems.push(`${otherLeaked} database password or Better Auth secret value(s) in browser-served output`);
+    if (leaked + otherLeaked === 0 && scan.controlHits.length > 0) {
       console.info("  PASS");
     }
 
@@ -389,8 +467,9 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
     console.error(`FAILED — ${problems.length} problem(s):`);
     for (const p of problems) console.error(`  - ${p}`);
     console.error(
-      "\nThe service-role key bypasses RLS. Anything reaching the browser with it" +
-        "\ngrants every visitor full database access. Do not deploy."
+      "\nThe service-role key bypasses RLS, and the database password and Better" +
+        "\nAuth's secret open every login. Anything reaching the browser with one of" +
+        "\nthem grants every visitor that access. Do not deploy."
     );
     return 1;
   }

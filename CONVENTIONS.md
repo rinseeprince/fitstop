@@ -69,7 +69,7 @@
   ### Never run `npm audit fix --force`
   - `npm audit fix` (no flag) is safe — it only takes semver-compatible bumps. Run it, then `npx vitest run`, then commit the lockfile.
   - `--force` installs breaking majors and npm's resolver walks *backwards* to find a version without the advisory. On 2026-07-22 it proposed `next@9.3.3` — a 2020 release, seven majors back — to clear a transitive `sharp`/`postcss` advisory. It would have destroyed the app.
-  - Audit production dependencies with `npm audit --omit=dev`. Dev-only advisories (vitest, esbuild, build tooling) don't ship to users and are noise for a launch check.
+  - Audit production dependencies with `npm audit --omit=dev`. Dev-only advisories (vitest, esbuild, build tooling) don't ship to users and are noise for a launch check. better-auth names vitest as an optional peer, so npm counts vitest, vite, esbuild, jsdom and tsx toward production and `--omit=dev` still lists their advisories: they are dev tools all the same, imported by no app code.
   - Before acting on any advisory, check it is **reachable in this app** rather than merely present. `next.config.mjs` sets `images.unoptimized = true` and nothing imports `next/image`, so `sharp` is never invoked and its libvips CVEs have no path; `postcss` is build-time only and our CSS is first-party. Record the reachability finding in the commit message so the next person doesn't re-litigate it or panic-run `--force`.
 
   ### Respect existing architecture
@@ -110,7 +110,7 @@
   5. `npm run check:rls` — every table has RLS, no policy exists in `public` or `storage`, and
      `anon`, `authenticated` and PUBLIC hold no privilege on any table, view or sequence in
      `public` (nor on a new one, through postgres's default privileges); every view is
-     `security_invoker`. It reads the linked project only, and it does not judge functions: a
+     `security_invoker`; and schema `better_auth`, Better Auth's logins, is postgres's alone. It reads the linked project only, and it does not judge functions: a
      SECURITY DEFINER function is `service_role`-only by its own migration's REVOKE and GRANT,
      and migration 201's closing check held the live set. Never assert RLS state from the docs;
      the live catalog is the source of truth.
@@ -878,7 +878,7 @@
 
   ## 19. Configuration
   - .env files: .env.local
-  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY`, `NEXT_PUBLIC_APP_URL`, and `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`. If you create `.env.example`, backfill it from those.
+  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` with the optional `AUTH_ADMIN_USER_IDS` (all four at their read site in `lib/auth.ts`), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY`, `NEXT_PUBLIC_APP_URL`, and `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`. If you create `.env.example`, backfill it from those.
   - Secrets: Never in code, use vault/secrets manager for prod
   ## 20. Units
 

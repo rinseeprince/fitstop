@@ -62,8 +62,15 @@ export async function middleware(request: NextRequest) {
   const isInviteRoute = pathname.startsWith("/invite/")
   const isInviteApiRoute = pathname.startsWith("/api/invitations/")
 
+  // Better Auth's endpoints (app/api/auth/[...all]) are reached signed out,
+  // signing in being one of them, and each answers for its own session.
+  // /api/auth/me, the app's one route under the prefix, answers its own 401.
+  // A prefix lets through whatever is added beneath it, so middleware.test.ts
+  // holds app/api/auth/ to exactly those two.
+  const isAuthApiRoute = pathname.startsWith("/api/auth/")
+
   // Skip auth check entirely for these routes
-  if (skipAuthRoutes.includes(pathname) || isInviteRoute || isInviteApiRoute) {
+  if (skipAuthRoutes.includes(pathname) || isInviteRoute || isInviteApiRoute || isAuthApiRoute) {
     return NextResponse.next()
   }
 

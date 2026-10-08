@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { readdirSync } from "node:fs"
-import { join } from "node:path"
+import { join, relative } from "node:path"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { NextRequest } from "next/server"
 import * as pageStaticInfo from "next/dist/build/analysis/get-page-static-info.js"
@@ -13,10 +13,18 @@ import type { MiddlewareRouteMatch } from "next/dist/shared/lib/router/utils/mid
 // without the env, so it is mocked before middleware.ts loads.
 vi.mock("@supabase/ssr", () => ({ createServerClient: vi.fn() }))
 vi.mock("@/services/supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }))
+// GET /api/auth/me's own chain, for the answer it gives once the middleware
+// leaves the /api/auth/ prefix to its routes.
+vi.mock("@/lib/rate-limit", () => ({ apiRateLimit: vi.fn().mockResolvedValue(null) }))
+vi.mock("@/lib/supabase-server", () => ({ createServerSupabaseClient: vi.fn() }))
+vi.mock("@/services/auth-profile-service", () => ({ getOrCreateProfileAndCoach: vi.fn() }))
 
 import { config, middleware, trainerRoutes } from "./middleware"
+import { GET as getMe } from "./app/api/auth/me/route"
 import { createServerClient } from "@supabase/ssr"
 import { supabaseAdmin } from "@/services/supabase-admin"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
+import { getOrCreateProfileAndCoach } from "@/services/auth-profile-service"
 
 /**
  * Guards the middleware matcher against auth bypasses.
@@ -160,6 +168,27 @@ describe("trainerRoutes is bound to app/(coach)/", () => {
 })
 
 /**
+ * Binds the public /api/auth/ prefix to the routes beneath it. The middleware
+ * leaves every path under the prefix to its route, so a route added there is
+ * reached signed out with nothing checking it: the folder holds Better Auth's
+ * catch-all and the app's /me, which answers its own 401, and nothing else
+ * until a change here says why.
+ */
+describe("the public /api/auth/ prefix is bound to app/api/auth/", () => {
+  /** Every route file beneath a folder, at any depth, relative to it. */
+  const routeFiles = (dir: string, base = dir): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) return routeFiles(full, base)
+      return /^route\.(ts|tsx|js|jsx|mjs)$/.test(entry.name) ? [relative(base, full)] : []
+    })
+
+  it("holds exactly Better Auth's catch-all and /api/auth/me, at every depth", () => {
+    expect(routeFiles(join(__dirname, "app", "api", "auth")).sort()).toEqual(["[...all]/route.ts", "me/route.ts"])
+  })
+})
+
+/**
  * The decisions the middleware makes on every request, with the session
  * client validating the session and the service role reading the role. A
  * request carries a cookie so the session client is built; the stubs below
@@ -208,7 +237,18 @@ describe("middleware decisions", () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
   })
 
-  it.each(["/auth/callback", "/forgot-password", "/reset-password", "/invite/abc", "/api/invitations/abc"])(
+  it.each([
+    "/auth/callback",
+    "/forgot-password",
+    "/reset-password",
+    "/invite/abc",
+    "/api/invitations/abc",
+    "/api/auth/sign-in/email",
+    "/api/auth/sign-up/email",
+    "/api/auth/get-session",
+    "/api/auth/admin/create-user",
+    "/api/auth/me",
+  ])(
     "%s skips auth entirely: no session is built, nothing is read",
     async (pathname) => {
       session(null)
@@ -218,6 +258,28 @@ describe("middleware decisions", () => {
       expect(read.from).not.toHaveBeenCalled()
     }
   )
+
+  it.each(["/api/authentication/x", "/api/authz", "/api/auth"])(
+    "the /api/auth/ prefix is a whole segment: %s is guarded like any API",
+    async (pathname) => {
+      session(null)
+      profile({ data: null, error: null })
+      expect(redirectsTo(await middleware(request(pathname)))?.pathname).toBe("/login")
+    }
+  )
+
+  it("/api/auth/me, left to the route, answers a signed-out request with its own 401 and makes nothing", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    const getUser = vi.fn().mockResolvedValue({ data: { user: null }, error: null })
+    vi.mocked(createServerSupabaseClient).mockResolvedValue({ auth: { getUser } } as never)
+    const signedOut = new NextRequest("http://localhost:3000/api/auth/me")
+    expect(passesThrough(await middleware(signedOut))).toBe(true)
+    const answer = await getMe(signedOut)
+    expect(answer.status).toBe(401)
+    expect(await answer.json()).toEqual({ success: false, error: "Unauthorized" })
+    expect(getUser).toHaveBeenCalledTimes(1)
+    expect(getOrCreateProfileAndCoach).not.toHaveBeenCalled()
+  })
 
   it.each(["/dashboard", "/clients/abc", "/client", "/client/training", "/api/clients", "/api/client/me"])(
     "%s with no session redirects to /login, and the role is never read",

@@ -75,6 +75,14 @@ NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
+# Better Auth (lib/auth.ts refuses to start without the first three)
+# DATABASE_URL: Supabase dashboard → Connect → Transaction pooler, as given (no ?parameters);
+# percent-encode any @ # / ? : or % in the password
+DATABASE_URL=postgresql://postgres.your_project_ref:your_db_password@your_region.pooler.supabase.com:6543/postgres
+BETTER_AUTH_SECRET=output_of_openssl_rand_base64_32
+BETTER_AUTH_URL=http://localhost:3000      # the same origin as NEXT_PUBLIC_APP_URL
+# AUTH_ADMIN_USER_IDS=your_user_id         # optional: the admin plugin's admins
+
 # OpenAI Configuration (check-in AI summaries)
 OPENAI_API_KEY=your_openai_api_key
 

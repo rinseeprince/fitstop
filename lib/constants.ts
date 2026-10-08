@@ -285,3 +285,8 @@ export const AI_PROMPT_TEXT_LIMIT = 5000;
 // The error the middleware sends a signed-in visitor to /login with when
 // their role cannot be read; the login page's notice is its only reader.
 export const LOGIN_ERROR_PROFILE_UNAVAILABLE = "profile_unavailable";
+
+// The lengths Better Auth holds every password it sets to (D19): scrypt has
+// no 72-byte limit, so the longest is bcrypt's no longer.
+export const PASSWORD_MIN_LENGTH = 8;
+export const PASSWORD_MAX_LENGTH = 128;

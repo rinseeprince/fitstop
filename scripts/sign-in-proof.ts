@@ -30,7 +30,8 @@
  *   4  the coach on client URLs: the client home → 307 to /dashboard; a client
  *      API → 401
  *   5  no session: every page and API → 307 to /login, bare; the login page
- *      itself 200
+ *      itself 200; /api/auth/me → its own 401, the middleware leaving
+ *      /api/auth/ to its routes (Better Auth's are reached signed out)
  *   6  signed in on /, /login and /signup → 307 to the role's home
  *   7  a deactivated client: the middleware knows only the role, so their
  *      home answers 200 and a coach page sends them to /client; the seam's
@@ -41,7 +42,9 @@
  *      to /dashboard, which sent them back to /login — a loop the browser gave
  *      up on; after, the page shows (200). The login page's message is a
  *      client leaf, proven by components/auth/login-notice.test.tsx and seen
- *      in the browser smoke
+ *      in the browser smoke. Last, because it changes the login: GET
+ *      /api/auth/me runs the route's own chain, whose profile-create branch
+ *      makes the missing row (no invitation: a trainer)
  */
 import "./env-bootstrap";
 
@@ -283,10 +286,16 @@ async function access(mode: "before" | "after"): Promise<void> {
     check("GET /api/client/me → 401 from the seam", answers(await send(coach, "GET", "/api/client/me"), 401, UNAUTHORIZED_ENVELOPE));
 
     console.info("5. No session");
-    for (const path of ["/dashboard", `/clients/${smoke.id}`, "/client", "/client/training", "/api/clients", "/api/client/me", "/api/auth/me"]) {
+    for (const path of ["/dashboard", `/clients/${smoke.id}`, "/client", "/client/training", "/api/clients", "/api/client/me"]) {
       const res = await open(null, path);
       check(`${path} → 307 to /login, bare`, target(res) === "/login", seen(res));
     }
+    const meSignedOut = await open(null, "/api/auth/me");
+    check(
+      "/api/auth/me → 401 from the route itself (the middleware leaves /api/auth/ to its routes)",
+      meSignedOut.status === 401 && meSignedOut.text.endsWith(JSON.stringify(UNAUTHORIZED_ENVELOPE)),
+      seen(meSignedOut)
+    );
     const login = await open(null, "/login");
     check("/login → 200", login.status === 200, seen(login));
     const signup = await open(null, "/signup");
@@ -319,7 +328,7 @@ async function access(mode: "before" | "after"): Promise<void> {
     );
 
     console.info("8. A login with no profile row");
-    for (const path of ["/dashboard", "/client", "/api/auth/me"]) {
+    for (const path of ["/dashboard", "/client"]) {
       const res = await open(profilelessSession, path);
       check(`${path} → 307 to /login?error=profile_unavailable`, target(res) === "/login?error=profile_unavailable", seen(res));
     }
@@ -336,6 +345,21 @@ async function access(mode: "before" | "after"): Promise<void> {
       AFTER ? "/login?error=profile_unavailable → 200, the page shows (the message is the browser smoke's)" : "/login?error=profile_unavailable → 307 to /dashboard (the loop's other half)",
       AFTER ? withError.status === 200 : target(withError) === "/dashboard",
       seen(withError)
+    );
+    // Last, because it changes the login: the middleware leaves /api/auth/ to
+    // its routes, so the route's own profile-create branch runs.
+    const meMakesProfile = await open(profilelessSession, "/api/auth/me");
+    type MeAnswer = { data?: { profile?: { role?: string }; coach?: unknown } };
+    let madeProfile: MeAnswer | null = null;
+    try {
+      madeProfile = JSON.parse(meMakesProfile.text.slice(meMakesProfile.text.indexOf("\n\n") + 2)) as MeAnswer;
+    } catch {
+      // Not JSON (an error page): the check below fails with the answer printed.
+    }
+    check(
+      "GET /api/auth/me → 200: the route makes the missing profile (no invitation: a trainer, with a coach row)",
+      meMakesProfile.status === 200 && madeProfile?.data?.profile?.role === "trainer" && !!madeProfile.data.coach,
+      seen(meMakesProfile)
     );
   } finally {
     console.info("Cleanup");

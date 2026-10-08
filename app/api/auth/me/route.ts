@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    // Defense-in-depth: middleware normally redirects unauthenticated /api
-    // requests before this runs. Mirrors lib/auth-helpers' auth_failure log
+    // The middleware leaves /api/auth/ to its routes, so this is the answer a
+    // signed-out request gets. Mirrors lib/auth-helpers' auth_failure log
     // shape (role unknown here — this endpoint resolves the role).
     const forwarded = request.headers.get("x-forwarded-for");
     const ip = forwarded?.split(",")[0]?.trim();

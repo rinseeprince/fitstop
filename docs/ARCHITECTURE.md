@@ -1228,11 +1228,11 @@ The wellness/tracking/activity triggers are pattern detectors over the client's 
 
 ### Middleware routing (`middleware.ts`)
 
-- Public routes (skip auth entirely): `/invite/*`, `/api/invitations/*`, `/forgot-password`, `/reset-password`, `/auth/callback`. **`/check-in/*` and `/api/check-in/*` are NOT public** — the magic-link check-in flow went with migration 142; clients check in through the authenticated portal (`/client/check-in`), and `/api/check-in/[id]/*` is a coach route (see "Route namespaces")
+- Public routes (skip auth entirely): `/invite/*`, `/api/invitations/*`, `/forgot-password`, `/reset-password`, `/auth/callback`, and `/api/auth/*`: Better Auth's endpoints, which are reached signed out, and `GET /api/auth/me`, which answers a signed-out request with its own 401. **`/check-in/*` and `/api/check-in/*` are NOT public** — the magic-link check-in flow went with migration 142; clients check in through the authenticated portal (`/client/check-in`), and `/api/check-in/[id]/*` is a coach route (see "Route namespaces")
 - Trainers: restricted to `trainerRoutes` (exported from `middleware.ts`) — `/dashboard`, `/clients`, `/crm`, `/automation`, `/settings`, the five folders of `app/(coach)/` (see "Coach route group"). Any other path is left to Next, which 404s it for either role
 - Clients: restricted to `/client/*` routes
 - Role mismatch: redirects to appropriate dashboard
-- The role comes from `profiles`, read through `supabaseAdmin` keyed on the user id `auth.getUser()` validated on the session client. A session whose role cannot be read (a failed read, no profile row) is sent to `/login?error=profile_unavailable` before any route runs, and on `/`, `/login` and `/signup` it is shown the page; the login page's notice (`components/auth/login-notice.tsx`, the only reader of `?error=`) carries the message. The middleware runs on the Edge runtime, where the service key is an env var, never inlined: `npm run check:service-key` scans the browser bundle for it, and `npm run build` compiles the middleware
+- The role comes from `profiles`, read through `supabaseAdmin` keyed on the user id `auth.getUser()` validated on the session client. A session whose role cannot be read (a failed read, no profile row) is sent to `/login?error=profile_unavailable` before any route runs on every path but the public routes above, and on `/`, `/login` and `/signup` it is shown the page; the login page's notice (`components/auth/login-notice.tsx`, the only reader of `?error=`) carries the message. The middleware runs on the Edge runtime, where the service key is an env var, never inlined: `npm run check:service-key` scans the browser bundle for it, and `npm run build` compiles the middleware
 
 ### Coach route group (`app/(coach)/`)
 
@@ -1249,16 +1249,21 @@ The wellness/tracking/activity triggers are pattern detectors over the client's 
 
 ### Session bootstrap (`GET /api/auth/me`)
 
-The browser `AuthProvider` (`contexts/auth-context.tsx`) is session-lifecycle-only: `supabase.auth` for login/signup/OAuth/logout/reset, with a **synchronous** `onAuthStateChange` callback (supabase-js holds an origin-wide Navigator lock while the callback runs; an awaited supabase query inside it deadlocks — the historical `fetchProfile timeout`). Profile and coach come from `GET /api/auth/me` via SWR, keyed on the user id. The route chain is `apiRateLimit → getUser() → getOrCreateProfileAndCoach()` (`services/auth-profile-service.ts`, `supabaseAdmin`), returning `{ profile, coach }` (`coach: null` for clients) with `Cache-Control: no-store`. The service mirrors the trigger's invitation-derived role and uses `ON CONFLICT (user_id) DO NOTHING` semantics, so it is race-safe against the trigger and against concurrent requests; on success `role === "trainer" ⟺ coach` is present. The browser anon-key client never reads `profiles`/`coaches`. Note: middleware fail-closes profile-less sessions (`/login?error=profile_unavailable`) before any route runs, so the route's profile-create branch is defense-in-depth; the coach-row self-heal is reachable and verified.
+The browser `AuthProvider` (`contexts/auth-context.tsx`) is session-lifecycle-only: `supabase.auth` for login/signup/OAuth/logout/reset, with a **synchronous** `onAuthStateChange` callback (supabase-js holds an origin-wide Navigator lock while the callback runs; an awaited supabase query inside it deadlocks — the historical `fetchProfile timeout`). Profile and coach come from `GET /api/auth/me` via SWR, keyed on the user id. The route chain is `apiRateLimit → getUser() → getOrCreateProfileAndCoach()` (`services/auth-profile-service.ts`, `supabaseAdmin`), returning `{ profile, coach }` (`coach: null` for clients) with `Cache-Control: no-store`. The service mirrors the trigger's invitation-derived role and uses `ON CONFLICT (user_id) DO NOTHING` semantics, so it is race-safe against the trigger and against concurrent requests; on success `role === "trainer" ⟺ coach` is present. The browser anon-key client never reads `profiles`/`coaches`. The middleware leaves `/api/auth/` to its routes, so this route runs its own chain: a signed-out request gets its 401, and a session with no profile row reaches the profile-create branch (from every guarded page the middleware sends that session to `/login?error=profile_unavailable`); the coach-row self-heal is reachable and verified.
+
+### Better Auth (`lib/auth.ts`, `app/api/auth/[...all]`)
+
+Better Auth stands beside Supabase Auth: it holds a copy of the logins and answers under `/api/auth`, and no screen signs in through it. Schema `better_auth` (migration 208) holds its five tables under its own names and camelCase columns — `"user"`, `session`, `account`, `verification`, `"rateLimit"` — off the Data API (PostgREST serves `public` alone), RLS on with no policy, and no privilege for any role but `postgres`, which owns them (`npm run check:rls` clause 6). Every id is a `uuid` — a copied login kept its Supabase id, and the database makes every new one — so a login's id is the `user_id` that `profiles`, `coaches` and `clients` carry. Migration 208 copied every `auth.users` login on its own id, born verified, its Supabase bcrypt hash its `credential` row; a login Supabase makes after that has no copy. `password.verify` checks a `$2…` hash with bcryptjs and any other with Better Auth's scrypt, and every password Better Auth sets is scrypt. Public sign-up is off, and a database hook refuses every login made on any path but the admin plugin's create-user (`refuseUnlessOwnerOrInvite`). Its endpoints run Better Auth's own chain, not the app's route chain: its limiter (counted in `better_auth."rateLimit"`, on in production only), its origin check (a POST carrying any cookie must come from `trustedOrigins`, the app's own URL; a sign-in or sign-up is also refused when it names another origin or arrives as another site's form) and its own answers. An error that is not one of its refusals (a 500, a throw from below it) goes to Sentry through `captureApiError` (`reportUnexpectedAuthError`).
 
 ### Database clients (see CONVENTIONS.md §8 for the authoritative rule)
 
 > The authoritative rule is **CONVENTIONS §8 ("Auth & data-access architecture")** — read it first; this is a summary, and §8 wins on any disagreement.
 
-- `supabaseAdmin` (`services/supabase-admin.ts`): the service role, which bypasses RLS. **This is the service-layer default**, used with an explicit caller-verified scope (`clientId` / `coachId`). Every query goes through it — client and coach reads, cross-client coach aggregation and system writes alike.
+- `supabaseAdmin` (`services/supabase-admin.ts`): the service role, which bypasses RLS. **This is the service-layer default**, used with an explicit caller-verified scope (`clientId` / `coachId`). Every app query goes through it — client and coach reads, cross-client coach aggregation and system writes alike.
 - `createServerSupabaseClient()` (`lib/supabase-server.ts`): the session client, built from the public key and the caller's login. It **validates the session** and reads nothing: `auth.getUser()` in the auth helpers and `GET /api/auth/me`; the middleware and `/auth/callback` build the same `@supabase/ssr` client for `getUser()` and the code exchange. Every table read, the sign-in lookups included, is `supabaseAdmin`'s, keyed on the user id the session validated, and every write goes through a route and `supabaseAdmin` (`lib/session-client-ownership.test.ts` holds every query, function call and storage call in the app to `supabaseAdmin`).
+- `authPool` (`lib/auth.ts`): Better Auth's own connection — the `postgres` user through Supabase's transaction pooler (`DATABASE_URL`), a pool of four, TLS verified against Supabase's root certificate (`lib/supabase-connection.ts`, which refuses a `DATABASE_URL` carrying parameters). Better Auth reads and writes schema `better_auth` through it, and the app reads nothing there.
 
-**The database is reachable only through the server.** RLS is enabled on every table in `public` and no table has a policy, so only the service role, which bypasses RLS, reads or writes a row. `anon` and `authenticated`, the roles the browser-shipped public key can act as, hold no privilege on any table, view or sequence in `public`, and a new table arrives closed to them. Every SECURITY DEFINER function is executable by `service_role` alone; the auth trigger `handle_new_user()` also by `supabase_auth_admin`, the role GoTrue inserts `auth.users` as. A request at `/rest/v1` with the public key is refused on every relation, with or without a login (`scripts/data-api-locked-proof.ts` proves it). Access is decided in one place: the route chain and the service's scope filter. `npm run check:rls` holds the catalog to this shape — RLS on every table, no policy in `public` or `storage`, no public-role privilege, every view `security_invoker`.
+**The database is reachable only through the server.** RLS is enabled on every table in `public` and no table has a policy, so only the service role, which bypasses RLS, reads or writes a row. `anon` and `authenticated`, the roles the browser-shipped public key can act as, hold no privilege on any table, view or sequence in `public`, and a new table arrives closed to them. Every SECURITY DEFINER function is executable by `service_role` alone; the auth trigger `handle_new_user()` also by `supabase_auth_admin`, the role GoTrue inserts `auth.users` as. A request at `/rest/v1` with the public key is refused on every relation, with or without a login (`scripts/data-api-locked-proof.ts` proves it). Access to the app's data is decided in one place: the route chain and the service's scope filter. `npm run check:rls` holds the catalog to this shape — RLS on every table, no policy in `public` or `storage`, no public-role privilege, every view `security_invoker`, and `better_auth` postgres's alone.
 
 ### IDOR prevention
 
@@ -1394,7 +1399,7 @@ Uses `Promise.all` with `safeQuery()` wrapper for partial failure tolerance. The
 
 ### Middleware ordering
 
-Every API handler follows this exact sequence:
+Every app API handler follows this exact sequence (Better Auth's endpoints under `/api/auth/*` run their own: see "Better Auth"):
 1. Rate limiting (`apiRateLimit`, `coachApiRateLimit`, `clientApiRateLimit`)
 2. CSRF protection (`requireCSRFProtection`) - mutating methods only (POST/PUT/PATCH/DELETE)
 3. Authentication (`getAuthenticatedCoachId()` or `getAuthenticatedClientId()`)
@@ -1404,7 +1409,7 @@ Every API handler follows this exact sequence:
 
 ### Response format
 
-All endpoints return:
+All app endpoints return (Better Auth's answer in its own shape):
 ```json
 { "success": true, "data": { ... } }
 { "success": false, "error": "Human-readable message" }
@@ -1418,6 +1423,7 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 - `/api/client/*` - client-side routes (use `clientApiRateLimit`, `getAuthenticatedClientId`)
 - `/api/check-in/[id]/*` - coach-side per-check-in routes (detail, comparison, review, AI regenerate) behind `requireCoachOwnsCheckIn` (the review POST spells the same chain inline: `getAuthenticatedCoachId` + ownership); `apiRateLimit`, with the coach-keyed `aiRateLimit` on the regenerate. Not public since migration 142 — `checkInRateLimit` has no live route today; it survives only as `requireClientAuth`'s uncalled `rateLimit: "checkIn"` tier
 - `/api/dashboard/*` - coach dashboard aggregation routes
+- `/api/auth/*` - Better Auth's endpoints (`app/api/auth/[...all]`), which run Better Auth's own chain and answers rather than the ordering above (see "Better Auth"); `/api/auth/me` is the app's own route (`apiRateLimit`, then the session)
 
 ---
 
