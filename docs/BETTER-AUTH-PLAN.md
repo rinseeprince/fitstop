@@ -846,7 +846,7 @@ nothing a coach or client sees changes until commit 2, and from commit 2 every s
 
 ### Commit 1 — `feat(auth): Better Auth stands up beside Supabase Auth: its schema (migration 208), today's logins copied in, and the server behind /api/auth`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `a503ddb6` 2026-10-08.**
 
 - `better-auth@1.7.7` (exact), `pg`, `kysely`, `bcryptjs` installed (D26). `lib/auth.ts` with every §2.2 option
   that needs no email and no screen: the database, `trustedOrigins` (the app URL only), `emailAndPassword` with
