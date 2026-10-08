@@ -36,7 +36,8 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SEED_ID_LO, SEED_ID_HI, isSeedEmail } from "./ids";
+import { deleteThrowawayLogin, loginsOnDomain } from "../auth-fixtures";
+import { SEED_ID_LO, SEED_ID_HI, SEED_EMAIL_DOMAIN } from "./ids";
 import { countRows, countTotalRows } from "./db";
 
 /**
@@ -122,30 +123,31 @@ export async function deleteSeedRows(
 
 export type TeardownReport = {
   perTable: { table: string; removed: number; unmarkedBefore: number; unmarkedAfter: number }[];
-  authUsersRemoved: number;
-  /** profiles rows the auth cascade took. Asserted to equal authUsersRemoved. */
+  loginsRemoved: number;
+  /** profiles rows that went with the logins. Asserted to equal loginsRemoved. */
   profilesRemoved: number;
 };
 
 /**
  * Tables that hold no seeded rows but that a cascade could reach.
  *
- * Deleting an `auth.users` row cascades into `public` — and every seeded coach
- * and client is an FK parent of tables this script never writes
- * (`coach_client_views`, `attention_dismissals`, `client_notes`,
+ * Deleting a seeded login cascades into `public` (migration 209's keys) — and
+ * every seeded coach and client is an FK parent of tables this script never
+ * writes (`coach_client_views`, `attention_dismissals`, `client_notes`,
  * `content_assignments`, ...). Those are empty for a seeded principal on a
  * clean run, but a persona login used between seed and teardown populates them,
  * and `content_assignments -> coaches` is ON DELETE NO ACTION, so it would
  * block the coaches delete outright rather than cascade.
  *
- * Guard 4 only ever covered TEARDOWN_ORDER, and only before the auth phase.
- * These are checked too, and re-checked after the auth users go.
+ * Guard 4 only ever covered TEARDOWN_ORDER, and only before the login phase.
+ * These are checked too, and re-checked after the logins go.
  */
 const CASCADE_WITNESS_TABLES: readonly string[] = [
-  // NOTE: `profiles` is deliberately NOT here. handle_new_user writes one
-  // profiles row per seeded auth user, so it IS part of the seed's footprint
-  // and is EXPECTED to shrink when those users go. It gets its own exact-delta
-  // assertion below rather than a "must not move" one.
+  // NOTE: `profiles` is deliberately NOT here. The path that makes a persona's
+  // login writes one profiles row for it (scripts/auth-fixtures.ts), so it IS
+  // part of the seed's footprint and is EXPECTED to shrink when those logins
+  // go. It gets its own exact-delta assertion below rather than a "must not
+  // move" one.
   "coach_client_views",
   "attention_dismissals",
   "client_notes",
@@ -159,11 +161,14 @@ const CASCADE_WITNESS_TABLES: readonly string[] = [
  * Remove every seeded row, asserting no collateral damage.
  *
  * Throws before deleting anything if a table's unmarked count cannot be read,
- * and throws immediately after a table if its unmarked count moved.
+ * and throws immediately after a table if its unmarked count moved. The
+ * seed's logins go too, unless `withLogins` is false: the caller passes false
+ * only for a target Better Auth's connection cannot reach, which holds none.
  */
 export async function teardown(
   db: SupabaseClient,
-  onProgress: (table: string, removed: number) => void
+  onProgress: (table: string, removed: number) => void,
+  withLogins: boolean
 ): Promise<TeardownReport> {
   const before = new Map<string, number>();
   for (const table of TEARDOWN_ORDER) {
@@ -195,19 +200,22 @@ export async function teardown(
     onProgress(table, removed);
   }
 
-  const authUsersRemoved = await deleteSeedAuthUsers(db);
+  const loginsRemoved = withLogins ? await deleteSeedLogins() : 0;
 
-  // Re-assert AFTER the auth phase. Deleting an auth.users row cascades into
-  // public, so the pre-auth per-table check above cannot see that damage — it
-  // has already completed by the time the first user is deleted.
+  // Re-assert AFTER the login phase. Deleting a login cascades into public,
+  // and so does deleting a parent table later in the walk (a seeded plan takes
+  // its targets, a seeded client its rows), so the per-table check above
+  // cannot see that damage — it ran before those deletes.
   for (const table of TEARDOWN_ORDER) {
     const after = (await countRows(db, table)).unmarked;
     const expected = before.get(table) ?? 0;
     if (after !== expected) {
       throw new Error(
-        `TEARDOWN DAMAGE DETECTED AFTER THE AUTH PHASE — ${table} went from ${expected} to ${after} ` +
-          "rows outside the seed namespace. Deleting the seeded auth users cascaded into rows this " +
-          "script did not create. The seeded rows are already gone; investigate before re-seeding."
+        `TEARDOWN DAMAGE DETECTED AFTER THE LOGIN PHASE — ${table} went from ${expected} to ${after} ` +
+          "rows outside the seed namespace. A cascade from a seeded row deleted after this table's own " +
+          "check, or from a seeded login, reached rows with ids outside the namespace: rows the app " +
+          "rewrote under a seeded parent, or somebody else's. The seeded rows are already gone; " +
+          "investigate before re-seeding."
       );
     }
   }
@@ -218,61 +226,36 @@ export async function teardown(
       throw new Error(
         `TEARDOWN DAMAGE DETECTED — ${table} went from ${expected} to ${after} rows. ` +
           "The seed never writes this table, so every row in it belonged to someone else. " +
-          "A cascade from a seeded coach/client/auth-user reached it. Investigate immediately."
+          "A cascade from a seeded coach, client or login reached it. Investigate immediately."
       );
     }
   }
 
-  // profiles is expected to shrink by EXACTLY the number of auth users removed
-  // (handle_new_user writes one row per signup, and the FK cascades). Anything
-  // else means the cascade took rows belonging to somebody real.
+  // profiles is expected to shrink by EXACTLY the number of logins removed
+  // (the path that made each login wrote one profile, and it goes with the
+  // login). Anything else means the delete took rows belonging to somebody real.
   const profilesAfter = await countTotalRows(db, "profiles");
-  const profilesExpected = profilesBefore - authUsersRemoved;
+  const profilesExpected = profilesBefore - loginsRemoved;
   if (profilesAfter !== profilesExpected) {
     throw new Error(
       `TEARDOWN DAMAGE DETECTED — profiles went from ${profilesBefore} to ${profilesAfter}, but ` +
-        `${authUsersRemoved} seeded auth users were removed, so ${profilesExpected} was expected. ` +
-        "The auth cascade reached profiles rows that do not belong to this seed."
+        `${loginsRemoved} seeded logins were removed, so ${profilesExpected} was expected. ` +
+        "Deleting the logins reached profiles rows that do not belong to this seed."
     );
   }
 
-  return { perTable, authUsersRemoved, profilesRemoved: profilesBefore - profilesAfter };
+  return { perTable, loginsRemoved, profilesRemoved: profilesBefore - profilesAfter };
 }
 
 /**
- * Delete the auth users the seed created, identified by the email domain.
- *
- * Two separate passes, and the separation is the point. `listUsers` pages by
- * OFFSET, so deleting while paging shifts every remaining user left and the
- * next page skips exactly as many users as were just deleted — roughly half the
- * seeded users used to survive a teardown that reported success. Sweep the full
- * list read-only first, then delete from that snapshot.
- *
- * Paging also terminates on an empty page rather than a short one: GoTrue caps
- * `perPage` server-side below whatever is requested, so a short page is the
- * normal case, not the end of the list.
+ * Delete the logins the seed made: every login on the seed's own email
+ * domain, read in one query and then deleted one by one through
+ * scripts/auth-fixtures.ts, each with its profile, sessions and password.
  */
-export async function deleteSeedAuthUsers(db: SupabaseClient): Promise<number> {
-  const targets: { id: string; email: string }[] = [];
-  const seenIds = new Set<string>();
-
-  for (let page = 1; page <= 500; page++) {
-    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 });
-    if (error) throw new Error(`teardown listUsers page ${page}: ${error.message}`);
-    const users = data?.users ?? [];
-    if (users.length === 0) break;
-    for (const u of users) {
-      if (!isSeedEmail(u.email) || seenIds.has(u.id)) continue;
-      seenIds.add(u.id);
-      targets.push({ id: u.id, email: u.email ?? "" });
-    }
-  }
-
+async function deleteSeedLogins(): Promise<number> {
   let removed = 0;
-  for (const t of targets) {
-    const del = await db.auth.admin.deleteUser(t.id);
-    if (del.error) throw new Error(`teardown deleteUser ${t.email}: ${del.error.message}`);
-    removed++;
+  for (const email of await loginsOnDomain(SEED_EMAIL_DOMAIN)) {
+    if (await deleteThrowawayLogin(email)) removed++;
   }
   return removed;
 }

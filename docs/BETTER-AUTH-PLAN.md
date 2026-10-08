@@ -787,7 +787,10 @@ so.
 - **Proofs on DEV** (the shape of `scripts/proof-session.ts` after commit 2 and `scripts/goal-routes-proof.ts`, run
   with `npx tsx --tsconfig ./tsconfig.json` against a `next dev` the script starts on a free port, never :3000;
   every row a proof creates is deleted in `finally`; Resend is never called — the proofs read tokens from
-  `better_auth.verification` through the pool):
+  `better_auth.verification` through the pool; from commit 3, `startProofServer` in `scripts/proof-server.ts` starts
+  that server, `createThrowawayLogin` / `deleteThrowawayLogin` in `scripts/auth-fixtures.ts` make and remove a
+  throwaway's login, `passwordLinkToken` beside them reads a password link's token, and `endMintedSessions` ends
+  every session a proof minted):
   - 1: `scripts/better-auth-standup-proof.ts prepare|check`: `prepare` (before the push) makes a throwaway Supabase
     login with a known password through `auth.admin.createUser` (the trigger makes its rows); `check` (after)
     signs it in through `POST /api/auth/sign-in/email` → 200, `set-auth-token` and the cookie, `GET
@@ -1050,7 +1053,9 @@ the exact route, what I should see in plain words. The browser smoke is mine.
 - `scripts/auth-fixtures.ts`: `createThrowawayLogin({ email, password, role, name, coachId? })` through
   `createCoachLogin` / the invite path's writes (never a Supabase call), `deleteThrowawayLogin(email)` through
   the pool and the app's rows; every script in §4's row that minted a Supabase session or login moves onto it
-  and `proof-session.ts` (`sign-in-proof.ts` already did in commit 2).
+  and `proof-session.ts` (`sign-in-proof.ts` already did in commit 2). As built, a client's login takes the
+  client row the script made rather than a coach: `{ role: "coach", email, password, name }` or `{ role:
+  "client", email, password, clientId, inviteToken? }`, the client row on that same address with no login yet.
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` has no reader left: removed from CONVENTIONS' env list (line 881) and from
   `README.md:75`; grep proves it; the owner removes it from `.env.local`.
 - Each moved script run once on DEV; no product code changes.

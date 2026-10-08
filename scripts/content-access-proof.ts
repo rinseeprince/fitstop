@@ -1,12 +1,13 @@
 /**
  * Request-level proof of docs/DATA-ACCESS-LOCKDOWN-PLAN.md §6 commit 4: the
  * content library reads through the server, and the download's access check is
- * code — against the linked DEV database through a running `next dev`.
+ * code — against the linked DEV database through a next dev the script starts
+ * on a free port (record and access).
  *
- *   WIRE_PROOF_DIR=<scratchpad> npx tsx scripts/content-access-proof.ts record before
- *   WIRE_PROOF_DIR=<scratchpad> npx tsx scripts/content-access-proof.ts record after
- *   WIRE_PROOF_DIR=<scratchpad> npx tsx scripts/content-access-proof.ts diff before after
- *   npx tsx scripts/content-access-proof.ts access before|after
+ *   WIRE_PROOF_DIR=<scratchpad> npx tsx --tsconfig ./tsconfig.json scripts/content-access-proof.ts record before
+ *   WIRE_PROOF_DIR=<scratchpad> npx tsx --tsconfig ./tsconfig.json scripts/content-access-proof.ts record after
+ *   WIRE_PROOF_DIR=<scratchpad> npx tsx --tsconfig ./tsconfig.json scripts/content-access-proof.ts diff before after
+ *   npx tsx --tsconfig ./tsconfig.json scripts/content-access-proof.ts access before|after
  *
  * `record` writes every content list response whole — its status,
  * Cache-Control, content type and body — for the owner's coach (GET
@@ -16,13 +17,15 @@
  * recordings go to WIRE_PROOF_DIR, outside the tree, and are never committed.
  *
  * `access` proves the decisions with real sessions, on throwaways made for the
- * run and removed at the end: logins, clients of the owner's coach, another
- * coach with a client of their own, and three files of the owner's coach — one
- * in the library, one assigned to the active client, one neither.
+ * run and removed at the end: logins (scripts/auth-fixtures.ts), clients of
+ * the owner's coach, another coach with a client of their own, and three files
+ * of the owner's coach — one in the library, one assigned to the active
+ * client, one neither.
  *   1  the download, case by case: the owning coach ✓; another coach ✗; the
  *      coach's active client — the library file ✓, the assigned file ✓, the
  *      other file ✗; another coach's client ✗; a deactivated client ✗; a login
- *      that is neither a coach nor a client ✗; no session → the login page
+ *      that is neither a coach nor a client ✗; no session → 401 before any
+ *      route runs
  *   2  a signed-in client on the coach's routes: before, the routes' own
  *      answers (404 "Coach profile not found", upload 403); after, the auth
  *      seam's 401 (CONVENTIONS §8, owner 2026-09-25). This also shows which
@@ -36,8 +39,10 @@ import "./env-bootstrap";
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createThrowawayLogin, deleteThrowawayLogin, loginIdFor, type ThrowawayLogin } from "./auth-fixtures";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { mintSession, send, PROOF_BASE, type ProofResponse, type ProofSession } from "./proof-session";
+import { endMintedSessions, mintSession, send, sendSignedOut, PROOF_BASE, type ProofResponse, type ProofSession } from "./proof-session";
+import { startProofServer, stopProofServer } from "./proof-server";
 
 const COACH_EMAIL = "samuel.k@taboola.com";
 // "Test intake form bug": the account every client-app smoke signs in as.
@@ -87,8 +92,17 @@ async function recordOne(dir: string, name: string, session: ProofSession, path:
 async function record(label: string): Promise<void> {
   const dir = proofDir(label);
   mkdirSync(dir, { recursive: true });
-  console.info(`Recording "${label}" into ${dir} against ${PROOF_BASE}`);
+  await startProofServer();
+  try {
+    console.info(`Recording "${label}" into ${dir} against ${PROOF_BASE}`);
+    await recordAll(dir);
+  } finally {
+    console.info(`Ended ${await endMintedSessions()} minted session(s)`);
+    await stopProofServer();
+  }
+}
 
+async function recordAll(dir: string): Promise<void> {
   const coachId = await ownerCoachId();
   const coach = await mintSession(COACH_EMAIL, "coach");
   await recordOne(dir, "coach-library", coach, "/api/content/library");
@@ -180,7 +194,7 @@ async function upload(session: ProofSession, title: string, fileName: string, by
   return { status: res.status, text, json };
 }
 
-type Made = { users: string[]; clients: string[]; items: string[]; objects: string[]; folders: string[] };
+type Made = { logins: ThrowawayLogin[]; clients: string[]; items: string[]; objects: string[]; folders: string[] };
 
 async function makeClient(
   made: Made,
@@ -207,25 +221,19 @@ async function makeClient(
   return data.id;
 }
 
-/** A login. With `inviteFor`, an invitation row first, so the signup trigger makes it a client, not a coach. */
-async function makeLogin(made: Made, email: string, stamp: number, inviteFor?: string): Promise<string> {
-  if (inviteFor) {
-    const { error } = await supabaseAdmin.from("client_invitations").insert({ client_id: inviteFor, email, status: "accepted" });
-    if (error) throw new Error(`invitation insert: ${error.message}`);
-  }
-  const { data, error } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    email_confirm: true,
-    password: `Content-proof-${stamp}-${Math.random().toString(36).slice(2)}`,
-  });
-  if (error || !data.user) throw new Error(`createUser ${email}: ${error?.message}`);
-  made.users.push(data.user.id);
-  return data.user.id;
+/** A throwaway login: a coach's through the owner's command, or a client's through the invite of the client row. */
+type LoginFor = { role: "coach"; email: string; name: string } | { role: "client"; email: string; clientId: string };
+
+async function makeLogin(made: Made, login: LoginFor, stamp: number): Promise<ThrowawayLogin> {
+  const throwaway = await createThrowawayLogin({ ...login, password: `Content-proof-${stamp}-${Math.random().toString(36).slice(2)}` });
+  made.logins.push(throwaway);
+  return throwaway;
 }
 
-async function link(clientId: string, userId: string): Promise<void> {
-  const { error } = await supabaseAdmin.from("clients").update({ user_id: userId }).eq("id", clientId);
-  if (error) throw new Error(`client link: ${error.message}`);
+/** The client row lets go of its login, so the login is neither a coach's nor a client's. */
+async function unlink(clientId: string): Promise<void> {
+  const { error } = await supabaseAdmin.from("clients").update({ user_id: null }).eq("id", clientId);
+  if (error) throw new Error(`client unlink: ${error.message}`);
 }
 
 /** A file of the owner's coach: the object in the bucket, then its item. */
@@ -289,29 +297,26 @@ async function access(mode: "before" | "after"): Promise<void> {
   const coachId = await ownerCoachId();
   const stamp = Date.now();
   const email = (who: string) => `content-proof-${who}-${stamp}@fixture.local`;
-  const made: Made = { users: [], clients: [], items: [], objects: [], folders: [] };
+  const made: Made = { logins: [], clients: [], items: [], objects: [], folders: [] };
   const DENIED = { success: false, error: "Access denied" };
   const UNAUTHORIZED = { success: false, error: "Unauthorized" };
 
   try {
+    await startProofServer();
     console.info("Setup: another coach and their client; three clients of the owner's coach; three files");
-    const otherCoachUser = await makeLogin(made, email("coach"), stamp);
-    const { data: otherCoach, error: otherCoachError } = await supabaseAdmin
-      .from("coaches")
-      .select("id")
-      .eq("user_id", otherCoachUser)
-      .single();
-    if (otherCoachError || !otherCoach) throw new Error(`the other coach's row: ${otherCoachError?.message}`);
+    const { coachId: otherCoachId } = await makeLogin(made, { role: "coach", email: email("coach"), name: "Content proof · other coach" }, stamp);
+    if (!otherCoachId) throw new Error("the other coach has no coach row");
 
     const active = await makeClient(made, coachId, "Content proof · active client", email("active"), true);
-    await link(active, await makeLogin(made, email("active"), stamp, active));
+    await makeLogin(made, { role: "client", email: email("active"), clientId: active }, stamp);
     const deactivated = await makeClient(made, coachId, "Content proof · deactivated client", email("deactivated"), false);
-    await link(deactivated, await makeLogin(made, email("deactivated"), stamp, deactivated));
-    // Invited, so the login is a client's, but never linked: neither a coach nor a client.
+    await makeLogin(made, { role: "client", email: email("deactivated"), clientId: deactivated }, stamp);
+    // Invited, so the login is a client's, then let go of by its client row: neither a coach nor a client.
     const unlinked = await makeClient(made, coachId, "Content proof · never linked", email("neither"), true);
-    await makeLogin(made, email("neither"), stamp, unlinked);
-    const foreign = await makeClient(made, otherCoach.id, "Content proof · other coach's client", email("foreign"), true);
-    await link(foreign, await makeLogin(made, email("foreign"), stamp, foreign));
+    await makeLogin(made, { role: "client", email: email("neither"), clientId: unlinked }, stamp);
+    await unlink(unlinked);
+    const foreign = await makeClient(made, otherCoachId, "Content proof · other coach's client", email("foreign"), true);
+    await makeLogin(made, { role: "client", email: email("foreign"), clientId: foreign }, stamp);
 
     const library = await makeFile(made, coachId, stamp, "library-guide", true);
     const assigned = await makeFile(made, coachId, stamp, "assigned-plan", false);
@@ -362,12 +367,8 @@ async function access(mode: "before" | "after"): Promise<void> {
       AFTER ? answers(neitherOpen, 401, UNAUTHORIZED) : answers(neitherOpen, 403, DENIED),
       seen(neitherOpen)
     );
-    const anonymous = await fetch(`${PROOF_BASE}/api/content/download/${library.id}`, { redirect: "manual" });
-    check(
-      "no session → 307 to the login page, before any route runs",
-      anonymous.status === 307 && (anonymous.headers.get("location") ?? "").endsWith("/login"),
-      { status: anonymous.status, location: anonymous.headers.get("location") }
-    );
+    const anonymous = await sendSignedOut("GET", `/api/content/download/${library.id}`);
+    check("no session → 401 Unauthorized from the proxy, before any route runs", anonymous.refused, anonymous);
 
     console.info("2. A signed-in client on the coach's routes");
     const clientLibrary = await send(activeSession, "GET", "/api/content/library");
@@ -480,10 +481,14 @@ async function access(mode: "before" | "after"): Promise<void> {
       if (error) console.error(`  client not deleted: ${error.message}`);
     }
     // The other coach's login takes their coach row, and with it their client.
-    for (const id of made.users) {
-      const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
-      if (error) console.error(`  login not deleted: ${error.message}`);
+    for (const login of made.logins) {
+      try {
+        await deleteThrowawayLogin(login.email);
+      } catch (error) {
+        console.error(`  login not deleted: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
+    const sessionsEnded = await endMintedSessions();
 
     let left = 0;
     for (const id of made.items) left += (await rowExists("content_items", id)) ? 1 : 0;
@@ -493,16 +498,16 @@ async function access(mode: "before" | "after"): Promise<void> {
       const { data } = await supabaseAdmin.from("clients").select("id").eq("id", id).maybeSingle();
       left += data ? 1 : 0;
     }
-    for (const id of made.users) {
-      const { data } = await supabaseAdmin.from("profiles").select("user_id").eq("user_id", id).maybeSingle();
-      const { data: user } = await supabaseAdmin.auth.admin.getUserById(id);
-      left += data || user?.user ? 1 : 0;
+    for (const login of made.logins) {
+      const { data } = await supabaseAdmin.from("profiles").select("user_id").eq("user_id", login.userId).maybeSingle();
+      left += data || (await loginIdFor(login.email)) ? 1 : 0;
     }
     check(
-      `cleanup: ${made.items.length} files, ${made.folders.length} folder, ${made.clients.length} clients and ${made.users.length} logins are gone`,
+      `cleanup: ${made.items.length} files, ${made.folders.length} folder, ${made.clients.length} clients and ${made.logins.length} logins are gone, and the minted sessions with them (${sessionsEnded} of a real login ended)`,
       left === 0,
       { left }
     );
+    await stopProofServer();
   }
 
   if (failures > 0) {

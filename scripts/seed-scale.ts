@@ -24,12 +24,16 @@
  */
 
 import "./env-bootstrap";
+import { createThrowawayLogin, loginIdFor, type ThrowawayLoginInput } from "./auth-fixtures";
+import { PROD_REF } from "./proof-session";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { PASSWORD_MIN_LENGTH } from "@/lib/constants";
+import { parseDatabaseUrl } from "@/lib/supabase-connection";
 import {
   makeAdminClient, insertInBatches, countRows, analyzeTables, writeManifest, writeHabits,
   type WriteLedger, type Manifest,
 } from "./seed/db";
-import { seedUuid, seedEmail, SEED_ID_LO, SEED_ID_HI, SEED_EMAIL_DOMAIN } from "./seed/ids";
+import { seedUuid, seedEmail, seedInviteToken, SEED_ID_LO, SEED_ID_HI, SEED_EMAIL_DOMAIN } from "./seed/ids";
 import { generateCoachBundle, fallbackCatalog, type CatalogExercise, type RowStep, type SeedContext } from "./seed/generate";
 import { fillSentSnapshots } from "@/services/check-in-sent-snapshot-fill";
 import { teardown, TEARDOWN_ORDER } from "./seed/teardown";
@@ -37,9 +41,7 @@ import { EXERCISE_POOL } from "./seed/model";
 
 // ------------------------------------------------------------------ guards
 
-/** The production project. The seed must never run here. */
-const PROD_REF = "etezzztgafcotyahgijk";
-/** Targets this script is allowed to write to without an explicit override. */
+/** Targets this script is allowed to write to without an explicit override. The production project (PROD_REF) never. */
 const KNOWN_TARGETS = new Set(["aeaphsslctwcmebldrzx", "local"]);
 
 type Target = { ref: string; url: string; isLocal: boolean };
@@ -99,6 +101,19 @@ function resolveTarget(allowRef: string | null): Target {
   }
 
   return { ref, url, isLocal: local };
+}
+
+/**
+ * Whether the persona logins would land in the target. They are made and
+ * deleted through Better Auth's own connection, DATABASE_URL
+ * (scripts/auth-fixtures.ts), not the target's service key, so that string
+ * must name the target's own pooler: one naming another project would put the
+ * logins there. A local target is never reached by it (the connection is
+ * Supabase's pooler, TLS verified), so a local seed has no logins.
+ */
+function loginsReachTarget(target: Target): boolean {
+  const databaseUrl = process.env.DATABASE_URL;
+  return !target.isLocal && !!databaseUrl && parseDatabaseUrl(databaseUrl).username === `postgres.${target.ref}`;
 }
 
 function fail(...lines: string[]): never {
@@ -213,8 +228,8 @@ function parseArgs(argv: readonly string[]): Args {
   positiveInt("--clients-per-coach", out.clientsPerCoach, 1, 10_000);
   positiveInt("--personas", out.personas, 0, 10_000);
   positiveInt("--saturated-coaches", out.saturatedCoaches, 0, 10_000);
-  if (out.password.length < 8) {
-    fail(`--password must be at least 8 characters (Supabase rejects shorter).`);
+  if (out.password.length < PASSWORD_MIN_LENGTH) {
+    fail(`--password must be at least ${PASSWORD_MIN_LENGTH} characters (Better Auth refuses shorter).`);
   }
 
   out.coaches = Math.max(1, Math.round(out.coaches * out.scale));
@@ -308,14 +323,30 @@ async function main(): Promise<void> {
   console.info(`  namespace   ${SEED_ID_LO} .. ${SEED_ID_HI}`);
   console.info(`  auth domain @${SEED_EMAIL_DOMAIN}`);
 
+  const withLogins = loginsReachTarget(target);
+  if (!withLogins && !target.isLocal && (args.teardown || args.personas > 0)) {
+    fail(
+      `DATABASE_URL does not name ${target.ref}: the seed's logins go through it (Better Auth's connection).`,
+      "Point it at the target's own pooler string, or the logins would be made or deleted in another project."
+    );
+  }
+
   if (args.teardown) {
     console.info("\n  TEARDOWN — deleting seeded rows in reverse dependency order.\n");
-    const report = await teardown(db, (table, removed) => {
-      if (removed > 0) console.info(`    ${table.padEnd(30)} ${removed.toLocaleString().padStart(9)} removed`);
-    });
+    const report = await teardown(
+      db,
+      (table, removed) => {
+        if (removed > 0) console.info(`    ${table.padEnd(30)} ${removed.toLocaleString().padStart(9)} removed`);
+      },
+      withLogins
+    );
     const total = report.perTable.reduce((s, t) => s + t.removed, 0);
     console.info(`\n  removed ${total.toLocaleString()} rows across ${report.perTable.length} tables`);
-    console.info(`  removed ${report.authUsersRemoved} auth users (+${report.profilesRemoved} profiles by cascade)`);
+    console.info(
+      withLogins
+        ? `  removed ${report.loginsRemoved} logins (+${report.profilesRemoved} profiles with them)`
+        : "  a local target holds no seed logins: none removed"
+    );
     console.info("  every table's unmarked row count was unchanged — no collateral damage.\n");
     if (!args.skipAnalyze) {
       console.info("  running ANALYZE on the emptied tables...");
@@ -333,6 +364,9 @@ async function main(): Promise<void> {
       `${existing.marked} seeded clients already exist in the namespace.`,
       "Run --teardown first. Seeding on top would collide on primary keys."
     );
+  }
+  if (args.personas > 0 && !withLogins) {
+    fail("A local target cannot hold the personas' logins (Better Auth's connection is Supabase's pooler).", "Seed it with --personas 0.");
   }
 
   const catalog = await loadCatalog(db);
@@ -386,12 +420,17 @@ async function main(): Promise<void> {
     let steps = generateCoachBundle(coachIdx, ctx);
 
     if (isPersonaCoach) {
-      // handle_new_user creates the coaches row itself for a non-invited signup,
-      // and coaches_email_key is NOT its ON CONFLICT target — so pre-inserting a
-      // row with the same email makes createUser fail with 23505 inside the
-      // trigger. Create the user first, then adopt the row it produced.
+      // The persona's login is made as the owner's command makes a coach's
+      // (scripts/auth-fixtures.ts), which writes the coaches row itself on the
+      // same email — coaches_email_key would refuse a second row. Make the
+      // login first, then adopt the row it produced.
       const coachRow = steps.find((s): s is RowStep => "table" in s && s.table === "coaches")!.rows[0];
-      const authId = await ensureAuthUser(db, seedEmail("coach", coachIdx), args.password);
+      const authId = await ensurePersonaLogin(db, {
+        role: "coach",
+        email: seedEmail("coach", coachIdx),
+        password: args.password,
+        name: String(coachRow.name),
+      });
       // .select() so a zero-row match is detectable. Without it the update
       // reports success having matched nothing, and because the `coaches`
       // insert is filtered out below, the coach would simply never exist —
@@ -402,12 +441,12 @@ async function main(): Promise<void> {
         .update({ ...coachRow, user_id: authId })
         .eq("user_id", authId)
         .select("id");
-      if (error) throw new Error(`adopting trigger-created coaches row: ${error.message}`);
+      if (error) throw new Error(`adopting the login's coaches row: ${error.message}`);
       if ((adopted?.length ?? 0) !== 1) {
         throw new Error(
-          `adopting trigger-created coaches row for ${seedEmail("coach", coachIdx)}: expected exactly 1 row, ` +
-            `matched ${adopted?.length ?? 0}. handle_new_user did not create the coaches row this script ` +
-            "relies on (it derives role='trainer' only for a signup with no pending invitation). " +
+          `adopting the login's coaches row for ${seedEmail("coach", coachIdx)}: expected exactly 1 row, ` +
+            `matched ${adopted?.length ?? 0}. The coach's login has no coaches row for this script to adopt ` +
+            "(createCoachLogin writes it with the login). " +
             "Investigate before re-running — the namespace now holds a partial dataset."
         );
       }
@@ -452,17 +491,19 @@ async function main(): Promise<void> {
       throw new Error(`saving the seeded check-ins' copies: ${copies.failed[0].error}`);
     }
 
-    // Persona clients: the invitation row is already in place, so the trigger
-    // derives role='client' and writes only profiles. Link afterwards.
+    // Persona clients: the client row and its pending invitation are in
+    // place, so the login is made by accepting it, which writes the client's
+    // profile and links the row.
     for (let c = 0; c < args.clientsPerCoach; c++) {
       const clientIdx = coachIdx * args.clientsPerCoach + c;
       if (!personaClientIndices.has(clientIdx)) continue;
-      const authId = await ensureAuthUser(db, seedEmail("client", clientIdx), args.password);
-      const { error } = await db
-        .from("clients")
-        .update({ user_id: authId })
-        .eq("id", seedUuid("client", coachIdx, c));
-      if (error) throw new Error(`linking client ${clientIdx}: ${error.message}`);
+      await ensurePersonaLogin(db, {
+        role: "client",
+        email: seedEmail("client", clientIdx),
+        password: args.password,
+        clientId: seedUuid("client", coachIdx, c),
+        inviteToken: seedInviteToken(coachIdx, c),
+      });
     }
 
     console.info(progress.line(`coach ${coachIdx + 1}/${args.coaches}`));
@@ -509,29 +550,19 @@ async function main(): Promise<void> {
   console.info(`  logins   -> coach000@${SEED_EMAIL_DOMAIN} .. / client000@${SEED_EMAIL_DOMAIN} .. (password: ${args.password})\n`);
 }
 
-/** Idempotent auth-user creation. Returns the user id either way. */
-async function ensureAuthUser(
-  db: SupabaseClient,
-  email: string,
-  password: string
-): Promise<string> {
-  const { data, error } = await db.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true, // required for a later signInWithPassword
-  });
-  if (!error && data.user) return data.user.id;
-
-  // Already present from a previous partial run — find it by paging.
-  for (let page = 1; page <= 200; page++) {
-    const list = await db.auth.admin.listUsers({ page, perPage: 200 });
-    if (list.error) throw new Error(`listUsers: ${list.error.message}`);
-    const users = list.data?.users ?? [];
-    const hit = users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
-    if (hit) return hit.id;
-    if (users.length < 200) break;
+/**
+ * A persona's login, made through scripts/auth-fixtures.ts with a password it
+ * signs in with; one already there from a previous partial run is kept (a
+ * client's is linked to its row again). Returns the login's id either way.
+ */
+async function ensurePersonaLogin(db: SupabaseClient, login: ThrowawayLoginInput): Promise<string> {
+  const existing = await loginIdFor(login.email);
+  if (!existing) return (await createThrowawayLogin(login)).userId;
+  if (login.role === "client") {
+    const { error } = await db.from("clients").update({ user_id: existing }).eq("id", login.clientId);
+    if (error) throw new Error(`linking ${login.email}: ${error.message}`);
   }
-  throw new Error(`createUser failed for ${email}: ${error?.message ?? "unknown"}`);
+  return existing;
 }
 
 /**

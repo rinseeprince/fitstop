@@ -1,21 +1,22 @@
 /**
  * Request-level proof of the measurement log's three row actions — edit in
- * place, remove, restore — against the linked DEV database through a running
- * `next dev` (docs/MEASUREMENT-LOG-PLAN.md commits 4 and 8).
+ * place, remove, restore — against the linked DEV database through a next dev
+ * this script starts on a free port (docs/MEASUREMENT-LOG-PLAN.md commits 4
+ * and 8).
  *
- *   npx tsx scripts/measurement-edit-proof.ts
+ *   npx tsx --tsconfig ./tsconfig.json scripts/measurement-edit-proof.ts
  *
  * The belts live in SQL (migration 160: a foreign row, a double void, a
  * restore of a live row, the client's only weight; migration 161: a foreign
  * row, a removed row, an unchanged value) and in the live view's filter and
  * the two derived views' ordering, so a vitest that mocks `supabaseAdmin`
  * proves nothing about them. This script creates two throwaway clients under
- * the owner's coach row — one with an auth user, so GET /api/client/progress
- * can be driven as the client (the session validates who they are; the read
- * is supabaseAdmin's, filtered on their id, through the view) — writes readings
- * through the app's own writer, drives the routes as the coach with a minted
- * session, calls the RPCs directly for their refusals, and reads every
- * surface back:
+ * the owner's coach row — one with a login of its own (scripts/auth-fixtures.ts),
+ * so GET /api/client/progress can be driven as the client (the session
+ * validates who they are; the read is supabaseAdmin's, filtered on their id,
+ * through the view) — writes readings through the app's own writer, drives
+ * the routes as the coach with a minted session, calls the RPCs directly for
+ * their refusals, and reads every surface back:
  *
  *   1  removing the newest weight: gone from the series, the current view,
  *      the check-in's own rows in the log and GET /api/client/progress; the
@@ -44,12 +45,12 @@
  *  10  the only body fat CAN be removed, and the formula switches
  *
  * Every fixture number is distinct. The throwaway rows go with the clients
- * (ON DELETE CASCADE); the auth user and its audit rows are removed last.
+ * (ON DELETE CASCADE); the login and its audit rows are removed last, and the
+ * minted sessions with them.
  */
 import "./env-bootstrap";
 
-import { createServerClient } from "@supabase/ssr";
-import { createClient } from "@supabase/supabase-js";
+import { createThrowawayLogin, deleteThrowawayLogin } from "./auth-fixtures";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import {
   appendMeasurements,
@@ -58,20 +59,12 @@ import {
   getMeasurementSeries,
   getMeasurementsForCheckIns,
 } from "@/services/measurements-service";
+import { endMintedSessions, mintSession, PROOF_BASE, type ProofSession } from "./proof-session";
+import { startProofServer, stopProofServer } from "./proof-server";
 
-const BASE = process.env.WIRE_PROOF_BASE ?? "http://localhost:3000";
 const COACH_EMAIL = "samuel.k@taboola.com";
 // A check-in stamp: source_id carries no foreign key, so a fold needs no row.
 const STAMP = "00000000-0000-4000-8000-00000000c401";
-
-const SUPABASE_URL = need("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL);
-const ANON_KEY = need("NEXT_PUBLIC_SUPABASE_ANON_KEY", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-const SERVICE_KEY = need("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
-
-function need(name: string, value: string | undefined): string {
-  if (!value) throw new Error(`Missing ${name} in .env.local`);
-  return value;
-}
 
 let failures = 0;
 function check(label: string, ok: boolean, detail?: unknown): void {
@@ -83,60 +76,19 @@ function check(label: string, ok: boolean, detail?: unknown): void {
   }
 }
 
-type Session = { cookie: string };
-
-async function mintSession(email: string): Promise<Session> {
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: link, error: linkError } = await admin.auth.admin.generateLink({
-    type: "magiclink",
-    email,
-  });
-  if (linkError || !link?.properties?.email_otp) {
-    throw new Error(`generateLink failed for ${email}: ${linkError?.message ?? "no otp"}`);
-  }
-  const anon = createClient(SUPABASE_URL, ANON_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: verified, error: verifyError } = await anon.auth.verifyOtp({
-    email,
-    token: link.properties.email_otp,
-    type: "email",
-  });
-  if (verifyError || !verified.session) {
-    throw new Error(`verifyOtp failed for ${email}: ${verifyError?.message ?? "no session"}`);
-  }
-  const jar = new Map<string, string>();
-  const ssr = createServerClient(SUPABASE_URL, ANON_KEY, {
-    cookies: {
-      getAll: () => [...jar].map(([name, value]) => ({ name, value })),
-      setAll: (cookies) => {
-        for (const { name, value } of cookies) jar.set(name, value);
-      },
-    },
-  });
-  const { error: setError } = await ssr.auth.setSession({
-    access_token: verified.session.access_token,
-    refresh_token: verified.session.refresh_token,
-  });
-  if (setError) throw new Error(`setSession failed for ${email}: ${setError.message}`);
-  return { cookie: [...jar].map(([name, value]) => `${name}=${value}`).join("; ") };
-}
-
 type Reply = { status: number; json: Record<string, unknown> | null };
 
 async function send(
-  session: Session,
+  session: ProofSession,
   method: "POST" | "PATCH",
   path: string,
   body?: unknown
 ): Promise<Reply> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${PROOF_BASE}${path}`, {
     method,
     headers: {
-      Cookie: session.cookie,
-      Origin: BASE,
+      ...session.headers,
+      Origin: PROOF_BASE,
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -151,12 +103,12 @@ async function send(
   return { status: res.status, json };
 }
 
-const post = (session: Session, path: string, body?: unknown) => send(session, "POST", path, body);
-const patch = (session: Session, path: string, body: unknown) => send(session, "PATCH", path, body);
+const post = (session: ProofSession, path: string, body?: unknown) => send(session, "POST", path, body);
+const patch = (session: ProofSession, path: string, body: unknown) => send(session, "PATCH", path, body);
 
-async function get(session: Session, path: string): Promise<Reply> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { Cookie: session.cookie, Origin: BASE, Accept: "application/json" },
+async function get(session: ProofSession, path: string): Promise<Reply> {
+  const res = await fetch(`${PROOF_BASE}${path}`, {
+    headers: { ...session.headers, Origin: PROOF_BASE, Accept: "application/json" },
   });
   const text = await res.text();
   let json: Record<string, unknown> | null = null;
@@ -216,19 +168,9 @@ async function main(): Promise<void> {
 
   const stamp = Date.now();
   const clientEmail = `edit-proof-${stamp}@fixture.local`;
-  const adminAuth = createClient(SUPABASE_URL, SERVICE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: created, error: userError } = await adminAuth.auth.admin.createUser({
-    email: clientEmail,
-    email_confirm: true,
-    password: `Proof-${stamp}-${Math.random().toString(36).slice(2)}`,
-  });
-  if (userError || !created.user) throw new Error(`createUser failed: ${userError?.message}`);
-  const userId = created.user.id;
 
   const clientIds: string[] = [];
-  const createClientRow = async (name: string, email: string, withUser: boolean) => {
+  const createClientRow = async (name: string, email: string) => {
     const { data, error } = await supabaseAdmin
       .from("clients")
       .insert({
@@ -236,7 +178,7 @@ async function main(): Promise<void> {
         name,
         email,
         active: true,
-        user_id: withUser ? userId : null,
+        user_id: null,
         start_date: "2026-04-01",
         timezone: "Europe/London",
         onboarding_status: "active",
@@ -252,9 +194,16 @@ async function main(): Promise<void> {
   };
 
   try {
-    console.info("Setup: two throwaway clients, one with an auth user");
-    const A = await createClientRow("Edit proof A", clientEmail, true);
-    const B = await createClientRow("Edit proof B", `edit-proof-b-${stamp}@fixture.local`, false);
+    await startProofServer();
+    console.info("Setup: two throwaway clients, one with a login of its own");
+    const A = await createClientRow("Edit proof A", clientEmail);
+    await createThrowawayLogin({
+      role: "client",
+      email: clientEmail,
+      password: `Proof-${stamp}-${Math.random().toString(36).slice(2)}`,
+      clientId: A,
+    });
+    const B = await createClientRow("Edit proof B", `edit-proof-b-${stamp}@fixture.local`);
 
     const w1 = (await appendMeasurements({ clientId: A, source: "intake", recordedOn: "2026-04-01", values: { weight: 71.1 } })).rows.weight!;
     const w2 = (await appendMeasurements({ clientId: A, source: "coach_entry", recordedOn: "2026-04-10", values: { weight: 72.2 }, createdBy: coach.id })).rows.weight!;
@@ -277,8 +226,8 @@ async function main(): Promise<void> {
     const pair0 = await energyPair(A);
     check("setup: the pair computed from the newest weight and body fat", pair0.bmr != null && pair0.tdee != null, pair0);
 
-    const coachSession = await mintSession(COACH_EMAIL);
-    const clientSession = await mintSession(clientEmail);
+    const coachSession = await mintSession(COACH_EMAIL, "coach");
+    const clientSession = await mintSession(clientEmail, "client");
     const rowUrl = (client: string, row: string) => `/api/clients/${client}/measurements/${row}`;
     const url = (client: string, row: string, action: string) => `${rowUrl(client, row)}/${action}`;
 
@@ -299,7 +248,7 @@ async function main(): Promise<void> {
 
     const progress = await get(clientSession, "/api/client/progress?days=365");
     const weights = ((dataOf(progress)?.weightHistory ?? []) as Array<{ weight?: number }>).map((p) => p.weight);
-    check("GET /api/client/progress under the client's JWT → 200", progress.status === 200, progress.status);
+    check("GET /api/client/progress under the client's session → 200", progress.status === 200, progress.status);
     check("…and the removed 73.3 is not in its weight history", progress.status === 200 && !weights.includes(73.3) && weights.includes(72.2), weights);
 
     const audits = await auditRows(A, w3.id);
@@ -357,7 +306,7 @@ async function main(): Promise<void> {
     check("'now' is the edited row", (await getCurrentMeasurements(A)).weight?.id === w3.id && (await getCurrentMeasurements(A)).weight?.value === 73.9);
     const progressAfterEdit = await get(clientSession, "/api/client/progress?days=365");
     const weightsAfterEdit = ((dataOf(progressAfterEdit)?.weightHistory ?? []) as Array<{ weight?: number }>).map((p) => p.weight);
-    check("GET /api/client/progress under the client's JWT reads 73.9 and no 73.3", progressAfterEdit.status === 200 && weightsAfterEdit.includes(73.9) && !weightsAfterEdit.includes(73.3), weightsAfterEdit);
+    check("GET /api/client/progress under the client's session reads 73.9 and no 73.3", progressAfterEdit.status === 200 && weightsAfterEdit.includes(73.9) && !weightsAfterEdit.includes(73.3), weightsAfterEdit);
     check("the pair moved with the edit", (await energyPair(A)).bmr !== pair0.bmr, { first: pair0, now: await energyPair(A) });
     const updateAudits = (await auditRows(A, w3.id)).filter((a) => a.action === "measurement.update");
     const meta = (updateAudits[0]?.metadata ?? {}) as Record<string, unknown>;
@@ -423,10 +372,19 @@ async function main(): Promise<void> {
       .select("id", { count: "exact", head: true })
       .in("client_id", clientIds);
     check("the throwaway readings went with their clients", count === 0, count);
-    const { error: coachRowError } = await supabaseAdmin.from("coaches").delete().eq("user_id", userId);
-    if (coachRowError) console.error(`  trigger-made coach row not deleted: ${coachRowError.message}`);
-    const { error: userDeleteError } = await adminAuth.auth.admin.deleteUser(userId);
-    if (userDeleteError) console.error(`  auth user not deleted: ${userDeleteError.message}`);
+    try {
+      await deleteThrowawayLogin(clientEmail);
+      check("the login is gone with its profile", true);
+    } catch (error) {
+      check("the login is gone with its profile", false, error instanceof Error ? error.message : String(error));
+    }
+    try {
+      await endMintedSessions();
+      check("every minted session ended", true);
+    } catch (error) {
+      check("every minted session ended", false, error instanceof Error ? error.message : String(error));
+    }
+    await stopProofServer();
   }
 
   if (failures > 0) {

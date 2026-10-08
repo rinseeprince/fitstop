@@ -22,10 +22,15 @@ import { join, relative } from "node:path";
 const ROOT = join(__dirname, "..");
 const SCAN: string[] = ["app", "components", "contexts", "hooks", "lib", "services", "utils", "proxy.ts"];
 
-// Builds a Supabase session client (@supabase/ssr's two factories, or the
-// app's own wrappers of them), or imports one.
+// Builds a Supabase session client (the two factories of Supabase's SSR
+// package, which the tree no longer installs, or the app's own wrappers of
+// them), or imports one: the package itself, should it ever come back, or a
+// wrapper.
 const SESSION_CLIENT =
   /\b(createServerClient|createServerSupabaseClient|createBrowserClient)\s*(<[^>]*>)?\s*\(|from\s+["'](@supabase\/ssr|@\/services\/supabase-client|@\/lib\/supabase-server)["']/;
+// The package's name, spelled in two halves so no line of the tree imports it,
+// a test included (docs/BETTER-AUTH-PLAN.md commit 3 greps for it).
+const SSR_PACKAGE = ["@supabase", "ssr"].join("/");
 
 // Better Auth's server and its own connection; its browser client.
 const BETTER_AUTH_SERVER = /\bbetterAuth\s*\(|\bnew\s+Pool\s*\(/;
@@ -148,8 +153,9 @@ describe("who the caller is comes from Better Auth alone", () => {
       'const supabase = createServerClient(url, key, { cookies })',
       "createBrowserClient<Database>(url, key)",
       "const supabase = await createServerSupabaseClient()",
-      'import { createServerClient } from "@supabase/ssr"',
+      `import { createServerClient as makeClient } from "${SSR_PACKAGE}"`,
       'import { supabase } from "@/services/supabase-client"',
+      'import { createServerSupabaseClient } from "@/lib/supabase-server"',
     ]) {
       expect(SESSION_CLIENT.test(src)).toBe(true);
     }

@@ -3,48 +3,54 @@
  * commit 6): the Data API is locked, before the push and after it, against the
  * linked DEV database.
  *
- *   WIRE_PROOF_DIR=<scratchpad> npx tsx scripts/data-api-locked-proof.ts before
- *   WIRE_PROOF_DIR=<scratchpad> npx tsx scripts/data-api-locked-proof.ts after
+ *   WIRE_PROOF_DIR=<scratchpad> npx tsx --tsconfig ./tsconfig.json scripts/data-api-locked-proof.ts before
+ *   WIRE_PROOF_DIR=<scratchpad> npx tsx --tsconfig ./tsconfig.json scripts/data-api-locked-proof.ts after
  *
- * Three callers, none of them the server: the browser's public key alone, a
- * real client's token and a real coach's token — a browser holding the login
+ * Three callers, none of them the server: the project's public key alone, a
+ * real client's login token and a real coach's — a browser holding a login
  * could send any of them to `/rest/v1` directly, skipping every route. For
  * every table and view in `public` (the live list, read from the catalog) each
  * caller asks `GET /rest/v1/<relation>?select=*&limit=1`. The whole matrix is
- * written to WIRE_PROOF_DIR/data-api-locked/<mode>.json, outside the tree.
+ * written to WIRE_PROOF_DIR/data-api-locked/<mode>.json, outside the tree. The
+ * public key is Supabase's anon key, read through the CLI
+ * (scripts/data-api-key.ts): the app holds it no more, but every browser
+ * bundle carried it until Better Auth.
  *
- *   before  the door is open: PostgREST answers 200 wherever the role holds a
- *           grant — the rows the policies allow, or none — so the client reads
- *           their own client row and the coach their own coach row through the
- *           sign-in rules migration 137 labelled; only the seven tables made
- *           closed under CONVENTIONS §8's new-table rule refuse the tokens, and
- *           the public key is refused on those plus the four authenticated-only
- *           relations (migration 158). A policy that is slow to evaluate can
+ *   before  the door is open to the public key: PostgREST answers 200
+ *           wherever anon holds a grant — the rows the policies allow, or
+ *           none; only the seven tables made closed under CONVENTIONS §8's
+ *           new-table rule and the four authenticated-only relations
+ *           (migration 158) refuse it. A policy that is slow to evaluate can
  *           run into the role's statement timeout (57014) — the door open, and
  *           the query running, not a refusal
- *   after   every relation refuses every caller: 401 for the public key and
- *           403 for a token, both with Postgres's 42501 (permission denied),
- *           because anon and authenticated hold no privilege in public
+ *   after   every relation refuses the public key: 401 with Postgres's 42501
+ *           (permission denied), because anon holds no privilege in public
+ *
+ * A login's token is Better Auth's session token, never a JWT, so PostgREST
+ * refuses it before it chooses any role — 401, PGRST301 — on every relation,
+ * before the push and after it: what a signed-in browser holds opens nothing
+ * at the Data API. The authenticated role's own lock, no privilege in public,
+ * is `npm run check:rls` clause 5's, read from the catalog.
  *
  * The two logins are throwaways made for the run and removed at the end, under
- * the owner's coach: a client — an invitation row first, so the signup trigger
- * gives the login the client role — and a coach, whose login the trigger gives
- * a coaches row. In both modes the proof reads those two roles back, which
- * after the push shows `handle_new_user()` still fires once its EXECUTE grant
- * is service_role's and supabase_auth_admin's alone. The catalog counts are
- * read too: 53 policies and 88 public-role grants (a relation and a grantee)
- * before, 0 and 0 after.
- * When a `next dev` answers at WIRE_PROOF_BASE, the app's own doors are tried
- * as well — the client's `/api/client/me`, the coach's `/api/clients` — and
- * must answer 200 in both modes: the lock changes nothing the app does.
+ * the owner's coach (scripts/auth-fixtures.ts): a client through the invite
+ * and a coach through the owner's command, whose roles the proof reads back.
+ * The catalog counts are read too: 53 policies and 88 public-role grants (a
+ * relation and a grantee) before, 0 and 0 after. The app's own doors are tried
+ * through a next dev the script starts on a free port — the client's
+ * `/api/client/me`, the coach's `/api/clients` — and must answer 200 in both
+ * modes: the lock changes nothing the app does.
  */
 import "./env-bootstrap";
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createThrowawayLogin, deleteThrowawayLogin, loginIdFor } from "./auth-fixtures";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { mintSession, send, PROOF_BASE, type ProofSession } from "./proof-session";
+import { dataApiPublicKey } from "./data-api-key";
+import { endMintedSessions, mintSession, send, PROOF_BASE, type ProofSession } from "./proof-session";
+import { startProofServer, stopProofServer } from "./proof-server";
 
 const COACH_EMAIL = "samuel.k@taboola.com";
 // Made closed at creation (REVOKE, then GRANT service_role): a token was
@@ -89,7 +95,7 @@ function need(name: string): string {
   return value;
 }
 const REST_URL = `${need("NEXT_PUBLIC_SUPABASE_URL")}/rest/v1`;
-const ANON_KEY = need("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+const PUBLIC_KEY = dataApiPublicKey();
 
 function proofDir(): string {
   const root = process.env.WIRE_PROOF_DIR;
@@ -132,8 +138,8 @@ type Cell = { status: number; code: string | null; rows: number | null };
 async function sideDoor(token: string | null, relation: string): Promise<Cell> {
   const res = await fetch(`${REST_URL}/${relation}?select=*&limit=1`, {
     headers: {
-      apikey: ANON_KEY,
-      Authorization: `Bearer ${token ?? ANON_KEY}`,
+      apikey: PUBLIC_KEY,
+      Authorization: `Bearer ${token ?? PUBLIC_KEY}`,
       Accept: "application/json",
     },
   });
@@ -150,7 +156,9 @@ async function sideDoor(token: string | null, relation: string): Promise<Cell> {
   return { status: res.status, code, rows };
 }
 
-const refused = (cell: Cell, withToken: boolean) => cell.status === (withToken ? 403 : 401) && cell.code === "42501";
+const refused = (cell: Cell) => cell.status === 401 && cell.code === "42501";
+// PostgREST's answer to a bearer token it cannot read as a JWT: no role was chosen.
+const unreadable = (cell: Cell) => cell.status === 401 && cell.code === "PGRST301";
 const answered = (cell: Cell) => cell.status === 200 && cell.rows !== null;
 // The role's statement timeout while a policy's nested subqueries run: the
 // query was allowed to start, so the door is open. Only possible before.
@@ -165,17 +173,8 @@ async function appAnswers(path: string, session: ProofSession): Promise<number |
   }
 }
 
-async function devServerUp(): Promise<boolean> {
-  try {
-    const res = await fetch(`${PROOF_BASE}/login`, { redirect: "manual", signal: AbortSignal.timeout(3000) });
-    return res.status > 0;
-  } catch {
-    return false;
-  }
-}
-
 async function main(): Promise<void> {
-  console.info(`Mode: ${mode} the push — the Data API should be ${OPEN ? "open" : "locked"}.`);
+  console.info(`Mode: ${mode} the push — the Data API should be ${OPEN ? "open" : "locked"} to the public key.`);
   const { data: coach, error: coachError } = await supabaseAdmin.from("coaches").select("id").eq("email", COACH_EMAIL).single();
   if (coachError || !coach) throw new Error(`Coach not found: ${coachError?.message}`);
 
@@ -183,10 +182,10 @@ async function main(): Promise<void> {
   const clientEmail = `data-api-locked-client-${stamp}@fixture.local`;
   const coachEmail = `data-api-locked-coach-${stamp}@fixture.local`;
   let clientId: string | null = null;
-  let clientUserId: string | null = null;
-  let coachUserId: string | null = null;
+  const logins: Array<{ email: string; userId: string }> = [];
 
   try {
+    await startProofServer();
     console.info("Setup: a client with its own login under the owner's coach, and a coach with its own login");
     const { data: made, error: clientError } = await supabaseAdmin
       .from("clients")
@@ -202,36 +201,19 @@ async function main(): Promise<void> {
       .single();
     if (clientError || !made) throw new Error(`client insert: ${clientError?.message}`);
     clientId = made.id;
-    const { error: inviteError } = await supabaseAdmin
-      .from("client_invitations")
-      .insert({ client_id: clientId, email: clientEmail, status: "accepted" });
-    if (inviteError) throw new Error(`invitation insert: ${inviteError.message}`);
 
     const password = () => `Proof-${stamp}-${Math.random().toString(36).slice(2)}`;
-    const { data: clientUser, error: clientUserError } = await supabaseAdmin.auth.admin.createUser({
-      email: clientEmail,
-      email_confirm: true,
-      password: password(),
-    });
-    if (clientUserError || !clientUser.user) throw new Error(`createUser (client): ${clientUserError?.message}`);
-    clientUserId = clientUser.user.id;
-    const { error: linkError } = await supabaseAdmin.from("clients").update({ user_id: clientUserId }).eq("id", clientId);
-    if (linkError) throw new Error(`client link: ${linkError.message}`);
+    const clientUser = await createThrowawayLogin({ role: "client", email: clientEmail, password: password(), clientId });
+    logins.push({ email: clientEmail, userId: clientUser.userId });
+    const coachUser = await createThrowawayLogin({ role: "coach", email: coachEmail, password: password(), name: "Data API locked proof coach" });
+    logins.push({ email: coachEmail, userId: coachUser.userId });
 
-    const { data: coachUser, error: coachUserError } = await supabaseAdmin.auth.admin.createUser({
-      email: coachEmail,
-      email_confirm: true,
-      password: password(),
-    });
-    if (coachUserError || !coachUser.user) throw new Error(`createUser (coach): ${coachUserError?.message}`);
-    coachUserId = coachUser.user.id;
-
-    // The signup trigger, handle_new_user(), decided both roles.
-    const { data: clientProfile } = await supabaseAdmin.from("profiles").select("role").eq("user_id", clientUserId).maybeSingle();
-    const { data: coachProfile } = await supabaseAdmin.from("profiles").select("role").eq("user_id", coachUserId).maybeSingle();
-    const { count: coachRows } = await supabaseAdmin.from("coaches").select("id", { count: "exact", head: true }).eq("user_id", coachUserId);
-    check("the signup trigger made the invited login a client", clientProfile?.role === "client", clientProfile);
-    check("…and the uninvited login a trainer with a coaches row", coachProfile?.role === "trainer" && coachRows === 1, { coachProfile, coachRows });
+    // The path that made each login decided its role (D9).
+    const { data: clientProfile } = await supabaseAdmin.from("profiles").select("role").eq("user_id", clientUser.userId).maybeSingle();
+    const { data: coachProfile } = await supabaseAdmin.from("profiles").select("role").eq("user_id", coachUser.userId).maybeSingle();
+    const { count: coachRows } = await supabaseAdmin.from("coaches").select("id", { count: "exact", head: true }).eq("user_id", coachUser.userId);
+    check("the invite made the client's login a client", clientProfile?.role === "client", clientProfile);
+    check("…and the owner's command made the coach's login a trainer with a coaches row", coachProfile?.role === "trainer" && coachRows === 1, { coachProfile, coachRows });
 
     const clientSession = await mintSession(clientEmail, "client");
     const coachSession = await mintSession(coachEmail, "coach");
@@ -256,13 +238,22 @@ async function main(): Promise<void> {
 
     for (const caller of callers) {
       const cells = matrix[caller.label];
-      const withToken = caller.token !== null;
-      const refusedNames = Object.entries(cells).filter(([, c]) => refused(c, withToken)).map(([n]) => n);
+      if (caller.token !== null) {
+        // Better Auth's token, never a JWT: refused before any role, in either mode.
+        const read = Object.entries(cells).filter(([, c]) => !unreadable(c)).map(([n]) => n);
+        check(
+          `${caller.label}: refused unread on every one of ${relations.length} relations (401, PGRST301: not a JWT)`,
+          read.length === 0,
+          { notRefusedUnread: read.map((n) => ({ [n]: cells[n] })) },
+        );
+        continue;
+      }
+      const refusedNames = Object.entries(cells).filter(([, c]) => refused(c)).map(([n]) => n);
       const answeredNames = Object.entries(cells).filter(([, c]) => answered(c)).map(([n]) => n);
       const timedOutNames = Object.entries(cells).filter(([, c]) => timedOut(c)).map(([n]) => n);
-      const other = Object.entries(cells).filter(([, c]) => !refused(c, withToken) && !answered(c) && !timedOut(c));
+      const other = Object.entries(cells).filter(([, c]) => !refused(c) && !answered(c) && !timedOut(c));
       if (OPEN) {
-        const expectedRefused = new Set([...CLOSED_BEFORE, ...(withToken ? [] : AUTHENTICATED_ONLY_BEFORE)]);
+        const expectedRefused = new Set([...CLOSED_BEFORE, ...AUTHENTICATED_ONLY_BEFORE]);
         const wrong = Object.keys(cells).filter((n) => expectedRefused.has(n) !== refusedNames.includes(n));
         const slow = timedOutNames.length === 0 ? "" : `, ${timedOutNames.length} still running at the role's timeout (${timedOutNames.join(", ")})`;
         check(
@@ -272,19 +263,13 @@ async function main(): Promise<void> {
         );
       } else {
         check(
-          `${caller.label}: refused on every one of ${relations.length} relations (${withToken ? 403 : 401}, 42501)`,
+          `${caller.label}: refused on every one of ${relations.length} relations (401, 42501)`,
           refusedNames.length === relations.length && other.length === 0 && timedOutNames.length === 0,
           { answered: answeredNames, timedOut: timedOutNames, other },
         );
       }
     }
     if (OPEN) {
-      check(
-        "the client token reads their own client row through the sign-in rule",
-        matrix["client token"].clients.rows === 1,
-        matrix["client token"].clients,
-      );
-      check("the coach token reads their own coach row through the sign-in rule", matrix["coach token"].coaches.rows === 1, matrix["coach token"].coaches);
       check("the public key reads nothing from a policy table, yet is answered", matrix["public key"].clients.rows === 0, matrix["public key"].clients);
     }
 
@@ -297,14 +282,10 @@ async function main(): Promise<void> {
     }
 
     console.info("3. The app's own doors");
-    if (await devServerUp()) {
-      const me = await appAnswers("/api/client/me", clientSession);
-      const clients = await appAnswers("/api/clients", coachSession);
-      check(`the client's /api/client/me answers 200 through the server (${PROOF_BASE})`, me === 200, me);
-      check("the coach's /api/clients answers 200 through the server", clients === 200, clients);
-    } else {
-      console.info(`  – no dev server at ${PROOF_BASE}; the app's doors are covered by the browser smoke`);
-    }
+    const me = await appAnswers("/api/client/me", clientSession);
+    const clients = await appAnswers("/api/clients", coachSession);
+    check(`the client's /api/client/me answers 200 through the server (${PROOF_BASE})`, me === 200, me);
+    check("the coach's /api/clients answers 200 through the server", clients === 200, clients);
   } finally {
     console.info("Cleanup");
     if (clientId) {
@@ -313,26 +294,25 @@ async function main(): Promise<void> {
       const { error: clientError } = await supabaseAdmin.from("clients").delete().eq("id", clientId);
       if (clientError) console.error(`  client not deleted: ${clientError.message}`);
     }
-    if (coachUserId) {
-      const { error: coachRowError } = await supabaseAdmin.from("coaches").delete().eq("user_id", coachUserId);
-      if (coachRowError) console.error(`  coach row not deleted: ${coachRowError.message}`);
+    for (const { email } of logins) {
+      try {
+        await deleteThrowawayLogin(email);
+      } catch (error) {
+        console.error(`  login ${email} not deleted: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
-    for (const id of [clientUserId, coachUserId]) {
-      if (!id) continue;
-      const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
-      if (error) console.error(`  login ${id} not deleted: ${error.message}`);
-    }
+    await endMintedSessions();
     if (clientId) {
       const { data: clientLeft } = await supabaseAdmin.from("clients").select("id").eq("id", clientId).maybeSingle();
       check("cleanup: the client is gone", clientLeft === null, clientLeft);
     }
-    for (const id of [clientUserId, coachUserId]) {
-      if (!id) continue;
-      const { data: profileLeft } = await supabaseAdmin.from("profiles").select("user_id").eq("user_id", id).maybeSingle();
-      const { count: coachLeft } = await supabaseAdmin.from("coaches").select("id", { count: "exact", head: true }).eq("user_id", id);
-      const { data: userLeft } = await supabaseAdmin.auth.admin.getUserById(id);
-      check(`cleanup: login ${id.slice(0, 8)}… and its rows are gone`, profileLeft === null && coachLeft === 0 && !userLeft?.user, { profileLeft, coachLeft });
+    for (const { email, userId } of logins) {
+      const { data: profileLeft } = await supabaseAdmin.from("profiles").select("user_id").eq("user_id", userId).maybeSingle();
+      const { count: coachLeft } = await supabaseAdmin.from("coaches").select("id", { count: "exact", head: true }).eq("user_id", userId);
+      const loginLeft = await loginIdFor(email);
+      check(`cleanup: login ${userId.slice(0, 8)}… and its rows are gone`, profileLeft === null && coachLeft === 0 && loginLeft === null, { profileLeft, coachLeft, loginLeft });
     }
+    await stopProofServer();
   }
 
   if (failures > 0) {

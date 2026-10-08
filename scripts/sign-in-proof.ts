@@ -31,16 +31,16 @@
  */
 import "./env-bootstrap";
 
-import { spawn, type ChildProcess } from "node:child_process";
 import { createHmac, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { join } from "node:path";
 import { Client } from "pg";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { parseDatabaseUrl, supabaseConnection } from "@/lib/supabase-connection";
 import { maskEmail } from "@/lib/mask-email";
+import { passwordLinkToken } from "./auth-fixtures";
 import { endSession, mintSession, signInOverHttp, type ProofSession } from "./proof-session";
+import { NO_EMAIL, startProofServer, stopProofServer, type ProofServer } from "./proof-server";
 
 const DEV_REF = "aeaphsslctwcmebldrzx";
 const ROOT = join(__dirname, "..");
@@ -50,10 +50,6 @@ const SMOKE_CLIENT_EMAIL = "s.kalepa91+intake@gmail.com";
 const STAMP = Date.now();
 const ADDRESS = (who: string) => `sign-in-proof-${who}-${STAMP}@fixture.local`;
 const ADDRESS_PATTERN = "sign-in-proof-%@fixture.local";
-// Discard: a connection here is refused at once, so no email leaves the machine.
-const NO_EMAIL = "http://127.0.0.1:9";
-const READY_TIMEOUT_MS = 120_000;
-const STOP_TIMEOUT_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 60_000;
 const UNAUTHORIZED = JSON.stringify({ success: false, error: "Unauthorized" });
 
@@ -102,87 +98,8 @@ function passwordFor(address: string, round = 0): string {
   return createHmac("sha256", need("BETTER_AUTH_SECRET")).update(`${address}:${round}`).digest("base64url").slice(0, 32);
 }
 
-// ---------------------------------------------------------------------------
-// The dev server
-// ---------------------------------------------------------------------------
-
-/** A free port that is not :3000, which belongs to whoever runs a dev server there. */
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.unref();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      server.close(() => (port > 0 && port !== 3000 ? resolve(port) : reject(new Error(`No usable port (${port})`))));
-    });
-  });
-}
-
-type DevServer = { base: string; child: ChildProcess; output: string[] };
-let devServer: DevServer | null = null;
-
-/** next dev on its own port, in its own process group, so this run stops it and nothing else. */
-async function startDevServer(): Promise<DevServer> {
-  const port = await freePort();
-  const base = `http://localhost:${port}`;
-  const output: string[] = [];
-  const child = spawn(join(ROOT, "node_modules/.bin/next"), ["dev", "--port", String(port)], {
-    cwd: ROOT,
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      PORT: String(port),
-      BETTER_AUTH_URL: base,
-      NEXT_PUBLIC_APP_URL: base,
-      RESEND_BASE_URL: NO_EMAIL,
-      SENTRY_DSN: "",
-    },
-  });
-  child.stdout?.on("data", (chunk: Buffer) => output.push(chunk.toString()));
-  child.stderr?.on("data", (chunk: Buffer) => output.push(chunk.toString()));
-  devServer = { base, child, output };
-
-  const started = Date.now();
-  while (Date.now() - started < READY_TIMEOUT_MS) {
-    if (child.exitCode !== null) {
-      throw new Error(`next dev exited before it was ready (another next dev may hold this folder):\n${output.join("").slice(-1500)}`);
-    }
-    try {
-      const res = await fetch(`${base}/login`, { redirect: "manual", signal: AbortSignal.timeout(5_000) });
-      if (res.status === 200) {
-        console.info(`Started next dev at ${base} (pid ${child.pid})`);
-        return devServer;
-      }
-    } catch {
-      // Not listening yet: keep waiting until the deadline.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-  }
-  throw new Error(`next dev did not answer /login within ${READY_TIMEOUT_MS / 1000} s:\n${output.join("").slice(-1500)}`);
-}
-
-/** SIGTERM to the dev server's process group while it still runs; synchronous, for the exit handler. */
-function terminateDevServer(): void {
-  const child = devServer?.child;
-  if (child?.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
-  try {
-    process.kill(-child.pid, "SIGTERM");
-  } catch (error) {
-    console.error(`next dev (pid ${child.pid}) had already stopped: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-async function stopDevServer({ child }: DevServer): Promise<void> {
-  if (child.pid === undefined || child.exitCode !== null) return;
-  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
-  process.kill(-child.pid, "SIGTERM");
-  const stopped = await Promise.race([exited.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), STOP_TIMEOUT_MS))]);
-  if (!stopped && child.exitCode === null) process.kill(-child.pid, "SIGKILL");
-  console.info(`Stopped next dev (pid ${child.pid})`);
-}
+/** The next dev this run started (scripts/proof-server.ts): its output is evidence. */
+let devServer: ProofServer | null = null;
 
 // ---------------------------------------------------------------------------
 // Requests
@@ -224,18 +141,6 @@ const target = (base: string, answer: Answer) =>
   answer.status === 307 || answer.status === 302 ? (answer.headers.get("location") ?? "").replace(base, "") : `status ${answer.status}`;
 
 const evidence = (answer: Answer) => ({ status: answer.status, code: (answer.json as { code?: string } | null)?.code, text: answer.text.slice(0, 160) });
-
-/** The newest live password-link token Better Auth wrote for a login. */
-async function linkToken(userId: string): Promise<string> {
-  const [row] = await sql<{ identifier: string }>(
-    `SELECT identifier FROM better_auth.verification
-      WHERE value = $1 AND identifier LIKE 'reset-password:%' AND "expiresAt" > now()
-      ORDER BY "createdAt" DESC LIMIT 1`,
-    [userId]
-  );
-  if (!row) throw new Error("No live password link for the throwaway");
-  return row.identifier.slice("reset-password:".length);
-}
 
 // ---------------------------------------------------------------------------
 // The proof
@@ -309,7 +214,7 @@ async function prove(base: string, made: Made): Promise<void> {
   );
   check("createCoachLogin: a verified login with no password, its trainer profile and coach row", credentialless?.verified === true && credentialless.credentials === 0 && !!coachRow, credentialless);
   const firstPassword = passwordFor(coachEmail);
-  const setPassword = await request(base, "POST", "/api/auth/reset-password", { body: { newPassword: firstPassword, token: await linkToken(coachUserId) } });
+  const setPassword = await request(base, "POST", "/api/auth/reset-password", { body: { newPassword: firstPassword, token: await passwordLinkToken(coachUserId) } });
   check("the set-password link's token sets the first password", setPassword.status === 200, evidence(setPassword));
   const cookieSession = await signInOverHttp(base, coachEmail, firstPassword, "throwaway coach");
   const coachDashboard = await request(base, "GET", "/dashboard", { session: cookieSession });
@@ -322,7 +227,7 @@ async function prove(base: string, made: Made): Promise<void> {
   const known = await ask(coachEmail);
   const unknown = await ask(ADDRESS("nobody"));
   check("the same answer for an address with a login and one without", known.status === 200 && known.text === unknown.text, { known: evidence(known), unknown: evidence(unknown) });
-  const token = await linkToken(coachUserId);
+  const token = await passwordLinkToken(coachUserId);
   const link = `/api/auth/reset-password/${token}?callbackURL=%2Freset-password`;
   const click = await request(base, "GET", link);
   check("the link lands on /reset-password with its token", target(base, click) === `/reset-password?token=${token}`, { status: click.status, lands: target(base, click).replace(token, "<token>") });
@@ -436,25 +341,15 @@ async function cleanup(made: Made): Promise<void> {
 
 async function main(): Promise<void> {
   assertDev();
-  // The server this run starts holds next dev's lock on this folder, so any
-  // exit that skips the cleanup below stops it, and so does an interrupt.
-  process.on("exit", terminateDevServer);
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
-    process.once(signal, () => {
-      console.error(`Interrupted (${signal}): next dev stopped; throwaways stay until the next run's cleanup.`);
-      process.exit(130);
-    });
-  }
-
   const made: Made = { sessions: [], clients: [], coaches: [] };
   try {
-    const server = await startDevServer();
-    await prove(server.base, made);
+    devServer = await startProofServer();
+    await prove(devServer.base, made);
   } finally {
     try {
       await cleanup(made);
     } finally {
-      if (devServer) await stopDevServer(devServer);
+      await stopProofServer();
     }
   }
   if (failures > 0) {

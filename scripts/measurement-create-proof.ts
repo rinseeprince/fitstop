@@ -1,9 +1,10 @@
 /**
  * Request-level proof of the Journey's Log measurement route,
  * `POST /api/clients/[id]/measurements` (docs/MEASUREMENT-LOG-PLAN.md §6
- * commit 10), against the linked DEV database through a running `next dev`.
+ * commit 10), against the linked DEV database through a next dev the script
+ * starts on a free port.
  *
- *   npx tsx scripts/measurement-create-proof.ts
+ *   npx tsx --tsconfig ./tsconfig.json scripts/measurement-create-proof.ts
  *
  * A vitest that mocks the measurement service proves nothing about the
  * route's chain, the log's rules or the feed that reads what it wrote. This
@@ -36,7 +37,8 @@ import { getCoachTodayString } from "@/services/today-service";
 import { startLastViewed } from "@/services/coach-client-views-service";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import type { ActivityItem } from "@/types/coach-brief";
-import { mintSession, send, PROOF_BASE } from "./proof-session";
+import { endMintedSessions, mintSession, send, sendSignedOut, PROOF_BASE } from "./proof-session";
+import { startProofServer, stopProofServer } from "./proof-server";
 
 const COACH_EMAIL = "samuel.k@taboola.com";
 
@@ -95,6 +97,7 @@ async function main(): Promise<void> {
   const made: string[] = [];
 
   try {
+    await startProofServer();
     const { data: client, error: clientError } = await supabaseAdmin
       .from("clients")
       .insert({ coach_id: coach.id, name: "Measurement create proof", email: `measurement-create-proof-${stamp}@fixture.local` })
@@ -248,19 +251,10 @@ async function main(): Promise<void> {
     const foreign = await post(foreignClient.id, { metricKey: "weight", value: 81.2, recordedOn: today });
     check("another coach's client → 404", foreign.status === 404, foreign);
     check("…and nothing written to it", (await readingsOf(foreignClient.id)).length === foreignBefore);
-    // Without a session the middleware answers before the route runs: the
-    // sign-in redirect, which fetch would otherwise follow to the login page.
-    const anonymous = await fetch(`${PROOF_BASE}${url(A)}`, {
-      method: "POST",
-      redirect: "manual",
-      headers: { Origin: PROOF_BASE, "Content-Type": "application/json" },
-      body: JSON.stringify({ metricKey: "weight", value: 80.9, recordedOn: today }),
-    });
-    check(
-      "no session → the sign-in redirect",
-      anonymous.status === 307 && (anonymous.headers.get("location") ?? "").endsWith("/login"),
-      { status: anonymous.status, location: anonymous.headers.get("location") }
-    );
+    // Without a session the proxy answers before the route runs: 401 JSON for
+    // an /api request, never the login page (docs/BETTER-AUTH-PLAN.md rule 16).
+    const anonymous = await sendSignedOut("POST", url(A), { metricKey: "weight", value: 80.9, recordedOn: today });
+    check("no session → 401 Unauthorized from the proxy", anonymous.refused, anonymous);
     const noOrigin = await fetch(`${PROOF_BASE}${url(A)}`, {
       method: "POST",
       headers: { ...session.headers, "Content-Type": "application/json" },
@@ -292,6 +286,8 @@ async function main(): Promise<void> {
         .in("client_id", made);
       check("the throwaway readings went with their client", count === 0, count);
     }
+    await endMintedSessions();
+    await stopProofServer();
   }
 
   if (failures > 0) {

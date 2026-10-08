@@ -15,6 +15,7 @@
  *   --full-reset            also delete the seeded coach + client rows
  */
 import "./env-bootstrap";
+import { createThrowawayLogin, loginIdFor } from "./auth-fixtures";
 import { DEFAULT_PRESCRIBED_FIELDS } from "@/utils/prescribed-fields";
 
 import { supabaseAdmin } from "@/services/supabase-admin";
@@ -177,7 +178,7 @@ async function main() {
 
   await cleanExistingFixtures(args.fullReset);
   await insertCoachAndClient();
-  await ensureClientAuthUser();
+  await ensureClientLogin();
   const exerciseIds = await pickGlobalExercises();
   await insertClientGoal(startDate);
   await insertNutritionPlan();
@@ -333,64 +334,54 @@ async function insertCoachAndClient() {
 }
 
 // ---------------------------------------------------------------------------
-// Auth user for the perf client (so you can actually log in as them)
+// The perf client's login (so you can actually sign in as them)
 //
-// Migration 025's on_auth_user_created trigger reads
-// raw_user_meta_data->>'role' (defaults to 'trainer') and creates BOTH a
-// profiles row AND — for trainers — a coaches row. We pass role='client'
-// on creation, then force-correct the profile and remove the spurious
-// coaches row in case a previous run (or the trigger default) misclassified.
-// Idempotent: looks up by email; safe to re-run.
+// Made, when it is missing, the way a client's login is made: by accepting an
+// invitation of the client row (scripts/auth-fixtures.ts), which writes the
+// client profile and links the row. A login already there is kept, and must
+// be a client's — a client profile and no coaches row — or the seed stops and
+// says so: it writes no login rows of its own. Idempotent: looks up by email;
+// safe to re-run.
 // ---------------------------------------------------------------------------
 
-async function ensureClientAuthUser() {
-  console.log("Ensuring auth user for perf client...");
+async function ensureClientLogin() {
+  console.log("Ensuring the perf client's login...");
 
-  const { data: list, error: listErr } = await supabaseAdmin.auth.admin.listUsers({
-    perPage: 1000,
-  });
-  if (listErr) throw new Error(`auth listUsers: ${listErr.message}`);
-
-  const existing = list.users.find((u) => u.email === PERF_CLIENT_EMAIL);
-  let userId: string;
-
-  if (existing) {
-    userId = existing.id;
-    console.log(`  found existing auth user (id=${userId})`);
-  } else {
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+  const existing = await loginIdFor(PERF_CLIENT_EMAIL);
+  if (!existing) {
+    const { userId } = await createThrowawayLogin({
+      role: "client",
       email: PERF_CLIENT_EMAIL,
       password: PERF_CLIENT_PASSWORD,
-      email_confirm: true,
-      user_metadata: { role: "client", name: PERF_CLIENT_NAME },
+      clientId: PERF_CLIENT_ID,
     });
-    if (error) throw new Error(`auth createUser: ${error.message}`);
-    if (!data.user) throw new Error("auth createUser returned no user");
-    userId = data.user.id;
-    console.log(`  created auth user (id=${userId})`);
+    console.log(`  made the login through the invite, linked to the client (id=${userId})`);
+    return;
   }
+  console.log(`  found the existing login (id=${existing})`);
 
-  // Force profile.role = 'client'. The trigger may have defaulted to 'trainer'
-  // for users created before this seed passed role metadata.
-  const { error: profileErr } = await supabaseAdmin
+  const { data: profile, error: profileErr } = await supabaseAdmin
     .from("profiles")
-    .upsert({ user_id: userId, role: "client" }, { onConflict: "user_id" });
-  if (profileErr) throw new Error(`profiles upsert: ${profileErr.message}`);
-  console.log(`  set profiles.role = client`);
-
-  // Drop any spurious coaches row the default-trainer trigger created for
-  // this auth user. The real perf-fixture coach uses PERF_COACH_ID and is
-  // unaffected (it has no user_id link).
-  const { error: spuriousErr } = await supabaseAdmin
+    .select("role")
+    .eq("user_id", existing)
+    .maybeSingle();
+  if (profileErr) throw new Error(`profiles read: ${profileErr.message}`);
+  const { count: coachRows, error: coachErr } = await supabaseAdmin
     .from("coaches")
-    .delete()
-    .eq("user_id", userId);
-  if (spuriousErr) throw new Error(`spurious coach cleanup: ${spuriousErr.message}`);
-  console.log(`  cleaned any spurious coaches row for this user_id`);
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", existing);
+  if (coachErr) throw new Error(`coaches read: ${coachErr.message}`);
+  if (profile?.role !== "client" || coachRows !== 0) {
+    throw new Error(
+      `The perf client's login is not a client's (profile: ${profile?.role ?? "none"}, coaches rows: ${coachRows}). ` +
+        "Fix it by hand; the seed writes no login rows."
+    );
+  }
+  console.log(`  checked: a client's profile, no coaches row`);
 
   const { error: linkErr } = await supabaseAdmin
     .from("clients")
-    .update({ user_id: userId })
+    .update({ user_id: existing })
     .eq("id", PERF_CLIENT_ID);
   if (linkErr) throw new Error(`clients.user_id link: ${linkErr.message}`);
   console.log(`  linked clients.user_id → ${PERF_CLIENT_EMAIL}`);

@@ -605,7 +605,7 @@ Both suites now run cleanly; preserved for historical context.
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Supabase client not mocked | `intake-review-service.test.ts` | Suite fails before any test runs. Imports `supabase-client.ts` which throws when `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are not set. Needs `vi.mock("@/services/supabase-client")` at the top. | Resolved |
+| 1 | Supabase client not mocked | `intake-review-service.test.ts` | Suite fails before any test runs. Imports `supabase-client.ts` which throws when `NEXT_PUBLIC_SUPABASE_URL` and the public key are not set. Needs `vi.mock("@/services/supabase-client")` at the top. | Resolved |
 | 2 | Supabase admin not mocked (**history** — the roadmap route and its test were removed with migration 133; the mocking lesson stands) | `app/api/clients/[id]/roadmap/route.test.ts` (gone) | Suite fails before any test runs. Imports `supabase-admin.ts` which throws when `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are not set. Needs `vi.mock("@/services/supabase-admin")` at the top. | Resolved |
 
 ---

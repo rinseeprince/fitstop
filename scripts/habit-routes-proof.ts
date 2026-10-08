@@ -1,10 +1,10 @@
 /**
  * Request-level proof of the habit routes commits 1 to 3 build
  * (docs/HABITS-REBUILD-PLAN.md §2.4 and §5) against the linked DEV database
- * through a running `next dev`: the full chain, every write and its audit row,
- * and each refusal's status and sentence.
+ * through a next dev the script starts on a free port: the full chain, every
+ * write and its audit row, and each refusal's status and sentence.
  *
- *   npx tsx scripts/habit-routes-proof.ts
+ *   npx tsx --tsconfig ./tsconfig.json scripts/habit-routes-proof.ts
  *
  * A vitest that mocks the services proves nothing about a route's chain or the
  * functions behind it. This drives the real routes: as the owner's coach, on
@@ -12,12 +12,12 @@
  * attack (their habits, entries and audit rows go at the end — a client's
  * teardown removes both in one statement); as the perf fixture client, on
  * habits the proof adds to it and removes at the end; and as a throwaway
- * client with a login of its own, whose deleted habit the fixture client could
- * never be rid of (the login goes at the end too). Habits are set up
- * through `addHabits`, the path the product will use. Every fixture number is
- * distinct.
+ * client with a login of its own (scripts/auth-fixtures.ts), whose deleted
+ * habit the fixture client could never be rid of (the login goes at the end
+ * too, and every minted session). Habits are set up through `addHabits`, the
+ * path the product will use. Every fixture number is distinct.
  *
- *   1  the chain: no session is sent to /login, a write without the Origin is refused
+ *   1  the chain: no session is refused 401 before the route runs, a write without the Origin is refused
  *   2  another coach's client — one with a habit of its own — is 404 on every coach route and stays untouched;
  *      another client's habit through this URL is 404 and stays
  *   3  a change from a later day — audited once, a repeat writes nothing; the refusals say why
@@ -44,6 +44,7 @@
  */
 import "./env-bootstrap";
 
+import { createThrowawayLogin, deleteThrowawayLogin, loginIdFor } from "./auth-fixtures";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { addHabits } from "@/services/client-habit-writes-service";
 import { getClientTodayString } from "@/services/today-service";
@@ -62,7 +63,8 @@ import type {
   HabitEntryResult,
 } from "@/types/habits";
 import { PERF_CLIENT_EMAIL, PERF_CLIENT_ID, PERF_COACH_ID } from "./perf-fixtures";
-import { mintSession, send, PROOF_BASE, type ProofSession } from "./proof-session";
+import { endMintedSessions, mintSession, send, sendSignedOut, PROOF_BASE, type ProofSession } from "./proof-session";
+import { startProofServer, stopProofServer } from "./proof-server";
 
 const COACH_EMAIL = "samuel.k@taboola.com";
 const EVERY_DAY = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
@@ -131,7 +133,7 @@ async function main(): Promise<void> {
 
   const stamp = Date.now();
   const made: string[] = [];
-  const logins: string[] = [];
+  const logins: Array<{ email: string; userId: string }> = [];
   const perfHabits: string[] = [];
   const makeClient = async (name: string, coachId: string = coach.id) => {
     const { data, error } = await supabaseAdmin
@@ -145,9 +147,8 @@ async function main(): Promise<void> {
   };
   /**
    * A throwaway client of the coach's that the proof can sign in as: active,
-   * with an accepted invitation so the signup trigger makes the login a
-   * client's, and the login linked. Its teardown takes its habits and entries
-   * with the client row, then the login.
+   * its login made through the invite (scripts/auth-fixtures.ts). Its teardown
+   * takes its habits and entries with the client row, then the login.
    */
   const makeClientWithLogin = async (name: string) => {
     const email = `habit-routes-proof-${made.length}-${stamp}@fixture.local`;
@@ -158,23 +159,18 @@ async function main(): Promise<void> {
       .single();
     if (error || !data) throw new Error(`client insert: ${error?.message}`);
     made.push(data.id);
-    const { error: inviteError } = await supabaseAdmin
-      .from("client_invitations")
-      .insert({ client_id: data.id, email, status: "accepted" });
-    if (inviteError) throw new Error(`invitation insert: ${inviteError.message}`);
-    const { data: login, error: loginError } = await supabaseAdmin.auth.admin.createUser({
+    const { userId } = await createThrowawayLogin({
+      role: "client",
       email,
-      email_confirm: true,
       password: `Habit-proof-${stamp}-${Math.random().toString(36).slice(2)}`,
+      clientId: data.id,
     });
-    if (loginError || !login.user) throw new Error(`createUser: ${loginError?.message}`);
-    logins.push(login.user.id);
-    const { error: linkError } = await supabaseAdmin.from("clients").update({ user_id: login.user.id }).eq("id", data.id);
-    if (linkError) throw new Error(`client link: ${linkError.message}`);
+    logins.push({ email, userId });
     return { clientId: data.id, email };
   };
 
   try {
+    await startProofServer();
     const A = await makeClient("Habit routes proof A");
     const B = await makeClient("Habit routes proof B");
     const today = await getClientTodayString(A);
@@ -202,8 +198,8 @@ async function main(): Promise<void> {
     const habitsOf = (clientId: string) => `/api/clients/${clientId}/habits`;
 
     console.info("1. The chain");
-    const noSession = await fetch(`${PROOF_BASE}${habitsOf(A)}/week`, { redirect: "manual" });
-    check("no session is sent to /login before the route runs", noSession.status === 307 && (noSession.headers.get("location") ?? "").endsWith("/login"), noSession.status);
+    const noSession = await sendSignedOut("GET", `${habitsOf(A)}/week`);
+    check("no session is refused 401 before the route runs", noSession.refused, noSession);
     const noOrigin = await fetch(`${PROOF_BASE}${habitsOf(A)}/${water}/stop`, {
       method: "POST",
       headers: { ...coachSession.headers, "Content-Type": "application/json" },
@@ -374,8 +370,8 @@ async function main(): Promise<void> {
     const client = await mintSession(PERF_CLIENT_EMAIL, "client");
     const entryPath = (habitId: string, date: string) => `/api/client/habits/${habitId}/days/${date}`;
 
-    const clientNoSession = await fetch(`${PROOF_BASE}/api/client/habits/day?date=${pToday}`, { redirect: "manual" });
-    check("no session is sent to /login", clientNoSession.status === 307, clientNoSession.status);
+    const clientNoSession = await sendSignedOut("GET", `/api/client/habits/day?date=${pToday}`);
+    check("no session is refused 401 before the route runs", clientNoSession.refused, clientNoSession);
     const dayRead = await send(client, "GET", `/api/client/habits/day?date=${pToday}`);
     const dayBody = dayRead.json as Body<ClientHabitDay>;
     const ownDay = (dayBody.data?.habits ?? []).filter((item) => perfHabits.includes(item.habit.id));
@@ -466,12 +462,8 @@ async function main(): Promise<void> {
         listedHabits[2]?.words.target === "at least 3 L" && listedHabits[2]?.versions.length === 2,
       listedHabits.map((h) => [h.name, h.status, h.hasEntries, h.words, h.versions.length])
     );
-    const listNoSession = await fetch(`${PROOF_BASE}${habitsOf(A)}`, { redirect: "manual" });
-    check(
-      "no session is sent to /login",
-      listNoSession.status === 307 && (listNoSession.headers.get("location") ?? "").endsWith("/login"),
-      listNoSession.status
-    );
+    const listNoSession = await sendSignedOut("GET", habitsOf(A));
+    check("no session is refused 401 before the route runs", listNoSession.refused, listNoSession);
     const journalInput = {
       name: "Proof journal",
       howTo: "Three lines before bed",
@@ -801,10 +793,19 @@ async function main(): Promise<void> {
       if (auditError) cleanupErrors.push(auditError.message);
       if (clientError) cleanupErrors.push(clientError.message);
     }
-    // The logins go after their clients; each takes its profile with it.
-    for (const id of logins) {
-      const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
-      if (error) cleanupErrors.push(error.message);
+    // The logins go after their clients, each with its profile and sessions;
+    // then every session minted for a real login (the coach's, the fixture client's).
+    for (const { email } of logins) {
+      try {
+        await deleteThrowawayLogin(email);
+      } catch (error) {
+        cleanupErrors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    try {
+      await endMintedSessions();
+    } catch (error) {
+      cleanupErrors.push(error instanceof Error ? error.message : String(error));
     }
     // What is left, counted rather than assumed.
     const count = async (query: PromiseLike<{ count: number | null; error: { message: string } | null }>) => {
@@ -821,20 +822,20 @@ async function main(): Promise<void> {
         ? await count(supabaseAdmin.from("client_habits").select("id", { count: "exact", head: true }).in("id", perfHabits))
         : 0) +
       (logins.length > 0
-        ? await count(supabaseAdmin.from("profiles").select("user_id", { count: "exact", head: true }).in("user_id", logins))
+        ? await count(supabaseAdmin.from("profiles").select("user_id", { count: "exact", head: true }).in("user_id", logins.map((login) => login.userId)))
         : 0);
-    for (const id of logins) {
-      const { data: login } = await supabaseAdmin.auth.admin.getUserById(id);
-      if (login?.user) cleanupErrors.push(`login ${id} is still there`);
+    for (const { email } of logins) {
+      if (await loginIdFor(email)) cleanupErrors.push(`login ${email} is still there`);
     }
     if (cleanupErrors.length > 0 || left > 0) {
       console.error("Cleanup failed:", { errors: cleanupErrors, rowsLeft: left });
       process.exitCode = 1;
     } else {
       console.info(
-        `Cleanup: ${made.length} throwaway clients removed with their habits, entries and audit rows, ${logins.length} login with its profile; ${perfHabits.length} fixture habits removed with their entries; nothing left.`
+        `Cleanup: ${made.length} throwaway clients removed with their habits, entries and audit rows, ${logins.length} login with its profile; ${perfHabits.length} fixture habits removed with their entries; every minted session ended; nothing left.`
       );
     }
+    await stopProofServer();
   }
 
   if (failures > 0) {

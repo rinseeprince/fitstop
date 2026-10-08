@@ -72,7 +72,6 @@ Create a `.env.local` file with the following variables:
 ```bash
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
 # Better Auth (lib/auth.ts refuses to start without the first three)

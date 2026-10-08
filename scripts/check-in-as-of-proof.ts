@@ -1,9 +1,9 @@
 /**
  * Request-level proof that a check-in's review reads the check-in's day
  * (docs/MEASUREMENT-LOG-PLAN.md commit 8b), against the linked DEV database
- * through a running `next dev`.
+ * through a next dev this script starts on a free port.
  *
- *   npx tsx scripts/check-in-as-of-proof.ts
+ *   npx tsx --tsconfig ./tsconfig.json scripts/check-in-as-of-proof.ts
  *
  * Two subjects, both read through GET /api/check-in/[id]/comparison as the
  * coach with a minted session, every expectation computed from the database
@@ -35,8 +35,6 @@
  */
 import "./env-bootstrap";
 
-import { createServerClient } from "@supabase/ssr";
-import { createClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { appendMeasurements } from "@/services/measurements-service";
 import { voidMeasurement } from "@/services/measurement-edits-service";
@@ -44,19 +42,11 @@ import { addGoal } from "@/services/client-goal-writes-service";
 import { fillSentSnapshots } from "@/services/check-in-sent-snapshot-fill";
 import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { addDaysToDateString, differenceInDays, getTodayDateStringInTimezone } from "@/lib/date-helpers";
+import { endMintedSessions, mintSession, PROOF_BASE, type ProofSession } from "./proof-session";
+import { startProofServer, stopProofServer } from "./proof-server";
 
-const BASE = process.env.WIRE_PROOF_BASE ?? "http://localhost:3000";
 const COACH_EMAIL = "samuel.k@taboola.com";
 const SAM = "f87bee53-0974-46d3-b1fb-34c14af6a8b5";
-
-const SUPABASE_URL = need("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL);
-const ANON_KEY = need("NEXT_PUBLIC_SUPABASE_ANON_KEY", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-const SERVICE_KEY = need("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
-
-function need(name: string, value: string | undefined): string {
-  if (!value) throw new Error(`Missing ${name} in .env.local`);
-  return value;
-}
 
 let failures = 0;
 function check(label: string, ok: boolean, detail?: unknown): void {
@@ -66,47 +56,6 @@ function check(label: string, ok: boolean, detail?: unknown): void {
     failures += 1;
     console.error(`  ✗ ${label}${detail === undefined ? "" : ` — ${JSON.stringify(detail)}`}`);
   }
-}
-
-type Session = { cookie: string };
-
-async function mintSession(email: string): Promise<Session> {
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: link, error: linkError } = await admin.auth.admin.generateLink({
-    type: "magiclink",
-    email,
-  });
-  if (linkError || !link?.properties?.email_otp) {
-    throw new Error(`generateLink failed for ${email}: ${linkError?.message ?? "no otp"}`);
-  }
-  const anon = createClient(SUPABASE_URL, ANON_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: verified, error: verifyError } = await anon.auth.verifyOtp({
-    email,
-    token: link.properties.email_otp,
-    type: "email",
-  });
-  if (verifyError || !verified.session) {
-    throw new Error(`verifyOtp failed for ${email}: ${verifyError?.message ?? "no session"}`);
-  }
-  const jar = new Map<string, string>();
-  const ssr = createServerClient(SUPABASE_URL, ANON_KEY, {
-    cookies: {
-      getAll: () => [...jar].map(([name, value]) => ({ name, value })),
-      setAll: (cookies) => {
-        for (const { name, value } of cookies) jar.set(name, value);
-      },
-    },
-  });
-  const { error: setError } = await ssr.auth.setSession({
-    access_token: verified.session.access_token,
-    refresh_token: verified.session.refresh_token,
-  });
-  if (setError) throw new Error(`setSession failed for ${email}: ${setError.message}`);
-  return { cookie: [...jar].map(([name, value]) => `${name}=${value}`).join("; ") };
 }
 
 type GoalRow = { goal?: number; startingWeight?: number; goalStartWeight?: number; startingBodyFat?: number; position: { current: number; trend: string | null; paceStatus?: string } | null };
@@ -128,9 +77,9 @@ type Comparison = {
   };
 };
 
-async function comparisonOf(session: Session, checkInId: string): Promise<{ status: number; body: Comparison }> {
-  const res = await fetch(`${BASE}/api/check-in/${checkInId}/comparison`, {
-    headers: { Cookie: session.cookie, Origin: BASE, Accept: "application/json" },
+async function comparisonOf(session: ProofSession, checkInId: string): Promise<{ status: number; body: Comparison }> {
+  const res = await fetch(`${PROOF_BASE}/api/check-in/${checkInId}/comparison`, {
+    headers: { ...session.headers, Origin: PROOF_BASE, Accept: "application/json" },
   });
   const text = await res.text();
   let body: Comparison;
@@ -209,7 +158,7 @@ async function coveringVersion(clientId: string, day: string) {
   return data;
 }
 
-async function main(): Promise<void> {
+async function proveAsOf(): Promise<void> {
   const { data: coach, error: coachError } = await supabaseAdmin
     .from("coaches")
     .select("id")
@@ -217,7 +166,7 @@ async function main(): Promise<void> {
     .single();
   if (coachError || !coach) throw new Error(`Coach not found: ${coachError?.message}`);
 
-  const coachSession = await mintSession(COACH_EMAIL);
+  const coachSession = await mintSession(COACH_EMAIL, "coach");
 
   // ---------------------------------------------------------------------------
   console.info("A. Sam Kalepa's 31 May check-in — real DEV history");
@@ -485,6 +434,16 @@ async function main(): Promise<void> {
       .select("id", { count: "exact", head: true })
       .eq("client_id", C);
     check("the throwaway goals went with the client", goalCount === 0, goalCount);
+  }
+}
+
+async function main(): Promise<void> {
+  await startProofServer();
+  try {
+    await proveAsOf();
+  } finally {
+    await endMintedSessions();
+    await stopProofServer();
   }
 
   if (failures > 0) {

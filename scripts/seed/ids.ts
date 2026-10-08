@@ -33,7 +33,7 @@ export const SEED_PREFIX = "5eed0001";
 export const SEED_ID_LO = `${SEED_PREFIX}-0000-0000-0000-000000000000`;
 export const SEED_ID_HI = "5eed0002-0000-0000-0000-000000000000";
 
-/** Email domain marker for the auth users the seed creates. */
+/** Email domain marker for the logins the seed creates. */
 export const SEED_EMAIL_DOMAIN = "seed.atletafit.test";
 
 const HEX = "0123456789abcdef";
@@ -86,7 +86,7 @@ export function seedEmail(kind: "coach" | "client", index: number): string {
   return `${kind}${String(index).padStart(3, "0")}@${SEED_EMAIL_DOMAIN}`;
 }
 
-/** True if an auth user belongs to the seed. Used by teardown. */
-export function isSeedEmail(email: string | null | undefined): boolean {
-  return typeof email === "string" && email.toLowerCase().endsWith(`@${SEED_EMAIL_DOMAIN}`);
+/** The token of a persona client's invitation: the seed writes it, and accepting it makes the persona's login. */
+export function seedInviteToken(coachIdx: number, clientInCoach: number): string {
+  return seedUuid("invtoken", coachIdx, clientInCoach).replace(/-/g, "");
 }

@@ -1,45 +1,54 @@
 /**
  * Request-level proof of migration 200 (docs/DATA-ACCESS-LOCKDOWN-PLAN.md §6
  * commit 2): the Data API's write side door, before the push and after it,
- * against the linked DEV database through a running `next dev`.
+ * against the linked DEV database through a next dev the script starts on a
+ * free port.
  *
- *   npx tsx scripts/data-api-writes-proof.ts before   # every side-door attempt succeeds
- *   npx tsx scripts/data-api-writes-proof.ts after    # every side-door attempt is refused
+ *   npx tsx --tsconfig ./tsconfig.json scripts/data-api-writes-proof.ts before
+ *   npx tsx --tsconfig ./tsconfig.json scripts/data-api-writes-proof.ts after
  *
- * The side door is `/rest/v1` called with the browser's public key and the
- * user's own token: no route, so none of the routes' rules. A throwaway client
- * with its own login and a habit is made under the owner's coach — an
- * invitation row first, so the signup trigger gives the login the client role —
- * and everything is removed at the end: its audit rows, the client (its logs,
- * habit, check-ins, reading and invitation cascade) and the login (its profile
- * cascades). Every fixture number is distinct.
+ * The side door is `/rest/v1` called with the project's public key (read
+ * through the CLI, scripts/data-api-key.ts) and the user's own login token:
+ * no route, so none of the routes' rules. A throwaway client with its own
+ * login (scripts/auth-fixtures.ts: the invite) and a habit is made under the
+ * owner's coach, and everything is removed at the end: its audit rows, the
+ * client (its logs, habit, check-ins, reading and invitation cascade) and the
+ * login with its profile. Every fixture number is distinct.
  *
  *   1  the client, through the side door: inserts wellness and a habit entry
  *      on one day, wellness and a food log on another, and a check-in;
  *      rewrites a seeded day's wellness, food log and habit entry
  *   2  the coach, through the side door: inserts a check-in for the client,
- *      then deletes the client — before the push it is gone, and the proof
- *      recreates it
- *   3  the app still writes: the coach activates the pending client, through
- *      the one write rule kept; the client saves wellness and ticks the habit,
- *      through its entry route
- *   4  the catalog: 56 write rules in public before the push, one after it —
- *      activation's
+ *      then deletes the client
+ *   3  the app still writes, through the server: the coach activates the
+ *      pending client; the client saves wellness and ticks the habit, through
+ *      its entry route
+ *   4  the catalog: 56 write rules in public before the push; after it, and
+ *      since migration 201 took the last one (activation's) with every other
+ *      policy, none
  *
- * Before the push every attempt in 1 and 2 succeeds. After it an insert is
- * refused with the RLS error, and an update or a delete changes nothing, read
- * back with the service role. 3 holds in both.
+ * Every attempt in 1 and 2 is made twice. With the user's login token, which
+ * is Better Auth's session token and never a JWT, PostgREST refuses it before
+ * choosing any role — 401, PGRST301: what a signed-in browser holds writes
+ * nothing through the side door. With the public key alone it reaches Postgres
+ * as the anon role, which the lock refuses — 401, 42501. Nothing is written
+ * either way, read back with the service role. The authenticated role's own
+ * lock is `npm run check:rls` clause 5's. These are the expectations after the
+ * push; 3 holds in both modes.
  */
 import "./env-bootstrap";
 
 import { execFileSync } from "node:child_process";
+import { createThrowawayLogin, deleteThrowawayLogin, loginIdFor } from "./auth-fixtures";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { appendMeasurements } from "@/services/measurements-service";
 import { addHabits } from "@/services/client-habit-writes-service";
 import { getClientTodayString } from "@/services/today-service";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
-import { mintSession, send, type ProofSession } from "./proof-session";
+import { dataApiPublicKey } from "./data-api-key";
+import { endMintedSessions, mintSession, send, type ProofSession } from "./proof-session";
+import { startProofServer, stopProofServer } from "./proof-server";
 
 const COACH_EMAIL = "samuel.k@taboola.com";
 const ACTIVATION_RULE = "Coaches can update their own clients on clients (UPDATE)";
@@ -49,7 +58,7 @@ if (mode !== "before" && mode !== "after") {
   console.error("Usage: npx tsx scripts/data-api-writes-proof.ts before|after");
   process.exit(2);
 }
-// Before the push the side door is open; after it, closed.
+// Before the push 56 write rules stood; now none: migration 201 took the last, activation's.
 const OPEN = mode === "before";
 
 let failures = 0;
@@ -68,13 +77,13 @@ function need(name: string): string {
   return value;
 }
 const REST_URL = `${need("NEXT_PUBLIC_SUPABASE_URL")}/rest/v1`;
-const ANON_KEY = need("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+const PUBLIC_KEY = dataApiPublicKey();
 
 type SideDoorReply = { status: number; code: string | null };
 
-/** One write through the side door: the public key and the user's own token. */
+/** One write through the side door: the public key, and the user's own token or nothing else. */
 async function sideDoor(
-  session: ProofSession,
+  caller: ProofSession | "public key",
   method: "POST" | "PATCH" | "DELETE",
   path: string,
   body?: unknown
@@ -82,8 +91,8 @@ async function sideDoor(
   const res = await fetch(`${REST_URL}/${path}`, {
     method,
     headers: {
-      apikey: ANON_KEY,
-      Authorization: session.headers.Authorization,
+      apikey: PUBLIC_KEY,
+      Authorization: caller === "public key" ? `Bearer ${PUBLIC_KEY}` : caller.headers.Authorization,
       "Content-Type": "application/json",
       Prefer: "return=minimal",
     },
@@ -99,17 +108,34 @@ async function sideDoor(
   return { status: res.status, code };
 }
 
-/** An insert: written before the push; refused by RLS (403, 42501) after it, with nothing written. */
-function insertCheck(label: string, reply: SideDoorReply, written: boolean): void {
-  if (OPEN) check(`${label} → 201, written`, reply.status === 201 && written, { reply, written });
-  else check(`${label} → refused (403, 42501), nothing written`, reply.status === 403 && reply.code === "42501" && !written, { reply, written });
+// PostgREST's answer to a bearer token it cannot read as a JWT: no role was chosen.
+const unreadable = (reply: SideDoorReply) => reply.status === 401 && reply.code === "PGRST301";
+// Postgres's answer to the anon role, which holds no privilege in public (migration 201).
+const locked = (reply: SideDoorReply) => reply.status === 401 && reply.code === "42501";
+
+type BothWays = { token: SideDoorReply; publicKey: SideDoorReply };
+
+/** One write tried both ways: with the user's login token, then with the public key alone. */
+async function bothWays(session: ProofSession, method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<BothWays> {
+  return { token: await sideDoor(session, method, path, body), publicKey: await sideDoor("public key", method, path, body) };
 }
 
-/** An update or a delete: it lands before the push; after it the row is as it was. */
-function changeCheck(label: string, reply: SideDoorReply, changed: boolean, intact: boolean): void {
-  const answered = reply.status >= 200 && reply.status < 300;
-  if (OPEN) check(`${label} → ${reply.status}, changed`, answered && changed, { reply, changed });
-  else check(`${label} → ${reply.status}, unchanged`, answered && intact, { reply, intact });
+/** An insert: the token refused unread, the public key refused by the lock, nothing written. */
+function insertCheck(label: string, replies: BothWays, written: boolean): void {
+  check(
+    `${label} → the token refused unread (401, PGRST301), the public key refused (401, 42501), nothing written`,
+    unreadable(replies.token) && locked(replies.publicKey) && !written,
+    { replies, written }
+  );
+}
+
+/** An update or a delete: the token refused unread, the public key refused by the lock, the row as it was. */
+function changeCheck(label: string, replies: BothWays, changed: boolean, intact: boolean): void {
+  check(
+    `${label} → the token refused unread (401, PGRST301), the public key refused (401, 42501), unchanged`,
+    unreadable(replies.token) && locked(replies.publicKey) && !changed && intact,
+    { replies, changed, intact }
+  );
 }
 
 /** The write rules in public, read from the catalog (PostgREST cannot reach pg_policies). */
@@ -188,7 +214,7 @@ async function countOf(table: "wellness_logs" | "check_ins" | "client_habits", c
 }
 
 async function main(): Promise<void> {
-  console.info(`Mode: ${mode} the push — the side door should be ${OPEN ? "open" : "closed"}.`);
+  console.info(`Mode: ${mode} the push — ${OPEN ? "56 write rules" : "no write rule"} in public; a login's token opens the side door in neither.`);
   const { data: coach, error: coachError } = await supabaseAdmin
     .from("coaches")
     .select("id")
@@ -202,22 +228,16 @@ async function main(): Promise<void> {
   let userId: string | null = null;
 
   try {
+    await startProofServer();
     console.info("Setup: a pending client with its own login, a weight reading, a habit and two seeded days");
     const A = await makeClient(coach.id, email, null);
     clientId = A;
-    const { error: inviteError } = await supabaseAdmin
-      .from("client_invitations")
-      .insert({ client_id: A, email, status: "accepted" });
-    if (inviteError) throw new Error(`invitation insert: ${inviteError.message}`);
-    const { data: created, error: userError } = await supabaseAdmin.auth.admin.createUser({
+    ({ userId } = await createThrowawayLogin({
+      role: "client",
       email,
-      email_confirm: true,
       password: `Proof-${stamp}-${Math.random().toString(36).slice(2)}`,
-    });
-    if (userError || !created.user) throw new Error(`createUser: ${userError?.message}`);
-    userId = created.user.id;
-    const { error: linkError } = await supabaseAdmin.from("clients").update({ user_id: userId }).eq("id", A);
-    if (linkError) throw new Error(`client link: ${linkError.message}`);
+      clientId: A,
+    }));
 
     const { data: profile } = await supabaseAdmin.from("profiles").select("role").eq("user_id", userId).maybeSingle();
     const { count: coachRows } = await supabaseAdmin
@@ -267,15 +287,15 @@ async function main(): Promise<void> {
     const coachSession = await mintSession(COACH_EMAIL, "coach");
 
     console.info(`1. The client, through the side door (${mode} the push)`);
-    const wellnessD1 = await sideDoor(client, "POST", "wellness_logs", { client_id: A, date: D1, mood: 5, energy: 7 });
+    const wellnessD1 = await bothWays(client,"POST", "wellness_logs", { client_id: A, date: D1, mood: 5, energy: 7 });
     const { data: wellnessD1Row } = await supabaseAdmin.from("wellness_logs").select("mood, energy").eq("client_id", A).eq("date", D1).maybeSingle();
     insertCheck("wellness on a day", wellnessD1, wellnessD1Row?.mood === 5 && wellnessD1Row.energy === 7);
 
-    const wellness = await sideDoor(client, "POST", "wellness_logs", { client_id: A, date: D3, mood: 2, energy: 9 });
+    const wellness = await bothWays(client,"POST", "wellness_logs", { client_id: A, date: D3, mood: 2, energy: 9 });
     const { data: wellnessRow } = await supabaseAdmin.from("wellness_logs").select("mood, energy").eq("client_id", A).eq("date", D3).maybeSingle();
     insertCheck("wellness on another day", wellness, wellnessRow?.mood === 2 && wellnessRow.energy === 9);
 
-    const food = await sideDoor(client, "POST", "nutrition_logs", {
+    const food = await bothWays(client,"POST", "nutrition_logs", {
       client_id: A,
       date: D3,
       calories_consumed: 2465,
@@ -289,7 +309,7 @@ async function main(): Promise<void> {
       .maybeSingle();
     insertCheck("a food log", food, foodRow?.calories_consumed === 2465 && foodRow.protein_g === 171);
 
-    const habitEntry = await sideDoor(client, "POST", "client_habit_logs", { client_habit_id: H, client_id: A, date: D1, done: true });
+    const habitEntry = await bothWays(client,"POST", "client_habit_logs", { client_habit_id: H, client_id: A, date: D1, done: true });
     const { data: habitEntryRow } = await supabaseAdmin
       .from("client_habit_logs")
       .select("done")
@@ -298,7 +318,7 @@ async function main(): Promise<void> {
       .maybeSingle();
     insertCheck("a habit entry", habitEntry, habitEntryRow?.done === true);
 
-    const clientCheckIn = await sideDoor(client, "POST", "check_ins", { client_id: A, notes: "side-door check-in from the client" });
+    const clientCheckIn = await bothWays(client,"POST", "check_ins", { client_id: A, notes: "side-door check-in from the client" });
     const { count: clientCheckIns } = await supabaseAdmin
       .from("check_ins")
       .select("id", { count: "exact", head: true })
@@ -306,20 +326,20 @@ async function main(): Promise<void> {
       .eq("notes", "side-door check-in from the client");
     insertCheck("a check-in", clientCheckIn, clientCheckIns === 1);
 
-    const rewriteWellness = await sideDoor(client, "PATCH", `wellness_logs?id=eq.${W2}`, { mood: 4 });
+    const rewriteWellness = await bothWays(client,"PATCH", `wellness_logs?id=eq.${W2}`, { mood: 4 });
     const { data: wellnessAfter } = await supabaseAdmin.from("wellness_logs").select("mood").eq("id", W2).maybeSingle();
     changeCheck("its wellness", rewriteWellness, wellnessAfter?.mood === 4, wellnessAfter?.mood === 1);
 
-    const rewriteFood = await sideDoor(client, "PATCH", `nutrition_logs?id=eq.${N2}`, { calories_consumed: 3120 });
+    const rewriteFood = await bothWays(client,"PATCH", `nutrition_logs?id=eq.${N2}`, { calories_consumed: 3120 });
     const { data: foodAfter } = await supabaseAdmin.from("nutrition_logs").select("calories_consumed").eq("id", N2).maybeSingle();
     changeCheck("its food log", rewriteFood, foodAfter?.calories_consumed === 3120, foodAfter?.calories_consumed === 1810);
 
-    const rewriteHabit = await sideDoor(client, "PATCH", `client_habit_logs?id=eq.${HL2}`, { done: true });
+    const rewriteHabit = await bothWays(client,"PATCH", `client_habit_logs?id=eq.${HL2}`, { done: true });
     const { data: habitAfter } = await supabaseAdmin.from("client_habit_logs").select("done").eq("id", HL2).maybeSingle();
     changeCheck("its habit entry", rewriteHabit, habitAfter?.done === true, habitAfter?.done === false);
 
     console.info(`2. The coach, through the side door (${mode} the push)`);
-    const coachCheckIn = await sideDoor(coachSession, "POST", "check_ins", { client_id: A, notes: "side-door check-in from the coach" });
+    const coachCheckIn = await bothWays(coachSession,"POST", "check_ins", { client_id: A, notes: "side-door check-in from the coach" });
     const { count: coachCheckIns } = await supabaseAdmin
       .from("check_ins")
       .select("id", { count: "exact", head: true })
@@ -328,7 +348,7 @@ async function main(): Promise<void> {
     insertCheck("a check-in for the client", coachCheckIn, coachCheckIns === 1);
 
     const logsBefore = await countOf("wellness_logs", A);
-    const deleted = await sideDoor(coachSession, "DELETE", `clients?id=eq.${A}`);
+    const deleted = await bothWays(coachSession,"DELETE", `clients?id=eq.${A}`);
     const { data: clientAfter } = await supabaseAdmin.from("clients").select("id").eq("id", A).maybeSingle();
     const logsAfter = await countOf("wellness_logs", A);
     changeCheck(
@@ -404,7 +424,7 @@ async function main(): Promise<void> {
     if (OPEN) {
       check("56 write rules in public, activation's among them", rules.length === 56 && rules.includes(ACTIVATION_RULE), rules.length);
     } else {
-      check("one write rule left in public — activation's", rules.length === 1 && rules[0] === ACTIVATION_RULE, rules);
+      check("no write rule left in public: migration 201 took the last, activation's, with every other policy", rules.length === 0, rules);
     }
   } finally {
     console.info("Cleanup");
@@ -415,10 +435,12 @@ async function main(): Promise<void> {
       const { error: clientError } = await supabaseAdmin.from("clients").delete().eq("id", clientId);
       if (clientError) console.error(`  client not deleted: ${clientError.message}`);
     }
-    if (userId) {
-      const { error: userDeleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-      if (userDeleteError) console.error(`  login not deleted: ${userDeleteError.message}`);
+    try {
+      await deleteThrowawayLogin(email);
+    } catch (error) {
+      console.error(`  login not deleted: ${error instanceof Error ? error.message : String(error)}`);
     }
+    await endMintedSessions();
     if (clientId) {
       const left = (await countOf("wellness_logs", clientId)) + (await countOf("check_ins", clientId)) + (await countOf("client_habits", clientId));
       const { data: clientLeft } = await supabaseAdmin.from("clients").select("id").eq("id", clientId).maybeSingle();
@@ -426,9 +448,10 @@ async function main(): Promise<void> {
     }
     if (userId) {
       const { data: profileLeft } = await supabaseAdmin.from("profiles").select("user_id").eq("user_id", userId).maybeSingle();
-      const { data: userLeft } = await supabaseAdmin.auth.admin.getUserById(userId);
-      check("cleanup: the login and its profile are gone", profileLeft === null && !userLeft?.user, { profileLeft });
+      const loginLeft = await loginIdFor(email);
+      check("cleanup: the login and its profile are gone", profileLeft === null && loginLeft === null, { profileLeft, loginLeft });
     }
+    await stopProofServer();
   }
 
   if (failures > 0) {

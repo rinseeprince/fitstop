@@ -39,7 +39,7 @@ import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import { GOAL_TYPE_SETTINGS, goalTypeFromTargets } from "@/lib/goals/goal-types";
 import type { Database } from "@/types/database";
-import { seedUuid, seedEmail } from "./ids";
+import { seedUuid, seedEmail, seedInviteToken } from "./ids";
 import { streamFor, type Rng } from "./rng";
 import {
   ARCHETYPES, COACH_TIERS, SATURATED_ARCHETYPE, drawArchetype, pickBreaks, pickTenure, logsOnDay,
@@ -101,7 +101,7 @@ export type SeedContext = {
   windowDays: number;
   clientsPerCoach: number;
   catalog: readonly CatalogExercise[];
-  /** Which client indices get a real auth user (RLS personas). */
+  /** Which client indices get a real login (personas, made through scripts/auth-fixtures.ts). */
   personaClientIndices: ReadonlySet<number>;
   /**
    * Coaches whose ENTIRE roster is forced to the worst case: full client count,
@@ -332,18 +332,21 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       // their defaults rather than inventing a value the read side disagrees with.
     });
 
-    // An invitation must precede the auth user, or handle_new_user derives
-    // role='trainer' and inserts a spurious coaches row per client.
+    // The invitation the persona's login is made from: seed-scale accepts it
+    // through scripts/auth-fixtures.ts once the client row is in, as a client
+    // accepts their invite, so it is written pending and with no expiry. The
+    // draw its old expiry took is still taken, so this stream's later draws
+    // (the client's habits), and with them the dataset, stay as they were.
     if (isPersona) {
+      void timestampAt(addDays(startIso, 14), 12, idRng);
       invitations.push({
         id: seedUuid("invitation", coachIdx, c),
         client_id: clientId,
         email: seedEmail("client", clientIdx),
-        status: "accepted",
-        token: seedUuid("invtoken", coachIdx, c).replace(/-/g, ""),
+        status: "sent",
+        token: seedInviteToken(coachIdx, c),
         invited_at: createdAt,
-        accepted_at: createdAt,
-        expires_at: timestampAt(addDays(startIso, 14), 12, idRng),
+        expires_at: null,
         created_at: createdAt,
         updated_at: createdAt,
       });

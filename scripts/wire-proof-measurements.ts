@@ -3,34 +3,28 @@
  * §2 rule 7, §5). Records the raw JSON of the routes whose shape must not move
  * when body measurements change store, so a before/after diff proves it.
  *
- *   npx tsx scripts/wire-proof-measurements.ts record before
- *   npx tsx scripts/wire-proof-measurements.ts record after
- *   npx tsx scripts/wire-proof-measurements.ts diff before after
+ *   npx tsx --tsconfig ./tsconfig.json scripts/wire-proof-measurements.ts record before
+ *   npx tsx --tsconfig ./tsconfig.json scripts/wire-proof-measurements.ts record after
+ *   npx tsx --tsconfig ./tsconfig.json scripts/wire-proof-measurements.ts diff before after
  *
- * Needs a running `next dev` on WIRE_PROOF_BASE (default http://localhost:3000)
- * and the linked DEV project in .env.local. Sessions are minted with no
- * browser: `generateLink` (sends no email) → `verifyOtp` → the @supabase/ssr
- * cookie jar, whose cookies become the Cookie header the app's auth helpers
- * read. Recordings go to WIRE_PROOF_DIR (default ./.wire-proofs, gitignored by
- * being outside the tree when the scratchpad is passed) — they contain health
- * data and are never committed.
+ * `record` starts its own next dev on a free port and needs the linked DEV
+ * project in .env.local. Sessions are minted with no browser
+ * (scripts/proof-session.ts: a Better Auth session sent as a bearer token)
+ * and ended when the recording is done. Recordings go to WIRE_PROOF_DIR
+ * (default ./.wire-proofs, gitignored by being outside the tree when the
+ * scratchpad is passed) — they contain health data and are never committed.
  *
  * A vitest that mocks `supabaseAdmin` proves nothing about a wire; this is the
  * request-level harness the plan asks for.
  */
 import "./env-bootstrap";
 
-import { createServerClient } from "@supabase/ssr";
-import { createClient } from "@supabase/supabase-js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { endMintedSessions, mintSession, PROOF_BASE, type ProofSession } from "./proof-session";
+import { startProofServer, stopProofServer } from "./proof-server";
 
-const BASE = process.env.WIRE_PROOF_BASE ?? "http://localhost:3000";
 const OUT_ROOT = process.env.WIRE_PROOF_DIR ?? join(process.cwd(), ".wire-proofs");
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // The two proof subjects the plan names (§6 commit 2) and their coach.
 const COACH_EMAIL = "samuel.k@taboola.com";
@@ -63,61 +57,9 @@ const SHAPE_ONLY = [
   /^client-me/,
 ];
 
-type Session = { label: string; cookie: string };
-
-function need(name: string, value: string | undefined): string {
-  if (!value) throw new Error(`Missing ${name} in .env.local`);
-  return value;
-}
-
-async function mintSession(email: string, label: string): Promise<Session> {
-  const url = need("NEXT_PUBLIC_SUPABASE_URL", SUPABASE_URL);
-  const admin = createClient(url, need("SUPABASE_SERVICE_ROLE_KEY", SERVICE_KEY), {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: link, error: linkError } = await admin.auth.admin.generateLink({
-    type: "magiclink",
-    email,
-  });
-  if (linkError || !link?.properties?.email_otp) {
-    throw new Error(`generateLink failed for ${email}: ${linkError?.message ?? "no otp"}`);
-  }
-
-  const anon = createClient(url, need("NEXT_PUBLIC_SUPABASE_ANON_KEY", ANON_KEY), {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: verified, error: verifyError } = await anon.auth.verifyOtp({
-    email,
-    token: link.properties.email_otp,
-    type: "email",
-  });
-  if (verifyError || !verified.session) {
-    throw new Error(`verifyOtp failed for ${email}: ${verifyError?.message ?? "no session"}`);
-  }
-
-  const jar = new Map<string, string>();
-  const ssr = createServerClient(url, need("NEXT_PUBLIC_SUPABASE_ANON_KEY", ANON_KEY), {
-    cookies: {
-      getAll: () => [...jar].map(([name, value]) => ({ name, value })),
-      setAll: (cookies) => {
-        for (const { name, value } of cookies) jar.set(name, value);
-      },
-    },
-  });
-  const { error: setError } = await ssr.auth.setSession({
-    access_token: verified.session.access_token,
-    refresh_token: verified.session.refresh_token,
-  });
-  if (setError) throw new Error(`setSession failed for ${email}: ${setError.message}`);
-  if (jar.size === 0) throw new Error(`No auth cookie minted for ${email}`);
-
-  const cookie = [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
-  return { label, cookie };
-}
-
-async function get(session: Session, path: string): Promise<{ status: number; body: string }> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { Cookie: session.cookie, Origin: BASE, Accept: "application/json" },
+async function get(session: ProofSession, path: string): Promise<{ status: number; body: string }> {
+  const res = await fetch(`${PROOF_BASE}${path}`, {
+    headers: { ...session.headers, Origin: PROOF_BASE, Accept: "application/json" },
   });
   const body = await res.text();
   return { status: res.status, body };
@@ -126,7 +68,7 @@ async function get(session: Session, path: string): Promise<{ status: number; bo
 async function recordOne(
   dir: string,
   name: string,
-  session: Session,
+  session: ProofSession,
   path: string
 ): Promise<unknown> {
   const { status, body } = await get(session, path);
@@ -144,8 +86,17 @@ type StartDateHolder = { data: { startDate?: string } };
 async function record(label: string): Promise<void> {
   const dir = join(OUT_ROOT, label);
   mkdirSync(dir, { recursive: true });
-  console.info(`Recording "${label}" into ${dir} against ${BASE}`);
+  await startProofServer();
+  try {
+    console.info(`Recording "${label}" into ${dir} against ${PROOF_BASE}`);
+    await recordAll(dir);
+  } finally {
+    console.info(`Ended ${await endMintedSessions()} minted session(s)`);
+    await stopProofServer();
+  }
+}
 
+async function recordAll(dir: string): Promise<void> {
   const coach = await mintSession(COACH_EMAIL, "coach");
 
   for (const subject of SUBJECTS) {
