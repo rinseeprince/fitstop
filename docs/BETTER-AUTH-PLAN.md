@@ -1048,7 +1048,7 @@ the exact route, what I should see in plain words. The browser smoke is mine.
 
 ### Commit 3 — `test(auth): the seed and proof scripts make their logins through Better Auth`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `f6d6606e` 2026-10-09.**
 
 - `scripts/auth-fixtures.ts`: `createThrowawayLogin({ email, password, role, name, coachId? })` through
   `createCoachLogin` / the invite path's writes (never a Supabase call), `deleteThrowawayLogin(email)` through
