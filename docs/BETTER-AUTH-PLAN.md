@@ -32,8 +32,9 @@ its own plan later; §9.3 lists what it will need); a list of signed-in devices;
 deletes their own); two-factor; magic links; a client changing their email; renaming the product (emails and
 screens keep saying "CoachHub", as `app/layout.tsx:16` does).
 
-**How this plan is used.** Each commit's prompt tells a fresh session to read `CONVENTIONS.md` whole, this file
-whole, and only the ARCHITECTURE sections it names, and to build without a plan review. A session stops only when
+**How this plan is used.** Each commit's prompt tells a fresh session to read `CONVENTIONS.md` whole, this file's
+head, §1–§5, §6's "How every commit runs" and its own entry, and only the ARCHITECTURE sections it names, and to
+build without a plan review. "How every commit runs" sets each session's weight and wins over a prompt's heavier lines. A session stops only when
 a §3 decision it needs is blank, when building as listed would break a CONVENTIONS rule that §4 does not mark for
 rewriting, when a gate's root fix lies outside its commit, or when a Better Auth fact in §2.9 turns out false at
 1.7.7 (it says so and stops; the plan is corrected before anyone builds on it). When a commit ships, its session
@@ -844,6 +845,25 @@ Each prompt is complete on its own: paste it into a fresh session. **The session
 names, and hands over when everything the commit lists is built and every gate passes. The logins move in 1–3;
 nothing a coach or client sees changes until commit 2, and from commit 2 every screen runs on Better Auth.
 
+**How every commit runs (owner, 2026-10-08, after commit 1 took a day).** Where a prompt below asks for more (every
+Better Auth fact checked against docs and source, every review finding fixed, every gate run twice, a mutation for
+every rule), this block wins:
+1. **Read** CONVENTIONS.md whole; from this plan its head, §1–§5, this block, the commit's own §6 entry, and the §7
+   smoke and §8 step it names. ARCHITECTURE only where the prompt names it.
+2. **Better Auth facts:** check only the ones this commit's code relies on, against the installed source in
+   `node_modules` (the source is the truth; no docs sweep). A §2.9 fact found false still stops the session.
+3. **Tests:** a test for every new rule; a deliberate break (a mutation) only for the rules the prompt names and
+   for any security guard. While building, run only the affected test files.
+4. **Review:** one independent review of the diff once the build is done. Fix its blockers and should-fix items at
+   the root, list its nits in the handover for the owner to decide, and run no second review, except in the three
+   security-heavy commits, 2 (the switch), 6 (deleting accounts) and 8 (app tokens): there a second independent
+   review reads the first review's fixes, and its blockers and should-fix items are fixed the same way.
+5. **Proof and gates:** the commit's DEV proof once, on the finished code; the full gates once, after the last
+   review's fixes.
+6. **Scope:** build what the commit lists. A security defect in the commit's own code is fixed in the commit; a
+   fact that changes how a later commit must be built goes into that commit's entry here; anything else worth
+   doing goes in the handover as a recommendation, not into the diff.
+
 ### Commit 1 — `feat(auth): Better Auth stands up beside Supabase Auth: its schema (migration 208), today's logins copied in, and the server behind /api/auth`
 
 **STATUS: SHIPPED `a503ddb6` 2026-10-08.**
@@ -867,7 +887,7 @@ nothing a coach or client sees changes until commit 2, and from commit 2 every s
   middleware keeps its Supabase path untouched (it stays on the Edge runtime until commit 2).
 
 ```text
-Read CONVENTIONS.md (whole) and docs/BETTER-AUTH-PLAN.md (whole). From
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry. From
 docs/ARCHITECTURE.md read only "Auth Model" through "Database clients" and
 "API Route Structure". Also read supabase/migrations/201_lock_the_database.sql
 (a migration's closing DO check), supabase/migrations/203_client_habits.sql (a
@@ -948,7 +968,7 @@ this commit: the proof is the evidence.
   handover.
 
 ```text
-Read CONVENTIONS.md (whole) and docs/BETTER-AUTH-PLAN.md (whole), then lib/auth.ts
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts
 as commit 1 left it. From docs/ARCHITECTURE.md read "Auth Model" through
 "Database clients", "Client Onboarding Flow" (to its state machine) and "API
 Route Structure". Also read middleware.ts and middleware.test.ts, lib/auth-
@@ -985,8 +1005,9 @@ DEV (every check of §5's proof 2); grep finds no @supabase/ssr, createServer
 Client, createBrowserClient, onAuthStateChange, signInWithPassword,
 exchangeCodeForSession or auth.admin outside scripts/ (commit 3 takes the
 scripts); an independent review of the whole diff, docs included, has run and
-every finding is fixed at the root; and every gate passes after the build and
-again after the review's fixes: npx tsc --noEmit, npx eslint ., npx vitest run,
+every finding is fixed at the root; a second independent review of those fixes
+has run and its findings are fixed; and every gate passes after the build and
+again after the second review's fixes: npx tsc --noEmit, npx eslint ., npx vitest run,
 npm run check:labels, npx knip, npm run check:service-key (with its new
 control), npm run check:rls, npm run build. Never skip, weaken or delete a test
 to make a gate pass. Report the security, load and performance review
@@ -1035,7 +1056,7 @@ the exact route, what I should see in plain words. The browser smoke is mine.
 - Each moved script run once on DEV; no product code changes.
 
 ```text
-Read CONVENTIONS.md (whole) and docs/BETTER-AUTH-PLAN.md (whole), then
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then
 scripts/proof-session.ts, scripts/sign-in-proof.ts and services/login-service.ts
 as commit 2 left them, scripts/env-bootstrap.ts, scripts/seed/teardown.ts, and
 every script §4 names in the proof-scripts row. Open another section only when
@@ -1082,7 +1103,7 @@ shipped and each script's result. There is no browser smoke for this commit.
 - `scripts/create-coach-proof.ts` (§5, proof 4).
 
 ```text
-Read CONVENTIONS.md (whole) and docs/BETTER-AUTH-PLAN.md (whole), then lib/auth.ts,
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
 services/login-service.ts, services/auth-email-service.ts, app/reset-password/
 page.tsx, proxy.ts and proxy.test.ts, emails/reset-password-email.tsx and
 scripts/create-coach-proof.ts's neighbours scripts/proof-session.ts and
@@ -1137,7 +1158,7 @@ instead of the email step. The browser smoke is mine.
 - `scripts/account-proof.ts` (§5, proof 5).
 
 ```text
-Read CONVENTIONS.md (whole) and docs/BETTER-AUTH-PLAN.md (whole), then lib/auth.ts,
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
 lib/auth-client.ts, services/auth-email-service.ts, app/(coach)/settings/
 page.tsx, components/coach/settings-units-card.tsx, app/client/settings/
 page.tsx, components/client-portal/nav/client-nav.tsx, and one existing dialog
@@ -1194,7 +1215,7 @@ smoke is mine.
 - The smoke seed (§7.4): a throwaway coach "Smoke · delete coach" with two clients and the records the steps name.
 
 ```text
-Read CONVENTIONS.md (whole) and docs/BETTER-AUTH-PLAN.md (whole), then lib/auth.ts,
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
 services/login-service.ts, services/storage-service.ts, services/client-
 service.ts (deleteClient, reactivateClient), services/content-item-service.ts,
 components/coach/account-card.tsx, components/client-portal/account-card.tsx,
@@ -1221,8 +1242,9 @@ Done when: everything that section lists is built; migration 210 is on DEV and
 types/database.ts shows exactly its functions; scripts/delete-account-proof.ts
 passes on DEV (every check of §5's proof 6, every throwaway removed in finally
 even when a check fails); an independent review of the whole diff has run and
-every finding is fixed at the root; and every gate passes after the build and
-again after the review's fixes: npx tsc --noEmit, npx eslint ., npx vitest run,
+every finding is fixed at the root; a second independent review of those fixes
+has run and its findings are fixed; and every gate passes after the build and
+again after the second review's fixes: npx tsc --noEmit, npx eslint ., npx vitest run,
 npm run check:labels, npx knip, npm run check:service-key, npm run check:rls,
 npm run build. Never skip, weaken or delete a test to make a gate pass. Report
 the security, load and performance review (CONVENTIONS §2), naming every row
@@ -1260,7 +1282,7 @@ arrives or the auth:last-link command. The browser smoke is mine.
   the evidence.
 
 ```text
-Read CONVENTIONS.md (whole) and docs/BETTER-AUTH-PLAN.md (whole), then lib/auth.ts,
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
 lib/auth-client.ts, app/login/page.tsx, components/auth/login-notice.tsx,
 lib/constants.ts and proxy.ts. From docs/ARCHITECTURE.md read "Auth Model".
 Open another section only when something you touch points to it.
@@ -1312,7 +1334,7 @@ mine.
   call carries `Authorization: Bearer`, a dead token is 401 JSON.
 
 ```text
-Read CONVENTIONS.md (whole) and docs/BETTER-AUTH-PLAN.md (whole), then lib/auth.ts,
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
 lib/csrf-protection.ts and its test, lib/auth-helpers.ts, proxy.ts,
 CLIENT-APP-REFERENCE.md (the auth lines around 36, 153–164) and
 scripts/proof-session.ts. Open another section only when something you touch
@@ -1332,8 +1354,9 @@ rewriting, or if a gate fails and its root fix lies outside this commit.
 
 Done when: everything that section lists is built; scripts/bearer-proof.ts
 passes on DEV (every check of §2.8's last bullet); an independent review of
-the whole diff has run and every finding is fixed at the root; and every gate
-passes after the build and again after the review's fixes: npx tsc --noEmit,
+the whole diff has run and every finding is fixed at the root; a second
+independent review of those fixes has run and its findings are fixed; and every
+gate passes after the build and again after the second review's fixes: npx tsc --noEmit,
 npx eslint ., npx vitest run, npm run check:labels, npx knip, npm run
 check:service-key, npm run build. Never skip, weaken or delete a test to make
 a gate pass. Report the security, load and performance review (CONVENTIONS
@@ -1369,7 +1392,7 @@ shipped and the proof's output. There is no browser smoke for this commit.
   migration-201 entry (:454) points here for the order.
 
 ```text
-Read CONVENTIONS.md (whole) and docs/BETTER-AUTH-PLAN.md (whole), then the code
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then the code
 commits 1–8 built (lib/auth.ts, lib/auth-client.ts, proxy.ts, services/login-
 service.ts, services/account-service.ts, services/auth-email-service.ts,
 app/api/auth/, app/set-password/, components/coach/account-card.tsx,
