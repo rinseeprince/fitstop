@@ -16,18 +16,47 @@ import { PASSWORD_MIN_LENGTH } from "@/lib/constants";
 import { newPasswordSchema, type NewPasswordFormData } from "@/lib/validations/auth";
 
 /**
- * The reset link's landing (rule 4): Better Auth sends the link's click here
- * with `?token=`, or with `?error=INVALID_TOKEN` when the link was used or has
- * expired. The ONLY reader of those params; `useSearchParams` bails static
- * prerendering out to the nearest Suspense boundary, so the page hosts this
- * leaf behind one of its own, with the fields as its pending frame
- * (CONVENTIONS §7, "Gate content, not structure").
+ * The two pages Better Auth's password link lands on (D17): the reset link's
+ * (rule 4) and the "Set your password" link the owner's coach:create emails a
+ * new coach (rule 9). One form, one call; only the words differ.
  */
-export function ResetPasswordForm() {
+export type PasswordLinkLanding = "reset" | "set";
+
+export const PASSWORD_LINK_WORDING: Record<
+  PasswordLinkLanding,
+  { title: string; description: string; passwordLabel: string; submit: string; submitting: string; done: string }
+> = {
+  reset: {
+    title: "Create new password",
+    description: "Enter a new password for your account",
+    passwordLabel: "New Password",
+    submit: "Update password",
+    submitting: "Updating password...",
+    done: "Password updated",
+  },
+  set: {
+    title: "Set your password",
+    description: "Choose a password for your account",
+    passwordLabel: "Password",
+    submit: "Set password",
+    submitting: "Setting password...",
+    done: "Password set",
+  },
+};
+
+/**
+ * The link's landing: Better Auth sends the link's click here with `?token=`,
+ * or with `?error=INVALID_TOKEN` when the link was used or has expired. The
+ * ONLY reader of those params; `useSearchParams` bails static prerendering
+ * out to the nearest Suspense boundary, so the page hosts this leaf behind
+ * one of its own, with the fields as its pending frame (CONVENTIONS §7, "Gate
+ * content, not structure").
+ */
+export function ResetPasswordForm({ landing }: { landing: PasswordLinkLanding }) {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
   if (!token || searchParams.get("error")) return <ExpiredLink />;
-  return <NewPasswordFields token={token} />;
+  return <NewPasswordFields token={token} landing={landing} />;
 }
 
 function ExpiredLink() {
@@ -42,7 +71,8 @@ function ExpiredLink() {
 }
 
 /** The new password, twice. With no token yet (the pending frame) it is shown and can't be used. */
-export function NewPasswordFields({ token }: { token: string | null }) {
+export function NewPasswordFields({ token, landing }: { token: string | null; landing: PasswordLinkLanding }) {
+  const wording = PASSWORD_LINK_WORDING[landing];
   const router = useRouter();
   const {
     register,
@@ -62,7 +92,7 @@ export function NewPasswordFields({ token }: { token: string | null }) {
         setError("root.reset", { message: authErrorSentence(error) });
         return;
       }
-      toast.success("Password updated");
+      toast.success(wording.done);
       router.push("/login");
     } catch (error) {
       console.error("Password reset failed:", error);
@@ -81,7 +111,7 @@ export function NewPasswordFields({ token }: { token: string | null }) {
       className="space-y-4"
     >
       <div className="space-y-2">
-        <Label htmlFor="password">New Password</Label>
+        <Label htmlFor="password">{wording.passwordLabel}</Label>
         <Input
           id="password"
           type="password"
@@ -118,12 +148,12 @@ export function NewPasswordFields({ token }: { token: string | null }) {
         {isSubmitting ? (
           <>
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Updating password...
+            {wording.submitting}
           </>
         ) : (
           <>
             <Check className="h-4 w-4 mr-2" />
-            Update password
+            {wording.submit}
           </>
         )}
       </Button>

@@ -1,5 +1,6 @@
 import { isAPIError } from "better-auth/api";
 import { auth, authPool } from "@/lib/auth";
+import { SET_PASSWORD_PAGE } from "@/lib/constants";
 import { captureApiError } from "@/lib/error-handler";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { findLiveInvitation, INVITATION_REFUSALS } from "@/services/invitation-service";
@@ -34,7 +35,7 @@ type AcceptResult =
   | { accepted: false; refusal: AcceptRefusal };
 
 /** The admin plugin's answer to an address that already has a login, at 1.7.7. */
-const ADDRESS_TAKEN = "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL";
+export const ADDRESS_TAKEN = "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL";
 
 /**
  * A coach's login, made by the owner's command: verified, with no password
@@ -51,7 +52,7 @@ export async function createCoachLogin({ email, name }: { email: string; name: s
     await insertProfile(user.id, "trainer");
     const { error } = await supabaseAdmin.from("coaches").insert({ user_id: user.id, name, email: user.email });
     if (error) throw new Error(`Failed to create the coach row: ${error.message}`);
-    await auth.api.requestPasswordReset({ body: { email: user.email, redirectTo: "/set-password" } });
+    await auth.api.requestPasswordReset({ body: { email: user.email, redirectTo: SET_PASSWORD_PAGE } });
   } catch (error) {
     await undoLogin(user.id, error);
     throw error;

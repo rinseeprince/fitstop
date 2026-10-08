@@ -38,6 +38,7 @@ import {
   backgroundWorkSettled,
   readSessionUserId,
   runAfterAnswer,
+  refuseSetPasswordLandingOverHttp,
   refuseUnlessOwnerOrInvite,
   reportEndpointFailure,
   reportUnexpectedAuthError,
@@ -430,6 +431,61 @@ describe("the reset link (rule 4)", () => {
     await expect(instance.api.resetPassword({ body: { newPassword: "another password", token } })).rejects.toMatchObject({
       body: { code: "INVALID_TOKEN" },
     })
+  })
+})
+
+/** A forgot-password request through Better Auth's own HTTP handler, as anyone signed out can post one. */
+const postResetRequest = (instance: LiveInstance, email: string, redirectTo: string) =>
+  instance.handler(
+    new Request("http://localhost:3000/api/auth/request-password-reset", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://localhost:3000" },
+      body: JSON.stringify({ email, redirectTo }),
+    })
+  )
+
+describe("the set-password link is the owner's alone (D17, rule 9)", () => {
+  it("is the hook Better Auth runs before every endpoint", () => {
+    expect(options.hooks?.before).toBe(refuseSetPasswordLandingOverHttp)
+  })
+
+  it.each(["/set-password", "http://localhost:3000/set-password", "/set-password?from=owner"])(
+    "in Better Auth's pipeline: a request over HTTP asking for %s is refused, one answer for every address, and nothing is written or sent",
+    async (landing) => {
+      vi.mocked(sendPasswordLinkEmail).mockClear()
+      vi.mocked(after).mockClear()
+      const { instance, db } = await liveAuth()
+      seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+      const known = await postResetRequest(instance, "client@example.com", landing)
+      const unknown = await postResetRequest(instance, "nobody@example.com", landing)
+      expect([known.status, unknown.status]).toEqual([403, 403])
+      expect(await known.json()).toEqual(await unknown.json())
+      await backgroundSettled()
+      expect(db.verification).toEqual([])
+      expect(sendPasswordLinkEmail).not.toHaveBeenCalled()
+    }
+  )
+
+  it("in Better Auth's pipeline: forgot password's own landing over HTTP is answered and emailed as before", async () => {
+    vi.mocked(sendPasswordLinkEmail).mockClear()
+    vi.mocked(after).mockClear()
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    expect((await postResetRequest(instance, "client@example.com", "/reset-password")).status).toBe(200)
+    await backgroundSettled()
+    expect(sendPasswordLinkEmail).toHaveBeenCalledTimes(1)
+    expect(db.verification).toHaveLength(1)
+  })
+
+  it("in Better Auth's pipeline: the server's own call, createCoachLogin's, may ask for it; one carrying a request's headers may not", async () => {
+    const { instance, db } = await liveAuth()
+    await instance.api.createUser({ body: { email: "coach@example.com", name: "Coach", data: { emailVerified: true } } })
+    await instance.api.requestPasswordReset({ body: { email: "coach@example.com", redirectTo: "/set-password" } })
+    expect(db.verification).toHaveLength(1)
+    await expect(
+      instance.api.requestPasswordReset({ body: { email: "coach@example.com", redirectTo: "/set-password" }, headers: new Headers() })
+    ).rejects.toMatchObject({ statusCode: 403, message: "The set-password link is sent by the owner's command alone." })
+    expect(db.verification).toHaveLength(1)
   })
 })
 

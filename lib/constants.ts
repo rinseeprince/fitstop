@@ -290,3 +290,13 @@ export const LOGIN_ERROR_PROFILE_UNAVAILABLE = "profile_unavailable";
 // no 72-byte limit, so the longest is bcrypt's no longer.
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 128;
+
+// Where Better Auth's emailed links land. Its password link carries the page
+// as its callbackURL and its rows record none, so these are what tells the
+// "Set your password" email from "Reset your password" (D17), and what
+// `npm run auth:last-link` prints a link for (scripts/auth-last-link.ts).
+export const RESET_PASSWORD_PAGE = "/reset-password";
+export const SET_PASSWORD_PAGE = "/set-password";
+// The delete-account confirmation's landing (rule 10): the delete dialog
+// asks Better Auth for it, and the login page says the account went.
+export const ACCOUNT_DELETED_PAGE = "/login?deleted=1";

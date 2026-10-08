@@ -9,6 +9,8 @@
     "check:prerender": "npx tsx scripts/check-prerender.ts",
     "check:service-key": "npx tsx scripts/check-service-key-leak.ts",
     "print:check-in-prompt": "npx tsx scripts/print-check-in-review-prompt.ts",
+    "coach:create": "npx tsx scripts/create-coach.ts",
+    "auth:last-link": "npx tsx scripts/auth-last-link.ts",
     "dev": "next dev",
     "lint": "eslint .",
     "start": "next start",

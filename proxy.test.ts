@@ -230,6 +230,7 @@ describe("proxy decisions", () => {
   it.each([
     "/forgot-password",
     "/reset-password",
+    "/set-password",
     "/invite/abc",
     "/api/invitations/abc",
     "/api/auth/sign-in/email",
@@ -248,7 +249,7 @@ describe("proxy decisions", () => {
     }
   )
 
-  it.each(["/forgot-password/x", "/reset-passwords", "/auth/callback", "/signup"])(
+  it.each(["/forgot-password/x", "/reset-passwords", "/set-passwords", "/set-password/x", "/auth/callback", "/signup"])(
     "%s is no public page: signed out, it is sent to /login",
     async (pathname) => {
       session(null)

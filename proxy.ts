@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from "next/server"
 // this file.
 import { readSessionUserId } from "@/lib/auth"
 import { supabaseAdmin } from "@/services/supabase-admin"
-import { LOGIN_ERROR_PROFILE_UNAVAILABLE } from "@/lib/constants"
+import { LOGIN_ERROR_PROFILE_UNAVAILABLE, RESET_PASSWORD_PAGE, SET_PASSWORD_PAGE } from "@/lib/constants"
 
 /**
  * The trainer-only route prefixes — the authorization half of the coach
@@ -24,8 +24,11 @@ export const trainerRoutes = [
   "/settings",
 ] as const
 
-/** Pages that skip auth entirely, matched exactly: the password reset's two. */
-const PUBLIC_PAGES = ["/forgot-password", "/reset-password"]
+/**
+ * Pages that skip auth entirely, matched exactly: the password reset's two,
+ * and the page the owner's "Set your password" link lands on (rule 9).
+ */
+const PUBLIC_PAGES = ["/forgot-password", RESET_PASSWORD_PAGE, SET_PASSWORD_PAGE]
 
 /**
  * Prefixes that skip auth entirely, each answering for itself: the invite page

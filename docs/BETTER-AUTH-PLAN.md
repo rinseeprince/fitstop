@@ -499,12 +499,16 @@ Two functions, both server-only, both the only writers of `profiles` and the log
   migration 208 is SQL and never meets the hook.
 
 `scripts/create-coach.ts` (`npm run coach:create -- --project <ref> --email … --name …`) calls the first only when
-`--project` equals `supabase/.temp/project-ref` and `DATABASE_URL`'s host names the same ref, so a PROD run is a
-deliberate pair of flags and env, never an accident; `scripts/auth-last-link.ts` (`npm run auth:last-link`, rule 14) refuses every ref but DEV's,
+`--project` equals `supabase/.temp/project-ref`, `DATABASE_URL` names the same ref (the pooler string carries it in its
+user, `postgres.<ref>`) and so does `NEXT_PUBLIC_SUPABASE_URL` (`scripts/project-ref.ts`), so a PROD run is a
+deliberate pair of flags and env, never an accident, and on any project but DEV only when `BETTER_AUTH_URL` is https
+(the emailed link opens it; `.env.local`'s localhost would send a real coach to the owner's machine); `scripts/auth-last-link.ts` (`npm run auth:last-link`, rule 14) refuses every ref but DEV's,
 reads `better_auth.verification` through the pool for the live token of an address (the identifier prefixes
-Better Auth 1.7.7 writes: `reset-password:`, the change-email and delete-account ones, read from its source by
-commit 4's session and pinned by a test on Better Auth's memory adapter) and prints the link the email would
-carry.
+Better Auth 1.7.7 writes, read from its source by commit 4: `reset-password:<token>` and `delete-account-<token>`,
+pinned by a test on Better Auth's memory adapter; change email's two links carry a JWT Better Auth signs and never
+stores, so no row holds them) and prints the link the email would carry. The rows record no landing page: a login with
+no password yet is printed `/set-password`, one with a password `/reset-password`, and a delete-account link
+`/login?deleted=1` (`ACCOUNT_DELETED_PAGE`, `lib/constants.ts`).
 
 `POST /api/invitations/accept` (`authRateLimit`, CSRF, zod `{ token: 64 hex, password: PASSWORD_MIN_LENGTH–PASSWORD_MAX_LENGTH }`,
 the two in `lib/constants.ts` that `lib/auth.ts` holds Better Auth to, as do the reset and set-password pages) calls the second
@@ -554,7 +558,10 @@ account, the client's that the coach keeps nothing). Better Auth calls one funct
 (`sendResetPassword`, `sendChangeEmailConfirmation`, `sendVerificationEmail`, `sendDeleteAccountVerification`);
 each is a thin function in `services/auth-email-service.ts` that renders the template and sends through the
 existing `resend` client. `sendPasswordLinkEmail` picks set-password or reset-password by the `callbackURL` inside
-the `url` it is given (`/set-password` vs `/reset-password`, D17); nothing else tells them apart. The sender comes
+the `url` it is given (`/set-password` vs `/reset-password`, D17); nothing else tells them apart. So only the server's
+own call may ask for `/set-password`: over HTTP `request-password-reset` is open to anyone signed out and its origin
+check accepts any page of the app as `redirectTo`, and `lib/auth.ts`'s before hook refuses that landing (commit 4's
+review). The sender comes
 from `EMAIL_FROM` (default today's `CoachHub <onboarding@resend.dev>`, D30); Resend's sandbox delivers to the
 owner's one verified address only (TECHNICAL-DEBT :256), so the smokes say where each email must go until the
 owner verifies a domain (§9.1).
@@ -1175,6 +1182,12 @@ instead of the email step. The browser smoke is mine.
 - `user.changeEmail` and `emailVerification` in `lib/auth.ts`; `emails/approve-email-change-email.tsx`,
   `emails/confirm-new-email-email.tsx`; `mirrorEmailToCoachRow` (D18).
 - `scripts/account-proof.ts` (§5, proof 5).
+- Found by commit 4 in Better Auth 1.7.7's installed source (`changeEmail`, `api/routes/update-user.mjs`;
+  `createEmailVerificationToken`, `api/routes/email-verification.mjs`) and pinned by `scripts/auth-last-link.test.ts`:
+  change email's two links carry a JWT signed with `BETTER_AUTH_SECRET`, and nothing is written to
+  `better_auth.verification`. So proof 5 cannot read "the approval token" or "the confirmation token" from the table
+  as §5 says, and `auth:last-link` prints neither: the proof takes each link from the email Better Auth hands
+  `sendChangeEmailConfirmation` and `sendVerificationEmail`, and §7.3's two addresses must both receive real email.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -1230,6 +1243,8 @@ smoke is mine.
   the key collection, `services/storage-service.ts` gains `removeObjects(bucket, keys)`); `user.deleteUser` in
   `lib/auth.ts`; `emails/confirm-delete-account-email.tsx` (two wordings, one template with a role prop).
 - The Delete account button and dialog on both Account cards (rules 10 and 13); `?deleted=1` on the login notice.
+  The dialog's `callbackURL` is `ACCOUNT_DELETED_PAGE` (`lib/constants.ts`, from commit 4): Better Auth's row records no
+  landing, so `auth:last-link` prints a delete-account link with that constant, and the two must stay one.
 - `scripts/delete-account-proof.ts` (§5, proof 6).
 - The smoke seed (§7.4): a throwaway coach "Smoke · delete coach" with two clients and the records the steps name.
 
@@ -1574,8 +1589,11 @@ copied by rerunning 209's section 1 (idempotent) before the deploy.
    refuses a push to PROD): 210 adds the functions.
 4. Deploy `main` with the env of step 1.
 5. If PROD held logins, each person signs in again (D8). If it held none, `npm run coach:create -- --project
-   etezzztgafcotyahgijk …` with PROD's `DATABASE_URL` in the shell for the owner's own coach, set the password from
-   the email, then put that user id in `AUTH_ADMIN_USER_IDS` and redeploy.
+   etezzztgafcotyahgijk …` for the owner's own coach, from the repo while it is linked to PROD (step 2), with PROD's
+   values in the shell, where they win over `.env.local`: `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL` (both the coaches'
+   https address, which the emailed link opens; the command refuses any other on a project but DEV), `RESEND_API_KEY`
+   and `EMAIL_FROM`. Set the password from the email, then put that user id in `AUTH_ADMIN_USER_IDS` and redeploy.
 6. `npm run check:rls` (linked to PROD), `npx supabase gen types typescript --linked` to a scratch file and diff
    against `types/database.ts` (only the `PostgrestVersion` line may differ). Relink DEV:
    `npx supabase link --project-ref aeaphsslctwcmebldrzx < /dev/null`.

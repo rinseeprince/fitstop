@@ -8,6 +8,7 @@ import { after } from "next/server"
 import { Pool, TypeOverrides, types } from "pg"
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/constants"
 import { captureApiError } from "@/lib/error-handler"
+import { landsOnSetPassword } from "@/lib/password-link"
 import { supabaseConnection } from "@/lib/supabase-connection"
 
 /**
@@ -87,6 +88,32 @@ export function refuseUnlessOwnerOrInvite(_user: unknown, ctx: { path?: string }
   if (ctx?.path === CREATE_USER_PATH) return Promise.resolve()
   return Promise.reject(new APIError("FORBIDDEN", { message: "Accounts are created by invitation." }))
 }
+
+/** Forgot password's endpoint: where a password link is asked for over HTTP. */
+const REQUEST_PASSWORD_RESET_PATH = "/request-password-reset"
+
+/**
+ * The "Set your password" link is the owner's (D17, rule 9): only the
+ * server's own call, createCoachLogin's, which carries no request, may ask for
+ * a password link landing on /set-password. Over HTTP the endpoint is forgot
+ * password's, open to anyone signed out, and its origin check lets any page
+ * of the app be the landing, so without this anyone could send any address
+ * with a login the new-coach email. A request asking for that landing is
+ * refused before any address is looked up: every address gets one answer.
+ */
+export const refuseSetPasswordLandingOverHttp = createAuthMiddleware((ctx) => {
+  const overHttp = ctx.request !== undefined || ctx.headers !== undefined
+  const redirectTo: unknown = (ctx.body as { redirectTo?: unknown } | undefined)?.redirectTo
+  if (
+    ctx.path === REQUEST_PASSWORD_RESET_PATH &&
+    overHttp &&
+    typeof redirectTo === "string" &&
+    landsOnSetPassword(redirectTo, ctx.context.baseURL)
+  ) {
+    return Promise.reject(new APIError("FORBIDDEN", { message: "The set-password link is sent by the owner's command alone." }))
+  }
+  return Promise.resolve()
+})
 
 /**
  * Today's logins carry Supabase's bcrypt hashes, copied by migration 208; a
@@ -196,7 +223,7 @@ export const auth = betterAuth({
   databaseHooks: {
     user: { create: { before: refuseUnlessOwnerOrInvite } },
   },
-  hooks: { after: reportEndpointFailure },
+  hooks: { before: refuseSetPasswordLandingOverHttp, after: reportEndpointFailure },
   onAPIError: { onError: (error) => reportUnexpectedAuthError(error) },
   // The database makes every new id (uuid, gen_random_uuid()), and a copied
   // login kept its Supabase one: every login's id has the type of the user_id

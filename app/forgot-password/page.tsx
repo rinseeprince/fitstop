@@ -12,6 +12,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Loader2, Mail } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { authErrorSentence } from "@/lib/auth-error-messages";
+import { RESET_PASSWORD_PAGE } from "@/lib/constants";
 import { forgotPasswordSchema, type ForgotPasswordFormData } from "@/lib/validations/auth";
 
 export default function ForgotPasswordPage() {
@@ -32,7 +33,7 @@ export default function ForgotPasswordPage() {
     // whatever was typed (rule 4); only a refusal, such as too many requests,
     // says otherwise.
     try {
-      const { error } = await authClient.requestPasswordReset({ email, redirectTo: "/reset-password" });
+      const { error } = await authClient.requestPasswordReset({ email, redirectTo: RESET_PASSWORD_PAGE });
       if (error) {
         toast.error("Couldn't send the link", { description: authErrorSentence(error) });
         return;
