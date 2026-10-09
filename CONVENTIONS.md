@@ -506,7 +506,7 @@
 
   The consequence: the route layer **is** the security perimeter. Gaps in route-level auth are not caught by a second line of defense. Treat the route's auth chain and the service function's scoping parameter as non-optional.
 
-  Auth bootstrap follows the same shape: the browser fetches its identity via `GET /api/auth/me` (`services/auth-profile-service.ts`); the browser holds Better Auth's `authClient` (`lib/auth-client.ts`) alone, never a Supabase client, and never reads `profiles`/`coaches`.
+  Auth bootstrap follows the same shape: the browser fetches its identity via `GET /api/auth/me` (`services/auth-profile-service.ts`); the browser holds Better Auth's `authClient` (`lib/auth-client.ts`) and no database client, and reads `profiles`/`coaches` through that route alone.
 
   #### Route-level auth chain (mandatory, in this order)
 
@@ -523,7 +523,7 @@
 
   #### Service layer contract
 
-  - **Services use `supabaseAdmin`.** This is the default client for the service layer, not an exception. Import from `services/supabase-admin.ts`. Do NOT add a comment justifying its use — that was an artifact of the old rule and creates noise.
+  - **Services use `supabaseAdmin`.** This is the default client for the service layer, not an exception. Import from `services/supabase-admin.ts`. Do NOT add a comment justifying its use.
   - **Services that read or write user-owned data MUST accept an explicit scope parameter** (usually `clientId`, sometimes `coachId` for coach-owned resources). No service function reads client-owned data without being told whose data to read.
   - **Services MUST filter on the provided scope.** `.eq('client_id', clientId)` (or the equivalent join constraint for nested entities). A service that accepts `clientId` but doesn't filter on it is a data leak waiting to happen.
   - **Services trust their callers.** The route layer is responsible for proving that the `clientId` passed in is one the authed principal is allowed to access. Services do not re-verify (that would be the auth check moving into the wrong layer and creating circular dependencies).
@@ -532,7 +532,9 @@
 
   #### Who the caller is
 
-  No Supabase session client exists, and none is built. Who the caller is comes from Better Auth: `readSessionUserId` (`lib/auth.ts`) reads the session the request's cookie or bearer token names, without renewing it, for the proxy, the auth seam (`lib/auth-helpers.ts`) and `GET /api/auth/me`; the browser's `authClient` (`lib/auth-client.ts`) signs in and out and reads its own session. Every table read, database function call and storage call goes through `supabaseAdmin`, filtered on the user id the session names, and `lib/session-client-ownership.test.ts` fails the first that does not — no rule in the database stands behind an app read, so a query through any other client would have nothing to lean on. The same test holds `betterAuth(…)` and its pool to `lib/auth.ts`, `createAuthClient(…)` to `lib/auth-client.ts`, and fails a file that builds or imports a Supabase session client.
+  Who the caller is comes from Better Auth: `readSessionUserId` (`lib/auth.ts`) reads the session the request's cookie or bearer token names, without renewing it, for the proxy, the auth seam (`lib/auth-helpers.ts`) and `GET /api/auth/me`; the browser's `authClient` (`lib/auth-client.ts`) signs in and out and reads its own session. Every table read, database function call and storage call goes through `supabaseAdmin`, filtered on the user id the session names, and `lib/session-client-ownership.test.ts` fails the first that does not — no rule in the database stands behind an app read, so a query through any other client would have nothing to lean on. The same test holds `betterAuth(…)` and its pool to `lib/auth.ts`, `createAuthClient(…)` to `lib/auth-client.ts`, and fails a file that builds or imports a Supabase client carrying a login's session: never build one.
+
+  **Better Auth writes its own tables.** A login, a session or an address changes through Better Auth (`auth.api` or its `internalAdapter` on the server, `authClient` in the browser), never through new SQL on `better_auth`; the app's own SQL there is the three writers `docs/ARCHITECTURE.md` → "Auth Model" names (`services/login-service.ts`'s undo of a login it made, the address trigger, `delete_coach_records`).
 
   #### RLS policies
 
