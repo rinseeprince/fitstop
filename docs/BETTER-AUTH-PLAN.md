@@ -1987,7 +1987,7 @@ shipped and the proof's output. There is no browser smoke for this commit.
 
 ### Commit 9 — `docs(auth): ARCHITECTURE, CONVENTIONS, TECHNICAL-DEBT and CLIENT-APP-REFERENCE describe the logins as they are`
 
-**STATUS: SHIPPED `5de1a84b` (2026-10-10).**
+**STATUS: SHIPPED `5de1a84b` (2026-10-10); its review's later findings fixed `f32433d1` (2026-10-10).**
 
 - `docs/ARCHITECTURE.md`: "Auth Model" complete for the account features, Google, the bearer path, the delete
   paths; the Settings pages' Account cards under their pages; the emails list; the "Client Onboarding Flow" line
