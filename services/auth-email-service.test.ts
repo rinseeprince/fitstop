@@ -6,10 +6,10 @@ vi.mock("@/services/email-service", async () => {
 });
 vi.mock("@/lib/error-handler", () => ({ captureApiError: vi.fn() }));
 
-import { sendApproveEmailChangeEmail, sendConfirmNewEmailEmail, sendPasswordLinkEmail } from "./auth-email-service";
+import { sendApproveEmailChangeEmail, sendConfirmDeleteAccountEmail, sendConfirmNewEmailEmail, sendPasswordLinkEmail } from "./auth-email-service";
 import { EMAIL_SENDER, resend } from "@/services/email-service";
 import { captureApiError } from "@/lib/error-handler";
-import { PRODUCT_NAME } from "@/lib/constants";
+import { ACCOUNT_DELETION_TAKES, PRODUCT_NAME } from "@/lib/constants";
 
 const LINK = {
   user: { email: "coach@example.com", name: "Sam" },
@@ -168,5 +168,37 @@ describe("change email's second email: Confirm your new email, to the new addres
     vi.mocked(resend.emails.send).mockResolvedValue({ data: null, error: { message: "sandbox" } } as never);
     await expect(sendConfirmNewEmailEmail({ user: { email: "new@example.com", name: "Sam" }, url: CONFIRM_URL })).resolves.toBeUndefined();
     expect(captureApiError).toHaveBeenCalledWith(expect.any(Error), { source: "sendConfirmNewEmailEmail" });
+  });
+});
+
+describe("delete account's email: Confirm deleting your account, to the address the person signs in with (rules 10 and 13)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const DELETE_URL = "http://localhost:3000/api/auth/delete-user/callback?token=abc123&callbackURL=%2Flogin%3Fdeleted%3D1";
+  const ASKER = { email: "coach@example.com", name: "Sam" };
+
+  it.each(["coach", "client"] as const)("a %s's goes from the app's sender, says what goes with the account, and carries Better Auth's link", async (account) => {
+    vi.mocked(resend.emails.send).mockResolvedValue({ data: { id: "e4" }, error: null } as never);
+    await sendConfirmDeleteAccountEmail({ user: ASKER, url: DELETE_URL, account });
+    const [message] = vi.mocked(resend.emails.send).mock.calls[0];
+    expect(message).toMatchObject({ from: EMAIL_SENDER, to: "coach@example.com", subject: "Confirm deleting your account" });
+    expect(message.html).toContain(DELETE_URL.replace(/&/g, "&amp;"));
+    expect(message.text).toContain(DELETE_URL);
+    const both = `${readable(message.html)}\n${message.text}`;
+    for (const shown of [readable(message.html), message.text ?? ""]) {
+      expect(shown).toContain(`Someone asked to delete your ${PRODUCT_NAME} account.`);
+      expect(shown.replace(/&#x27;/g, "'")).toContain(ACCOUNT_DELETION_TAKES[account]);
+      expect(shown.replace(/&#x27;/g, "'")).toContain("This link expires in one day and works once. Open it in the browser you asked from, while you're signed in.");
+    }
+    expect(both).not.toContain(ACCOUNT_DELETION_TAKES[account === "coach" ? "client" : "coach"]);
+    expectSignedByTheTeam(message);
+    expect(both).not.toContain("—");
+    expect(captureApiError).not.toHaveBeenCalled();
+  });
+
+  it("never throws when Resend refuses it, and the failure reaches Sentry", async () => {
+    vi.mocked(resend.emails.send).mockResolvedValue({ data: null, error: { message: "sandbox" } } as never);
+    await expect(sendConfirmDeleteAccountEmail({ user: ASKER, url: DELETE_URL, account: "client" })).resolves.toBeUndefined();
+    expect(captureApiError).toHaveBeenCalledWith(expect.any(Error), { source: "sendConfirmDeleteAccountEmail" });
   });
 });

@@ -1,7 +1,8 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { sanitizeFileName } from "@/lib/upload-validation";
 
-const CONTENT_BUCKET = "content-library";
+/** The coach's content library files, each under the coach's id: `<coachId>/<contentId>/<when>-<file name>`. */
+export const CONTENT_BUCKET = "content-library";
 
 export const uploadContentFile = async (
   file: File,

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
 import { ChangeEmailDialog } from "@/components/auth/change-email-dialog";
+import { DANGER_OUTLINE_CLASS, DeleteAccountDialog } from "@/components/auth/delete-account-dialog";
 import { SignOutEverywhereDialog } from "@/components/coach/sign-out-everywhere-dialog";
 import {
   SETTINGS_CARD_CLASS,
@@ -14,21 +15,24 @@ import { TextSkeleton } from "@/components/text-skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { COACH_SETTINGS_PAGE } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 
 /** The dialog the card has open, with what it shows: change email shows the address the card showed. */
 type AccountDialog =
   | { kind: "change-password" }
   | { kind: "change-email"; currentEmail: string }
-  | { kind: "sign-out-everywhere" };
+  | { kind: "sign-out-everywhere" }
+  | { kind: "delete-account" };
 
 const ACTION_CLASS = "rounded-[6px] border-[rgba(13,148,136,0.08)] bg-white text-[#5a7d82] hover:text-[#0c1a1e]";
 
 /**
- * The coach's Account card on Settings (rules 5, 6 and 7): the name and the
- * address they sign in with, both Better Auth's, then Change password, Change
- * email and Sign out everywhere. Who is signed in comes from the session
- * alone (docs/BETTER-AUTH-PLAN.md 1.2), so the address changes here when the
- * change of email's second link does, and not before. Until the session is
+ * The coach's Account card on Settings (rules 5, 6, 7 and 10): the name and
+ * the address they sign in with, both Better Auth's, then Change password,
+ * Change email, Sign out everywhere and Delete account. Who is signed in
+ * comes from the session alone (docs/BETTER-AUTH-PLAN.md 1.2), so the address
+ * changes here when the change of email's second link does, and not before.
+ * Until the session is
  * read the two values are pending and Change email, which needs the address,
  * waits. One dialog at a time (`useDialogSubject`): a close leaves it showing
  * what it showed, and each open mounts it fresh.
@@ -67,6 +71,13 @@ export function CoachAccountCard() {
             <Button variant="outline" className={ACTION_CLASS} onClick={() => dialog.show({ kind: "sign-out-everywhere" })}>
               Sign out everywhere
             </Button>
+            <Button
+              variant="outline"
+              className={cn(ACTION_CLASS, DANGER_OUTLINE_CLASS)}
+              onClick={() => dialog.show({ kind: "delete-account" })}
+            >
+              Delete account
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -85,6 +96,9 @@ export function CoachAccountCard() {
       )}
       {subject?.kind === "sign-out-everywhere" && (
         <SignOutEverywhereDialog key={`sign-out-everywhere-${dialog.openKey}`} open={dialog.open} onOpenChange={onOpenChange} />
+      )}
+      {subject?.kind === "delete-account" && (
+        <DeleteAccountDialog key={`delete-account-${dialog.openKey}`} open={dialog.open} account="coach" onOpenChange={onOpenChange} />
       )}
     </>
   );

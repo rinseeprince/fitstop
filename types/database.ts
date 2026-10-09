@@ -3238,6 +3238,8 @@ export type Database = {
         Args: { p_client_id: string; p_habit_id: string; p_today: string }
         Returns: undefined
       }
+      delete_client_records: { Args: { p_user_id: string }; Returns: number }
+      delete_coach_records: { Args: { p_user_id: string }; Returns: number }
       edit_client_goal: {
         Args: {
           p_client_id: string

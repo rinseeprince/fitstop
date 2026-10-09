@@ -12,14 +12,21 @@ const dialogs = vi.hoisted(() => ({ mounts: [] as { kind: string; props: Record<
 vi.mock("@/components/auth/change-password-dialog", async () => ({ ChangePasswordDialog: await standIn("change-password") }));
 vi.mock("@/components/auth/change-email-dialog", async () => ({ ChangeEmailDialog: await standIn("change-email") }));
 vi.mock("@/components/coach/sign-out-everywhere-dialog", async () => ({ SignOutEverywhereDialog: await standIn("sign-out-everywhere") }));
+vi.mock("@/components/auth/delete-account-dialog", async () => ({ DeleteAccountDialog: await standIn("delete-account"), DANGER_OUTLINE_CLASS: "" }));
 
 async function standIn(kind: string) {
   const { useState } = await import("react");
-  return function StandIn(props: { open: boolean; currentEmail?: string; landing?: string; onOpenChange: (open: boolean) => void }) {
+  return function StandIn(props: { open: boolean; currentEmail?: string; landing?: string; account?: string; onOpenChange: (open: boolean) => void }) {
     // Mounted once per opening: its first props are recorded, as a fresh dialog's form would start from them.
     useState(() => dialogs.mounts.push({ kind, props }));
     return (
-      <div data-testid={kind} data-open={String(props.open)} data-email={props.currentEmail ?? ""} data-landing={props.landing ?? ""}>
+      <div
+        data-testid={kind}
+        data-open={String(props.open)}
+        data-email={props.currentEmail ?? ""}
+        data-landing={props.landing ?? ""}
+        data-account={props.account ?? ""}
+      >
         <button type="button" onClick={() => props.onOpenChange(false)}>
           close {kind}
         </button>
@@ -32,22 +39,27 @@ import { CoachAccountCard } from "./account-card";
 
 const SAM = { id: "user-1", name: "Sam Coach", email: "sam@example.com" };
 
-describe("CoachAccountCard (rules 5, 6 and 7)", () => {
+describe("CoachAccountCard (rules 5, 6, 7 and 10)", () => {
   beforeEach(() => {
     auth.user = SAM;
     dialogs.mounts = [];
   });
   afterEach(() => cleanup());
 
-  it("shows the name and the address the coach signs in with, from the session, and the three actions", () => {
+  it("shows the name and the address the coach signs in with, from the session, and the four actions", () => {
     render(<CoachAccountCard />);
     expect(screen.getByRole("heading", { name: "Account" })).toBeInTheDocument();
     expect(screen.getByText("Name").nextSibling).toHaveTextContent("Sam Coach");
     expect(screen.getByText("Email").nextSibling).toHaveTextContent("sam@example.com");
-    for (const name of ["Change password", "Change email", "Sign out everywhere"]) {
+    for (const name of ["Change password", "Change email", "Sign out everywhere", "Delete account"]) {
       expect(screen.getByRole("button", { name })).toBeEnabled();
     }
-    expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
+  });
+
+  it("delete account opens with the coach's account, which says the clients go with it (rule 10)", async () => {
+    render(<CoachAccountCard />);
+    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    expect(screen.getByTestId("delete-account")).toHaveAttribute("data-account", "coach");
   });
 
   it("shows the address the session holds: a change lands here when the second link changes the login, never before", () => {
@@ -67,12 +79,14 @@ describe("CoachAccountCard (rules 5, 6 and 7)", () => {
     expect(screen.getByRole("button", { name: "Change email" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Change password" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Sign out everywhere" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Delete account" })).toBeEnabled();
   });
 
   it.each([
     ["Change password", "change-password"],
     ["Change email", "change-email"],
     ["Sign out everywhere", "sign-out-everywhere"],
+    ["Delete account", "delete-account"],
   ])("%s opens its dialog, and only that one", async (button, kind) => {
     render(<CoachAccountCard />);
     await userEvent.click(screen.getByRole("button", { name: button }));

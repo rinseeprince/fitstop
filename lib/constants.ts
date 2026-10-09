@@ -304,8 +304,16 @@ export const PASSWORD_MAX_LENGTH = 128;
 export const RESET_PASSWORD_PAGE = "/reset-password";
 export const SET_PASSWORD_PAGE = "/set-password";
 // The delete-account confirmation's landing (rule 10): the delete dialog
-// asks Better Auth for it, and the login page says the account went.
-export const ACCOUNT_DELETED_PAGE = "/login?deleted=1";
+// asks Better Auth for it, and the login page's marker says the account went.
+export const ACCOUNT_DELETED_PARAM = "deleted";
+export const ACCOUNT_DELETED_PAGE = `/login?${ACCOUNT_DELETED_PARAM}=1`;
+// What deleting an account takes (rules 10 and 13), said by the Delete
+// account dialog and by the email that confirms it.
+export const ACCOUNT_DELETION_TAKES = {
+  coach: "This deletes your account, every client you coach, all of their records and photos, and their logins. It can't be undone.",
+  client: "This deletes your account and everything recorded about you, including your photos. Your coach keeps none of it. It can't be undone.",
+} as const;
+export type DeletedAccount = keyof typeof ACCOUNT_DELETION_TAKES;
 // Where Log out lands (contexts/auth-context.tsx), loaded as a fresh page, and
 // the marker that has the login page say "Logged out successfully".
 export const LOGGED_OUT_PARAM = "logged-out";

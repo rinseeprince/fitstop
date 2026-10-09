@@ -1,5 +1,24 @@
 # Technical Debt Tracker
 
+## Delete account has a size limit
+
+Logged: 2026-10-09 (Better Auth commit 6; the owner chose to note it for later when approving migration 212).
+
+Delete account removes an account's records with one database function call (`delete_client_records` or
+`delete_coach_records`, migration 211, from `deleteAccountRecords` in `services/account-service.ts`). The call goes
+through the Data API, which cancels a statement after 8 s (`authenticator`'s `statement_timeout`; `service_role`
+sets none of its own), and its time grows with the account. With migration 212's indexes a 20-client seed coach
+(about 118k rows under it, 52.5k of them `set_logs`) took 1.5 to 4 s on DEV, and a client 0.35 s, so a coach several
+times that size (say 60 clients with a year of logging) can't finish deleting. Each attempt removes the account's
+photos and content files first (D20: objects before rows), then the call times out: the rows and the login stay,
+the person sees "Couldn't delete your account. Try again.", and asking again ends the same way. Until it is fixed,
+the owner finishes such a deletion by hand.
+
+Two ways out, neither built: delete a coach's clients one call per client and then the coach row, so each call's
+work is one client's and progress survives a retry (a new function, a new migration); or call the functions over a
+connection with no Data API timeout (`postgres` has none), which CONVENTIONS §8 forbids today (every function call
+goes through `supabaseAdmin`). Prove either on a coach several times the seed coach's size.
+
 ## A moved workout leaves its log's stored date behind
 
 Logged: 2026-09-17 (training upgrade, commit 9).
@@ -671,14 +690,20 @@ The consequence: the route layer **is** the security perimeter. Gaps in route-le
   coach asks for it.
 
 ### P3 - Known, no action
-- **`check_in_answers.question_id` is `ON DELETE NO ACTION`, so deleting an answered
-  question raises `23503`.** That is the intent — it is what forces archive-instead-of-
-  delete — and the app has no question-delete path, only `archived_at`. NO ACTION
-  rather than RESTRICT so a full coach/client teardown, which removes the answers in
-  the same statement, still succeeds regardless of cascade order (there is a live
-  coach-delete path: `scripts/seed-scale-client.ts --fullReset`). If a user-facing
-  delete is ever built it must translate `23503` to a sentence rather than letting the
-  constraint text reach a coach (CONVENTIONS §10).
+- ~~**`check_in_answers.question_id` is `ON DELETE NO ACTION`, so deleting an answered
+  question raises `23503`.**~~ **CLOSED 2026-10-09 (Better Auth commit 6, migration 211).**
+  The user-facing delete this entry waited for is Delete account. Its coach path,
+  `delete_coach_records`, deletes the coach's clients, and their check-ins and answers
+  with them, in a statement of its own before the coach row, and any failure reaches the
+  person as "Couldn't delete your account. Try again.", never the constraint's text. The
+  entry's claim that a one-statement teardown succeeds "regardless of cascade order" was
+  false: Postgres checks a NO ACTION key in the cascade round that deletes its parent,
+  before a deeper round removes the rows pointing at it, so `DELETE FROM coaches` alone
+  fails for a coach whose client answered one of the coach's questions, and
+  `content_assignments.assigned_by` fails it the same way (both shown on DEV in a
+  rolled-back transaction, 2026-10-09). `scripts/seed-scale-client.ts --full-reset`
+  deletes its client before its coach. Questions still have no delete path, only
+  `archived_at`.
 
 ## Client check-in wizard — open defects
 

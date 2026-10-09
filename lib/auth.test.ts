@@ -31,34 +31,43 @@ vi.mock("@/services/auth-email-service", () => ({
   sendPasswordLinkEmail: vi.fn(),
   sendApproveEmailChangeEmail: vi.fn(),
   sendConfirmNewEmailEmail: vi.fn(),
+  sendConfirmDeleteAccountEmail: vi.fn(),
 }))
-// The app's rows behind Better Auth's hook: services/account-service.test.ts proves the statements.
-vi.mock("@/services/account-service", () => ({ isAddressHeldElsewhere: vi.fn() }))
+// The app's rows behind Better Auth's hooks: services/account-service.test.ts proves the statements.
+vi.mock("@/services/account-service", () => ({ isAddressHeldElsewhere: vi.fn(), readLoginRole: vi.fn(), deleteAccountRecords: vi.fn() }))
 // Better Auth's background work goes to Next's after(), which keeps it alive
 // past the answer; here it only records the work, which runs on regardless.
 vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after: vi.fn() }))
 
 import { APIError } from "better-auth/api"
 import {
+  ACCOUNT_NOT_DELETED,
   auth,
   authPool,
   backgroundWorkSettled,
+  deleteRecordsBeforeLogin,
   readSessionUserId,
   runAfterAnswer,
   refuseBeforeEndpoint,
   refuseUnlessOwnerOrInvite,
   reportEndpointFailure,
   reportUnexpectedAuthError,
+  sendDeletionConfirmation,
   verifyBcryptOrScrypt,
 } from "./auth"
 import { captureApiError } from "@/lib/error-handler"
-import { sendApproveEmailChangeEmail, sendConfirmNewEmailEmail, sendPasswordLinkEmail } from "@/services/auth-email-service"
-import { isAddressHeldElsewhere } from "@/services/account-service"
+import {
+  sendApproveEmailChangeEmail,
+  sendConfirmDeleteAccountEmail,
+  sendConfirmNewEmailEmail,
+  sendPasswordLinkEmail,
+} from "@/services/auth-email-service"
+import { deleteAccountRecords, isAddressHeldElsewhere, readLoginRole } from "@/services/account-service"
 import { after } from "next/server"
 
 /** Every piece of background work handed to after() so far, settled. */
 const backgroundSettled = () => Promise.all(vi.mocked(after).mock.calls.map(([task]) => task as Promise<unknown>))
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/constants"
+import { ACCOUNT_DELETED_PAGE, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/constants"
 import { SUPABASE_ROOT_CA } from "@/lib/supabase-connection"
 
 /** What lib/auth.ts handed Better Auth, read as Better Auth's own option type. */
@@ -74,7 +83,7 @@ type Row = Record<string, unknown>
 async function liveAuth(
   emailAndPassword?: BetterAuthOptions["emailAndPassword"],
   db: Record<string, Row[]> = { user: [], session: [], account: [], verification: [], rateLimit: [] },
-  { originCheck = false }: { originCheck?: boolean } = {}
+  { originCheck = false, rateLimited = false }: { originCheck?: boolean; rateLimited?: boolean } = {}
 ) {
   const { betterAuth } = await vi.importActual<typeof import("better-auth")>("better-auth")
   const instance = betterAuth({
@@ -82,6 +91,8 @@ async function liveAuth(
     database: memoryAdapter(db),
     emailAndPassword: emailAndPassword ?? auth.options.emailAndPassword,
     advanced: { ...auth.options.advanced, ...(originCheck ? { disableOriginCheck: false } : {}) },
+    // The limiter runs in production only; rateLimited switches it on, its rules as lib/auth.ts wrote them.
+    ...(rateLimited ? { rateLimit: { ...auth.options.rateLimit, enabled: true, storage: "memory" as const } } : {}),
   })
   return { instance, db }
 }
@@ -933,5 +944,195 @@ describe("sign out everywhere (rule 7, D14)", () => {
     expect(await signedInAs(instance, phone)).toBeNull()
     expect(db.session.map((row) => row.userId)).toEqual([other])
     expect(await signedInAs(instance, theirs)).toBe(other)
+  })
+})
+
+/** Delete account's link as Better Auth builds it, landing on the login page's deleted notice; its token captured. */
+const DELETE_LINK = /^http:\/\/localhost:3000\/api\/auth\/delete-user\/callback\?token=([a-z0-9]+)&callbackURL=%2Flogin%3Fdeleted%3D1$/
+
+/** A delete-account link opened in a browser: a GET of the callback, with the browser's cookie when it has one. */
+const openLink = (instance: LiveInstance, url: string, cookie?: string) =>
+  instance.handler(new Request(url, { headers: cookie ? { cookie } : {} }))
+
+describe("delete account (rules 10 and 13, D20): the password, then the emailed link, which deletes the app's records before the login", () => {
+  beforeEach(() => {
+    vi.mocked(after).mockClear()
+    vi.mocked(captureApiError).mockClear()
+    vi.mocked(sendConfirmDeleteAccountEmail).mockReset()
+    vi.mocked(readLoginRole).mockReset()
+    vi.mocked(readLoginRole).mockResolvedValue("trainer")
+    vi.mocked(deleteAccountRecords).mockReset()
+    vi.mocked(deleteAccountRecords).mockResolvedValue(undefined)
+  })
+
+  it("is on, its link lasting a day, its email worded by the asker's role and its records deleted first", () => {
+    expect(options.user?.deleteUser?.enabled).toBe(true)
+    expect(options.user?.deleteUser?.deleteTokenExpiresIn).toBe(DAY_MS / 1000)
+    expect(options.user?.deleteUser?.sendDeleteAccountVerification).toBe(sendDeletionConfirmation)
+    expect(options.user?.deleteUser?.beforeDelete).toBe(deleteRecordsBeforeLogin)
+  })
+
+  /** A coach, signed in, asking with their password for the link to the login page's deleted notice. */
+  async function askToDelete(body: Record<string, unknown> = { password: PASSWORD, callbackURL: ACCOUNT_DELETED_PAGE }) {
+    const { instance, db } = await liveAuth()
+    const id = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const cookie = sessionCookie(await postSignIn(instance, "coach@example.com", PASSWORD))!
+    const asked = await postAsSignedIn(instance, "/delete-user", body, cookie)
+    await backgroundSettled()
+    return { instance, db, id, cookie, asked }
+  }
+
+  /** The link the confirmation email was handed, and its token. */
+  function emailedLink(): { url: string; token: string } {
+    const url = vi.mocked(sendConfirmDeleteAccountEmail).mock.calls[0]?.[0].url ?? ""
+    return { url, token: DELETE_LINK.exec(url)?.[1] ?? "" }
+  }
+
+  it("in Better Auth's pipeline: the right password emails the coach's confirmation instead of deleting, its token stored for a day", async () => {
+    const { db, id, asked } = await askToDelete()
+    expect(asked.status).toBe(200)
+    expect(await asked.json()).toEqual({ success: true, message: "Verification email sent" })
+    expect(sendConfirmDeleteAccountEmail).toHaveBeenCalledTimes(1)
+    expect(sendConfirmDeleteAccountEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ user: expect.objectContaining({ id, email: "coach@example.com" }), account: "coach" })
+    )
+    const { token } = emailedLink()
+    expect(token).not.toBe("")
+    const row = db.verification.find((stored) => stored.identifier === `delete-account-${token}`)
+    expect(row).toMatchObject({ value: id })
+    expect((row!.expiresAt as Date).getTime() - Date.now()).toBeGreaterThan(DAY_MS - 60_000)
+    expect(db.user.map((user) => user.id)).toEqual([id])
+    expect(deleteAccountRecords).not.toHaveBeenCalled()
+  })
+
+  it("in Better Auth's pipeline: a client's confirmation is worded for a client", async () => {
+    vi.mocked(readLoginRole).mockResolvedValue("client")
+    await askToDelete()
+    expect(sendConfirmDeleteAccountEmail).toHaveBeenCalledWith(expect.objectContaining({ account: "client" }))
+  })
+
+  it("in Better Auth's pipeline: a wrong password is refused as INVALID_PASSWORD, with no email and no link", async () => {
+    const { db, asked } = await askToDelete({ password: WRONG, callbackURL: ACCOUNT_DELETED_PAGE })
+    expect(asked.status).toBe(400)
+    expect(await asked.json()).toMatchObject({ code: "INVALID_PASSWORD" })
+    expect(sendConfirmDeleteAccountEmail).not.toHaveBeenCalled()
+    expect(db.verification).toHaveLength(0)
+  })
+
+  it.each([
+    ["no password", { callbackURL: ACCOUNT_DELETED_PAGE }],
+    ["an empty password", { password: "", callbackURL: ACCOUNT_DELETED_PAGE }],
+    ["a password that is no string", { password: 12345678, callbackURL: ACCOUNT_DELETED_PAGE }],
+  ])("in Better Auth's pipeline: a request with %s is refused before any link is made, so a session alone never has one sent", async (_label, body) => {
+    const { db, asked } = await askToDelete(body)
+    expect(asked.status).toBe(400)
+    expect(sendConfirmDeleteAccountEmail).not.toHaveBeenCalled()
+    expect(db.verification).toHaveLength(0)
+    expect(db.user).toHaveLength(1)
+  })
+
+  it("in Better Auth's pipeline: asking is limited as sign-in is, three in ten seconds, since it answers whether a password is right", async () => {
+    expect(options.rateLimit?.customRules?.["/delete-user"]).toEqual({ window: 10, max: 3 })
+    const { instance, db } = await liveAuth(undefined, undefined, { rateLimited: true })
+    seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const cookie = sessionCookie(await postSignIn(instance, "coach@example.com", PASSWORD))!
+    const statuses: number[] = []
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      statuses.push((await postAsSignedIn(instance, "/delete-user", { password: WRONG, callbackURL: ACCOUNT_DELETED_PAGE }, cookie)).status)
+    }
+    expect(statuses).toEqual([400, 400, 400, 429])
+  })
+
+  it("in Better Auth's pipeline: the link, opened where the person is signed in, deletes the records first, then the login, and lands on the deleted notice", async () => {
+    const { instance, db, id, cookie } = await askToDelete()
+    let loginWhenRecordsWent: number | null = null
+    vi.mocked(deleteAccountRecords).mockImplementation((user) => {
+      loginWhenRecordsWent = db.user.filter((row) => row.id === user.id).length
+      return Promise.resolve()
+    })
+    const opened = await openLink(instance, emailedLink().url, cookie)
+    expect(opened.status).toBe(302)
+    expect(opened.headers.get("location")).toBe(ACCOUNT_DELETED_PAGE)
+    expect(deleteAccountRecords).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(deleteAccountRecords).mock.calls[0][0]).toMatchObject({ id })
+    expect(loginWhenRecordsWent).toBe(1)
+    expect(db.user).toHaveLength(0)
+    expect(db.session).toHaveLength(0)
+    expect(db.account).toHaveLength(0)
+    expect(opened.headers.getSetCookie().some((set) => /^better-auth\.session_token=;/.test(set))).toBe(true)
+  })
+
+  it("in Better Auth's pipeline: records that can't be deleted refuse it with the sentence, the login and its session untouched, the link spent", async () => {
+    const { instance, db, id, cookie } = await askToDelete()
+    vi.mocked(deleteAccountRecords).mockRejectedValue(new Error("Failed to remove 1 object(s) from progress-photos: 503"))
+    const { url, token } = emailedLink()
+    const opened = await openLink(instance, url, cookie)
+    expect(opened.status).toBe(500)
+    expect(await opened.json()).toMatchObject({ message: ACCOUNT_NOT_DELETED, code: "ACCOUNT_NOT_DELETED" })
+    expect(db.user.map((user) => user.id)).toEqual([id])
+    expect(await signedInAs(instance, cookie)).toBe(id)
+    expect(db.verification.some((row) => row.identifier === `delete-account-${token}`)).toBe(false)
+  })
+
+  it("in Better Auth's pipeline: the link opened where no one is signed in deletes nothing", async () => {
+    const { instance, db, id } = await askToDelete()
+    const opened = await openLink(instance, emailedLink().url)
+    expect(opened.status).toBe(404)
+    expect(deleteAccountRecords).not.toHaveBeenCalled()
+    expect(db.user.map((user) => user.id)).toEqual([id])
+  })
+
+  it("in Better Auth's pipeline: another login's link deletes nothing of either", async () => {
+    const { instance, db, id } = await askToDelete()
+    const other = seedLogin(db, "other@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const theirs = sessionCookie(await postSignIn(instance, "other@example.com", PASSWORD))!
+    const opened = await openLink(instance, emailedLink().url, theirs)
+    expect(opened.status).toBe(404)
+    expect(deleteAccountRecords).not.toHaveBeenCalled()
+    expect(db.user.map((user) => user.id).sort()).toEqual([id, other].sort())
+  })
+})
+
+describe("delete account's two callbacks", () => {
+  const user = { id: "u", email: "coach@example.com", name: "Sam", emailVerified: true, createdAt: new Date(), updatedAt: new Date() }
+  const link = { user, url: "delete-link", token: "t" }
+
+  beforeEach(() => {
+    vi.mocked(captureApiError).mockClear()
+    vi.mocked(sendConfirmDeleteAccountEmail).mockReset()
+    vi.mocked(readLoginRole).mockReset()
+    vi.mocked(deleteAccountRecords).mockReset()
+  })
+
+  it.each([
+    ["trainer", "coach"],
+    ["client", "client"],
+  ] as const)("the confirmation for a %s's login is worded for a %s", async (role, account) => {
+    vi.mocked(readLoginRole).mockResolvedValue(role)
+    await sendDeletionConfirmation(link)
+    expect(readLoginRole).toHaveBeenCalledWith("u")
+    expect(sendConfirmDeleteAccountEmail).toHaveBeenCalledWith({ ...link, account })
+  })
+
+  it("a login with no role, or a role that can't be read, gets no email, and Sentry hears of it", async () => {
+    vi.mocked(readLoginRole).mockResolvedValueOnce(null)
+    await expect(sendDeletionConfirmation(link)).resolves.toBeUndefined()
+    const failed = new Error("connection reset")
+    vi.mocked(readLoginRole).mockRejectedValueOnce(failed)
+    await expect(sendDeletionConfirmation(link)).resolves.toBeUndefined()
+    expect(sendConfirmDeleteAccountEmail).not.toHaveBeenCalled()
+    expect(captureApiError).toHaveBeenCalledTimes(2)
+    expect(captureApiError).toHaveBeenLastCalledWith(failed, { source: "sendDeleteAccountVerification", userId: "u" })
+  })
+
+  it("beforeDelete hands the login to deleteAccountRecords, and turns its failure, already reported, into the refusal", async () => {
+    vi.mocked(deleteAccountRecords).mockResolvedValueOnce(undefined)
+    await expect(deleteRecordsBeforeLogin({ id: "u" })).resolves.toBeUndefined()
+    expect(deleteAccountRecords).toHaveBeenCalledWith({ id: "u" })
+    vi.mocked(deleteAccountRecords).mockRejectedValueOnce(new Error("delete_coach_records failed: timeout"))
+    const refused = await deleteRecordsBeforeLogin({ id: "u" }).catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(APIError)
+    expect(refused).toMatchObject({ statusCode: 500, body: { message: ACCOUNT_NOT_DELETED, code: "ACCOUNT_NOT_DELETED" } })
+    expect(captureApiError).not.toHaveBeenCalled()
   })
 })

@@ -10,7 +10,9 @@ import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/constants"
 import { captureApiError } from "@/lib/error-handler"
 import { landsOnSetPassword } from "@/lib/password-link"
 import { supabaseConnection } from "@/lib/supabase-connection"
+import type * as AccountService from "@/services/account-service"
 import type * as AuthEmailService from "@/services/auth-email-service"
+import type { UserRole } from "@/types/auth"
 
 /**
  * Better Auth, the one betterAuth(...) in the tree (docs/BETTER-AUTH-PLAN.md
@@ -115,9 +117,32 @@ function refuseSetPasswordLandingOverHttp(ctx: GenericEndpointContext): void {
   }
 }
 
-/** Better Auth's before hook: it refuses the set-password landing over HTTP and lets every other request through. */
+/** Delete account's endpoint, where the dialog asks for the confirmation link. */
+const DELETE_USER_PATH = "/delete-user"
+/** Its limit: sign-in's (three in ten seconds, per IP), since it answers whether a password is right. */
+export const DELETE_USER_RATE_LIMIT = { window: 10, max: 3 }
+
+/**
+ * Delete account asks for the password (rules 10 and 13, D20). Better Auth
+ * checks a password only when one is sent and emails the confirmation link
+ * either way, so a request without one is refused here, before any link is
+ * made: a session alone, a stolen one too, never has it sent.
+ */
+function refuseDeleteWithoutPassword(ctx: GenericEndpointContext): void {
+  const password: unknown = (ctx.body as { password?: unknown } | undefined)?.password
+  if (ctx.path === DELETE_USER_PATH && (typeof password !== "string" || password === "")) {
+    throw new APIError("BAD_REQUEST", { message: "Your password is required to delete your account." })
+  }
+}
+
+/**
+ * Better Auth's before hook: it refuses the set-password landing over HTTP
+ * and a delete-account request without a password, and lets every other
+ * request through.
+ */
 export const refuseBeforeEndpoint = createAuthMiddleware((ctx) => {
   refuseSetPasswordLandingOverHttp(ctx)
+  refuseDeleteWithoutPassword(ctx)
   return Promise.resolve()
 })
 
@@ -220,6 +245,67 @@ export async function sendApprovalUnlessHeld(data: ApprovalRequest): Promise<voi
   await sendWithEmailService("sendChangeEmailConfirmation", (emails) => emails.sendApproveEmailChangeEmail(data))
 }
 
+/** How long delete account's confirmation link lasts: one day, as its email says (rules 10 and 13). */
+const DELETE_LINK_EXPIRES_IN = 60 * 60 * 24
+
+/** What Better Auth hands sendDeleteAccountVerification: the asker's login and the confirmation link. */
+type DeletionRequest = { user: { id: string; email: string; name: string }; url: string; token: string }
+
+/**
+ * Delete account's email, "Confirm deleting your account", to the address
+ * the asker signs in with, worded for their role: a coach's names their
+ * clients, the clients' records and logins going with it (rule 10), a
+ * client's that their coach keeps nothing (rule 13). Better Auth calls this in
+ * the background once it has checked the password and stored the link's
+ * token. A role that can't be read, or a login with none, sends nothing and
+ * reaches Sentry.
+ */
+export async function sendDeletionConfirmation(data: DeletionRequest): Promise<void> {
+  let role: UserRole | null
+  try {
+    const { readLoginRole } = await import("@/services/account-service")
+    role = await readLoginRole(data.user.id)
+  } catch (error) {
+    captureApiError(error, { source: "sendDeleteAccountVerification", userId: data.user.id })
+    return
+  }
+  if (!role) {
+    captureApiError(new Error("A login with no role asked to delete its account"), { source: "sendDeleteAccountVerification", userId: data.user.id })
+    return
+  }
+  await sendWithEmailService("sendDeleteAccountVerification", (emails) =>
+    emails.sendConfirmDeleteAccountEmail({ ...data, account: role === "trainer" ? "coach" : "client" })
+  )
+}
+
+/** What a refused deletion answers on the confirmation link's page (D20): nothing was deleted, and asking again from Settings finishes it. */
+export const ACCOUNT_NOT_DELETED = "Couldn't delete your account. Try again."
+
+/**
+ * Better Auth's beforeDelete: the app's records of the login go first
+ * (services/account-service.ts deleteAccountRecords, which reports what
+ * failed, and what it had removed, to Sentry), and Better Auth deletes the
+ * login only once they have. Anything that fails refuses the deletion with
+ * ACCOUNT_NOT_DELETED, the login untouched; Better Auth has already spent the
+ * link's token by then, so the person asks again from Settings.
+ */
+export async function deleteRecordsBeforeLogin(user: { id: string }): Promise<void> {
+  const refusal = () => new APIError("INTERNAL_SERVER_ERROR", { message: ACCOUNT_NOT_DELETED, code: "ACCOUNT_NOT_DELETED" })
+  let accountService: typeof AccountService
+  try {
+    accountService = await import("@/services/account-service")
+  } catch (error) {
+    captureApiError(error, { source: "beforeDelete", userId: user.id })
+    throw refusal()
+  }
+  try {
+    await accountService.deleteAccountRecords(user)
+  } catch {
+    // Reported by deleteAccountRecords, with the keys it had removed.
+    throw refusal()
+  }
+}
+
 /**
  * Better Auth turns an error its endpoint throws into the endpoint's answer
  * before onAPIError could see it, its own 500s included (a database fault
@@ -272,14 +358,25 @@ export const auth = betterAuth({
       enabled: true,
       sendChangeEmailConfirmation: sendApprovalUnlessHeld,
     },
+    // Delete account (rules 10 and 13, D20): the password, then an emailed
+    // link, opened where the person is signed in, which deletes the app's
+    // records first (beforeDelete) and then the login.
+    deleteUser: {
+      enabled: true,
+      sendDeleteAccountVerification: sendDeletionConfirmation,
+      deleteTokenExpiresIn: DELETE_LINK_EXPIRES_IN,
+      beforeDelete: deleteRecordsBeforeLogin,
+    },
   },
   // Better Auth's defaults, written down: a session lasts seven days from its
   // last renewal, and a use a day or more after that renews it. No cookie
   // cache, so a revoked session ends on its next request (D15).
   session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
   // Better Auth's limiter on /api/auth, counted in better_auth."rateLimit":
-  // on in production, off under next dev (D16).
-  rateLimit: { storage: "database" },
+  // on in production, off under next dev (D16). Delete account checks a
+  // password, so it gets sign-in's three tries in ten seconds: Better Auth's
+  // own rule for it is its general hundred.
+  rateLimit: { storage: "database", customRules: { [DELETE_USER_PATH]: DELETE_USER_RATE_LIMIT } },
   databaseHooks: {
     user: { create: { before: refuseUnlessOwnerOrInvite } },
   },

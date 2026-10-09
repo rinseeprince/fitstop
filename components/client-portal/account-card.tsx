@@ -4,20 +4,22 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChangeEmailDialog } from "@/components/auth/change-email-dialog";
 import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
+import { DANGER_OUTLINE_CLASS, DeleteAccountDialog } from "@/components/auth/delete-account-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { CLIENT_SETTINGS_PAGE } from "@/lib/constants";
 
 /** The dialog the card has open, with what it shows: change email shows the address the session held. */
-type AccountDialog = { kind: "change-password" } | { kind: "change-email"; currentEmail: string };
+type AccountDialog = { kind: "change-password" } | { kind: "change-email"; currentEmail: string } | { kind: "delete-account" };
 
 /**
  * The client's Account card on Settings, between Profile and Units (rule 13):
- * Change password and Change email, as the coach's (rules 6 and 17, D18).
- * Change email is handed the address the client signs in with, Better Auth's
- * session's, and waits until the session is read; both of its links land back
- * on this page. One dialog at a time (`useDialogSubject`): a close leaves it
- * showing what it showed, and each open mounts it fresh.
+ * Change password and Change email, as the coach's (rules 6 and 17, D18), and
+ * Delete account, which says the coach keeps nothing. Change email is handed
+ * the address the client signs in with, Better Auth's session's, and waits
+ * until the session is read; both of its links land back on this page. One
+ * dialog at a time (`useDialogSubject`): a close leaves it showing what it
+ * showed, and each open mounts it fresh.
  */
 export function ClientAccountCard() {
   const { user } = useAuth();
@@ -45,6 +47,9 @@ export function ClientAccountCard() {
           >
             Change email
           </Button>
+          <Button type="button" variant="outline" className={DANGER_OUTLINE_CLASS} onClick={() => dialog.show({ kind: "delete-account" })}>
+            Delete account
+          </Button>
         </CardContent>
       </Card>
 
@@ -59,6 +64,9 @@ export function ClientAccountCard() {
           landing={CLIENT_SETTINGS_PAGE}
           onOpenChange={onOpenChange}
         />
+      )}
+      {subject?.kind === "delete-account" && (
+        <DeleteAccountDialog key={`delete-account-${dialog.openKey}`} open={dialog.open} account="client" onOpenChange={onOpenChange} />
       )}
     </>
   );

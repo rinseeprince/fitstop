@@ -3,15 +3,17 @@
 import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Info } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { LOGGED_OUT_PARAM, LOGIN_ERROR_PROFILE_UNAVAILABLE } from "@/lib/constants";
+import { ACCOUNT_DELETED_PARAM, LOGGED_OUT_PARAM, LOGIN_ERROR_PROFILE_UNAVAILABLE } from "@/lib/constants";
 
 /**
  * The login page's notices: the message for a visitor the proxy sent here
  * because their role could not be read (a failed read, or no profile row),
- * and "Logged out successfully" for one Log out sent here. The ONLY reader of
- * the login page's `?error=` and `?logged-out=`. `useSearchParams` bails
+ * "Your account has been deleted." for one delete account's emailed link sent
+ * here (rules 10 and 13), and "Logged out successfully" for one Log out sent
+ * here. The ONLY reader of the login page's `?error=`, `?deleted=` and
+ * `?logged-out=`. `useSearchParams` bails
  * static prerendering out to the nearest Suspense boundary, so the page hosts
  * this leaf behind one of its own and stays prerendered (CONVENTIONS §7 →
  * "Gate content, not structure").
@@ -31,6 +33,14 @@ export function LoginNotice() {
     router.replace("/login");
   }, [loggedOut, router]);
 
+  if (searchParams.has(ACCOUNT_DELETED_PARAM)) {
+    return (
+      <Alert className="mb-6">
+        <Info className="h-4 w-4" />
+        <AlertDescription>Your account has been deleted.</AlertDescription>
+      </Alert>
+    );
+  }
   if (searchParams.get("error") !== LOGIN_ERROR_PROFILE_UNAVAILABLE) return null;
   return (
     <Alert variant="destructive" className="mb-6">

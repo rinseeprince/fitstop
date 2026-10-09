@@ -11,14 +11,21 @@ vi.mock("@/contexts/auth-context", () => ({ useAuth: () => auth }));
 const dialogs = vi.hoisted(() => ({ mounts: [] as { kind: string; props: Record<string, unknown> }[] }));
 vi.mock("@/components/auth/change-password-dialog", async () => ({ ChangePasswordDialog: await standIn("change-password") }));
 vi.mock("@/components/auth/change-email-dialog", async () => ({ ChangeEmailDialog: await standIn("change-email") }));
+vi.mock("@/components/auth/delete-account-dialog", async () => ({ DeleteAccountDialog: await standIn("delete-account"), DANGER_OUTLINE_CLASS: "" }));
 
 async function standIn(kind: string) {
   const { useState } = await import("react");
-  return function StandIn(props: { open: boolean; currentEmail?: string; landing?: string; onOpenChange: (open: boolean) => void }) {
+  return function StandIn(props: { open: boolean; currentEmail?: string; landing?: string; account?: string; onOpenChange: (open: boolean) => void }) {
     // Mounted once per opening: its first props are recorded, as a fresh dialog's form would start from them.
     useState(() => dialogs.mounts.push({ kind, props }));
     return (
-      <div data-testid={kind} data-open={String(props.open)} data-email={props.currentEmail ?? ""} data-landing={props.landing ?? ""}>
+      <div
+        data-testid={kind}
+        data-open={String(props.open)}
+        data-email={props.currentEmail ?? ""}
+        data-landing={props.landing ?? ""}
+        data-account={props.account ?? ""}
+      >
         <button type="button" onClick={() => props.onOpenChange(false)}>
           close {kind}
         </button>
@@ -38,25 +45,33 @@ describe("ClientAccountCard (rules 13 and 17)", () => {
   });
   afterEach(() => cleanup());
 
-  it("holds Change password and Change email, and nothing to delete yet", () => {
+  it("holds Change password, Change email and Delete account", () => {
     render(<ClientAccountCard />);
     expect(screen.getByRole("heading", { name: "Account" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Change password" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Change email" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
+    for (const name of ["Change password", "Change email", "Delete account"]) {
+      expect(screen.getByRole("button", { name })).toBeEnabled();
+    }
   });
 
-  it("until the session is read, Change email waits; the card and Change password are there", () => {
+  it("delete account opens with the client's account, which says the coach keeps nothing (rule 13)", async () => {
+    render(<ClientAccountCard />);
+    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    expect(screen.getByTestId("delete-account")).toHaveAttribute("data-account", "client");
+  });
+
+  it("until the session is read, Change email waits; the card, Change password and Delete account are there", () => {
     auth.user = null;
     render(<ClientAccountCard />);
     expect(screen.getByRole("heading", { name: "Account" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Change email" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Change password" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Delete account" })).toBeEnabled();
   });
 
   it.each([
     ["Change password", "change-password"],
     ["Change email", "change-email"],
+    ["Delete account", "delete-account"],
   ])("%s opens its dialog, and only that one", async (button, kind) => {
     render(<ClientAccountCard />);
     await userEvent.click(screen.getByRole("button", { name: button }));

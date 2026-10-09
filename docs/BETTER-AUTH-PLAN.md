@@ -9,8 +9,8 @@ email, sign out everywhere (5); every screen and email says the product's name, 
 their email too, every copy of an address follows it in one write, and the owner moves the login of someone who
 lost their inbox (5.5); delete account (6); Continue with Google (7);
 the server ready for the client app (8). **Commit 9** writes the docs. This plan adds
-migrations 208, 209, 210 and 211: DEV and PROD hold 208 and 209 (PROD since 2026-10-08), and PROD takes 210 and 211
-by §8.2. **Billing is not here:** Better Auth's
+migrations 208, 209, 210, 211 and 212: DEV and PROD hold 208 and 209 (PROD since 2026-10-08), and PROD takes 210, 211
+and 212 by §8.2. **Billing is not here:** Better Auth's
 Stripe plugin later adds one column and one table and touches nothing this plan builds (D27). Every file and line
 named here was grepped on 2026-10-07 at `d5f23299`; every Better Auth fact is from its docs and source at
 **1.7.7** (§2.9), the version commit 1 pins.
@@ -173,12 +173,12 @@ not at all (rule 17, D37) and the migrations' row counts are proved by scripts a
 
 ## 2. Target shape
 
-### 2.1 Data model: migrations 208, 209, 210 and 211
+### 2.1 Data model: migrations 208, 209, 210, 211 and 212
 
 **Better Auth's tables live in their own schema, `better_auth`, under Better Auth's own names and column names
 (D5).** PostgREST serves `public` alone, so nothing on the Data API can reach them with any key; only Better
 Auth's own connection (the `postgres` user through Supabase's pooler, D28), the address trigger of migration 210
-and the two delete functions of migration 211 touch them. The ids are `uuid` with the database's default, so
+and migration 211's `delete_coach_records` (a deleted coach's clients' logins) touch them. The ids are `uuid` with the database's default, so
 today's user ids carry over (D6).
 Columns are Better Auth's camelCase (its docs, CLI and plugins assume them; the app never reads these tables
 through PostgREST, so CONVENTIONS' snake_case examples don't apply, §4). `"user"` is a reserved word and is quoted
@@ -376,7 +376,8 @@ COMMENT ON SCHEMA better_auth IS
 
 ```sql
 -- 211_delete_account_functions.sql: the app's records go in one statement each when a login is deleted (2.6).
--- Also extends the better_auth schema's COMMENT to name these two functions beside 210's trigger.
+-- Also extends the better_auth schema's COMMENT to name delete_coach_records, the one of the two that writes there,
+-- beside 210's trigger.
 CREATE OR REPLACE FUNCTION public.delete_client_records(p_user_id uuid) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE n integer;
@@ -389,10 +390,17 @@ CREATE OR REPLACE FUNCTION public.delete_coach_records(p_user_id uuid) RETURNS i
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, better_auth AS $$
 DECLARE n integer;
 BEGIN
-  -- the clients' logins first: clients.user_id -> "user" is SET NULL, so nothing else would remove them
-  DELETE FROM better_auth."user" u USING public.clients cl JOIN public.coaches c ON cl.coach_id = c.id
-   WHERE c.user_id = p_user_id AND cl.user_id = u.id;
-  DELETE FROM public.coaches WHERE user_id = p_user_id;   -- cascades the clients and everything under them
+  -- the clients' logins first: clients.user_id -> "user" is SET NULL, so nothing else would remove them;
+  -- never a login with a coach row, or one that signs in as a client of another coach
+  DELETE FROM better_auth."user" u USING public.clients cl JOIN public.coaches c ON c.id = cl.coach_id
+   WHERE c.user_id = p_user_id AND cl.user_id = u.id
+     AND NOT EXISTS (SELECT 1 FROM public.coaches oc WHERE oc.user_id = u.id)
+     AND NOT EXISTS (SELECT 1 FROM public.clients other WHERE other.user_id = u.id AND other.coach_id <> c.id);
+  -- the clients in a statement of their own, before the coach: content_assignments.assigned_by and
+  -- check_in_answers.question_id are NO ACTION keys, which Postgres checks in the cascade round that deletes
+  -- their parent, before a deeper round removes the rows pointing at them (2.6)
+  DELETE FROM public.clients WHERE coach_id IN (SELECT c.id FROM public.coaches c WHERE c.user_id = p_user_id);
+  DELETE FROM public.coaches WHERE user_id = p_user_id;   -- cascades the coach's library
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
 END $$;
@@ -400,8 +408,21 @@ REVOKE ALL ON FUNCTION public.delete_client_records(uuid), public.delete_coach_r
 GRANT EXECUTE ON FUNCTION public.delete_client_records(uuid), public.delete_coach_records(uuid) TO service_role;
 ```
 
-Neither function deletes the caller's own login row: Better Auth does that itself after `beforeDelete` returns
-(§2.6), which cascades `profiles`, `coaches` (already gone) and the sessions.
+211 shipped in commit 6 as `supabase/migrations/211_delete_account_functions.sql`, the record from here: the sketch
+above plus each function's COMMENT and a closing check that both are postgres's, SECURITY DEFINER with a pinned
+search_path, and executable by `service_role` alone. Neither function deletes the caller's own login row: Better
+Auth does that itself after `beforeDelete` returns (§2.6), which cascades `profiles`, `coaches` (already gone) and
+the sessions.
+
+212 (`supabase/migrations/212_delete_account_key_indexes.sql`, commit 6, owner 2026-10-09) adds sixteen indexes, one
+led by each foreign key column the deletion's cascades walk that had none: for every deleted row Postgres looks up
+each key pointing at its table, and without an index each lookup scans the whole table, every tenant's rows
+included. On DEV a 20-client seed coach's delete took 14.9 s, beyond the 8 s the Data API lets a statement run
+(`authenticator`'s `statement_timeout`; `service_role` sets none of its own), and 2.8 s with the indexes (later runs
+1.5 to 4 s). Its closing check holds every foreign key into a table a coach's deletion reaches to an index led by its
+column (`check_in_forms.coach_id` passes on a partial index the cascade can't use: a coach's deletion scans that
+table once). The time still grows with the account, so a coach several times the seed coach's size can still pass
+8 s (TECHNICAL-DEBT, "Delete account has a size limit"; owner 2026-10-09: noted for later).
 
 **Alternatives considered** (CONVENTIONS §8: the data model is a decision):
 - **Where the tables live:** their own schema (chosen) or `public` with Better Auth's names. In `public` they'd sit on
@@ -631,27 +652,51 @@ owner verifies a domain (§9.1).
 ### 2.6 Deleting an account (commit 6)
 
 `beforeDelete(user)` in `services/account-service.ts` looks up the role, then:
-- **client:** collects the client's `check_ins.photo_front/side/back` keys, removes those objects from
+- **client:** lists every object in the photo folder of each client row the login signs in as (`<clientId>/`, where
+  the upload writes a client's photos; `listObjects`, the Storage API's flat listing by prefix), removes those objects from
   `progress-photos` through `supabaseAdmin.storage` (`services/storage-service.ts` owns the bucket name), then
   `supabaseAdmin.rpc("delete_client_records", { p_user_id })`. Every FK to `clients` is ON DELETE CASCADE
-  (check_ins, check_in_reminders, training_plans, client_session_completions, client_intake, nutrition_plans,
+  (check_ins, check_in_reminders, training_plans, session_logs, client_intake, nutrition_plans,
   wellness_logs, nutrition_logs, client_goals, training_events, attention_dismissals, coach_client_views,
   client_notes, client_phases, client_measurements, nutrition_day_edits, client_habits, client_habit_logs,
-  content_assignments, client_invitations, and check_in_forms' nullable key), so the one DELETE takes everything
-  recorded about the person.
-- **coach:** collects every photo key of every client of the coach and every `content_items.storage_path` of the
-  coach, removes the objects from both buckets, then `delete_coach_records`: the clients' logins, then the coach
-  row, which cascades `clients` and all of the above plus the coach's plans, folders, items, saved plans and
-  sessions, questions and forms, custom exercises (D2). `content_assignments.assigned_by` is the one NO ACTION key
-  to `coaches`; its rows go through `client_id` and `content_item_id` in the same statement, so it never fires
-  (the proof deletes a coach whose client holds an assignment).
+  content_assignments, client_invitations, and check_in_forms' nullable key; DEV's catalog, read by commit 6),
+  so the one DELETE takes everything recorded about the person, and the rows under those rows by their own
+  CASCADE keys: check_in_answers, check_in_exercise_highlights, client_goal_deadlines, client_habit_versions and
+  their days, client_habit_day_edits, exercise_logs, set_logs, session_log_group_scores, nutrition_plan_daily_targets,
+  nutrition_plan_kept_goals, training_sessions, training_exercise_groups, training_exercises, check_in_form_fields
+  and check_in_form_questions. The keys between them that are SET NULL (check_in_reminders.check_in_id,
+  training_events.session_log_id, session_logs.training_event_id, nutrition_logs.nutrition_plan_id, …) all point
+  inside the deleted set, and every one is nullable. The folder, not `check_ins.photo_*`, says which photos are
+  theirs (commit 6's review): a check-in's photo is whatever string its client sent when it is not an upload,
+  another client's key among them, and an upload no check-in names (a check-in refused after its photos went) is
+  still theirs. Only the account's own folders are ever listed.
+- **coach:** lists every client's photo folder (eight at a time: the Storage API lists one prefix a request) and the
+  coach's content library folder (`<coachId>/`, each file under its item's folder, a file no item names among
+  them), removes the objects from both buckets, then `delete_coach_records`: the
+  clients' logins, then the clients, then the coach row, which cascades the coach's plans, folders, items, saved
+  plans and sessions, questions and forms, custom exercises, coach-client views and dismissals (D2); the coach's
+  SET NULL keys (`set_by`, `created_by`, `reviewed_by`, `voided_by`, `kept_by`, `coach_id` on notes, day edits and
+  habit day edits) are on rows of the coach's own clients, already gone, and nullable. The clients go in a
+  statement of their own: `content_assignments.assigned_by` and `check_in_answers.question_id` are NO ACTION keys,
+  and Postgres checks a NO ACTION key in the cascade round that deletes its parent, before a deeper round removes
+  the rows pointing at it, so deleting the coach row alone fails for a coach whose client holds an assignment or
+  answered one of the coach's questions (shown on DEV in a rolled-back transaction by commit 6; the proof deletes
+  such a coach).
 - Objects first, rows second (D20): a failed object removal refuses the delete ("Couldn't delete your account. Try
   again.") with the account intact; a failed function call after the objects went is logged with the keys and
-  refused the same way, and a retry completes it. Then Better Auth deletes the sessions, the credential and Google
-  rows and the login, which cascades `profiles`.
-- The dialog sends the password; Better Auth checks it, then sends the email instead of deleting (§2.9 #7). The
-  email's link is Better Auth's `/api/auth/delete-user/callback?token=…&callbackURL=/login?deleted=1`, valid one
-  day, and needs the person still signed in on the device that opens it (the same browser, in practice).
+  refused the same way, and a retry completes it, for an account within the size limit (TECHNICAL-DEBT, "Delete
+  account has a size limit"): past it, every attempt removes the objects and then times out. Better Auth consumes the link's token before it runs
+  `beforeDelete`, so a refused link is spent: the retry is a new request from Settings. Then Better Auth deletes the
+  sessions, the credential and Google rows and the login, which cascades `profiles`. Its three deletes run after
+  the function's transaction has committed: should they fail, the records are gone, the login is left with its
+  profile and can reach no screen, the failure reaches Sentry with the user id, and the owner deletes the login.
+- The dialog sends the password. Better Auth checks a password only when one is sent and emails the link either way,
+  so `lib/auth.ts`'s before hook refuses a request without one, and since the request answers whether a password is
+  right, it gets sign-in's limit (three in ten seconds per IP, `rateLimit.customRules`; Better Auth's own is its
+  general hundred); with the right one it sends the email instead of
+  deleting (§2.9 #7). The email's link is Better Auth's `/api/auth/delete-user/callback?token=…&callbackURL=/login?deleted=1`, valid one
+  day, and needs the person still signed in on the device that opens it (the same browser, in practice); opened
+  anywhere else, Better Auth answers its own JSON 404.
 
 ### 2.7 Google (commit 7)
 
@@ -714,6 +759,8 @@ refused with `account_not_linked` (none is: D4). Google's console needs the redi
    its link then triggers `emailVerification.sendVerificationEmail` to the new one; the row changes at the second
    click); `user.deleteUser` with `sendDeleteAccountVerification` sends the email and does not delete on the POST,
    even with a correct password; `beforeDelete` may throw to refuse; the callback needs the user's live session.
+   (Commit 6, in the installed source: the POST checks a password only when one is sent, and the callback spends the
+   token before `beforeDelete` runs.)
    https://www.better-auth.com/docs/concepts/users-accounts.
 8. Sessions: `expiresIn` 7 d, `updateAge` 1 d, `cookieCache` off by default; `revokeSessions` ends every session;
    `getSession` returns `null` without a session; `auth.api.signInEmail({ body, returnHeaders: true })` returns
@@ -853,7 +900,7 @@ can be vetoed before its commit starts.
 | D28 | `DATABASE_URL` is Supabase's transaction pooler string for the `postgres` user; one pool of four per bundle (the proxy's and the routes' are separate bundles). | Serverless-safe; `postgres` owns the schema, so RLS never bites Better Auth; a direct connection is IPv6-only on Supabase. |
 | D29 | Env: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (= `NEXT_PUBLIC_APP_URL`), `DATABASE_URL`, `AUTH_ADMIN_USER_IDS`, `EMAIL_FROM`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`; `NEXT_PUBLIC_SUPABASE_ANON_KEY` has no reader after commit 3 and leaves `.env.local`. | Documented per CONVENTIONS 852 (no `.env.example`): at the read site and in §19's list. |
 | D30 | The emails use one sender (`EMAIL_FROM`, falling back to `onboarding@resend.dev`), one look, and the product's name, Atletafit, written once (`PRODUCT_NAME`, `lib/constants.ts`) and read by every screen, email and tab title (commit 5.1). Commits 1–5 shipped the old name, "CoachHub". | Owner, 2026-10-09: "It's not called coachub." One constant, so the name can't drift between an email's sender and its sign-off. |
-| D31 | Migrations: 208 (schema + copy, additive), 209 (the switch), 210 (a login's address and its copies in one write, commit 5.5), 211 (delete functions, commit 6). The coach chat plan's "migration 208" takes the next free number when it is built (§9.3). | CONVENTIONS: next number, never skip; this plan ships first; 5.5 is built before 6, so it takes 210. |
+| D31 | Migrations: 208 (schema + copy, additive), 209 (the switch), 210 (a login's address and its copies in one write, commit 5.5), 211 (delete functions, commit 6), 212 (an index on every foreign key a deletion's cascades walk, commit 6, owner 2026-10-09: a 20-client seed coach's delete took 14.9 s against the Data API's 8 s, 2.8 s with them). The coach chat plan's "migration 208" takes the next free number when it is built (§9.3). | CONVENTIONS: next number, never skip; this plan ships first; 5.5 is built before 6, so it takes 210. |
 | D32 | Undo (§8.3): revert the switch commit, then a new migration re-points the FKs to `auth.users` as `NOT VALID` and restores the trigger from 107; logins made after the switch are re-invited; passwords changed after it revert to the old ones. | Supabase's rows are never touched by the switch, so the old door reopens. |
 | D33 | Supabase Auth is retired, not deleted, until the undo window closes: providers off, sign-ups off; the owner deletes `auth.users` after (§9.1). | The undo needs the rows. |
 | D34 | `proof-session.ts` mints a session by inserting a `better_auth.session` row through the pool and sending its token as a bearer token; cookie-path proofs sign in over HTTP with a throwaway's password. | The old magic-link mint is Supabase's; a bare token is accepted by the bearer plugin (its default); no secret-signing in scripts. |
@@ -872,7 +919,7 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | Subsystem | Today | After | Commit |
 |---|---|---|---|
 | `package.json` | `@supabase/ssr`, no auth library | `better-auth@1.7.7`, `pg`, `kysely`, `bcryptjs`, later `@better-auth/expo`; `@supabase/ssr` gone (3) | 1, 3, 8 |
-| `supabase/migrations/` | 207 | 208 (schema + copy), 209 (switch), 210 (a login's address in one write), 211 (delete functions) | 1, 2, 5.5, 6 |
+| `supabase/migrations/` | 207 | 208 (schema + copy), 209 (switch), 210 (a login's address in one write), 211 (delete functions), 212 (the delete's foreign-key indexes) | 1, 2, 5.5, 6 |
 | `lib/auth.ts`, `lib/auth-client.ts`, `app/api/auth/[...all]/route.ts` | none | new | 1, 2 |
 | `middleware.ts` + `middleware.test.ts` | Edge; Supabase `getUser()`; 307 for `/api/**` | `proxy.ts` + `proxy.test.ts`; Node; `auth.api.getSession`; 401 JSON for `/api/**`; `/api/auth/` and `/set-password` public | 1 (the `/api/auth/` skip only), 2 |
 | `lib/auth-helpers.ts` + test | `createServerSupabaseClient().auth.getUser()` | `auth.api.getSession({ headers })`; bearer accepted | 2 |
@@ -1581,12 +1628,13 @@ arrives (EMAIL_FROM must be on the verified domain first). The browser smoke is
 mine; offer to run its terminal step.
 ```
 
-### Commit 6 — `feat(account): delete account, the coach's and the client's; migration 211`
+### Commit 6 — `feat(account): delete account, the coach's and the client's; migrations 211 and 212`
 
 **STATUS: NOT STARTED.**
 
-- Migration 211 (§2.1) on DEV. `services/account-service.ts` (§2.6: `deleteAccountRecords` as `beforeDelete`,
-  the key collection, `services/storage-service.ts` gains `removeObjects(bucket, keys)`); `user.deleteUser` in
+- Migration 211 (§2.1) on DEV, and 212, its foreign keys' indexes (§2.1, owner 2026-10-09). `services/account-service.ts` (§2.6: `deleteAccountRecords` as `beforeDelete`,
+  the key collection, `services/storage-service.ts` gains `removeObjects(bucket, keys)` and, from commit 6's review,
+  `listObjects(bucket, folder)`, the account's own folders listed in place of keys read from rows); `user.deleteUser` in
   `lib/auth.ts`; `emails/confirm-delete-account-email.tsx` (two wordings, one template with a role prop).
 - The Delete account button and dialog on both Account cards (rules 10 and 13); `?deleted=1` on the login notice.
   The dialog's `callbackURL` is `ACCOUNT_DELETED_PAGE` (`lib/constants.ts`, from commit 4): Better Auth's row records no
@@ -1595,7 +1643,8 @@ mine; offer to run its terminal step.
 - The smoke seed (§7.4): a throwaway coach "Smoke · delete coach" with two clients and the records the steps name.
 - Found by commits 5 and 5.5: `services/account-service.ts` exists (5.5's `moveLoginEmail` and the new address's
   check; 5's `isCoachLogin` is gone, so `beforeDelete` reads the role itself), and `deleteAccountRecords` joins it.
-  Migration 211 also rewrites the `better_auth` schema's COMMENT to name its two functions beside 210's trigger.
+  Migration 211 also rewrites the `better_auth` schema's COMMENT to name `delete_coach_records`, the one of its two
+  functions that writes there, beside 210's trigger.
   Both Account cards host their dialogs with `useDialogSubject` over a dialog kind (`CoachAccountCard`'s
   `AccountDialog`, `ClientAccountCard`'s): the Delete account dialog joins those, keyed by `openKey`. `lib/auth.ts` sends
   every Better Auth email through `sendWithEmailService`, and its one before hook is `refuseBeforeEndpoint`. A hook that
@@ -1673,6 +1722,10 @@ arrives or the auth:last-link command. The browser smoke is mine.
   who never used the "Set your password" link and signs in with Google has none, and Change password answers
   `CREDENTIAL_ACCOUNT_NOT_FOUND`, which the dialog words as "Something went wrong. Try again." A change of a login's
   address, whatever makes it, runs migration 210's trigger (5.5); Google's linking changes no address.
+- Found by commit 6: Delete account needs the password too (`lib/auth.ts`'s before hook refuses a request without
+  one, and Better Auth checks it against the password row), so the same Google-only coach can't delete their
+  account either: the dialog answers "Something went wrong. Try again." until they set a password through "Forgot
+  your password?". This commit decides whether either dialog says so.
 - Found by commit 5.5 in Better Auth 1.7.7's installed source (`oauth2/link-account.mjs`), two facts this commit must
   build to:
   - A Google sign-in finds its login by provider and Google account id first (`findAccountOwnerByKey`), before any
@@ -1738,6 +1791,12 @@ mine.
   (`readSessionUserId`, `disableRefresh`), so a session is renewed only by `GET /api/auth/get-session`. The app
   must call it (the Expo client's `useSession()` does) or its session ends seven days after sign-in; the proof
   shows a bearer session past `updateAge` renewed there.
+- Found by commit 6: delete account's emailed link deletes only when opened where the person is signed in as that
+  login (Better Auth's callback reads the session from the request; the link carries none). An app user's session
+  is a bearer token the phone's browser never holds, so the link opened there answers Better Auth's JSON 404 and
+  deletes nothing. Better Auth's `POST /delete-user` also deletes at once when its body carries the link's `token`
+  (and the password the before hook asks for), under the asker's session, a bearer token's included. This commit
+  decides how an app user confirms a deletion.
 - Found by commit 5: a Better Auth before hook sees the request before the bearer plugin's hook turns its token into
   the session cookie, so a guard reading the request's own cookie misses a bearer request, or names the cookie's login
   when a bearer token rides beside it. Change email's check of the new address (commit 5's guard as 5.5 rewrites
@@ -1972,7 +2031,7 @@ session prints.
 ### 8.2 PROD
 
 PROD is `etezzztgafcotyahgijk`. It took 185–209 on 2026-10-08 with no app deployed against it, holding no logins
-(208 copied none) and no coaching data: it serves the marketing site's waitlist alone. It owes 210 and 211; the app's PROD
+(208 copied none) and no coaching data: it serves the marketing site's waitlist alone. It owes 210, 211 and 212; the app's PROD
 deployment and its env will live wherever the owner runs it (no file in the repo describes it). The session that
 runs this counts PROD's `auth.users` first: with no app on PROD none should appear, and a login found there is
 copied by rerunning 209's section 1 (idempotent) before the deploy.
@@ -1984,10 +2043,11 @@ copied by rerunning 209's section 1 (idempotent) before the deploy.
    chain, set `advanced.ipAddress` (the header, or the trusted proxies) in `lib/auth.ts` first, or every caller
    shares one count per path and three sign-ins in ten seconds lock everyone out.
 2. `npx supabase link --project-ref etezzztgafcotyahgijk < /dev/null`; `npx supabase migration list --linked`
-   (expect 210 and 211 pending, nothing else); count `auth.users`, `profiles`, `coaches`, `clients` with
+   (expect 210, 211 and 212 pending, nothing else); count `auth.users`, `profiles`, `coaches`, `clients` with
    `db query --linked` and write the numbers in the handover.
 3. `npx supabase db push --dry-run`, read it, then the owner runs `npx supabase db push` (Claude Code's auto mode
-   refuses a push to PROD): 210 adds the address trigger, 211 the delete functions.
+   refuses a push to PROD): 210 adds the address trigger, 211 the delete functions, 212 the indexes on the foreign
+   keys their cascades walk (each migration's closing check runs in the push).
 4. Deploy `main` with the env of step 1.
 5. If PROD held logins, each person signs in again (D8). If it held none, `npm run coach:create -- --project
    etezzztgafcotyahgijk …` for the owner's own coach, from the repo while it is linked to PROD (step 2), with PROD's

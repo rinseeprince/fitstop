@@ -13,6 +13,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn() } }));
 
 import { LoginNotice } from "./login-notice";
 import { toast } from "sonner";
+import { ACCOUNT_DELETED_PAGE } from "@/lib/constants";
 
 describe("LoginNotice", () => {
   it("shows the message the proxy sent the visitor here with", () => {
@@ -33,6 +34,31 @@ describe("LoginNotice", () => {
     search = new URLSearchParams("error=something_else");
     const { container } = render(<LoginNotice />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("LoginNotice after delete account's link (rules 10 and 13)", () => {
+  it("says the account has been deleted, as information, not as an error", () => {
+    search = new URLSearchParams("deleted=1");
+    render(<LoginNotice />);
+    const notice = screen.getByRole("alert");
+    expect(notice).toHaveTextContent("Your account has been deleted.");
+    expect(notice.className).not.toContain("text-destructive");
+  });
+
+  it("is the page the delete dialog asks Better Auth's link to land on", () => {
+    search = new URLSearchParams(new URL(ACCOUNT_DELETED_PAGE, "http://localhost").search);
+    render(<LoginNotice />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Your account has been deleted.");
+  });
+
+  it("leaves the address alone and says nothing of a log out", () => {
+    vi.mocked(toast.success).mockClear();
+    replace.mockClear();
+    search = new URLSearchParams("deleted=1");
+    render(<LoginNotice />);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 });
 

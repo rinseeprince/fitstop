@@ -1,6 +1,11 @@
 import { auth } from "@/lib/auth";
 import { RESET_PASSWORD_PAGE } from "@/lib/constants";
+import { captureApiError } from "@/lib/error-handler";
+import { chunkIds, fetchAllPages } from "@/lib/paged-fetch";
+import { CONTENT_BUCKET } from "@/services/content-storage-service";
+import { listObjects, PROGRESS_PHOTOS_BUCKET, removeObjects, type StorageBucket } from "@/services/storage-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
+import type { UserRole } from "@/types/auth";
 
 /**
  * A login's address (docs/BETTER-AUTH-PLAN.md 2.10): coaches.email and
@@ -9,7 +14,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
  * check lib/auth.ts makes of a change of email's new address, and the owner's
  * move of a login to a new address (scripts/move-email.ts), which changes it
  * through Better Auth's own adapter so Better Auth stays the writer of its
- * tables.
+ * tables. And a deleted account's records (2.6): Better Auth's beforeDelete.
  */
 
 /** Which rows of one address's holders the reads return: the login each points at, or none. */
@@ -106,4 +111,102 @@ export async function moveLoginEmail({ email, to }: { email: string; to: string 
     throw new MovedLoginUnfinishedError(to, `"Reset your password" could not be asked for`, error);
   }
   return { moved: true, userId, sessionsEnded };
+}
+
+/**
+ * The app's role of a login (profiles.role, written with the login by
+ * services/login-service.ts), or null for a login with no profile. Throws when
+ * the profile can't be read.
+ */
+export async function readLoginRole(userId: string): Promise<UserRole | null> {
+  const { data, error } = await supabaseAdmin.from("profiles").select("role").eq("user_id", userId).maybeSingle();
+  if (error) throw new Error(`Failed to read the login's role: ${error.message}`);
+  return data?.role === "trainer" || data?.role === "client" ? data.role : null;
+}
+
+/** How many client folders are listed at once for a coach's deletion: one listing request per client, a few in flight. */
+const FOLDERS_AT_ONCE = 8;
+
+/**
+ * Every progress photo in the folders of these clients. The upload writes a
+ * client's photos into their own folder (`<clientId>/<file>`), so the folder
+ * holds every photo of theirs, one no check-in names among them (an upload
+ * whose check-in was then refused); and nothing a check-in carries is read,
+ * since it may be any string its client sent (lib/validations/check-in.ts).
+ */
+async function photoKeysOf(clientIds: string[]): Promise<string[]> {
+  const keys: string[] = [];
+  for (const batch of chunkIds(clientIds, FOLDERS_AT_ONCE)) {
+    const listed = await Promise.all(batch.map((clientId) => listObjects(PROGRESS_PHOTOS_BUCKET, clientId)));
+    keys.push(...listed.flat());
+  }
+  return keys;
+}
+
+/** The client rows a login signs in as, or a coach's clients, read whole past PostgREST's row cap. */
+async function clientIdsWhere(column: "user_id" | "coach_id", value: string): Promise<string[]> {
+  const rows = await fetchAllPages<{ id: string }>(
+    (from, to) => supabaseAdmin.from("clients").select("id").eq(column, value).order("id").range(from, to),
+    { errorLabel: "the account's client rows" }
+  );
+  return rows.map((row) => row.id);
+}
+
+/** The coach row a login signs in as, or null. */
+async function coachIdOf(userId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin.from("coaches").select("id").eq("user_id", userId).maybeSingle();
+  if (error) throw new Error(`Failed to read the coach row: ${error.message}`);
+  return data?.id ?? null;
+}
+
+/**
+ * Better Auth's beforeDelete (docs/BETTER-AUTH-PLAN.md 2.6, D20, D21): what
+ * the app holds about a login goes before Better Auth deletes the login, which
+ * takes its sessions, its password and its profile.
+ * - A client: every object in their photo folder, then their client rows and
+ *   everything under them (delete_client_records, migration 211).
+ * - A coach: every object in each of their clients' photo folders and in
+ *   their own content library folder (`<coachId>/…`, each file under its
+ *   item's folder), then their clients' logins, their clients and everything
+ *   under them, and the coach row with the coach's library
+ *   (delete_coach_records). Only the account's own folders are listed, so no
+ *   other account's object is ever named.
+ * - A login with no role holds nothing of the app's: Better Auth deletes it
+ *   alone.
+ * Objects first, rows second: a failure before the function leaves every row,
+ * and the objects not yet removed, as they were; a failure of the function
+ * after the objects went leaves every row. Either way it reaches Sentry with
+ * the keys that went and throws, Better Auth refuses the deletion, and a new
+ * request from Settings finishes it (a key whose object is gone is no
+ * failure).
+ */
+export async function deleteAccountRecords(user: { id: string }): Promise<void> {
+  const removed: Partial<Record<StorageBucket, string[]>> = {};
+  const remove = async (bucket: StorageBucket, keys: string[]) => {
+    await removeObjects(bucket, keys);
+    removed[bucket] = keys;
+  };
+  try {
+    const role = await readLoginRole(user.id);
+    if (role === "client") {
+      await remove(PROGRESS_PHOTOS_BUCKET, await photoKeysOf(await clientIdsWhere("user_id", user.id)));
+      const { error } = await supabaseAdmin.rpc("delete_client_records", { p_user_id: user.id });
+      if (error) throw new Error(`delete_client_records failed: ${error.message}`);
+    } else if (role === "trainer") {
+      const coachId = await coachIdOf(user.id);
+      if (coachId) {
+        const [photoKeys, contentKeys] = await Promise.all([
+          clientIdsWhere("coach_id", coachId).then(photoKeysOf),
+          listObjects(CONTENT_BUCKET, coachId),
+        ]);
+        await remove(PROGRESS_PHOTOS_BUCKET, photoKeys);
+        await remove(CONTENT_BUCKET, contentKeys);
+      }
+      const { error } = await supabaseAdmin.rpc("delete_coach_records", { p_user_id: user.id });
+      if (error) throw new Error(`delete_coach_records failed: ${error.message}`);
+    }
+  } catch (error) {
+    captureApiError(error, { source: "deleteAccountRecords: the account is not deleted", userId: user.id, removed });
+    throw error;
+  }
 }

@@ -65,3 +65,10 @@ export function changeEmailSchema(currentEmail: string) {
 }
 
 export type ChangeEmailFormData = z.infer<ReturnType<typeof changeEmailSchema>>
+
+/** Delete account: the password, which Better Auth checks before it emails the confirmation link (rules 10 and 13) */
+export const deleteAccountSchema = z.object({
+  password: z.string().min(1, "Password is required"),
+})
+
+export type DeleteAccountFormData = z.infer<typeof deleteAccountSchema>

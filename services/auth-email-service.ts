@@ -1,9 +1,10 @@
 import { render } from "@react-email/render"
 import ApproveEmailChangeEmail from "@/emails/approve-email-change-email"
+import ConfirmDeleteAccountEmail from "@/emails/confirm-delete-account-email"
 import ConfirmNewEmailEmail from "@/emails/confirm-new-email-email"
 import ResetPasswordEmail from "@/emails/reset-password-email"
 import SetPasswordEmail from "@/emails/set-password-email"
-import { PRODUCT_NAME } from "@/lib/constants"
+import { ACCOUNT_DELETION_TAKES, PRODUCT_NAME, type DeletedAccount } from "@/lib/constants"
 import { captureApiError } from "@/lib/error-handler"
 import { landsOnSetPassword } from "@/lib/password-link"
 import { EMAIL_SENDER, resend } from "@/services/email-service"
@@ -129,6 +130,29 @@ export async function sendConfirmNewEmailEmail({ user, url }: { user: Recipient;
 Open this link to confirm this address: ${url}
 
 Once you do, you sign in to ${PRODUCT_NAME} with this email. This link expires in one hour. If you didn't ask for this, you can ignore this email: nothing changes.
+
+Best regards,
+The ${PRODUCT_NAME} Team`,
+  }))
+}
+
+/**
+ * Better Auth's sendDeleteAccountVerification (rules 10 and 13), through
+ * lib/auth.ts's sendDeletionConfirmation, which reads the asker's role:
+ * "Confirm deleting your account", to the address they sign in with, saying
+ * what goes with a coach's account or a client's. Its link
+ * (/api/auth/delete-user/callback, one day, once) deletes the account when
+ * opened where the person is still signed in, and lands on /login?deleted=1.
+ */
+export async function sendConfirmDeleteAccountEmail({ user, url, account }: { user: Recipient; url: string; account: DeletedAccount }): Promise<void> {
+  await sendAuthEmail("sendConfirmDeleteAccountEmail", user.email, async () => ({
+    subject: "Confirm deleting your account",
+    html: await render(ConfirmDeleteAccountEmail({ name: user.name, account, confirmUrl: url })),
+    text: `Hi ${user.name},
+
+Someone asked to delete your ${PRODUCT_NAME} account. ${ACCOUNT_DELETION_TAKES[account]} Open this link to delete it: ${url}
+
+This link expires in one day and works once. Open it in the browser you asked from, while you're signed in. If you didn't ask for this, you can ignore this email: your account stays as it is.
 
 Best regards,
 The ${PRODUCT_NAME} Team`,
