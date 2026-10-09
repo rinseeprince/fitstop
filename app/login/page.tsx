@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/contexts/auth-context";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
-import { Chrome, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { loginSchema, type LoginFormData } from "@/lib/validations/auth";
 import { authClient } from "@/lib/auth-client";
 import { authErrorSentence } from "@/lib/auth-error-messages";
@@ -160,10 +161,14 @@ export default function LoginPage() {
               onClick={continueWithGoogle}
               disabled={busy}
             >
+              {/* Google's own "G", its file unchanged, as Google's sign-in
+                  branding rules require (CONVENTIONS §5's one exception to
+                  Lucide): 20px beside 14px words and 10px before them, as
+                  on Google's buttons. The spinner takes its place. */}
               {googlePending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="size-5 mr-0.5 animate-spin" />
               ) : (
-                <Chrome className="h-4 w-4 mr-2" />
+                <Image src="/google-g-logo.png" alt="" width={200} height={204} unoptimized loading="eager" className="h-5 w-auto mr-0.5" />
               )}
               Continue with Google
             </Button>

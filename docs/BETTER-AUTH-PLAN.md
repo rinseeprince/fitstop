@@ -1797,7 +1797,10 @@ smoke's three Google accounts as its test users.
     migration 213's trigger, which unlinks inside the move's own UPDATE, below.)
   - The button is back where it was before commit 2, above the form with its "Or continue with" divider and
     Lucide's `Chrome` mark; while it is in flight the whole form is busy, and a page the browser restores from its
-    back-forward cache (Back from Google's page) is idle again.
+    back-forward cache (Back from Google's page) is idle again. (After commit 7, on the owner's go, 2026-10-09: the
+    mark is Google's own "G", `public/google-g-logo.png`, Google's file from its sign-in branding page unchanged,
+    20px and 10px before the words as on Google's buttons; Google's rules want that "G", current and unaltered, on
+    its sign-in buttons, so it is CONVENTIONS §5's one exception to Lucide.)
 - Found by commit 7 and left for the owner in its handover; built after it on the owner's go (2026-10-09, "yes can
   you do this?", "yes do this too") as migration 213 (§2.1):
   - A Google account linked to a login kept signing it in after the login's address changed through Change

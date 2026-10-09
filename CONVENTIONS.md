@@ -209,7 +209,7 @@
 
   ## 5. Code Style
   - Use Tailwind for styling
-  - Lucide icons only
+  - Lucide icons only. The one exception: Google's own "G" on Continue with Google (`public/google-g-logo.png`, Google's file unchanged), which Google's sign-in branding rules require in place of any other mark
   - Instrument Sans (UI text) + JetBrains Mono (numerical data) - see `docs/newdesignsystem.md` for the full typography spec
   - Async/await over promises
   - Named exports over default

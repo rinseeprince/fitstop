@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -67,10 +70,31 @@ describe("the login page (rules 1, 3, 15)", () => {
   });
 });
 
+/** Google's own "G" for its sign-in buttons, the file Google publishes (developers.google.com/identity/branding-guidelines). */
+const GOOGLE_G = "/google-g-logo.png";
+const GOOGLE_G_SHA256 = "d1ce9c2af0b10a7333abc99bc706f9a6a199e5b65bf3e3009624f076b8638e6a";
+
 describe("Continue with Google (rule 8, D3)", () => {
   beforeEach(() => vi.clearAllMocks());
 
   const google = () => screen.getByRole("button", { name: "Continue with Google" });
+
+  it("shows Google's own G before its words, a picture read aloud as nothing; the spinner takes its place while the browser leaves for Google", async () => {
+    social.mockReturnValue(new Promise(() => {}));
+    render(<LoginPage />);
+    const logo = google().querySelector("img");
+    expect(logo).toHaveAttribute("src", GOOGLE_G);
+    expect(logo).toHaveAttribute("alt", "");
+    expect(google().firstElementChild).toBe(logo);
+    await userEvent.click(google());
+    await waitFor(() => expect(google().querySelector("img")).toBeNull());
+    expect(google().querySelector("svg.animate-spin")).not.toBeNull();
+  });
+
+  it("the G is Google's file unchanged, as Google's branding rules require", () => {
+    const file = readFileSync(join(process.cwd(), "public", GOOGLE_G));
+    expect(createHash("sha256").update(file).digest("hex")).toBe(GOOGLE_G_SHA256);
+  });
 
   it("asks Better Auth for Google, landing on / or, refused, on /login, and the page stays busy while the browser leaves for Google", async () => {
     // Better Auth's client sends the browser to Google's page itself once this answers.
