@@ -1750,8 +1750,8 @@ arrives or the auth:last-link command. The browser smoke is mine.
 
 **STATUS: SHIPPED `0a54cc5e` (2026-10-09); its follow-up, migration 213, SHIPPED `6544f59c` (2026-10-09).** 213 on
 DEV (PROD owes 210 to 213); proof 5.5 passes on DEV (53 checks, every path's Google unlink among them); browser smoke
-§7.5 owed. The Google keys are in `.env.local` (2026-10-09), the consent screen in Testing with the smoke's three
-Google accounts as its test users.
+§7.5 PASSED 2026-10-09. The Google keys are in `.env.local` (2026-10-09), the consent screen in Testing with the
+smoke's three Google accounts as its test users.
 
 - `socialProviders.google` and `account.accountLinking` in `lib/auth.ts` (§2.7); the button back on
   `app/login/page.tsx` wired to `signIn.social`; the two notices on `components/auth/login-notice.tsx` (rule 8).
