@@ -2197,7 +2197,9 @@ copied by rerunning 209's section 1 (idempotent) before the deploy.
    address trigger, 211 the delete functions, 212 the indexes on the foreign keys their cascades walk, 213 the Google
    links' two rules, each migration's closing check run in the push; before it PROD held 0 logins, profiles,
    coaches and clients, and after it its ledger, catalog, `check:rls` and generated types matched DEV's.
-4. Deploy `main` with the env of step 1.
+4. Deploy `main` with the env of step 1. The host installs with `npm ci`: a plain `npm install` fails on this lockfile
+   (CONVENTIONS §2), and Vercel's default install is `npm install`, so on Vercel set the project's Install Command to
+   `npm ci`.
 5. If PROD held logins, each person signs in again (D8). If it held none, `npm run coach:create -- --project
    etezzztgafcotyahgijk …` for the owner's own coach, from the repo while it is linked to PROD (step 2), with PROD's
    values in the shell, where they win over `.env.local`: `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`,

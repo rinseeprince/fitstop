@@ -65,6 +65,7 @@
 
   ### Don't install packages without asking
   - If a task can be done with what's already in the project, don't add a new dependency. Always ask before running `npm install`.
+  - Install from the lockfile with `npm ci`. A plain `npm install` fails here (ERESOLVE): `better-call`, under `better-auth`, names zod 4 as an optional peer, and the app runs zod 3. So an approved package goes in lockfile-only from a scratch copy (`npm install <package> --package-lock-only --force`), the lockfile diff checked to add that package's own tree and nothing else, then the lockfile is copied in and installed with `npm ci`. Never `--legacy-peer-deps`: it drops the peer-installed packages, `@testing-library/dom` among them.
 
   ### Never run `npm audit fix --force`
   - `npm audit fix` (no flag) is safe — it only takes semver-compatible bumps. Run it, then `npx vitest run`, then commit the lockfile.
@@ -101,7 +102,7 @@
   - roughly ≥5 files or ≥200 lines touching data flow
 
   **Security — check each, cite `file:line`:**
-  1. Write routes carry `coachApiRateLimit` **and** `requireCSRFProtection` (§9/§10).
+  1. Write routes carry `coachApiRateLimit` **and** `requireCSRFProtection` (§9/§10); Better Auth's catch-all runs its own limiter and origin check instead (§10).
   2. Authenticated (`getAuthenticatedCoachId` / `getAuthenticatedClientId`, **passing `request`**)
      AND a tenant-ownership check — a foreign resource must 403/404, not proceed.
   3. zod validation before any write.
@@ -167,7 +168,7 @@
 
   ### Preserve backwards compatibility
   - If existing clients/pages already work, new code shouldn't break them.
-  - Additive changes over breaking changes.
+  - Additive changes over breaking changes, except where the owner's plan replaces a thing by design: then the old goes in the change that brings the new, with nothing kept beside it for compatibility.
 
   ### Component communication
   - Props down, callbacks up. Parent owns state.
@@ -242,11 +243,18 @@
 
   Key lib files:
   - `lib/rate-limit.ts` - Rate limiting tiers (Upstash Redis + in-memory fallback)
-  - `lib/csrf-protection.ts` - CSRF origin/referer validation
+  - `lib/csrf-protection.ts` - CSRF origin/referer validation; a request naming no site that carries a bearer token, the client app's, passes
   - `lib/error-handler.ts` - Sentry error capture wrapper
   - `lib/swr-fetcher.ts` - SWR fetcher with error handling
   - `lib/auth-helpers.ts` - `getAuthenticatedCoachId()`, `getAuthenticatedClientId()`
   - `lib/auth-cache.ts` - Short-TTL (60s) `user_id → client_id` auth-resolution cache (Session 3.8)
+  - `lib/auth.ts` - Better Auth: the one `betterAuth(…)` and its pool, and `readSessionUserId`, who a request is signed in as
+  - `lib/auth-client.ts` - Better Auth in the browser: `authClient`, the one `createAuthClient(…)`
+  - `proxy.ts` - The proxy: who is signed in and their role, on every request; a signed-out page goes to `/login`, a signed-out `/api/**` request gets 401 JSON
+  - `app/api/auth/[...all]/` - Better Auth's endpoints under `/api/auth/*`; `/api/auth/me` is the app's own route
+  - `services/login-service.ts` - The two paths that make a login: the owner's `coach:create` and the client invite
+  - `services/account-service.ts` - A login's address (change email's check, the owner's `auth:move-email`) and a deleted account's records
+  - `services/auth-email-service.ts` - The emails Better Auth sends
   - `lib/cursor.ts` - Opaque base64url keyset cursor encode/decode for paginated reads (Sessions 3.7/3.9)
   - `lib/date-helpers.ts` - Date/timezone helpers; the ONLY surface owning `Intl.DateTimeFormat` math (`getTodayDateStringInTimezone`, `getTodayInTimezone`, `getDeviceTimeZone`)
   - `services/today-service.ts` - DB-fetching "today" helpers for bare ids: `getClientTodayString` (client→coach→UTC fallback), `getCoachTodayString`
@@ -494,7 +502,7 @@
 
   ### Auth & data-access architecture (Shape B)
 
-  Atletafit runs in a backend-mediated shape: the browser calls Next.js API routes, routes authenticate the user and verify ownership, routes call service functions scoped by `clientId`, service functions read/write through `supabaseAdmin`. The database is locked behind that server: RLS is enabled on every table with **no policies**, and `anon` and `authenticated` — the roles the browser-shipped public key can act as — hold **no privilege** on any table, view or sequence in `public`, so the Data API (`/rest/v1`) refuses every request that does not carry the service key. RLS is the lock, not a rule set, and it is no second line of defence for the app's own path: `service_role` bypasses it (see "RLS policies" below). This is a valid pattern for apps with a dedicated backend, multiple user audiences (coach + client), cross-user aggregation reads, and server-only integrations (OpenAI, Anthropic, Resend). See `TECHNICAL-DEBT.md → Auth Architecture Hygiene` for the rationale and for open hardening items.
+  Atletafit runs in a backend-mediated shape: the browser calls Next.js API routes, routes authenticate the user and verify ownership, routes call service functions scoped by `clientId`, service functions read/write through `supabaseAdmin`. The database is locked behind that server: RLS is enabled on every table with **no policies**, and `anon` and `authenticated` — the roles the project's public key can act as — hold **no privilege** on any table, view or sequence in `public`, so the Data API (`/rest/v1`) refuses every request that does not carry the service key. RLS is the lock, not a rule set, and it is no second line of defence for the app's own path: `service_role` bypasses it (see "RLS policies" below). This is a valid pattern for apps with a dedicated backend, multiple user audiences (coach + client), cross-user aggregation reads, and server-only integrations (OpenAI, Anthropic, Resend). See `TECHNICAL-DEBT.md → Auth Architecture Hygiene` for the rationale and for open hardening items.
 
   The consequence: the route layer **is** the security perimeter. Gaps in route-level auth are not caught by a second line of defense. Treat the route's auth chain and the service function's scoping parameter as non-optional.
 
@@ -502,7 +510,7 @@
 
   #### Route-level auth chain (mandatory, in this order)
 
-  Every authenticated API handler must execute these steps before any business logic. Order matters (§9 and §10 restate this; it is the same chain).
+  Every authenticated API handler must execute these steps before any business logic. Order matters (§9 and §10 restate this; it is the same chain). Better Auth's catch-all, `app/api/auth/[...all]`, is the one route outside it (§10).
 
   1. **Rate limit** — `apiRateLimit` / `coachApiRateLimit` / `clientApiRateLimit` / `authRateLimit` / `checkInRateLimit` / `aiRateLimit` per the route's category. Two account-keyed tiers (`clientPerClientRateLimit`, `assistantRateLimit`) necessarily run *after* step 3 because they key on the resolved principal — see the sanctioned exceptions in §9.
   2. **CSRF** — `requireCSRFProtection(request)` on any mutating verb (POST / PUT / PATCH / DELETE).
@@ -528,7 +536,7 @@
 
   #### RLS policies
 
-  - RLS is enabled on **every** table in `public`, and **no table carries a policy** — in `public` or in `storage` (migration 201; verified against the live catalog by `npm run check:rls`, clauses 1 and 4). Every query the app makes is `supabaseAdmin`'s, which bypasses RLS, so a policy would govern no app read and would only open a door for the browser-shipped public key. With no policy, RLS is the lock: a role that does not bypass it reads and writes nothing.
+  - RLS is enabled on **every** table in `public`, and **no table carries a policy** — in `public` or in `storage` (migration 201; verified against the live catalog by `npm run check:rls`, clauses 1 and 4). Every query the app makes is `supabaseAdmin`'s, which bypasses RLS, so a policy would govern no app read and would only open a door for the project's public key. With no policy, RLS is the lock: a role that does not bypass it reads and writes nothing.
   - **The public roles hold no privileges.** `anon` and `authenticated` have no grant on any table, view or sequence in `public`, and postgres's default privileges hand a new one nothing (`check:rls` clause 5). Schema `USAGE` stays. A request at `/rest/v1` with the public key is refused with `42501` on every relation, and a login's Better Auth token is no JWT PostgREST can read, so it is refused before any role is chosen (`PGRST301`) — `scripts/data-api-locked-proof.ts` proves both; `authenticated`'s own lock is `check:rls` clause 5's.
   - Do NOT write app code that relies on RLS to enforce access. If the route layer is broken, RLS under `service_role` does nothing (it bypasses RLS entirely — and every query the app makes is `service_role`'s). The route chain and the service's scope filter are the whole perimeter.
   - **Nothing reads or writes through a session client.** A write goes through a route and `supabaseAdmin`, and so does every read; `lib/session-client-ownership.test.ts` holds the code to it.
@@ -579,7 +587,7 @@
   - **Dictionaries sync via their own delta endpoint.** The exercise catalog is the canonical example: `GET /api/client/exercises/catalog?since=<ISO>` returns a sparse fieldset of rows with `updated_at` after `since` (omit `since` for a full resync). It is complete-by-construction past the ~1000-row PostgREST cap (pages internally on the tie-safe `(updated_at, id)` cursor); deletes are invisible to the delta, so a periodic full resync catches them.
 
   ### Soft deletes
-  - User-created data uses soft delete, never hard delete. **Three deliberate exceptions are hard-deleted:** a coach's note, the coach's own scratch text (`docs/ARCHITECTURE.md` → "client_notes table"); a **goal**, which nothing references: a check-in or a nutrition version keeps its own copy of what it needs (`docs/ARCHITECTURE.md` → "client_goals table"); and a **habit the client never logged**, which nothing references — a logged habit is marked deleted and keeps everything logged (`docs/ARCHITECTURE.md` → "Habits")
+  - User-created data uses soft delete, never hard delete. **Four deliberate exceptions are hard-deleted:** a coach's note, the coach's own scratch text (`docs/ARCHITECTURE.md` → "client_notes table"); a **goal**, which nothing references: a check-in or a nutrition version keeps its own copy of what it needs (`docs/ARCHITECTURE.md` → "client_goals table"); a **habit the client never logged**, which nothing references — a logged habit is marked deleted and keeps everything logged (`docs/ARCHITECTURE.md` → "Habits"); and an **account**: Delete account erases the login and everything the app holds about the person, and a coach's takes their clients with it (`docs/ARCHITECTURE.md` → "Account changes")
   - **is_active pattern**: Training sessions and exercises use `is_active = false`. Always filter by `.eq("is_active", true)` in read queries
   - **Status-based lifecycle**: Entities with richer states use a status column instead of is_active. The lifecycle is **not uniform across entities** — match the one already in place:
     - **Training plans** moved to **date-range coexistence** (events-as-SOT): many provenance `training_plans` rows coexist, there is **no `planned`/promotion concept**, and "active" is resolved **by date** (the row whose `[effective_from, effective_until]` covers today — both ends stored, migration 167), not `status='active'`. Placement is additive on the past and supersedes the future: the RPC caps every earlier live program at the day before the new start and archives one that started on the same day (it never ran a day of its own), and the service then removes the earlier programs' scheduled days from the start onward, logged days detached. Nothing before the new start is touched.
@@ -713,8 +721,8 @@
   - Auth: Check on every protected route/component
   - Proxy and seam auth: who the caller is comes from Better Auth's `auth.api.getSession` (through `readSessionUserId`), which looks the session up in `better_auth.session` on every request, so a revoked or expired one ends at once. Never trust `getSessionCookie` (a cookie's presence proves nothing), and never switch on Better Auth's cookie cache, which would let a revoked session live on
   - Input sanitization: All user inputs
-  - Rate limiting: **MANDATORY** - Every API route must include rate limiting as the first check
-  - CSRF protection: **MANDATORY** - All mutating API routes (POST/PUT/PATCH/DELETE) must call `requireCSRFProtection(request)` from `lib/csrf-protection.ts` as the second check after rate limiting
+  - Rate limiting: **MANDATORY** - Every API route must include rate limiting as the first check (Better Auth's catch-all is limited by Better Auth's own limiter, below)
+  - CSRF protection: **MANDATORY** - All mutating API routes (POST/PUT/PATCH/DELETE) must call `requireCSRFProtection(request)` from `lib/csrf-protection.ts` as the second check after rate limiting (Better Auth's catch-all runs its own origin check, §10)
   - Sensitive data: Never log passwords or tokens
   - File uploads: Validate the size, and the declared type against the file's own signature (`lib/upload-validation.ts`). The uploads are progress photos and content-library files
 
@@ -729,6 +737,7 @@
 
   #### Rate Limit Types:
   - `authRateLimit`: Auth/invitation routes (5 requests per 15 minutes)
+  - Better Auth's limiter (`lib/auth.ts`, its own, not `lib/rate-limit.ts`): every endpoint of Better Auth's catch-all, counted per IP and path in `better_auth."rateLimit"`, in production only. Sign-in, change password and change email take three requests in ten seconds, a password reset request three a minute, delete account three in ten seconds (`customRules`), every other endpoint a hundred in ten seconds. A server-side `auth.api` call is not counted
   - `apiRateLimit`: General API endpoints (60 requests per minute)
   - `coachApiRateLimit`: Coach-side client routes (30 requests per 10 seconds, allows burst traffic)
   - `clientApiRateLimit`: Client portal routes (first tier) — a loose, abuse-only IP burst guard (~1000 req/10s) set above any plausible carrier-NAT aggregate. Paired with a tight **per-client** limit (`clientPerClientRateLimit`, 30 req/10s, keyed by client id) applied post-auth. The per-client tier composes on top of any first-tier override; it is never replaced by one.
@@ -760,7 +769,7 @@
   ## 10. API Design
   - RESTful routes
   - Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 404 (not found), 500 (server)
-  - Response format: { success: bool, data: {}, error?: string }
+  - Response format: { success: bool, data: {}, error?: string }; Better Auth's catch-all answers in Better Auth's own shape (below)
   - Timestamps: ISO 8601 format
   - No version prefix in routes (use `/api/*` directly)
 
@@ -774,6 +783,8 @@
   6. Business logic (wrapped in try/catch)
 
   The only sanctioned reorderings are the account-keyed rate-limit tiers documented in §9 (client-portal per-client, and `/api/training/assistant`), where the limiter runs after step 3 because it keys on the resolved principal. Steps 2-6 keep their relative order everywhere. If you find a route that deviates, check §9 before "fixing" it.
+
+  **Better Auth's catch-all is the one route outside the chain.** `app/api/auth/[...all]` hands every request under `/api/auth/*` but `/api/auth/me` to Better Auth (`lib/auth.ts`), which runs its own: its limiter (§9), its origin check against `trustedOrigins` (the app's URL and the client app's scheme), its answers in its own shape, and its own error handling, its unexpected errors reaching Sentry through `onAPIError` and an after hook (§12). Nothing of the app's chain is added to that file. `/api/auth/me` is the app's route and keeps the chain.
 
   ### API changes cascade
   - If you change an API response shape, check every file that consumes that endpoint.
@@ -808,7 +819,7 @@
   The assistant bills per coach message, so cost scales with usage rather than headcount. Per-coach spend quotas are still unbuilt (see `TECHNICAL-DEBT.md`) — until they exist the ceiling is the rate limit, not a budget.
 
   ## 12. Error Handling
-  - All API routes: try-catch with proper error codes
+  - All API routes: try-catch with proper error codes (Better Auth's catch-all handles its own errors, §10)
   - User-facing errors: Toast notifications with plain language
   - Server-side errors: Use `captureApiError(error, context)` from `lib/error-handler.ts` to log and send to Sentry
   - Client-side errors: Wrap error-prone UI sections with `<ErrorBoundary>` from `components/ui/error-boundary.tsx`

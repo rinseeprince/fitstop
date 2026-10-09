@@ -95,7 +95,7 @@ New page. The data layer is already in place on the `clients` table; only UI plu
 - **Timezone**: if Session 0.1 identifies it as missing, add a timezone selector here; the save endpoint writes to the column added in prep.
 - **Sign out** button.
 
-Out of scope for v1: avatar upload, password change (uses Supabase auth flow elsewhere), notification channel management beyond what `reminder_preferences` exposes.
+Out of scope for v1: avatar upload, notification channel management beyond what `reminder_preferences` exposes.
 
 New endpoint: `PATCH /api/client/settings` with zod validation for the supported fields.
 
@@ -432,7 +432,7 @@ Cross-ref CONVENTIONS §9.
 
 ### Auth-resolution cache (Session 3.8)
 
-A short-TTL (60s) Upstash cache of `user_id -> client id`. `getUser()` still runs **every request** (only the `clients` lookup is cached, not the Supabase session verification). Invalidation is **TTL-only**. The `{id, checkInDay}` variant is also cached, with a benign `<=60s` propagation delay if a coach changes the client's check-in day — that only shifts a *computed* training/nutrition week boundary; **no submission or gating route depends on it**, so the staleness is safe.
+A short-TTL (60s) Upstash cache of `user_id -> client id`. The session is still validated on **every request** (`readSessionUserId`; only the `clients` lookup is cached, never the session). Invalidation is **TTL-only**. The `{id, checkInDay}` variant is also cached, with a benign `<=60s` propagation delay if a coach changes the client's check-in day — that only shifts a *computed* training/nutrition week boundary; **no submission or gating route depends on it**, so the staleness is safe.
 
 ---
 

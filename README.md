@@ -22,7 +22,7 @@ A modern fitness coaching platform that helps trainers manage clients, create pe
 | Styling | Tailwind CSS 4 |
 | UI Components | Radix UI, shadcn/ui |
 | Database | Supabase (PostgreSQL) |
-| Authentication | Supabase Auth |
+| Authentication | Better Auth |
 | Email Service | Resend |
 | AI Integration | OpenAI API |
 | State Management | SWR, React Hook Form |
@@ -45,8 +45,9 @@ A modern fitness coaching platform that helps trainers manage clients, create pe
    ```bash
    git clone <repository-url>
    cd FitStop
-   npm install
+   npm ci
    ```
+   `npm ci` installs the lockfile as committed; a plain `npm install` fails on it (CONVENTIONS.md §2, "Don't install packages without asking").
 
 2. **Configure environment variables**
    ```bash
@@ -74,12 +75,17 @@ Create a `.env.local` file with the following variables:
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
-# Better Auth (lib/auth.ts refuses to start without the first three)
+# Better Auth (lib/auth.ts refuses to start without each of these but AUTH_ADMIN_USER_IDS,
+# and without NEXT_PUBLIC_APP_URL below)
 # DATABASE_URL: Supabase dashboard → Connect → Transaction pooler, as given (no ?parameters);
 # percent-encode any @ # / ? : or % in the password
 DATABASE_URL=postgresql://postgres.your_project_ref:your_db_password@your_region.pooler.supabase.com:6543/postgres
 BETTER_AUTH_SECRET=output_of_openssl_rand_base64_32
 BETTER_AUTH_URL=http://localhost:3000      # the same origin as NEXT_PUBLIC_APP_URL
+# Continue with Google: a Google Cloud OAuth client (Web application) whose authorized
+# redirect URI is <BETTER_AUTH_URL>/api/auth/callback/google
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
 # AUTH_ADMIN_USER_IDS=your_user_id         # optional: the admin plugin's admins
 
 # OpenAI Configuration (check-in AI summaries)
@@ -94,6 +100,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 
 # Email Service Configuration
 RESEND_API_KEY=your_resend_api_key
+# EMAIL_FROM="Atletafit <hello@your_verified_domain>"  # optional: without it, Resend's sandbox sender, which delivers only to the Resend account's own address
 
 # App Configuration
 NEXT_PUBLIC_APP_URL=http://localhost:3000
@@ -104,7 +111,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 ├── app/                        # Next.js App Router pages
 │   ├── api/                   # API routes
-│   ├── auth/                  # Authentication pages
+│   ├── login/                 # Sign-in (and forgot-password/, reset-password/, set-password/)
 │   ├── clients/               # Client management pages
 │   ├── check-in/              # Check-in submission pages
 │   ├── invite/                # Client invitation pages
@@ -182,7 +189,7 @@ Atletafit features a secure token-based invitation system that allows coaches to
 1. **Coach sends invitation** - Creates client profile and sends invitation via email
 2. **Secure token generation** - Cryptographically secure 64-character tokens
 3. **Email delivery** - Professional invitation emails sent via Resend
-4. **Client signup** - Token-validated signup page with pre-filled email
+4. **Client account** - The invite page shows the invited address with its middle hidden and asks only for a password; the login is made on that address
 5. **Account linking** - Automatic connection to coach's client record
 
 ### Key Features

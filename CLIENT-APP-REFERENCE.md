@@ -32,8 +32,8 @@ The client app is a fitness coaching platform where clients can:
 - Access educational resources
 
 ### Technology Stack (Web)
-- **Frontend**: Next.js 14 (App Router), React, TypeScript
-- **Backend**: Supabase (PostgreSQL + Auth)
+- **Frontend**: Next.js 16 (App Router), React, TypeScript
+- **Backend**: Supabase (PostgreSQL, Storage), Better Auth (sign-in and sessions)
 - **Styling**: Tailwind CSS, shadcn/ui components
 - **State**: React hooks, Context API for auth
 
@@ -134,25 +134,27 @@ type UserRole = "client" | "trainer"
 
 ```typescript
 interface AuthContextType {
-  user: User | null
+  user: SessionUser | null // Better Auth's session user (lib/auth-client.ts)
+  coach: Coach | null
   profile: Profile | null
   role: UserRole | null
-  isClient: boolean
+  loading: boolean
   isTrainer: boolean
+  isClient: boolean
   login: (email: string, password: string) => Promise<UserRole | null>
   logout: () => Promise<void>
-  // ... other methods
 }
 ```
 
-### Middleware Protection
-**Location**: `middleware.ts`
+### Proxy Protection
+**Location**: `proxy.ts`
 
 - Routes starting with `/client/*` require `role === "client"`
 - Automatic redirection based on role:
   - Clients → `/client`
   - Trainers → `/dashboard`
-- Public routes: `/invite/[token]`
+- Signed out: a page redirects to `/login`; an `/api/**` request gets `401 { "success": false, "error": "Unauthorized" }`
+- Public routes: `/forgot-password`, `/reset-password`, `/set-password`, and everything under `/invite/`, `/api/invitations/` and `/api/auth/`
 
 ---
 
@@ -1173,7 +1175,7 @@ Coaches receive alerts when:
 ### Types & Services
 ```
 /types/
-├── auth.ts                 # User, Profile, Role types
+├── auth.ts                 # Profile, UserRole and the invitation types
 ├── training.ts             # TrainingPlan, Session, Exercise
 ├── check-in.ts             # CheckIn, metrics types
 ├── daily-log.ts            # DailyLog, the assembled day
@@ -1182,8 +1184,7 @@ Coaches receive alerts when:
 /services/
 ├── client-portal-service.ts # Client data fetching
 ├── daily-logs-service.ts    # The day reader: a day from its wellness and food rows
-├── check-in-service.ts      # Check-in handling
-└── supabase-client.ts      # Database client
+└── check-in-service.ts      # Check-in handling
 ```
 
 ---
@@ -1214,7 +1215,7 @@ Coaches receive alerts when:
 
 - Use existing REST endpoints unchanged
 - Add mobile-specific headers for analytics
-- Implement token refresh for long sessions
+- Keep the session alive through `GET /api/auth/get-session` (see Authentication: renewal)
 - Cache responses appropriately
 
 ### Platform-Specific Considerations
