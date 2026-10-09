@@ -10,16 +10,16 @@ vi.mock("@/contexts/auth-context", () => ({ useAuth: () => auth }));
 // on its own beside its file.
 const dialogs = vi.hoisted(() => ({ mounts: [] as { kind: string; props: Record<string, unknown> }[] }));
 vi.mock("@/components/auth/change-password-dialog", async () => ({ ChangePasswordDialog: await standIn("change-password") }));
-vi.mock("@/components/coach/change-email-dialog", async () => ({ ChangeEmailDialog: await standIn("change-email") }));
+vi.mock("@/components/auth/change-email-dialog", async () => ({ ChangeEmailDialog: await standIn("change-email") }));
 vi.mock("@/components/coach/sign-out-everywhere-dialog", async () => ({ SignOutEverywhereDialog: await standIn("sign-out-everywhere") }));
 
 async function standIn(kind: string) {
   const { useState } = await import("react");
-  return function StandIn(props: { open: boolean; currentEmail?: string; onOpenChange: (open: boolean) => void }) {
+  return function StandIn(props: { open: boolean; currentEmail?: string; landing?: string; onOpenChange: (open: boolean) => void }) {
     // Mounted once per opening: its first props are recorded, as a fresh dialog's form would start from them.
     useState(() => dialogs.mounts.push({ kind, props }));
     return (
-      <div data-testid={kind} data-open={String(props.open)} data-email={props.currentEmail ?? ""}>
+      <div data-testid={kind} data-open={String(props.open)} data-email={props.currentEmail ?? ""} data-landing={props.landing ?? ""}>
         <button type="button" onClick={() => props.onOpenChange(false)}>
           close {kind}
         </button>
@@ -80,10 +80,11 @@ describe("CoachAccountCard (rules 5, 6 and 7)", () => {
     expect(dialogs.mounts.map((mount) => mount.kind)).toEqual([kind]);
   });
 
-  it("change email is handed the address the card showed when it opened, kept through the close", async () => {
+  it("change email is handed the address the card showed when it opened, kept through the close, its links landing on the coach's Settings", async () => {
     render(<CoachAccountCard />);
     await userEvent.click(screen.getByRole("button", { name: "Change email" }));
     expect(screen.getByTestId("change-email")).toHaveAttribute("data-email", "sam@example.com");
+    expect(screen.getByTestId("change-email")).toHaveAttribute("data-landing", "/settings");
     await userEvent.click(within(screen.getByTestId("change-email")).getByRole("button"));
     // Closing: open flips, the subject stays, so the closing card shows what it showed.
     expect(screen.getByTestId("change-email")).toHaveAttribute("data-open", "false");

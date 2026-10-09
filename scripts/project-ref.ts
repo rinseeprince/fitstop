@@ -6,7 +6,8 @@
  * postgres.<ref>) and NEXT_PUBLIC_SUPABASE_URL (the app's rows, through
  * supabaseAdmin). The command names the project it means, and runs only when
  * all three name it too: a run on production is a deliberate flag and a
- * deliberate env, never one of them by accident.
+ * deliberate env, never one of them by accident. Off DEV, a command that
+ * emails a link runs only when the link opens the deployed app.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -45,6 +46,21 @@ export function refuseUnlessProject(project: string, env: ProjectEnv): void {
     const disagreements = others.map(([source, ref]) => `${source} names ${ref || "no project"}`).join(", ");
     throw new Error(`Refused: this run is for project ${project}, but ${disagreements}. Nothing was read or written.`);
   }
+}
+
+/**
+ * A link an owner's command emails opens BETTER_AUTH_URL's app: on DEV, next
+ * dev on this machine; on any other project it must be the deployed app,
+ * which is https. A production run left on .env.local's localhost address
+ * would email a real person a link to the owner's own machine. `recipient`
+ * names who is emailed, as the refusal says it ("a coach").
+ */
+export function refuseLocalLink(project: string, betterAuthUrl: string | undefined, recipient: string): void {
+  if (project === DEV_REF) return;
+  if (betterAuthUrl && URL.canParse(betterAuthUrl) && new URL(betterAuthUrl).protocol === "https:") return;
+  throw new Error(
+    `Refused: ${recipient} on ${project} is emailed a link to BETTER_AUTH_URL, ${betterAuthUrl || "which is unset"}, and it must be the app's https address. Set BETTER_AUTH_URL and NEXT_PUBLIC_APP_URL to it. Nothing was read or written.`
+  );
 }
 
 function need(name: string): string {

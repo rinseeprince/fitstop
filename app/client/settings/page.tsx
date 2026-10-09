@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { Controller, useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import useSWR, { type SWRResponse } from "swr";
@@ -12,6 +13,8 @@ import {
   type UpdateSettingsInput,
 } from "@/lib/validations/client";
 import { ClientAccountCard } from "@/components/client-portal/account-card";
+import { ChangeEmailLinkNotice } from "@/components/auth/change-email-link-notice";
+import { CLIENT_SETTINGS_PAGE } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -28,10 +31,23 @@ export default function SettingsPage() {
     { revalidateOnFocus: false, errorRetryCount: 3, errorRetryInterval: 1000 },
   );
 
-  if (isLoading) return <SettingsSkeleton />;
-  if (error || !data?.data) return <SettingsError onRetry={() => mutate()} />;
-
-  return <SettingsForm client={data.data} mutate={mutate} />;
+  return (
+    <>
+      {/* Says when a change-of-email link failed, whatever the read below is
+          doing. Its own Suspense boundary: the reader of ?error= must not
+          deopt the page's prerender. */}
+      <Suspense fallback={null}>
+        <ChangeEmailLinkNotice landing={CLIENT_SETTINGS_PAGE} />
+      </Suspense>
+      {isLoading ? (
+        <SettingsSkeleton />
+      ) : error || !data?.data ? (
+        <SettingsError onRetry={() => mutate()} />
+      ) : (
+        <SettingsForm client={data.data} mutate={mutate} />
+      )}
+    </>
+  );
 }
 
 function SettingsSkeleton() {

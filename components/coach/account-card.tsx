@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
-import { ChangeEmailDialog } from "@/components/coach/change-email-dialog";
+import { ChangeEmailDialog } from "@/components/auth/change-email-dialog";
 import { SignOutEverywhereDialog } from "@/components/coach/sign-out-everywhere-dialog";
 import {
   SETTINGS_CARD_CLASS,
@@ -13,6 +13,7 @@ import {
 import { TextSkeleton } from "@/components/text-skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { useDialogSubject } from "@/hooks/use-dialog-subject";
+import { COACH_SETTINGS_PAGE } from "@/lib/constants";
 
 /** The dialog the card has open, with what it shows: change email shows the address the card showed. */
 type AccountDialog =
@@ -78,6 +79,7 @@ export function CoachAccountCard() {
           key={`change-email-${dialog.openKey}`}
           open={dialog.open}
           currentEmail={subject.currentEmail}
+          landing={COACH_SETTINGS_PAGE}
           onOpenChange={onOpenChange}
         />
       )}

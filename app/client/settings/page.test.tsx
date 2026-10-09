@@ -4,6 +4,15 @@ import userEvent from "@testing-library/user-event";
 
 // The Account card's Change password: its dialog calls Better Auth's client.
 vi.mock("@/lib/auth-client", () => ({ authClient: { changePassword: vi.fn() } }));
+// Who is signed in, which the Account card's Change email reads: Better Auth's session.
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ user: { id: "user-1", name: "Alex Doe", email: "alex@example.com" } }),
+}));
+// The notice that says when a change-of-email link failed reads the address
+// (useSearchParams); it is tested beside its file and stands in here by name.
+vi.mock("@/components/auth/change-email-link-notice", () => ({
+  ChangeEmailLinkNotice: ({ landing }: { landing: string }) => <output aria-label="Link notice" data-landing={landing} />,
+}));
 
 import SettingsPage from "./page";
 import { authClient } from "@/lib/auth-client";
@@ -245,12 +254,22 @@ describe("SettingsPage", () => {
     expect(mutateMock).not.toHaveBeenCalled();
   });
 
-  it("puts the Account card between Profile and Units, with Change password and nothing to change the email (rule 13, D18)", () => {
+  it("puts the Account card between Profile and Units, with Change password and Change email (rules 13 and 17, D18)", () => {
     render(<SettingsPage />);
     const titles = screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent);
     expect(titles).toEqual(["Profile", "Account", "Units", "Timezone"]);
     expect(screen.getByRole("button", { name: "Change password" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /change email/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Change email" })).toBeEnabled();
+  });
+
+  it.each([
+    ["the settings", { data: { success: true, data: makeClient() } }],
+    ["the skeleton, while they load", { isLoading: true }],
+    ["the error, when they can't load", { error: new Error("boom") }],
+  ])("hosts the notice that says when a change-of-email link failed, for links landing here, beside %s", (_label, swr) => {
+    setSWR(swr);
+    render(<SettingsPage />);
+    expect(screen.getByLabelText("Link notice")).toHaveAttribute("data-landing", "/client/settings");
   });
 
   it("Change password opens its dialog, and neither it nor the dialog's own submit reaches the settings form", async () => {

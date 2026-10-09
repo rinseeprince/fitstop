@@ -10,17 +10,19 @@ vi.mock("sonner", () => ({ toast: toastMock }));
 
 import { ChangeEmailDialog } from "./change-email-dialog";
 import { authClient } from "@/lib/auth-client";
+import { CLIENT_SETTINGS_PAGE, COACH_SETTINGS_PAGE, type SettingsPage } from "@/lib/constants";
 
 /**
- * Change email's dialog (rule 6, D18): its call, its states, and what it
- * says. The two emails and the change itself are Better Auth's, proven in
- * lib/auth.test.ts and by scripts/account-proof.ts.
+ * Change email's dialog (rules 6 and 17, D18), on the coach's and the client's
+ * Account cards: its call, its states, and what it says. The two emails and
+ * the change itself are Better Auth's, proven in lib/auth.test.ts and by
+ * scripts/account-proof.ts and scripts/email-follows-proof.ts.
  */
 const CURRENT = "coach@example.com";
 
-function renderDialog() {
+function renderDialog(landing: SettingsPage = COACH_SETTINGS_PAGE) {
   const onOpenChange = vi.fn();
-  render(<ChangeEmailDialog open currentEmail={CURRENT} onOpenChange={onOpenChange} />);
+  render(<ChangeEmailDialog open currentEmail={CURRENT} landing={landing} onOpenChange={onOpenChange} />);
   return { onOpenChange };
 }
 
@@ -40,13 +42,16 @@ describe("ChangeEmailDialog", () => {
     vi.restoreAllMocks();
   });
 
-  it("asks Better Auth for the change, both links landing on Settings, and says where the approval went", async () => {
+  it.each([
+    ["the coach's", COACH_SETTINGS_PAGE, "/settings"],
+    ["the client's", CLIENT_SETTINGS_PAGE, "/client/settings"],
+  ] as const)("asks Better Auth for the change, both links landing on %s Settings, and says where the approval went", async (_label, landing, page) => {
     vi.mocked(authClient.changeEmail).mockResolvedValue({ data: { status: true }, error: null } as never);
-    const { onOpenChange } = renderDialog();
+    const { onOpenChange } = renderDialog(landing);
     await ask("  new@example.com ");
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(authClient.changeEmail).toHaveBeenCalledTimes(1);
-    expect(authClient.changeEmail).toHaveBeenCalledWith({ newEmail: "new@example.com", callbackURL: "/settings" });
+    expect(authClient.changeEmail).toHaveBeenCalledWith({ newEmail: "new@example.com", callbackURL: page });
     expect(toastMock.success).toHaveBeenCalledWith("We've emailed coach@example.com to approve the change.");
     const order = (fn: unknown) => vi.mocked(fn as () => void).mock.invocationCallOrder[0];
     expect(order(onOpenChange)).toBeLessThan(order(toastMock.success));

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEV_REF, refuseUnlessProject, type ProjectEnv } from "./project-ref";
+import { DEV_REF, refuseLocalLink, refuseUnlessProject, type ProjectEnv } from "./project-ref";
 
 /**
  * The guard on the owner's commands (docs/BETTER-AUTH-PLAN.md 2.3): a run acts
@@ -57,6 +57,26 @@ describe("refuseUnlessProject", () => {
     );
     expect(() => refuseUnlessProject(DEV_REF, { ...envOf(DEV_REF), databaseUrl: "not a url with a s3cret" })).toThrow(
       expect.objectContaining({ message: expect.not.stringContaining("s3cret") })
+    );
+  });
+});
+
+describe("refuseLocalLink: a link an owner's command emails must reach its recipient", () => {
+  it.each([
+    ["DEV, on this machine's next dev", DEV_REF, "http://localhost:3000"],
+    ["any other project, on an https address", PROD_REF, "https://app.example.com"],
+  ])("lets %s through", (_label, project, url) => {
+    expect(() => refuseLocalLink(project, url, "a coach")).not.toThrow();
+  });
+
+  it.each([
+    [".env.local's localhost address", "http://localhost:3000"],
+    ["an http address", "http://app.example.com"],
+    ["no address", undefined],
+    ["an address that cannot be read", "app.example.com"],
+  ])("refuses a run for another project than DEV whose link would open %s, naming who is emailed", (_label, url) => {
+    expect(() => refuseLocalLink(PROD_REF, url, "a coach")).toThrow(
+      `Refused: a coach on ${PROD_REF} is emailed a link to BETTER_AUTH_URL, ${url || "which is unset"}, and it must be the app's https address.`
     );
   });
 });

@@ -125,6 +125,15 @@ describe("mapClientRow — the four reading fields come from the embedded views"
 // the JSON. The goal is not on the profile row — its two targets come from the
 // goal in force on the client's today — and they print where they always have,
 // after `dateOfBirth`.
+describe("mapClientRow — the client's login", () => {
+  // The details sheet locks the address of a client with an account (D38):
+  // the record says whether there is one.
+  it("carries the login's id once the client has an account, and none while they are only invited", () => {
+    expect(mapClientRow(clientRow({ user_id: "user-9" })).userId).toBe("user-9");
+    expect(mapClientRow(clientRow({ user_id: null })).userId).toBeUndefined();
+  });
+});
+
 describe("toClientSelfView — the client's own profile", () => {
   /** A row carrying every column, the coach-only ones included. */
   const fullRow = clientRow({
@@ -158,6 +167,7 @@ describe("toClientSelfView — the client's own profile", () => {
     walkthrough_completed_at: "2026-03-03T10:00:00+00:00",
     start_date: "2026-03-02",
     timezone: "Europe/London",
+    user_id: "user-9",
   } as Partial<ClientRow>);
   const client = {
     ...mapClientRow({
@@ -215,6 +225,9 @@ describe("toClientSelfView — the client's own profile", () => {
     expect(view.goalBodyFatPercentage).toBe(17.5);
     // The deadline is not a profile field; the journey carries it.
     expect(view).not.toHaveProperty("deadline");
+    // The login's id is the coach's to know, not the client wire's.
+    expect(client.userId).toBe("user-9");
+    expect(view).not.toHaveProperty("userId");
   });
 
   it("omits a target the goal does not set, and both with no goal in force", () => {

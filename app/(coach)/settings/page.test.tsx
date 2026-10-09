@@ -8,7 +8,9 @@ vi.mock("@/components/page-header", () => ({ PageHeader: () => null }))
 // The two real cards are tested beside their files; here they stand in by name.
 vi.mock("@/components/coach/account-card", () => ({ CoachAccountCard: () => <section aria-label="Account card" /> }))
 vi.mock("@/components/coach/settings-units-card", () => ({ SettingsUnitsCard: () => <section aria-label="Units card" /> }))
-vi.mock("@/components/coach/change-email-link-notice", () => ({ ChangeEmailLinkNotice: () => <output aria-label="Link notice" /> }))
+vi.mock("@/components/auth/change-email-link-notice", () => ({
+  ChangeEmailLinkNotice: ({ landing }: { landing: string }) => <output aria-label="Link notice" data-landing={landing} />,
+}))
 
 import SettingsPage from "./page"
 
@@ -27,8 +29,8 @@ describe("the coach's Settings (rule 5)", () => {
     expect(screen.queryByLabelText("Bio")).toBeNull()
   })
 
-  it("hosts the notice that says when a change-of-email link failed", () => {
+  it("hosts the notice that says when a change-of-email link failed, for links landing here", () => {
     render(<SettingsPage />)
-    expect(screen.getByLabelText("Link notice")).toBeInTheDocument()
+    expect(screen.getByLabelText("Link notice")).toHaveAttribute("data-landing", "/settings")
   })
 })

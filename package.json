@@ -11,6 +11,7 @@
     "print:check-in-prompt": "npx tsx scripts/print-check-in-review-prompt.ts",
     "coach:create": "npx tsx scripts/create-coach.ts",
     "auth:last-link": "npx tsx scripts/auth-last-link.ts",
+    "auth:move-email": "npx tsx scripts/move-email.ts",
     "dev": "next dev",
     "lint": "eslint .",
     "start": "next start",

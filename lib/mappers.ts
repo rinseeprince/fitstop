@@ -101,6 +101,7 @@ export function mapClientRow(row: ClientRowWithMeasurements): Client {
   return {
     id: row.id,
     coachId: row.coach_id,
+    userId: row.user_id ?? undefined,
     name: row.name,
     email: row.email,
     avatarUrl: row.avatar_url ?? undefined,

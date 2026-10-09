@@ -453,6 +453,10 @@ export type NutritionEvent = {
 export type Client = {
   id: string;
   coachId: string;
+  // The login the client signs in with (clients.user_id), from the moment they
+  // accept their invite; none while they are only invited. A coach-side fact:
+  // the client's own wire (CLIENT_SELF_KEYS, lib/mappers.ts) never carries it.
+  userId?: string;
   name: string;
   email: string;
   avatarUrl?: string;

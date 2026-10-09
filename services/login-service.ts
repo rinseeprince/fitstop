@@ -8,14 +8,14 @@ import type { UserRole } from "@/types/auth";
 
 /**
  * The two paths that make a login (D9), and the only writers of profiles and
- * of the login side of coaches and clients, but for a coach's email, which
- * follows the login's address once made (services/account-service.ts): the
- * owner's coach command (createCoachLogin) and the client invite
- * (acceptClientInvitation). Each
+ * of the login side of coaches and clients: the owner's coach command
+ * (createCoachLogin) and the client invite (acceptClientInvitation). Each
  * makes the login through the admin plugin's create-user, the one path
  * lib/auth.ts's guard lets make one, then writes the app's rows for it in the
  * same request, so the role comes from the path and nothing races to make a
- * row later.
+ * row later. Each row takes the login's address at birth; after it the
+ * address follows the login's, rewritten by migration 210's trigger in the
+ * statement that changes it.
  *
  * A login and its rows are two writes in two places (Better Auth owns its
  * insert, the app's rows go through supabaseAdmin), so no transaction spans
@@ -67,7 +67,7 @@ export async function createCoachLogin({ email, name }: { email: string; name: s
  * pending invitation is checked as the invite page checks it, the login is
  * made on the invited address with the password the client chose (verified:
  * the invite reached that address), the client profile and the client's link
- * are written, the client is signed in, and the invitation is marked accepted
+ * with that address are written, the client is signed in, and the invitation is marked accepted
  * last. The caller forwards `setCookies` to the browser. Nothing the request
  * carries but the token and the password decides whose login it is.
  */
@@ -95,10 +95,13 @@ export async function acceptClientInvitation({ token, password }: { token: strin
     await insertProfile(userId, "client");
 
     // Only a client with no login yet: an invitation never re-points a client
-    // someone already signs in as.
+    // someone already signs in as. The row takes the login's address with its
+    // link, the invited one as Better Auth stored it: a coach may have edited
+    // a pending client's address after the invite went out, and from here the
+    // row is a copy of the address the client signs in with (migration 210).
     const { data: linked, error: linkError } = await supabaseAdmin
       .from("clients")
-      .update({ user_id: userId })
+      .update({ user_id: userId, email })
       .eq("id", invitation.clientId)
       .is("user_id", null)
       .select("id");

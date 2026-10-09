@@ -119,6 +119,12 @@ export function useClientProfileEdit(client: Client, onSaved: () => void) {
     defaultValues: toDefaults(client),
   });
 
+  // A client with an account changes the address they sign in with from their
+  // own Settings (D38, rule 18): the coach's edit would move only the copy, so
+  // the sheet shows the record's address read-only and a save sends none. A
+  // pending client's address is the coach's, as before the invite is accepted.
+  const clientOwnsEmail = client.userId !== undefined;
+
   const height = useHeightInput(preference, client.height);
   // The BASELINE weight: collected in the coach's unit, converted on submit.
   // `commit` is `isPristine ? seed : canonical` compared on the SEEDED STRING,
@@ -261,10 +267,10 @@ export function useClientProfileEdit(client: Client, onSaved: () => void) {
     try {
       const profile: Record<string, unknown> = {
         name: values.name,
-        email: values.email,
         phone: values.phone,
         workActivityLevel: values.workActivityLevel,
       };
+      if (!clientOwnsEmail) profile.email = values.email;
       if (values.gender !== UNSET) profile.gender = values.gender;
       // `commitCm` is the untouched seed unless the field was edited, so a save
       // that changed only the phone number cannot drift a stored 178 cm through
@@ -386,6 +392,7 @@ export function useClientProfileEdit(client: Client, onSaved: () => void) {
       void save();
     },
     form,
+    clientOwnsEmail,
     height,
     startWeight,
     autoEnergy: autoEnergyReady,

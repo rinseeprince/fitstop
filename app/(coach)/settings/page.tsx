@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { CoachAccountCard } from "@/components/coach/account-card"
-import { ChangeEmailLinkNotice } from "@/components/coach/change-email-link-notice"
+import { ChangeEmailLinkNotice } from "@/components/auth/change-email-link-notice"
 import {
   SETTINGS_CARD_CLASS,
   SETTINGS_CARD_HEADER_CLASS,
   SETTINGS_CARD_TITLE_CLASS,
 } from "@/components/coach/settings-card-classes"
 import { SettingsUnitsCard } from "@/components/coach/settings-units-card"
+import { COACH_SETTINGS_PAGE } from "@/lib/constants"
 
 // NOTE: the Business card below is still an unwired mock — no fetch, no save
 // handler, hardcoded values. The Account and Units cards are real. Do not
@@ -36,7 +37,7 @@ export default function SettingsPage() {
       {/* Says when a change-of-email link failed. Its own Suspense boundary:
           the reader of ?error= must not deopt the page's prerender. */}
       <Suspense fallback={null}>
-        <ChangeEmailLinkNotice />
+        <ChangeEmailLinkNotice landing={COACH_SETTINGS_PAGE} />
       </Suspense>
       <div className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-2">

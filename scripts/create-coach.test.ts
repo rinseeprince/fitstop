@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("@/lib/auth", () => mocks.authModule());
 vi.mock("@/services/login-service", () => mocks.loginServiceModule());
 
-import { parseCreateCoachArgs, refuseLocalLink } from "./create-coach";
+import { parseCreateCoachArgs } from "./create-coach";
 import { DEV_REF, type ProjectEnv } from "./project-ref";
 import { PROD_REF } from "./proof-session";
 
@@ -60,26 +60,6 @@ describe("parseCreateCoachArgs", () => {
     ["a flag with no value", ["--project", "p", "--email", "a@b.co", "--name"]],
   ])("refuses %s, with the usage", (_label, argv) => {
     expect(() => parseCreateCoachArgs(argv)).toThrow(USAGE);
-  });
-});
-
-describe("refuseLocalLink: the emailed link must reach the coach", () => {
-  it.each([
-    ["DEV, on this machine's next dev", DEV_REF, "http://localhost:3000"],
-    ["any other project, on an https address", PROD_REF, "https://app.example.com"],
-  ])("lets %s through", (_label, project, url) => {
-    expect(() => refuseLocalLink(project, url)).not.toThrow();
-  });
-
-  it.each([
-    [".env.local's localhost address", "http://localhost:3000"],
-    ["an http address", "http://app.example.com"],
-    ["no address", undefined],
-    ["an address that cannot be read", "app.example.com"],
-  ])("refuses a run for another project than DEV whose link would open %s", (_label, url) => {
-    expect(() => refuseLocalLink(PROD_REF, url)).toThrow(
-      `Refused: a coach on ${PROD_REF} is emailed a link to BETTER_AUTH_URL, ${url || "which is unset"}, and it must be the app's https address.`
-    );
   });
 });
 

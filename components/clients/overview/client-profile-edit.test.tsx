@@ -414,6 +414,46 @@ describe("the client details sheet", () => {
       expect(body?.email).toBe("alex@example.com");
     });
 
+    // D38, rule 18: a client with an account changes the address they sign in
+    // with from their own Settings, and the coach's edit would move only the copy.
+    it("shows a client with an account their address read-only, saying who changes it, and a save sends none", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(makeClient({ userId: "user-9" }));
+
+      expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+      // The Email field: its label, the address as a value, the sentence under it, and no box to type in.
+      const field = screen.getByText("The client changes this from their Settings.").parentElement!;
+      expect(within(field).getByText("Email")).toBeInTheDocument();
+      expect(within(field).getByText("alex@example.com")).toBeInTheDocument();
+      expect(within(field).queryByRole("textbox")).toBeNull();
+      expect(screen.queryByText("An invitation already sent stays addressed to the old email.")).not.toBeInTheDocument();
+
+      const name = screen.getByLabelText("Full name");
+      await user.clear(name);
+      await user.type(name, "Alex Doe-Smith");
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      const body = profilePatch(fetchSpy);
+      expect(body?.name).toBe("Alex Doe-Smith");
+      expect(body).not.toHaveProperty("email");
+    });
+
+    it("leaves a pending client's address the coach's to edit, with the invitation's sentence", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(makeClient({ onboardingStatus: "pending_intake" }));
+
+      expect(screen.getByText("An invitation already sent stays addressed to the old email.")).toBeInTheDocument();
+      expect(screen.queryByText("The client changes this from their Settings.")).not.toBeInTheDocument();
+      const email = screen.getByLabelText("Email");
+      await user.clear(email);
+      await user.type(email, "alex.new@example.com");
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      expect(profilePatch(fetchSpy)?.email).toBe("alex.new@example.com");
+    });
+
     it("blocks a save on an invalid email before sending anything", async () => {
       const fetchSpy = mockFetchOk();
       const user = await openEditor();

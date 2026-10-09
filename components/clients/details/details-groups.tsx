@@ -76,11 +76,14 @@ function Field({
   );
 }
 
-/** A value the sheet shows but does not write, with where it comes from. */
-function ReadOnly({ value, note }: { value: string; note?: string }) {
+/**
+ * A value the sheet shows but does not write, with where it comes from. Mono
+ * for a figure; `sans` for words a person reads, an address.
+ */
+function ReadOnly({ value, note, sans = false }: { value: string; note?: string; sans?: boolean }) {
   return (
     <div className="flex h-8 items-center justify-between gap-2 rounded-[6px] bg-[#f0f5f4] px-2.5">
-      <span className={cn(MONO, "truncate text-[12.5px] text-[#5a7d82]")}>{value}</span>
+      <span className={cn(!sans && MONO, "truncate text-[12.5px] text-[#5a7d82]")}>{value}</span>
       {note && <span className="shrink-0 text-[10.5px] text-[#93b0b4]">{note}</span>}
     </div>
   );
@@ -199,20 +202,26 @@ export function DetailsGroups({
           <Field
             label="Email"
             hint={
-              !hasStarted ? (
+              edit.clientOwnsEmail ? (
+                <span className={HINT_CLASS}>The client changes this from their Settings.</span>
+              ) : !hasStarted ? (
                 <span className={HINT_CLASS}>
                   An invitation already sent stays addressed to the old email.
                 </span>
               ) : undefined
             }
           >
-            <Input
-              aria-label="Email"
-              type="email"
-              value={form.watch("email")}
-              onChange={(e) => form.setValue("email", e.target.value)}
-              className={cn(FOCUS_RING, "h-8 text-[12.5px]")}
-            />
+            {edit.clientOwnsEmail ? (
+              <ReadOnly value={client.email} sans />
+            ) : (
+              <Input
+                aria-label="Email"
+                type="email"
+                value={form.watch("email")}
+                onChange={(e) => form.setValue("email", e.target.value)}
+                className={cn(FOCUS_RING, "h-8 text-[12.5px]")}
+              />
+            )}
           </Field>
           <Field label="Phone">
             <Input

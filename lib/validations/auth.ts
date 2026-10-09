@@ -52,7 +52,7 @@ export const changePasswordSchema = z
 
 export type ChangePasswordFormData = z.infer<typeof changePasswordSchema>
 
-/** Change email: the new address, which is not the one the coach signs in with now (rule 6) */
+/** Change email: the new address, which is not the one the coach or the client signs in with now (rules 6 and 17) */
 export function changeEmailSchema(currentEmail: string) {
   return z.object({
     newEmail: z

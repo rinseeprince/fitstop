@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  CLIENT_OWNS_EMAIL,
+  ClientEmailLockedError,
   getClientById,
   updateClient,
   deleteClient,
@@ -9,14 +11,15 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { ReadingRemovalUnavailableError } from "@/services/measurements-service";
+import type { Client } from "@/types/check-in";
 
-// Helper to verify client ownership
-async function verifyClientOwnership(
+// The client, when it is this coach's; null when it is not (or is not there).
+async function findOwnedClient(
   clientId: string,
   coachId: string
-): Promise<boolean> {
+): Promise<Client | null> {
   const client = await getClientById(clientId);
-  return client !== null && client.coachId === coachId;
+  return client !== null && client.coachId === coachId ? client : null;
 }
 
 // GET /api/clients/[id] - Get a single client
@@ -39,8 +42,8 @@ export async function GET(
     }
 
     // Verify ownership
-    const hasAccess = await verifyClientOwnership(id, coachId);
-    if (!hasAccess) {
+    const owned = await findOwnedClient(id, coachId);
+    if (!owned) {
       return NextResponse.json(
         { error: "Client not found or access denied" },
         { status: 404 }
@@ -89,8 +92,8 @@ export async function PATCH(
     }
 
     // Verify ownership
-    const hasAccess = await verifyClientOwnership(id, coachId);
-    if (!hasAccess) {
+    const owned = await findOwnedClient(id, coachId);
+    if (!owned) {
       return NextResponse.json(
         { error: "Client not found or access denied" },
         { status: 404 }
@@ -109,7 +112,19 @@ export async function PATCH(
       );
     }
 
-    const client = await updateClient(id, validationResult.data, coachId);
+    // A client with an account changes the address they sign in with from
+    // their own Settings (D38, rule 18): the coach's write would move only the
+    // copy. An address a save carries unchanged passes and writes nothing, for
+    // every client. Another one is a pending client's alone to be given, and
+    // written only while they still have no login (updateClient), in case they
+    // accept their invite meanwhile.
+    const { email, ...withoutEmail } = validationResult.data;
+    const changesAddress = email !== undefined && email !== owned.email.toLowerCase();
+    if (changesAddress && owned.userId !== undefined) {
+      return NextResponse.json({ error: CLIENT_OWNS_EMAIL }, { status: 409 });
+    }
+
+    const client = await updateClient(id, changesAddress ? validationResult.data : withoutEmail, coachId);
 
     return NextResponse.json({ client });
   } catch (error) {
@@ -120,6 +135,11 @@ export async function PATCH(
     // generic failure.
     if (error instanceof ReadingRemovalUnavailableError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    // The client accepted their invite between the ownership read and the write.
+    if (error instanceof ClientEmailLockedError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
     }
 
     // Handle duplicate email error
@@ -160,8 +180,8 @@ export async function DELETE(
     }
 
     // Verify ownership
-    const hasAccess = await verifyClientOwnership(id, coachId);
-    if (!hasAccess) {
+    const owned = await findOwnedClient(id, coachId);
+    if (!owned) {
       return NextResponse.json(
         { error: "Client not found or access denied" },
         { status: 404 }

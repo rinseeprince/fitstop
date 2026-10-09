@@ -750,29 +750,34 @@ menus aside (they read the session). From 5.5 the copies follow the login in one
   changes its address, whoever changes it: Better Auth's verify-email (the second link of a change, rule 17) or the
   owner's command (rule 19). Commit 5's `mirrorLoginEmail` (`lib/auth.ts`) and `mirrorEmailToCoachRow`
   (`services/account-service.ts`), and the `user.update.after` hook that ran them, are deleted. A copy that fails
-  fails the login's change with it: Better Auth then answers the link with its 500 (to Sentry through
-  `reportEndpointFailure`) and nothing has changed, so the link can be opened again once the conflict is gone.
+  fails the login's change with it: Better Auth then answers the link with its 500 (to Sentry through `onAPIError`:
+  a throw from below the endpoint never becomes an answer the after hook reads) and nothing has changed, so the link
+  can be opened again once the conflict is gone.
 - **From birth.** `acceptClientInvitation` (`services/login-service.ts`) writes `clients.email` with `user_id`: the
   invited address, lower-cased as the login's. A coach who edited a pending client's address after the invite went
   out (the details sheet already says "An invitation already sent stays addressed to the old email.") no longer
   leaves the client row on an address the client doesn't sign in with. `createCoachLogin` already writes the
   login's address to the coach row.
-- **Who may change it.** Coaches and clients alike (D18). Commit 5's `refuseEmailChangeUnlessCoach` becomes the
-  check of the new address: a change to an address that a coach row or a client row of another login, or of no
-  login, already holds is answered as Better Auth answers an address with a login (`{ status: true }`, no email),
-  so no answer tells anyone which addresses are in use, and a pending client's invite can never meet an address
-  someone else took. It still reads who is asking through `readSessionUserId` first (no session: the endpoint's
-  own 401, so the check answers nobody signed out) and runs on `/change-email` alone (§2.9 #14).
+- **Who may change it.** Coaches and clients alike (D18). Commit 5's `refuseEmailChangeUnlessCoach` goes, and the
+  new address is checked where its first email is sent: `sendChangeEmailConfirmation` (`sendApprovalUnlessHeld`,
+  `lib/auth.ts`) sends "Approve your email change" only when no coach row or client row of another login, or of no
+  login, holds the new address. Better Auth calls it in the background once it has validated the request, read who
+  is asking (the cookie's or the bearer token's session), refused the address they have, looked for a login on the
+  new one and answered, so every answer is Better Auth's own, the same for an address in use and a free one, and a
+  held address gets no email (rule 17), as an address with a login does. A pending client's row is guarded while it
+  holds the address. (As built in 5.5; its §6 entry says why the check is not a before hook.)
 - **The client's card.** `components/client-portal/account-card.tsx` gains Change email. The dialog moves from
   `components/coach/` to `components/auth/` (both audiences) and takes its landing: `COACH_SETTINGS_PAGE` or a new
   `CLIENT_SETTINGS_PAGE` (`/client/settings`, `lib/constants.ts`); the client card hands it the session's address.
   `ChangeEmailLinkNotice` moves to `components/auth/` the same way, each Settings page hosting it behind its own
   Suspense boundary with its own landing (the client page is prerendered too).
 - **The coach's lock (D38).** `components/clients/details/details-groups.tsx` shows the Email field read-only, with
-  "The client changes this from their Settings.", for a client whose record carries `userId` (`lib/mappers.ts`).
-  The sheet sends `email` on every save, so the server's rule is about a change, not the field: `PATCH
-  /api/clients/[id]` answers 409 "This client changes their own email." for an `email` that differs from the
-  row's on a client row with a `user_id`, and the same address passes. A pending client's address stays the coach's.
+  "The client changes this from their Settings.", for a client whose record carries `userId` (`lib/mappers.ts`),
+  and its save sends no address for such a client. `PATCH /api/clients/[id]` answers 409 "This client changes
+  their own email." for an `email` that differs from the row's on a client row with a `user_id`, and an address a
+  save carries unchanged passes and writes nothing. Another address for a pending client is written by an UPDATE
+  that holds to `user_id IS NULL` (`updateClient`), so one who accepts their invite meanwhile keeps theirs (409). A
+  pending client's address stays the coach's.
 - **The owner's command (D39, rule 19).** `scripts/move-email.ts` (`npm run auth:move-email -- --project <ref>
   --email <current> --to <new>`) with `create-coach.ts`'s refusals (`scripts/project-ref.ts`: `--project`, the
   linked ref, `DATABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL` agree; off DEV only with an https `BETTER_AUTH_URL`),
@@ -1485,6 +1490,28 @@ Asked for by the owner on 2026-10-09, after commit 5 shipped coaches only (D18, 
   of the copies after birth, the lock, the command), current shape only.
 - The smoke seed (§7.3b): a pending client "Smoke · change email" under the owner's coach, its invite link in the
   handover.
+- Found by commit 5.5 (2026-10-09), in the code and in Better Auth 1.7.7's installed source:
+  - The client record carried no `userId`: `mapClientRow` (`lib/mappers.ts`) mapped none, and the `userId` there was
+    `mapCoachRow`'s. 5.5 maps it, as the coach's is; the client's own wire (`CLIENT_SELF_KEYS`) never carries it.
+  - The details sheet sends no address for a client with an account, rather than the one it was seeded with: a record
+    revalidated while the sheet is open would otherwise show one address and send another into the 409. The route's
+    same-address pass stays for any other caller.
+  - The new address's check was first built as a before hook on `/change-email` answering `{ status: true }`
+    itself. The second review found that, answering before Better Auth validated the rest of the body, it told a
+    held address (200) from a free one (Better Auth's 400 for, say, a `callbackURL` that is not a string) at once and
+    with no email. It moved into `sendChangeEmailConfirmation`, which Better Auth runs after it has answered; the
+    asker's own rows count for nothing there, since Better Auth refuses the address they have before it asks.
+  - verify-email runs in no transaction. With no session it makes one before its one UPDATE, so a copy that fails the
+    UPDATE leaves that session behind, its token never sent to any browser; it expires in a week.
+  - `deleteUserSessions` returns nothing, so `moveLoginEmail` counts the sessions it ends with `listSessions` first.
+  - Whether "Approve your email change" arrives still tells the asker whether the address is held, as it does for an
+    address with a login. Checking at the first link's click instead would send the approval and withhold only the
+    confirmation, but that changes rule 17's "no email"; left as built, for the owner. The check reads
+    `clients.email`, not `client_invitations.email`: an invitation whose row the coach re-addressed keeps its old
+    address unguarded.
+  - The coach's lock was first a read before the write; the first review found the gap. The UPDATE that writes a
+    pending client's address now holds to `user_id IS NULL` itself, and an address a save carries unchanged is never
+    written.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5,
@@ -1646,6 +1673,15 @@ arrives or the auth:last-link command. The browser smoke is mine.
   who never used the "Set your password" link and signs in with Google has none, and Change password answers
   `CREDENTIAL_ACCOUNT_NOT_FOUND`, which the dialog words as "Something went wrong. Try again." A change of a login's
   address, whatever makes it, runs migration 210's trigger (5.5); Google's linking changes no address.
+- Found by commit 5.5 in Better Auth 1.7.7's installed source (`oauth2/link-account.mjs`), two facts this commit must
+  build to:
+  - A Google sign-in finds its login by provider and Google account id first (`findAccountOwnerByKey`), before any
+    address, so a Google account linked to a login keeps signing it in after `npm run auth:move-email` moved its
+    address: the lost or taken inbox that command exists for. `moveLoginEmail` (`services/account-service.ts`) must
+    also delete the login's non-password accounts (`providerId` other than `credential`), with a test and the proof.
+  - The provider's `overrideUserInfoOnSignIn` stays off (`api/routes/callback.mjs` hands it to the linking): on, every
+    Google sign-in rewrites the login's address to Google's through `updateUser`, which the trigger copies, skipping
+    the new address's check and both emails. `account.accountLinking.updateUserInfoOnLink` never changes an address.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,

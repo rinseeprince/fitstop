@@ -295,6 +295,20 @@ export const getClientById = async (clientId: string, includeInactive = false): 
   return mapClientRow(data as ClientRowWithMeasurements);
 };
 
+/** PostgREST's answer when `.single()` finds no row. */
+const NO_ROW = "PGRST116";
+
+/** What the coach reads when a client with an account keeps their address against the coach's edit (D38, rule 18). */
+export const CLIENT_OWNS_EMAIL = "This client changes their own email.";
+
+/** A write of a client's address that found the client with a login: the route answers 409 with the message. */
+export class ClientEmailLockedError extends Error {
+  constructor() {
+    super(CLIENT_OWNS_EMAIL);
+    this.name = "ClientEmailLockedError";
+  }
+}
+
 // Update a client
 export const updateClient = async (
   clientId: string,
@@ -336,16 +350,21 @@ export const updateClient = async (
   // below. No reading is written here either — every weight and body fat on
   // this input becomes a row in the measurement log (below), never a column.
 
-  const { data, error } = await supabaseAdmin
-    .from("clients")
-    .update(updateData)
-    .eq("id", clientId)
-    .select(CLIENT_SELECT)
-    .single();
+  // A client with an account changes the address they sign in with themselves
+  // (D38): an address is written only while the client has no login. The
+  // route refuses another address for a client it read with one; this holds
+  // the write itself to it, for a client who accepts their invite between that
+  // read and this UPDATE, so the statement matches no row then.
+  let update = supabaseAdmin.from("clients").update(updateData).eq("id", clientId);
+  if (clientData.email !== undefined) update = update.is("user_id", null);
+  const { data, error } = await update.select(CLIENT_SELECT).single();
 
   if (error) {
     if (error.code === "23505") {
       throw new Error("A client with this email already exists");
+    }
+    if (error.code === NO_ROW && clientData.email !== undefined) {
+      throw new ClientEmailLockedError();
     }
     console.error("Failed to update client:", error);
     throw new Error("Failed to update client");

@@ -59,6 +59,7 @@ import { getCoachTodayString, getClientTodayString } from './today-service'
 import { addGoal } from './client-goal-writes-service'
 import type { MeasurementReading } from '@/lib/measurements/day-values'
 import {
+  ClientEmailLockedError,
   CreateClientInputError,
   createClient,
   getClientsForCoach,
@@ -77,6 +78,7 @@ function createMockQuery(result: { data: unknown; error: unknown; count?: number
     update: vi.fn().mockReturnThis(),
     delete: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    is: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
@@ -716,6 +718,45 @@ describe('Client Service', () => {
       expect(result.name).toBe('Updated Name')
       expect(mockQuery.update).toHaveBeenCalled()
       expect(mockQuery.eq).toHaveBeenCalledWith('id', 'client-123')
+    })
+
+    // D38: a client with an account changes the address they sign in with
+    // themselves, so an address is written only while the client has no login.
+    it('writes an address only to a client with no login: the UPDATE holds to user_id IS NULL', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow({ email: 'new@example.com' }), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', { email: 'new@example.com' })
+
+      expect(mockQuery.update.mock.calls[0][0].email).toBe('new@example.com')
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', 'client-123')
+      expect(mockQuery.is).toHaveBeenCalledWith('user_id', null)
+    })
+
+    it('refuses an address for a client who has a login by now: the UPDATE matched no row', async () => {
+      const mockQuery = createMockQuery({ data: null, error: { code: 'PGRST116', message: 'no rows' } })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await expect(updateClient('client-123', { name: 'Alex', email: 'new@example.com' })).rejects.toBeInstanceOf(ClientEmailLockedError)
+      await expect(updateClient('client-123', { email: 'new@example.com' })).rejects.toThrow('This client changes their own email.')
+    })
+
+    it('reads a write with no address that finds no row as a failure, not the address lock', async () => {
+      const mockQuery = createMockQuery({ data: null, error: { code: 'PGRST116', message: 'no rows' } })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await expect(updateClient('client-123', { name: 'Alex' })).rejects.toThrow('Failed to update client')
+      await expect(updateClient('client-123', { name: 'Alex' })).rejects.not.toBeInstanceOf(ClientEmailLockedError)
+    })
+
+    it('holds a write that carries no address to nothing more than the client', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', { name: 'New Name' })
+
+      expect(mockQuery.is).not.toHaveBeenCalled()
     })
 
     it('only updates provided fields', async () => {

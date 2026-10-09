@@ -16,9 +16,11 @@
  *      and nothing changes; its link sends "Confirm your new email" to the
  *      new address and still nothing changes; that link changes the login's
  *      address and the coach row's together, and the coach signs in with it
- *   3  a client's change of email is refused, by cookie, by bearer token and
- *      by the two together, and nothing is sent; the coach's own bearer token
- *      is let through
+ *   3  a change to an address a client row holds (an invited client's) gets
+ *      the answer an address with a login gets, 200 and no email, asked by a
+ *      client's cookie, by their bearer token and by the two together, the
+ *      coach's cookie beside the client's token; the coach's own bearer token,
+ *      to an address no one holds, is let through
  *   4  sign out everywhere: every session of the login is gone from the table
  * Cleanup removes the throwaway coach and client and every session minted.
  * No token, link, cookie or password is printed.
@@ -27,7 +29,7 @@ import "./env-bootstrap";
 
 import { createHmac } from "node:crypto";
 import { authPool } from "@/lib/auth";
-import { COACH_SETTINGS_PAGE } from "@/lib/constants";
+import { CLIENT_SETTINGS_PAGE, COACH_SETTINGS_PAGE } from "@/lib/constants";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { createThrowawayLogin, deleteThrowawayLogin, loginIdFor } from "./auth-fixtures";
 import { DEV_REF, projectEnv, refuseUnlessProject } from "./project-ref";
@@ -39,6 +41,8 @@ const STAMP = Date.now();
 const COACH_ADDRESS = `account-proof-${STAMP}@fixture.local`;
 const NEW_ADDRESS = `account-proof-${STAMP}-new@fixture.local`;
 const CLIENT_ADDRESS = `account-proof-${STAMP}-client@fixture.local`;
+/** An invited client's address: a client row holds it, and no login. */
+const HELD_ADDRESS = `account-proof-${STAMP}-held@fixture.local`;
 const ADDRESS_PATTERN = "account-proof-%@fixture.local";
 const COACH_NAME = "Account proof coach";
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -245,33 +249,51 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
     again ? { status: again.status, lands: landing(base, again), rows: afterAgain } : "no link"
   );
 
-  console.info("3. A client's change of email is refused, by cookie or bearer token, and nothing is sent");
+  console.info("3. A change to an address a client row holds gets the no-email answer, by cookie, by bearer token or both");
   const { data: clientRow, error: clientError } = await supabaseAdmin
     .from("clients")
     .insert({ coach_id: coachId, name: "Account proof client", email: CLIENT_ADDRESS, active: true, onboarding_status: "pending_intake", timezone: "Europe/London", user_id: null })
     .select("id")
     .single();
   if (clientError || !clientRow) throw new Error(`client insert: ${clientError?.message}`);
+  const { error: heldError } = await supabaseAdmin
+    .from("clients")
+    .insert({ coach_id: coachId, name: "Account proof invited client", email: HELD_ADDRESS, active: true, onboarding_status: "pending_intake", timezone: "Europe/London", user_id: null });
+  if (heldError) throw new Error(`invited client insert: ${heldError.message}`);
   const clientPassword = passwordFor("client");
   await createThrowawayLogin({ role: "client", email: CLIENT_ADDRESS, password: clientPassword, clientId: clientRow.id });
   const client = await signInOverHttp(base, CLIENT_ADDRESS, clientPassword, "client");
   const clientBearer = await signInForBearer(base, CLIENT_ADDRESS, clientPassword, "client, bearer");
   const askAs = (asker: ProofSession, newEmail: string) =>
-    request(base, "POST", "/api/auth/change-email", { session: asker, body: { newEmail, callbackURL: COACH_SETTINGS_PAGE } });
+    request(base, "POST", "/api/auth/change-email", { session: asker, body: { newEmail, callbackURL: CLIENT_SETTINGS_PAGE } });
+  /** Better Auth's answer to an address a login has: asked for, and nothing sent. */
+  const noEmailAnswer = (answer: Answer) => answer.status === 200 && JSON.stringify(answer.json) === JSON.stringify({ status: true });
   const sentBefore = box.emails.length;
-  const refused = await askAs(client, `account-proof-${STAMP}-client-new@fixture.local`);
-  check("with the client's cookie: 403, before Better Auth looks the new address up", refused.status === 403, evidence(refused));
-  const refusedBearer = await askAs(clientBearer, `account-proof-${STAMP}-client-bearer@fixture.local`);
-  check("with the client's bearer token and no cookie, as the client app sends it: 403", refusedBearer.status === 403, evidence(refusedBearer));
+  const byCookie = await askAs(client, HELD_ADDRESS);
+  check("with the client's cookie: 200 { status: true }, the answer an address with a login gets", noEmailAnswer(byCookie), evidence(byCookie));
+  const byBearer = await askAs(clientBearer, HELD_ADDRESS);
+  check("with the client's bearer token and no cookie, as the client app sends it: the same", noEmailAnswer(byBearer), evidence(byBearer));
   const mixed = { label: "coach's cookie, client's bearer", headers: { ...session.headers, ...clientBearer.headers } };
-  const refusedMixed = await askAs(mixed, `account-proof-${STAMP}-client-mixed@fixture.local`);
-  check("with the coach's cookie beside the client's bearer token, which Better Auth acts as: 403", refusedMixed.status === 403, evidence(refusedMixed));
+  const byBoth = await askAs(mixed, HELD_ADDRESS);
+  check("with the coach's cookie beside the client's bearer token, which Better Auth acts as: the same", noEmailAnswer(byBoth), evidence(byBoth));
+  // Acting as the client, Better Auth refuses their own address as "Email is the same"; acting as the coach, it
+  // would answer that address, which the client's login has, with the no-email answer.
+  const ownAddress = await askAs(mixed, CLIENT_ADDRESS);
+  check(
+    "by the two together, the client's own address: Better Auth's 400 \"Email is the same\", so it acts as the bearer's login, and the check it runs with it",
+    ownAddress.status === 400 && (ownAddress.json as { message?: string } | null)?.message === "Email is the same",
+    evidence(ownAddress)
+  );
   await new Promise((resolve) => setTimeout(resolve, 1_000));
   check("no email is sent", box.emails.length === sentBefore, { sent: box.emails.length - sentBefore });
   const { rows: clientLogin } = await authPool.query<{ email: string }>(`SELECT email FROM better_auth."user" WHERE email = $1`, [CLIENT_ADDRESS]);
-  check("the client's login keeps its address", clientLogin.length === 1);
+  const { data: heldRows } = await supabaseAdmin.from("clients").select("user_id").eq("email", HELD_ADDRESS);
+  check("the client's login keeps its address, and the invited client's row keeps its own, with no login", clientLogin.length === 1 && heldRows?.length === 1 && heldRows[0].user_id === null, { clientLogin, heldRows });
   const coachBearer = await signInForBearer(base, NEW_ADDRESS, secondPassword, "coach, bearer");
-  const allowed = await askAs(coachBearer, `account-proof-${STAMP}-third@fixture.local`);
+  const allowed = await request(base, "POST", "/api/auth/change-email", {
+    session: coachBearer,
+    body: { newEmail: `account-proof-${STAMP}-third@fixture.local`, callbackURL: COACH_SETTINGS_PAGE },
+  });
   check(
     "the control: the coach's own bearer token is read as the coach and let through, its approval sent, nothing changed",
     allowed.status === 200 &&

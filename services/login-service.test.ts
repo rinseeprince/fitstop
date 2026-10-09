@@ -104,7 +104,7 @@ describe("acceptClientInvitation", () => {
       {
         table: "clients",
         verb: "update",
-        row: { user_id: USER.id },
+        row: { user_id: USER.id, email: USER.email },
         filters: [["eq", "id", INVITATION.clientId], ["is", "user_id", null], ["select", "id"]],
       },
       {
@@ -118,6 +118,15 @@ describe("acceptClientInvitation", () => {
       vi.mocked(supabaseAdmin.from).mock.invocationCallOrder[2]
     );
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it("the client row takes the login's address with its link, the invited one as Better Auth stored it, whatever the row said before", async () => {
+    // The coach edited the pending row's address after the invite went out:
+    // the invitation, and so the login, keep the one the email went to.
+    await accept();
+    expect(api.createUser).toHaveBeenCalledWith(expect.objectContaining({ body: expect.objectContaining({ email: "Invited@Example.com" }) }));
+    const link = writes.find((write) => write.table === "clients");
+    expect(link?.row).toEqual({ user_id: USER.id, email: "invited@example.com" });
   });
 
   it.each(["invalid", "expired", "used"] as const)("a token whose invitation is %s is refused before anything is made", async (refusal) => {

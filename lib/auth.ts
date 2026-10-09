@@ -115,42 +115,10 @@ function refuseSetPasswordLandingOverHttp(ctx: GenericEndpointContext): void {
   }
 }
 
-/** Change email's endpoint. */
-const CHANGE_EMAIL_PATH = "/change-email"
-
-/**
- * Only a coach changes the email they sign in with (D18). A client's address
- * is the one their coach invited, which the coach's roster shows
- * (clients.email), and nothing keeps that copy in step with the login, so a
- * change asked for by any other login is refused before Better Auth looks up
- * the new address or sends anything. The client's Account card has no Change
- * email; this holds for a call made without it, a bearer token's included.
- *
- * Who is asking is read as the proxy and the seam read it (readSessionUserId):
- * the session the cookie or the bearer token names. This hook runs before the
- * bearer plugin's, and every before hook is handed the request as it came, so
- * the request's own cookie would miss a bearer token, and would name the
- * wrong login when a bearer token rides beside a cookie. A request with no
- * session is the endpoint's own to answer (401). The session and the role
- * are read on this path alone: readSessionUserId's own get-session call
- * passes through this hook too, and must go straight on. A session or a role
- * that cannot be read refuses the change.
- */
-async function refuseEmailChangeUnlessCoach(ctx: GenericEndpointContext): Promise<void> {
-  if (ctx.path !== CHANGE_EMAIL_PATH) return
-  const headers = ctx.headers ?? ctx.request?.headers
-  const userId = headers ? await readSessionUserId(headers) : null
-  if (!userId) return
-  const { isCoachLogin } = await import("@/services/account-service")
-  if (!(await isCoachLogin(userId))) {
-    throw new APIError("FORBIDDEN", { message: "Only a coach changes the email they sign in with." })
-  }
-}
-
-/** Better Auth's before hook: each refusal guards its own endpoint and lets every other request through. */
-export const refuseBeforeEndpoint = createAuthMiddleware(async (ctx) => {
+/** Better Auth's before hook: it refuses the set-password landing over HTTP and lets every other request through. */
+export const refuseBeforeEndpoint = createAuthMiddleware((ctx) => {
   refuseSetPasswordLandingOverHttp(ctx)
-  await refuseEmailChangeUnlessCoach(ctx)
+  return Promise.resolve()
 })
 
 /**
@@ -220,25 +188,36 @@ async function sendWithEmailService(source: string, send: (emails: typeof AuthEm
   }
 }
 
+/** The longest an address can be (a 64-character local part, the @ and a 255-character domain). */
+const ADDRESS_MAX_LENGTH = 320
+
+/** What Better Auth hands sendChangeEmailConfirmation: the asker's login, the new address and the approval's link. */
+type ApprovalRequest = { user: { id: string; email: string; name: string }; newEmail: string; url: string; token: string }
+
 /**
- * After Better Auth updates a login, the coach row's email follows its
- * address (D18, services/account-service.ts). Better Auth has written the
- * login by then, and the update that changes an address is the second link
- * of a change of email, a page the coach opened from an email: a throw here
- * would answer them with a raw error, the address changed all the same. So a
- * copy that fails goes to Sentry with the login's id, and the coach row keeps
- * the old address until it is repaired by hand: nothing else updates a
- * coach's login in this app. No screen reads the copy (the Account card and
- * the coach menus show the session's address).
+ * Change email's first email, "Approve your email change", to the address the
+ * asker signs in with, unless the new address is held by a coach row or a
+ * client row of another login, or of no login (rule 17,
+ * services/account-service.ts). Better Auth sends nothing for an address a
+ * login has; this sends nothing for one a row holds, or one longer than any
+ * address, for which no row is read. Better Auth calls this in the background
+ * once it has validated the request, read the session (the cookie's or the
+ * bearer token's, as `user`), refused the address the asker has, looked for a
+ * login on the new one and answered, so every answer is its own, the same for
+ * an address in use and a free one; only the asker's inbox, where no approval
+ * arrives, tells them apart, as it does for an address with a login. A row
+ * that can't be read sends nothing and reaches Sentry.
  */
-export async function mirrorLoginEmail(user: { id: string; email: string } | null): Promise<void> {
-  if (!user) return
+export async function sendApprovalUnlessHeld(data: ApprovalRequest): Promise<void> {
+  if (data.newEmail.length > ADDRESS_MAX_LENGTH) return
   try {
-    const { mirrorEmailToCoachRow } = await import("@/services/account-service")
-    await mirrorEmailToCoachRow(user)
+    const { isAddressHeldElsewhere } = await import("@/services/account-service")
+    if (await isAddressHeldElsewhere(data.newEmail, data.user.id)) return
   } catch (error) {
-    captureApiError(error, { source: "mirrorLoginEmail", userId: user.id })
+    captureApiError(error, { source: "sendChangeEmailConfirmation", userId: data.user.id })
+    return
   }
+  await sendWithEmailService("sendChangeEmailConfirmation", (emails) => emails.sendApproveEmailChangeEmail(data))
 }
 
 /**
@@ -284,13 +263,14 @@ export const auth = betterAuth({
     expiresIn: 60 * 60,
   },
   user: {
-    // A coach changes the email they sign in with (D18): "Approve your email
-    // change" goes to the current address first. A client doesn't
-    // (refuseEmailChangeUnlessCoach).
+    // A coach and a client change the email they sign in with (D18): "Approve
+    // your email change" goes to the current address first, unless the new
+    // address is someone else's (sendApprovalUnlessHeld). The one UPDATE that
+    // changes the address changes its coach and client rows with it
+    // (migration 210's trigger).
     changeEmail: {
       enabled: true,
-      sendChangeEmailConfirmation: (data) =>
-        sendWithEmailService("sendChangeEmailConfirmation", (emails) => emails.sendApproveEmailChangeEmail(data)),
+      sendChangeEmailConfirmation: sendApprovalUnlessHeld,
     },
   },
   // Better Auth's defaults, written down: a session lasts seven days from its
@@ -301,7 +281,7 @@ export const auth = betterAuth({
   // on in production, off under next dev (D16).
   rateLimit: { storage: "database" },
   databaseHooks: {
-    user: { create: { before: refuseUnlessOwnerOrInvite }, update: { after: mirrorLoginEmail } },
+    user: { create: { before: refuseUnlessOwnerOrInvite } },
   },
   hooks: { before: refuseBeforeEndpoint, after: reportEndpointFailure },
   onAPIError: { onError: (error) => reportUnexpectedAuthError(error) },

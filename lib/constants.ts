@@ -310,6 +310,9 @@ export const ACCOUNT_DELETED_PAGE = "/login?deleted=1";
 // the marker that has the login page say "Logged out successfully".
 export const LOGGED_OUT_PARAM = "logged-out";
 export const LOGGED_OUT_PAGE = `/login?${LOGGED_OUT_PARAM}=1`;
-// Where both of change email's emailed links land (rule 6): the coach's
-// Settings, whose Account card shows the address the coach signs in with.
+// Where both of change email's emailed links land (rules 6 and 17): the
+// Settings page of whoever asked, the coach's or the client's, which also
+// says when a link could no longer be used.
 export const COACH_SETTINGS_PAGE = "/settings";
+export const CLIENT_SETTINGS_PAGE = "/client/settings";
+export type SettingsPage = typeof COACH_SETTINGS_PAGE | typeof CLIENT_SETTINGS_PAGE;

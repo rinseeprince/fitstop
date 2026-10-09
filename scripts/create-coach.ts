@@ -19,7 +19,7 @@ import "./env-bootstrap";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 import { SET_PASSWORD_PAGE } from "@/lib/constants";
-import { DEV_REF, projectEnv, refuseUnlessProject, type ProjectEnv } from "./project-ref";
+import { DEV_REF, projectEnv, refuseLocalLink, refuseUnlessProject, type ProjectEnv } from "./project-ref";
 
 const USAGE = 'Usage: npm run coach:create -- --project <ref> --email <address> --name "<name>"';
 
@@ -50,20 +50,6 @@ export function parseCreateCoachArgs(argv: string[]): CoachToCreate {
 }
 
 /**
- * The link a coach is emailed opens BETTER_AUTH_URL's app: on DEV, next dev on
- * this machine; on any other project it must be the deployed app, which is
- * https. A production run left on .env.local's localhost address would email
- * a real coach a link to the owner's own machine.
- */
-export function refuseLocalLink(project: string, betterAuthUrl: string | undefined): void {
-  if (project === DEV_REF) return;
-  if (betterAuthUrl && URL.canParse(betterAuthUrl) && new URL(betterAuthUrl).protocol === "https:") return;
-  throw new Error(
-    `Refused: a coach on ${project} is emailed a link to BETTER_AUTH_URL, ${betterAuthUrl || "which is unset"}, and it must be the app's https address. Set BETTER_AUTH_URL and NEXT_PUBLIC_APP_URL to it. Nothing was read or written.`
-  );
-}
-
-/**
  * The command, from npm's arguments. A run the project guard or the link's
  * address refuses is refused before anything that reaches a database loads;
  * every refusal throws the sentence the command prints.
@@ -71,7 +57,7 @@ export function refuseLocalLink(project: string, betterAuthUrl: string | undefin
 export async function createCoach(argv: string[], readEnv: () => ProjectEnv = projectEnv): Promise<void> {
   const coach = parseCreateCoachArgs(argv);
   refuseUnlessProject(coach.project, readEnv());
-  refuseLocalLink(coach.project, process.env.BETTER_AUTH_URL);
+  refuseLocalLink(coach.project, process.env.BETTER_AUTH_URL, "a coach");
 
   // Loaded only once the project is the one meant: lib/auth starts Better
   // Auth, whose pool reaches the database.

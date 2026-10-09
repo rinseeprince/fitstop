@@ -9,7 +9,7 @@ import { memoryAdapter } from "better-auth/adapters/memory"
  * lib/auth.ts's rules and the options it hands Better Auth: the guard on
  * making a login (D9), the two-way password check (D7), its connection to the
  * database, its refusals at start-up, what reaches Sentry, and the Account
- * card's three changes (change password, change email, sign out everywhere).
+ * cards' changes (change password, change email, sign out everywhere).
  *
  * lib/auth.ts builds its pool and Better Auth at import. The constructor is
  * stubbed to keep the options it was given, so nothing connects; the pipeline
@@ -32,8 +32,8 @@ vi.mock("@/services/auth-email-service", () => ({
   sendApproveEmailChangeEmail: vi.fn(),
   sendConfirmNewEmailEmail: vi.fn(),
 }))
-// The app's rows behind Better Auth's hooks: services/account-service.test.ts proves the statements.
-vi.mock("@/services/account-service", () => ({ isCoachLogin: vi.fn(), mirrorEmailToCoachRow: vi.fn() }))
+// The app's rows behind Better Auth's hook: services/account-service.test.ts proves the statements.
+vi.mock("@/services/account-service", () => ({ isAddressHeldElsewhere: vi.fn() }))
 // Better Auth's background work goes to Next's after(), which keeps it alive
 // past the answer; here it only records the work, which runs on regardless.
 vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after: vi.fn() }))
@@ -43,7 +43,6 @@ import {
   auth,
   authPool,
   backgroundWorkSettled,
-  mirrorLoginEmail,
   readSessionUserId,
   runAfterAnswer,
   refuseBeforeEndpoint,
@@ -54,7 +53,7 @@ import {
 } from "./auth"
 import { captureApiError } from "@/lib/error-handler"
 import { sendApproveEmailChangeEmail, sendConfirmNewEmailEmail, sendPasswordLinkEmail } from "@/services/auth-email-service"
-import { isCoachLogin, mirrorEmailToCoachRow } from "@/services/account-service"
+import { isAddressHeldElsewhere } from "@/services/account-service"
 import { after } from "next/server"
 
 /** Every piece of background work handed to after() so far, settled. */
@@ -681,12 +680,13 @@ describe("change password (rule 6, D19): the current password, and every other d
   })
 })
 
-/** Change email's link a sender was handed, and its token, as the email carries them. */
-const CHANGE_EMAIL_LINK = /^http:\/\/localhost:3000\/api\/auth\/verify-email\?token=[\w-]+\.[\w-]+\.[\w-]+&callbackURL=%2Fsettings$/
+/** Change email's link a sender was handed, and its token, as the email carries them, landing on the asker's Settings. */
+const changeEmailLink = (landing: "/settings" | "/client/settings") =>
+  new RegExp(`^http://localhost:3000/api/auth/verify-email\\?token=[\\w-]+\\.[\\w-]+\\.[\\w-]+&callbackURL=${encodeURIComponent(landing)}$`)
 
 /**
- * The live instance, answering also as lib/auth.ts's `auth`: the coach-only
- * guard reads who is asking through readSessionUserId, which asks
+ * The live instance, answering also as lib/auth.ts's `auth`: the new
+ * address's check reads who is asking through readSessionUserId, which asks
  * `auth.api`, as the proxy and the seam do.
  */
 async function liveAuthAsApp() {
@@ -701,18 +701,17 @@ const askWithBearer = (instance: LiveInstance, token: string, cookie?: string) =
     new Request("http://localhost:3000/api/auth/change-email", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...(cookie ? { cookie } : {}) },
-      body: JSON.stringify({ newEmail: "new@example.com", callbackURL: "/settings" }),
+      body: JSON.stringify({ newEmail: "new@example.com", callbackURL: "/client/settings" }),
     })
   )
 
-describe("change email (rule 6, D18): approved at the current address, confirmed at the new, and the coach row follows", () => {
+describe("change email (rules 6 and 17, D18): approved at the current address, confirmed at the new, and an address someone else holds gets the no-email answer", () => {
   beforeEach(() => {
     vi.mocked(after).mockClear()
     vi.mocked(sendApproveEmailChangeEmail).mockReset()
     vi.mocked(sendConfirmNewEmailEmail).mockReset()
-    vi.mocked(mirrorEmailToCoachRow).mockReset()
-    vi.mocked(isCoachLogin).mockReset()
-    vi.mocked(isCoachLogin).mockResolvedValue(true)
+    vi.mocked(isAddressHeldElsewhere).mockReset()
+    vi.mocked(isAddressHeldElsewhere).mockResolvedValue(false)
   })
 
   afterEach(() => {
@@ -724,6 +723,8 @@ describe("change email (rule 6, D18): approved at the current address, confirmed
     expect(options.emailVerification?.expiresIn).toBe(60 * 60)
     const user = { id: "u", email: "coach@example.com", name: "Sam", emailVerified: true, createdAt: new Date(), updatedAt: new Date() }
     await options.user?.changeEmail?.sendChangeEmailConfirmation?.({ user, newEmail: "new@example.com", url: "approve-link", token: "t" })
+    // The new address is checked as the asker's, and no one else's: then the approval goes.
+    expect(isAddressHeldElsewhere).toHaveBeenCalledWith("new@example.com", "u")
     expect(sendApproveEmailChangeEmail).toHaveBeenCalledWith({ user, newEmail: "new@example.com", url: "approve-link", token: "t" })
     await options.emailVerification?.sendVerificationEmail?.({ user, url: "confirm-link", token: "t" })
     expect(sendConfirmNewEmailEmail).toHaveBeenCalledWith({ user, url: "confirm-link", token: "t" })
@@ -740,146 +741,184 @@ describe("change email (rule 6, D18): approved at the current address, confirmed
     expect(captureApiError).toHaveBeenCalledWith(failed, { source: "sendChangeEmailConfirmation" })
   })
 
-  it("in Better Auth's pipeline: only the second link changes the address, and the coach row follows it", async () => {
-    const { instance, db } = await liveAuthAsApp()
-    const id = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
-    const cookie = sessionCookie(await postSignIn(instance, "coach@example.com", PASSWORD))!
-
-    const asked = await postAsSignedIn(instance, "/change-email", { newEmail: "New@Example.com", callbackURL: "/settings" }, cookie)
-    expect(asked.status).toBe(200)
-    await backgroundSettled()
-    expect(isCoachLogin).toHaveBeenCalledWith(id)
-    expect(sendApproveEmailChangeEmail).toHaveBeenCalledTimes(1)
-    const [{ user: current, newEmail, url: approveUrl }] = vi.mocked(sendApproveEmailChangeEmail).mock.calls[0]
-    expect(current.email).toBe("coach@example.com")
-    expect(newEmail).toBe("new@example.com")
-    expect(approveUrl).toMatch(CHANGE_EMAIL_LINK)
-    // A token Better Auth signs: nothing is stored, and the address stands.
-    expect(db.verification).toEqual([])
-    expect(db.user[0].email).toBe("coach@example.com")
-    expect(sendConfirmNewEmailEmail).not.toHaveBeenCalled()
-
-    const approved = await instance.handler(new Request(approveUrl, { headers: { cookie } }))
-    expect(approved.headers.get("location")).toBe("/settings")
-    await backgroundSettled()
-    expect(sendConfirmNewEmailEmail).toHaveBeenCalledTimes(1)
-    const [{ user: next, url: confirmUrl }] = vi.mocked(sendConfirmNewEmailEmail).mock.calls[0]
-    expect(next.email).toBe("new@example.com")
-    expect(confirmUrl).toMatch(CHANGE_EMAIL_LINK)
-    expect(db.user[0].email).toBe("coach@example.com")
-    expect(mirrorEmailToCoachRow).not.toHaveBeenCalled()
-
-    const confirmed = await instance.handler(new Request(confirmUrl, { headers: { cookie } }))
-    expect(confirmed.headers.get("location")).toBe("/settings")
-    expect(db.user[0]).toMatchObject({ id, email: "new@example.com", emailVerified: true })
-    expect(mirrorEmailToCoachRow).toHaveBeenCalledTimes(1)
-    expect(mirrorEmailToCoachRow).toHaveBeenCalledWith(expect.objectContaining({ id, email: "new@example.com" }))
-    expect((await postSignIn(instance, "new@example.com", PASSWORD)).status).toBe(200)
-    expect((await postSignIn(instance, "coach@example.com", PASSWORD)).status).toBe(401)
+  it("runs no database hook of the app's after a login is updated: migration 210's trigger copies the address, in the statement that changes it", () => {
+    expect(Object.keys(options.databaseHooks?.user ?? {})).toEqual(["create"])
+    expect(options.databaseHooks?.user?.update).toBeUndefined()
   })
 
-  it("in Better Auth's pipeline: a client's change is refused before anything is looked up or sent", async () => {
-    vi.mocked(isCoachLogin).mockResolvedValue(false)
+  it.each([
+    ["a coach", "coach@example.com", "/settings"],
+    ["a client", "client@example.com", "/client/settings"],
+  ] as const)(
+    "in Better Auth's pipeline: %s's change is checked for the new address, and only the second link changes it, landing on their Settings",
+    async (_label, email, landing) => {
+      const { instance, db } = await liveAuthAsApp()
+      const id = seedLogin(db, email, bcrypt.hashSync(PASSWORD, 4))
+      const cookie = sessionCookie(await postSignIn(instance, email, PASSWORD))!
+
+      const asked = await postAsSignedIn(instance, "/change-email", { newEmail: "New@Example.com", callbackURL: landing }, cookie)
+      expect(asked.status).toBe(200)
+      await backgroundSettled()
+      // Lower-cased, as the endpoint reads it and every copy is stored, and asked as the login that asks.
+      expect(isAddressHeldElsewhere).toHaveBeenCalledWith("new@example.com", id)
+      expect(sendApproveEmailChangeEmail).toHaveBeenCalledTimes(1)
+      const [{ user: current, newEmail, url: approveUrl }] = vi.mocked(sendApproveEmailChangeEmail).mock.calls[0]
+      expect(current.email).toBe(email)
+      expect(newEmail).toBe("new@example.com")
+      expect(approveUrl).toMatch(changeEmailLink(landing))
+      // A token Better Auth signs: nothing is stored, and the address stands.
+      expect(db.verification).toEqual([])
+      expect(db.user[0].email).toBe(email)
+      expect(sendConfirmNewEmailEmail).not.toHaveBeenCalled()
+
+      const approved = await instance.handler(new Request(approveUrl, { headers: { cookie } }))
+      expect(approved.headers.get("location")).toBe(landing)
+      await backgroundSettled()
+      expect(sendConfirmNewEmailEmail).toHaveBeenCalledTimes(1)
+      const [{ user: next, url: confirmUrl }] = vi.mocked(sendConfirmNewEmailEmail).mock.calls[0]
+      expect(next.email).toBe("new@example.com")
+      expect(confirmUrl).toMatch(changeEmailLink(landing))
+      expect(db.user[0].email).toBe(email)
+
+      const confirmed = await instance.handler(new Request(confirmUrl, { headers: { cookie } }))
+      expect(confirmed.headers.get("location")).toBe(landing)
+      expect(db.user[0]).toMatchObject({ id, email: "new@example.com", emailVerified: true })
+      expect((await postSignIn(instance, "new@example.com", PASSWORD)).status).toBe(200)
+      expect((await postSignIn(instance, email, PASSWORD)).status).toBe(401)
+      // Only the change asked the check: neither link, nor the sign-ins.
+      expect(isAddressHeldElsewhere).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it("in Better Auth's pipeline: an address a coach row or a client row of someone else holds is answered as a free one and one a login has are, and no approval is sent for it", async () => {
+    vi.mocked(isAddressHeldElsewhere).mockImplementation((address) => Promise.resolve(address === "held@example.com"))
     const { instance, db } = await liveAuthAsApp()
-    const id = seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    seedLogin(db, "taken@example.com", bcrypt.hashSync(PASSWORD, 4))
     const cookie = sessionCookie(await postSignIn(instance, "client@example.com", PASSWORD))!
-    const refused = await postAsSignedIn(instance, "/change-email", { newEmail: "new@example.com", callbackURL: "/settings" }, cookie)
-    expect(refused.status).toBe(403)
-    expect(await refused.json()).toMatchObject({ message: "Only a coach changes the email they sign in with." })
+    const ask = (newEmail: string) => postAsSignedIn(instance, "/change-email", { newEmail, callbackURL: "/client/settings" }, cookie)
+
+    const held = await ask("held@example.com")
+    // An address a login has, which Better Auth answers itself, and a free one.
+    const taken = await ask("taken@example.com")
+    const free = await ask("free@example.com")
+    expect([held.status, taken.status, free.status]).toEqual([200, 200, 200])
+    const [heldBody, takenBody, freeBody] = await Promise.all([held.json(), taken.json(), free.json()])
+    expect(heldBody).toEqual(takenBody)
+    expect(heldBody).toEqual(freeBody)
     await backgroundSettled()
-    expect(isCoachLogin).toHaveBeenCalledWith(id)
-    expect(sendApproveEmailChangeEmail).not.toHaveBeenCalled()
+    // The free address alone gets its approval.
+    expect(vi.mocked(sendApproveEmailChangeEmail).mock.calls.map(([data]) => data.newEmail)).toEqual(["free@example.com"])
+    expect(db.verification).toEqual([])
     expect(db.user[0].email).toBe("client@example.com")
   })
 
-  it("in Better Auth's pipeline: a role that can't be read refuses the change, and nothing is sent", async () => {
-    vi.mocked(isCoachLogin).mockRejectedValue(new Error("Failed to read the login's role: timeout"))
+  it("in Better Auth's pipeline: a body Better Auth refuses is refused alike whoever holds the address, so no answer tests an address", async () => {
+    vi.mocked(isAddressHeldElsewhere).mockImplementation((address) => Promise.resolve(address === "held@example.com"))
     const { instance, db } = await liveAuthAsApp()
-    seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
-    const cookie = sessionCookie(await postSignIn(instance, "coach@example.com", PASSWORD))!
-    const refused = await postAsSignedIn(instance, "/change-email", { newEmail: "new@example.com", callbackURL: "/settings" }, cookie)
-    expect(refused.status).toBe(500)
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const cookie = sessionCookie(await postSignIn(instance, "client@example.com", PASSWORD))!
+    const held = await postAsSignedIn(instance, "/change-email", { newEmail: "held@example.com", callbackURL: 0 }, cookie)
+    const free = await postAsSignedIn(instance, "/change-email", { newEmail: "free@example.com", callbackURL: 0 }, cookie)
+    expect([held.status, free.status]).toEqual([400, 400])
+    expect(await held.json()).toEqual(await free.json())
     await backgroundSettled()
+    expect(isAddressHeldElsewhere).not.toHaveBeenCalled()
     expect(sendApproveEmailChangeEmail).not.toHaveBeenCalled()
   })
 
-  it("in Better Auth's pipeline: signed out, the endpoint answers 401 itself and no role is read; no other endpoint reads one", async () => {
+  it("in Better Auth's pipeline: a row that can't be read sends nothing and reaches Sentry, the answer Better Auth's own", async () => {
+    vi.mocked(captureApiError).mockClear()
+    const unreadable = new Error("Failed to read the client rows holding the address: timeout")
+    vi.mocked(isAddressHeldElsewhere).mockRejectedValue(unreadable)
+    const { instance, db } = await liveAuthAsApp()
+    const id = seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const cookie = sessionCookie(await postSignIn(instance, "client@example.com", PASSWORD))!
+    const answered = await postAsSignedIn(instance, "/change-email", { newEmail: "new@example.com", callbackURL: "/client/settings" }, cookie)
+    expect(answered.status).toBe(200)
+    expect(await answered.json()).toEqual({ status: true })
+    await backgroundSettled()
+    expect(sendApproveEmailChangeEmail).not.toHaveBeenCalled()
+    expect(captureApiError).toHaveBeenCalledWith(unreadable, { source: "sendChangeEmailConfirmation", userId: id })
+    expect(db.user[0].email).toBe("client@example.com")
+  })
+
+  it("in Better Auth's pipeline: signed out, the endpoint answers 401 itself and no row is read; no other endpoint reads one", async () => {
     const { instance, db } = await liveAuthAsApp()
     seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
     const signedOut = await postAsSignedIn(instance, "/change-email", { newEmail: "new@example.com", callbackURL: "/settings" })
     expect(signedOut.status).toBe(401)
     const cookie = sessionCookie(await postSignIn(instance, "coach@example.com", PASSWORD))!
     expect(await signedInAs(instance, cookie)).toBe(db.user[0].id)
-    expect(isCoachLogin).not.toHaveBeenCalled()
+    expect(isAddressHeldElsewhere).not.toHaveBeenCalled()
   })
 
-  it("in Better Auth's pipeline: a client's bearer token with no cookie, as the client app sends it, is refused as the cookie is", async () => {
-    vi.mocked(isCoachLogin).mockResolvedValue(false)
+  it("in Better Auth's pipeline: a string longer than any address, which Better Auth takes, is answered as any other and sent nothing, no row read", async () => {
+    const { instance, db } = await liveAuthAsApp()
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const cookie = sessionCookie(await postSignIn(instance, "client@example.com", PASSWORD))!
+    const answered = await postAsSignedIn(instance, "/change-email", { newEmail: `${"a".repeat(320)}@example.com`, callbackURL: "/client/settings" }, cookie)
+    expect(answered.status).toBe(200)
+    expect(await answered.json()).toEqual({ status: true })
+    await backgroundSettled()
+    expect(isAddressHeldElsewhere).not.toHaveBeenCalled()
+    expect(sendApproveEmailChangeEmail).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["no address", 42],
+    ["a string that is not an address", "not-an-address"],
+  ])("in Better Auth's pipeline: a body with %s is the endpoint's own to refuse, and no row is read", async (_label, newEmail) => {
+    const { instance, db } = await liveAuthAsApp()
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const cookie = sessionCookie(await postSignIn(instance, "client@example.com", PASSWORD))!
+    const refused = await postAsSignedIn(instance, "/change-email", { newEmail, callbackURL: "/client/settings" }, cookie)
+    expect(refused.status).toBe(400)
+    expect(isAddressHeldElsewhere).not.toHaveBeenCalled()
+  })
+
+  it("in Better Auth's pipeline: a bearer token with no cookie, as the client app sends it, is read as its login", async () => {
     const { instance, db } = await liveAuthAsApp()
     const id = seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    // Held for this login alone: an answer without an email shows the check read who the bearer token is.
+    vi.mocked(isAddressHeldElsewhere).mockImplementation((_address, userId) => Promise.resolve(userId === id))
     const token = (await postSignIn(instance, "client@example.com", PASSWORD)).headers.get("set-auth-token")!
     expect(token).toBeTruthy()
-    const refused = await askWithBearer(instance, token)
-    expect(refused.status).toBe(403)
+    const answered = await askWithBearer(instance, token)
+    expect(answered.status).toBe(200)
+    expect(await answered.json()).toEqual({ status: true })
     await backgroundSettled()
-    expect(isCoachLogin).toHaveBeenCalledWith(id)
+    expect(isAddressHeldElsewhere).toHaveBeenCalledWith("new@example.com", id)
     expect(sendApproveEmailChangeEmail).not.toHaveBeenCalled()
     expect(db.user[0].email).toBe("client@example.com")
   })
 
-  it("in Better Auth's pipeline: a client's bearer token beside a coach's cookie is refused, the bearer's login being the one Better Auth acts as", async () => {
+  it("in Better Auth's pipeline: a bearer token beside another login's cookie is read as the bearer's login, the one Better Auth acts as", async () => {
     const { instance, db } = await liveAuthAsApp()
     const coach = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
     const client = seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
-    vi.mocked(isCoachLogin).mockImplementation((userId) => Promise.resolve(userId === coach))
+    vi.mocked(isAddressHeldElsewhere).mockImplementation((_address, userId) => Promise.resolve(userId === client))
     const coachCookie = sessionCookie(await postSignIn(instance, "coach@example.com", PASSWORD))!
     const clientToken = (await postSignIn(instance, "client@example.com", PASSWORD)).headers.get("set-auth-token")!
-    const refused = await askWithBearer(instance, clientToken, coachCookie)
-    expect(refused.status).toBe(403)
+    const answered = await askWithBearer(instance, clientToken, coachCookie)
+    expect(answered.status).toBe(200)
     await backgroundSettled()
-    expect(isCoachLogin).toHaveBeenCalledWith(client)
-    expect(isCoachLogin).not.toHaveBeenCalledWith(coach)
+    expect(isAddressHeldElsewhere).toHaveBeenCalledWith("new@example.com", client)
+    expect(isAddressHeldElsewhere).not.toHaveBeenCalledWith("new@example.com", coach)
     expect(sendApproveEmailChangeEmail).not.toHaveBeenCalled()
   })
 
-  it("in Better Auth's pipeline: a coach's own bearer token is read as the coach and let through (the control)", async () => {
+  it("in Better Auth's pipeline: a login's own bearer token, to an address no one else holds, is let through and the approval sent (the control)", async () => {
     const { instance, db } = await liveAuthAsApp()
-    const id = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
-    const token = (await postSignIn(instance, "coach@example.com", PASSWORD)).headers.get("set-auth-token")!
+    const id = seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const token = (await postSignIn(instance, "client@example.com", PASSWORD)).headers.get("set-auth-token")!
     const asked = await askWithBearer(instance, token)
     expect(asked.status).toBe(200)
     await backgroundSettled()
-    expect(isCoachLogin).toHaveBeenCalledWith(id)
+    expect(isAddressHeldElsewhere).toHaveBeenCalledWith("new@example.com", id)
     expect(sendApproveEmailChangeEmail).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(sendApproveEmailChangeEmail).mock.calls[0][0].user.email).toBe("coach@example.com")
-  })
-})
-
-describe("the coach row's email follows the login (mirrorLoginEmail, D18)", () => {
-  beforeEach(() => {
-    vi.mocked(mirrorEmailToCoachRow).mockReset()
-    vi.mocked(captureApiError).mockClear()
-  })
-
-  it("is the hook Better Auth runs after every update of a login", () => {
-    expect(options.databaseHooks?.user?.update?.after).toBe(mirrorLoginEmail)
-  })
-
-  it("copies the login's address through services/account-service.ts", async () => {
-    await mirrorLoginEmail({ id: "user-1", email: "new@example.com" })
-    expect(mirrorEmailToCoachRow).toHaveBeenCalledWith({ id: "user-1", email: "new@example.com" })
-  })
-
-  it("a copy that fails reaches Sentry with the login's id and throws nothing: Better Auth has written the login by then", async () => {
-    const failed = new Error("Failed to copy the login's email to the coach row: timeout")
-    vi.mocked(mirrorEmailToCoachRow).mockRejectedValueOnce(failed)
-    await expect(mirrorLoginEmail({ id: "user-1", email: "new@example.com" })).resolves.toBeUndefined()
-    expect(captureApiError).toHaveBeenCalledWith(failed, { source: "mirrorLoginEmail", userId: "user-1" })
-  })
-
-  it("an update that found no login copies nothing", async () => {
-    await mirrorLoginEmail(null)
-    expect(mirrorEmailToCoachRow).not.toHaveBeenCalled()
+    expect(vi.mocked(sendApproveEmailChangeEmail).mock.calls[0][0].user.email).toBe("client@example.com")
+    expect(vi.mocked(sendApproveEmailChangeEmail).mock.calls[0][0].url).toMatch(changeEmailLink("/client/settings"))
   })
 })
 
