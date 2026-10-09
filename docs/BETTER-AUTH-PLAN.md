@@ -1406,7 +1406,7 @@ smoke is mine.
 
 ### Commit 5.1 — `feat(brand): every screen, email and tab title says Atletafit`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `8d4d8d00` 2026-10-09.**
 
 Asked for by the owner on 2026-10-09 ("It's not called coachub"), after commit 5 (D30; rule 9's subject; §2.11).
 - `PRODUCT_NAME = "Atletafit"` in `lib/constants.ts`, read by every place §2.11 lists: the six email templates,
