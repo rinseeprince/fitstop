@@ -31,10 +31,11 @@
  *      the login and the client row read the invited address
  *   7  npm run auth:move-email for the client: refused with nothing changed
  *      for an address with no login, a --to a login, a coach row or a client
- *      row holds, and production's ref against DEV's env; then the move: the
- *      login and the client row on the new address, its sessions 0, "Reset
- *      your password" in the mailbox for the new address (the command's
- *      Resend pointed at it), and the reset works
+ *      row holds, and production's ref against DEV's env; then the move, a
+ *      Google account linked to the login first: the login and the client row
+ *      on the new address, the Google account unlinked and the password row
+ *      kept, its sessions 0, "Reset your password" in the mailbox for the new
+ *      address (the command's Resend pointed at it), and the reset works
  * Cleanup removes every throwaway login, coach row and client row, and every
  * session minted. No token, link, cookie or password is printed.
  */
@@ -169,6 +170,15 @@ async function login(userId: string): Promise<{ email: string | null; verified: 
     [userId]
   );
   return rows[0];
+}
+
+/** A login's account rows by provider, read through Better Auth's connection: "credential" is its password. */
+async function providersOf(userId: string): Promise<string[]> {
+  const { rows } = await authPool.query<{ providerId: string }>(
+    `SELECT "providerId" FROM better_auth.account WHERE "userId" = $1 ORDER BY "providerId"`,
+    [userId]
+  );
+  return rows.map((row) => row.providerId);
 }
 
 /** A client row's address and login. */
@@ -445,11 +455,19 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
   );
 
   check("before the move the login holds several live sessions", before.sessions >= 2, before);
+  // A Google account linked to the login, the row Better Auth's linking writes:
+  // it signs the login in by the Google account whatever the login's address.
+  await authPool.query(
+    `INSERT INTO better_auth.account ("userId", "accountId", "providerId", "createdAt", "updatedAt") VALUES ($1, $2, 'google', now(), now())`,
+    [client.userId, `email-follows-${STAMP}-google`]
+  );
+  check("before the move a Google account is linked to the login beside its password", (await providersOf(client.userId)).join() === "credential,google");
   const moved = await runMoveEmail(base, box, ["--project", DEV_REF, "--email", CLIENT_NEW, "--to", MOVED]);
   check(
-    "the move: it exits 0, saying it moved the login and how many sessions it ended",
+    "the move: it exits 0, saying it moved the login, unlinked its Google account and how many sessions it ended",
     moved.code === 0 &&
       moved.stdout.includes(`Moved the login of ${CLIENT_NEW} to ${MOVED}`) &&
+      moved.stdout.includes("Unlinked 1 Google account(s)") &&
       moved.stdout.includes(`Ended ${before.sessions} session(s)`) &&
       moved.stdout.includes(`npm run auth:last-link -- --email ${MOVED}`),
     { code: moved.code, stdout: moved.stdout.slice(-400), stderr: moved.stderr.slice(-300) }
@@ -460,6 +478,8 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
     movedLogin.email === MOVED && movedLogin.verified === true && movedLogin.sessions === 0 && (await clientRow(clientId))?.email === MOVED,
     movedLogin
   );
+  const providersNow = await providersOf(client.userId);
+  check("the Google account is unlinked and the password row kept", providersNow.join() === "credential", providersNow);
   check(
     "the client's open session and the minted one open nothing any more",
     (await request(base, "GET", "/api/client/me", { session: clientSession })).status === 401 &&

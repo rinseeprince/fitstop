@@ -499,8 +499,8 @@ export const auth = betterAuth({
       update: { after: mirrorEmailToCoachRow },                   // commit 5
     },
   },
-  socialProviders: { google: { clientId: process.env.GOOGLE_CLIENT_ID!, clientSecret: process.env.GOOGLE_CLIENT_SECRET!, disableSignUp: true, prompt: "select_account" } },   // commit 7
-  account: { accountLinking: { enabled: true, trustedProviders: ["google"] } },   // commit 7
+  socialProviders: { google: { clientId: process.env.GOOGLE_CLIENT_ID!, clientSecret: process.env.GOOGLE_CLIENT_SECRET!, disableSignUp: true, prompt: "select_account", overrideUserInfoOnSignIn: false } },   // commit 7
+  account: { accountLinking: { enabled: true } },   // commit 7: no trusted provider (§2.7)
   advanced: { database: { generateId: "uuid" } },
   plugins: [admin({ adminUserIds }), bearer(), expo()],           // expo(): commit 8
   telemetry: { enabled: false },
@@ -700,10 +700,14 @@ owner verifies a domain (§9.1).
 
 ### 2.7 Google (commit 7)
 
-`socialProviders.google` with `disableSignUp: true` and `account.accountLinking.trustedProviders: ["google"]`:
-a Google sign-in whose address matches a login links to it and signs in; an unknown address is refused with
-`signup_disabled` and lands on `/login?error=signup_disabled`; a login whose `emailVerified` were false would be
-refused with `account_not_linked` (none is: D4). Google's console needs the redirect URI
+`socialProviders.google` with `disableSignUp: true`, `prompt: "select_account"` and `overrideUserInfoOnSignIn:
+false`, and `account.accountLinking: { enabled: true }` with no trusted provider (commit 7, from 1.7.7's
+`oauth2/link-account.mjs`: a trusted provider adds nothing for an address Google has verified, and links one it
+hasn't, so anyone who made a Google account on another person's address would sign in as them): a Google sign-in
+whose address matches a login links to it and signs in when Google has verified the address (`email_verified`)
+and the login's is verified; an unknown address is refused with `signup_disabled` and lands on
+`/login?error=signup_disabled`; a Google address Google hasn't verified, or a login whose `emailVerified` were
+false (none is: D4), is refused with `account_not_linked`. Google's console needs the redirect URI
 `<app>/api/auth/callback/google` (and localhost's for DEV) — §9.1. The same button serves coaches and clients
 (D3): after sign-in Better Auth lands on `/`, and the proxy sends the role home.
 
@@ -771,6 +775,11 @@ refused with `account_not_linked` (none is: D4). Google's console needs the redi
 10. Google: `disableSignUp`, `prompt`, `account.accountLinking.trustedProviders`; an unknown address with sign-up
     disabled → `?error=signup_disabled` on `errorCallbackURL`; linking needs the local login's `emailVerified`.
     https://www.better-auth.com/docs/authentication/google, https://www.better-auth.com/docs/concepts/oauth.
+    (Commit 7, in the installed source: linking by address also needs Google's `email_verified` unless the
+    provider is trusted, which is all `trustedProviders` changes; `/sign-in/social` is POST only, answering 200
+    `{ url, redirect: true }` with a `Location` header, which Better Auth's browser client follows; the callback
+    reads the ID token Google's token endpoint answers without checking its signature, so a test can stand in for
+    Google there.)
 11. Supabase migration guide: ids are kept by inserting with the same `id`; `encrypted_password` is copied into
     `account.password` with `providerId: 'credential'` and `accountId: user.id`; `email_confirmed_at` →
     `emailVerified`; the move invalidates every session. https://www.better-auth.com/docs/guides/supabase-migration-guide.
@@ -892,7 +901,7 @@ can be vetoed before its commit starts.
 | D20 | Delete account asks for the password, then an emailed link; photos and files go first, then one SQL function per role, then Better Auth deletes the login. | The password check is free; the link makes a stolen session useless for deletion; objects first so a retry can always finish. |
 | D21 | A client's delete removes their client row and everything under it; the coach sees the client gone and keeps nothing. | UK GDPR erasure of what the app holds about the person; the owner wasn't asked for anything softer. |
 | D22 | The seam's functions keep their names, signatures and `request` argument; `lib/require-*-auth.ts` don't change; 120+ routes don't change. | The seam was built for this (the lockdown collapsed every identity read onto it). |
-| D23 | Google is sign-in only, linked by email to the existing login (trusted provider); an unknown address lands on `/login` with "There's no account for that Google email."; the button exists only once the keys do (commit 7). | `disableSignUp` plus `trustedProviders`; today's button never worked, so showing it before commit 7 is a lie. |
+| D23 | Google is sign-in only, linked by email to the existing login when Google has verified the address (no trusted provider, commit 7); an unknown address lands on `/login` with "There's no account for that Google email."; the button exists only once the keys do (commit 7: the app refuses to start without them). | `disableSignUp`; a trusted provider would link an address Google hasn't verified (§2.7); today's button never worked, so showing it before commit 7 is a lie. |
 | D24 | The admin plugin is on for `createUser`; `adminUserIds` is read from `AUTH_ADMIN_USER_IDS` (the owner's user id) for the admin endpoints that need a session later. | The owner's command needs `createUser` alone, which 1.7.7 allows without a session. |
 | D25 | `bearer()` and `expo()` are on; the scheme is `atletafit://`; the CSRF check passes bearer requests; no app code. | The audit's first priority before any RN build; the scheme must be chosen now or it is a server change later. |
 | D26 | Packages: `better-auth` pinned at `1.7.7`, `pg`, `kysely`, `bcryptjs`, `@better-auth/expo`; `@supabase/ssr` removed. Approved by the owner's go on this plan (CONVENTIONS "ask before npm install"). npm's resolver refuses `better-auth` here (its optional SvelteKit peer wants Vite 8; vitest has Vite 7), so commit 1 resolved it lockfile-only in a scratch copy (`npm install --package-lock-only --force`), checked the lockfile gained only better-auth's own packages, copied it in and ran a plain `npm install`; removing `@supabase/ssr` (3) and adding `@better-auth/expo` (8) take the same route. `--legacy-peer-deps` is never the answer: it drops the 53 peer-installed packages, `@testing-library/dom` among them. | The adapter form with `schemaName` takes a Kysely dialect; bcryptjs is pure JS (no native build on the host); `pg` is Better Auth's peer. |
@@ -1736,6 +1745,40 @@ arrives or the auth:last-link command. The browser smoke is mine.
   - The provider's `overrideUserInfoOnSignIn` stays off (`api/routes/callback.mjs` hands it to the linking): on, every
     Google sign-in rewrites the login's address to Google's through `updateUser`, which the trigger copies, skipping
     the new address's check and both emails. `account.accountLinking.updateUserInfoOnLink` never changes an address.
+- Decided by commit 7 (each in its handover, for the owner to veto):
+  - No trusted provider (§2.7, D23): a trusted Google is linked even when Google hasn't verified the address, and
+    an untrusted one only when it has. A Google account whose address Google hasn't verified is refused with
+    `account_not_linked`, rule 8's sentence.
+  - Both dialogs say it: Change password and Delete account answer a login with no password (Better Auth's
+    `CREDENTIAL_ACCOUNT_NOT_FOUND`) with "Your account has no password yet. Log out, then use "Forgot your
+    password?" on the sign-in page to set one." (`lib/auth-error-messages.ts`); a reset makes a login's first
+    password, and the proxy keeps a signed-in person off `/login`, hence "Log out".
+  - A failed Google sign-in is never silent (the review's): every failure lands on `/login?error=<code>`
+    (`onAPIError.errorURL` too, so none reaches Better Auth's own error page), says "Couldn't sign in with Google.
+    Try again." unless it is one of rule 8's two refusals or a person who said no on Google's page
+    (`access_denied`, nothing said), and reaches Sentry with its code unless it is one of those three
+    (`reportFailedGoogleSignIn`, an after hook: Better Auth answers these with redirects, which `onAPIError` skips).
+  - The keys are required: `lib/auth.ts` refuses to start without `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, as
+    it does without its other keys, so every environment needs them (DEV's `.env.local`, PROD's §8.2, the proofs'
+    and the owner's commands, which read `.env.local`).
+  - `moveLoginEmail` removes every account of the login but its password, in one DELETE through Better Auth's
+    adapter, after the move, when no Google account can link again by the old address, and before the sessions
+    end, so no session made meanwhile lives on; the command prints how many it unlinked. Proof 5.5 links a Google
+    account to the moved client first and shows it gone, the password row kept.
+  - The button is back where it was before commit 2, above the form with its "Or continue with" divider and
+    Lucide's `Chrome` mark; while it is in flight the whole form is busy, and a page the browser restores from its
+    back-forward cache (Back from Google's page) is idle again.
+- Found by commit 7, left for the owner (its handover):
+  - A Google account linked to a login keeps signing it in after the login's address changes through Change
+    email (rules 6 and 17): Better Auth finds it by the Google account first. Only `auth:move-email` unlinks. A
+    coach who linked a work Google account and then moved their login to a personal address can still be signed
+    in by whoever controls the work account. The fix the review proposes: migration 210's trigger also deletes
+    the login's accounts other than its password in the statement that changes its address, which covers every
+    path that changes one (and would replace `moveLoginEmail`'s own step). Rule 8 reads as if that were so.
+  - `better_auth.account` has no index or UNIQUE key on `("providerId", "accountId")`: every Google sign-in's
+    account lookup scans the table (one row per login and per link: 47 on DEV), and two first sign-ins of one
+    Google account at the same instant could both link it, after which Better Auth refuses that account's every
+    sign-in ("Multiple accounts match"). A migration's work.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -2038,7 +2081,8 @@ runs this counts PROD's `auth.users` first: with no app on PROD none should appe
 copied by rerunning 209's section 1 (idempotent) before the deploy.
 
 1. **Before, the owner (§9.1 "before PROD"):** PROD's `DATABASE_URL`, a new `BETTER_AUTH_SECRET`,
-   `BETTER_AUTH_URL` = the coaches' https address, `EMAIL_FROM` on the verified domain, Google's PROD redirect URI,
+   `BETTER_AUTH_URL` = the coaches' https address, `EMAIL_FROM` on the verified domain, Google's PROD redirect URI
+   and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (from commit 7 the app refuses to start without them),
    all set where the app runs. `AUTH_ADMIN_USER_IDS` stays empty until step 5. Better Auth's limiter reads the
    caller's address from `x-forwarded-for` only when it holds one address (Vercel's shape); on a host that sends a
    chain, set `advanced.ipAddress` (the header, or the trusted proxies) in `lib/auth.ts` first, or every caller
@@ -2117,7 +2161,8 @@ URIs `http://localhost:3000/api/auth/callback/google` → `GOOGLE_CLIENT_ID` and
 
 **Before PROD (§8.2):** PROD's pooler string for `etezzztgafcotyahgijk`; a new `BETTER_AUTH_SECRET` (never DEV's);
 `BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL` = the coaches' https address; `EMAIL_FROM` on the verified domain;
-the Google client gains the PROD origin and `https://<that address>/api/auth/callback/google`; all of it set
+the Google client gains the PROD origin and `https://<that address>/api/auth/callback/google`, and its
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` go with the rest (the app refuses to start without them); all of it set
 where PROD's app runs.
 
 **After the switch (PROD, and DEV once commit 2 has soaked):** Supabase dashboard → Authentication → Sign In /

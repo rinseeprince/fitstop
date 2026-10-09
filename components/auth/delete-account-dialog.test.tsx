@@ -102,6 +102,11 @@ describe("DeleteAccountDialog", () => {
   it.each([
     ["a refusal of another kind", { data: null, error: { status: 500, code: "FAILED", message: "boom" } }, "Something went wrong. Try again."],
     ["too many attempts", { data: null, error: { status: 429, message: "Too many requests" } }, "Too many attempts. Wait a moment and try again."],
+    [
+      "a login with no password yet (a coach who signs in with Google)",
+      { data: null, error: { status: 400, code: "CREDENTIAL_ACCOUNT_NOT_FOUND", message: "Credential account not found" } },
+      'Your account has no password yet. Log out, then use "Forgot your password?" on the sign-in page to set one.',
+    ],
   ])("%s goes to a toast with its sentence, nothing raw, and the dialog stays open", async (_label, answer, sentence) => {
     answers(answer);
     const { onOpenChange } = renderDialog();

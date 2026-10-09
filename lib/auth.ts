@@ -6,7 +6,14 @@ import bcrypt from "bcryptjs"
 import { PostgresDialect } from "kysely"
 import { after } from "next/server"
 import { Pool, TypeOverrides, types } from "pg"
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/constants"
+import {
+  LOGIN_ERROR_GOOGLE_CANCELLED,
+  LOGIN_ERROR_GOOGLE_NO_ACCOUNT,
+  LOGIN_ERROR_GOOGLE_NOT_LINKED,
+  LOGIN_PAGE,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+} from "@/lib/constants"
 import { captureApiError } from "@/lib/error-handler"
 import { landsOnSetPassword } from "@/lib/password-link"
 import { supabaseConnection } from "@/lib/supabase-connection"
@@ -53,6 +60,11 @@ const adminUserIds = (process.env.AUTH_ADMIN_USER_IDS ?? "")
   .split(",")
   .map((id) => id.trim())
   .filter(Boolean)
+// The Google OAuth client behind Continue with Google (D23, D29), made in
+// Google Cloud Console with <BETTER_AUTH_URL>/api/auth/callback/google as an
+// authorized redirect URI.
+const googleClientId = requiredEnv("GOOGLE_CLIENT_ID")
+const googleClientSecret = requiredEnv("GOOGLE_CLIENT_SECRET")
 
 /** How long a request waits to reach the pooler before it fails, instead of the operating system's TCP timeout. */
 const CONNECTION_TIMEOUT_MS = 10_000
@@ -306,14 +318,41 @@ export async function deleteRecordsBeforeLogin(user: { id: string }): Promise<vo
   }
 }
 
+/** Better Auth's OAuth callback, where Google sends the browser back (/callback/google). */
+const OAUTH_CALLBACK_PREFIX = "/callback/"
+
+/**
+ * The refusals of a Google sign-in a person meets in normal use: the two the
+ * login page words (rule 8), and a person who said no on Google's page.
+ */
+const EXPECTED_GOOGLE_REFUSALS = new Set([LOGIN_ERROR_GOOGLE_NO_ACCOUNT, LOGIN_ERROR_GOOGLE_NOT_LINKED, LOGIN_ERROR_GOOGLE_CANCELLED])
+
+/**
+ * Better Auth answers a failed Google sign-in with a redirect to
+ * /login?error=<code>, which no error handler sees (onAPIError skips
+ * redirects, and a redirect is no 500). A code that is not one of the
+ * expected refusals is a fault, a wrong client secret, a state that expired or
+ * was used, a database read, and goes to Sentry with it, or every Google
+ * sign-in could fail with nobody told.
+ */
+export function reportFailedGoogleSignIn(returned: unknown, endpoint: string): void {
+  if (!endpoint.startsWith(OAUTH_CALLBACK_PREFIX) || !isAPIError(returned) || returned.statusCode !== 302) return
+  const location = new Headers(returned.headers).get("location")
+  const code = location ? new URL(location, baseURL).searchParams.get("error") : null
+  if (!code || EXPECTED_GOOGLE_REFUSALS.has(code)) return
+  captureApiError(new Error(`Continue with Google failed: ${code}`), { route: `/api/auth${endpoint}`, error: code })
+}
+
 /**
  * Better Auth turns an error its endpoint throws into the endpoint's answer
  * before onAPIError could see it, its own 500s included (a database fault
- * behind /get-session answers 500 FAILED_TO_GET_SESSION). An after hook reads
- * what the endpoint returned, so those reach Sentry too; onAPIError keeps the
- * throws that never become an answer.
+ * behind /get-session answers 500 FAILED_TO_GET_SESSION), and answers a failed
+ * Google sign-in with a redirect. An after hook reads what the endpoint
+ * returned, so those reach Sentry too; onAPIError keeps the throws that never
+ * become an answer.
  */
 export const reportEndpointFailure = createAuthMiddleware((ctx) => {
+  reportFailedGoogleSignIn(ctx.context.returned, ctx.path)
   if (isAPIError(ctx.context.returned)) reportUnexpectedAuthError(ctx.context.returned, ctx.path)
   return Promise.resolve()
 })
@@ -368,6 +407,32 @@ export const auth = betterAuth({
       beforeDelete: deleteRecordsBeforeLogin,
     },
   },
+  // Continue with Google, for sign-in only (rule 8, D3, D23): coaches and
+  // clients alike sign in to the login that has their Google address, and
+  // Google never makes one. A Google address with no login lands on
+  // /login?error=signup_disabled. Google's account chooser shows every time,
+  // so a shared browser never signs in as whoever used Google last. The
+  // override stays off: on, every Google sign-in would rewrite the login's
+  // address to the Google account's, skipping change email's check and both
+  // its emails (rule 17).
+  socialProviders: {
+    google: {
+      clientId: googleClientId,
+      clientSecret: googleClientSecret,
+      disableSignUp: true,
+      prompt: "select_account",
+      overrideUserInfoOnSignIn: false,
+    },
+  },
+  // A Google sign-in finds its login by the Google account first (one linked
+  // before signs in whatever the login's address is now), then by address.
+  // By address, Better Auth links it only when Google says it has verified
+  // that the address is the account's and the login's is verified (D4). No
+  // trusted provider: a trusted Google is linked even when Google hasn't
+  // verified the address, so someone who made a Google account on another
+  // person's address would sign in as them. Linking never changes a login's
+  // address.
+  account: { accountLinking: { enabled: true } },
   // Better Auth's defaults, written down: a session lasts seven days from its
   // last renewal, and a use a day or more after that renews it. No cookie
   // cache, so a revoked session ends on its next request (D15).
@@ -381,7 +446,10 @@ export const auth = betterAuth({
     user: { create: { before: refuseUnlessOwnerOrInvite } },
   },
   hooks: { before: refuseBeforeEndpoint, after: reportEndpointFailure },
-  onAPIError: { onError: (error) => reportUnexpectedAuthError(error) },
+  // A Google sign-in that fails before the button's own errorCallbackURL is
+  // known (a state that expired or was used, a database read) lands on the
+  // login page with its error too, never on Better Auth's own error page.
+  onAPIError: { onError: (error) => reportUnexpectedAuthError(error), errorURL: LOGIN_PAGE },
   // The database makes every new id (uuid, gen_random_uuid()), and a copied
   // login kept its Supabase one: every login's id has the type of the user_id
   // columns that point at it.

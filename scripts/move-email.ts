@@ -7,8 +7,9 @@
  *
  * The owner confirms who is asking first; there is no recovery email. The
  * login moves to the new address everywhere at once (its coach and client rows
- * with it, migration 210), every session of it ends, and "Reset your password"
- * goes to the new address (moveLoginEmail, services/account-service.ts). An
+ * with it, migration 210), every Google account linked to it is unlinked,
+ * every session of it ends, and "Reset your password" goes to the new address
+ * (moveLoginEmail, services/account-service.ts). An
  * address with no login, and a new one that any login, coach row or client
  * row holds, are refused with nothing changed. It runs only when --project,
  * the linked project, DATABASE_URL and NEXT_PUBLIC_SUPABASE_URL all name one
@@ -95,6 +96,7 @@ export async function moveEmail(argv: string[], readEnv: () => ProjectEnv = proj
 
   const landing = new URL(RESET_PASSWORD_PAGE, process.env.BETTER_AUTH_URL).href;
   console.info(`Moved the login of ${move.email} to ${move.to} (user id ${result.userId}), its coach and client rows with it.`);
+  console.info(`Unlinked ${result.linkedAccountsRemoved} Google account(s): none signs it in any more.`);
   console.info(`Ended ${result.sessionsEnded} session(s): every device it was signed in on is signed out.`);
   console.info(`"Reset your password" sent to ${move.to}. Its link lasts one hour and lands on ${landing}.`);
   // A failed send is never thrown (forgot password answers every address

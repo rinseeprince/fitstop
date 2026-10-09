@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -10,24 +10,61 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
+import { Chrome, Loader2 } from "lucide-react";
 import { loginSchema, type LoginFormData } from "@/lib/validations/auth";
+import { authClient } from "@/lib/auth-client";
 import { authErrorSentence } from "@/lib/auth-error-messages";
-import { PRODUCT_NAME } from "@/lib/constants";
+import { LOGIN_PAGE, PRODUCT_NAME } from "@/lib/constants";
 import { LoginNotice } from "@/components/auth/login-notice";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
+  // Continue with Google in flight, until the browser has left for Google.
+  const [googlePending, setGooglePending] = useState(false);
 
   const {
     register,
     handleSubmit,
     setError,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
+  const busy = isSubmitting || googlePending;
+
+  // Back from Google's page, the browser may show this page as it was left,
+  // busy, from its back-forward cache: nothing is in flight any more.
+  useEffect(() => {
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) setGooglePending(false);
+    };
+    window.addEventListener("pageshow", restored);
+    return () => window.removeEventListener("pageshow", restored);
+  }, []);
+
+  // Continue with Google (rule 8, D3): Better Auth answers Google's sign-in
+  // page and the browser goes there. Google sends it back to Better Auth's
+  // callback, which signs in the login that has the Google address and lands
+  // on /, where the proxy sends each role home (F11); a refusal lands on
+  // /login?error=…, which the notice above words.
+  const continueWithGoogle = async () => {
+    // An earlier sign-in's sentence is about that attempt, not this one.
+    clearErrors("root.signIn");
+    setGooglePending(true);
+    let refusal: unknown = null;
+    try {
+      const { error } = await authClient.signIn.social({ provider: "google", callbackURL: "/", errorCallbackURL: LOGIN_PAGE });
+      refusal = error;
+    } catch (failure) {
+      console.error("Continue with Google failed:", failure);
+      refusal = failure;
+    }
+    if (!refusal) return;
+    setGooglePending(false);
+    setError("root.signIn", { message: authErrorSentence(refusal) });
+  };
 
   const onSubmit = async (data: LoginFormData) => {
     try {
@@ -109,6 +146,39 @@ export default function LoginPage() {
             <LoginNotice />
           </Suspense>
 
+          {/* Continue with Google */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className="mb-6"
+          >
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full rounded-xs h-11"
+              onClick={continueWithGoogle}
+              disabled={busy}
+            >
+              {googlePending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Chrome className="h-4 w-4 mr-2" />
+              )}
+              Continue with Google
+            </Button>
+          </motion.div>
+
+          {/* Divider */}
+          <div className="relative mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+            </div>
+          </div>
+
           {/* Email/Password form */}
           <motion.form
             initial={{ opacity: 0 }}
@@ -124,7 +194,7 @@ export default function LoginPage() {
                 type="email"
                 placeholder="coach@example.com"
                 className="rounded-xs h-11"
-                disabled={isSubmitting}
+                disabled={busy}
                 {...register("email")}
               />
               {errors.email && (
@@ -147,7 +217,7 @@ export default function LoginPage() {
                 type="password"
                 placeholder="••••••••"
                 className="rounded-xs h-11"
-                disabled={isSubmitting}
+                disabled={busy}
                 {...register("password")}
               />
               {errors.password && (
@@ -158,7 +228,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               className="w-full rounded-xs h-11 bg-primary hover:bg-primary/90 transition-colors"
-              disabled={isSubmitting}
+              disabled={busy}
             >
               {isSubmitting ? (
                 <>

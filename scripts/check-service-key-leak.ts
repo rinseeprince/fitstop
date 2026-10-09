@@ -1,8 +1,8 @@
 /**
  * Server-secret containment gate. Asserts that the server's secrets cannot
  * reach the browser, and exits non-zero if one can: SUPABASE_SERVICE_ROLE_KEY,
- * held by services/supabase-admin.ts, and the database password and
- * BETTER_AUTH_SECRET, held by lib/auth.ts.
+ * held by services/supabase-admin.ts, and the database password,
+ * BETTER_AUTH_SECRET and GOOGLE_CLIENT_SECRET, held by lib/auth.ts.
  *
  *   npx tsx scripts/check-service-key-leak.ts                  (or: npm run check:service-key)
  *   npx tsx scripts/check-service-key-leak.ts --require-bundle (pre-deploy: demands a prod build)
@@ -18,8 +18,8 @@
  *      for the service key's value, its bare JWT signature segment (in case the
  *      value is re-encoded or chunk-split) and its literal env-var name, and for
  *      the values of the database password (as DATABASE_URL writes it, and
- *      decoded) and BETTER_AUTH_SECRET (their names are not scanned: Better
- *      Auth's own browser code may spell them).
+ *      decoded), BETTER_AUTH_SECRET and GOOGLE_CLIENT_SECRET (their names are
+ *      not scanned: Better Auth's own browser code may spell them).
  *
  * EVERY CLAUSE CARRIES A POSITIVE CONTROL
  * A grep that finds nothing and a grep that is silently broken look identical.
@@ -65,7 +65,7 @@ const SKIP_DIRS = new Set([
 /** The modules that hold a server secret, each the root of clause 1's walk. */
 const SEEDS = [
   { path: join(ROOT, "services/supabase-admin.ts"), holds: "the service-role client" },
-  { path: join(ROOT, "lib/auth.ts"), holds: "the database password and Better Auth's signing secret" },
+  { path: join(ROOT, "lib/auth.ts"), holds: "the database password, Better Auth's signing secret and the Google client secret" },
 ] as const;
 
 /** A secret shorter than this could match unrelated bundle text, so a zero-hit scan for it would prove nothing. */
@@ -324,18 +324,20 @@ export function databasePasswordForms(databaseUrl: string): string[] {
 
 /**
  * What the bundle scan searches for besides the service key: each form of the
- * database password, and BETTER_AUTH_SECRET's value. A secret that is missing,
+ * database password, and BETTER_AUTH_SECRET's and GOOGLE_CLIENT_SECRET's values. A secret that is missing,
  * a password with no form, and any form shorter than MIN_SCANNABLE_SECRET are
  * named in `unscannable` instead: a zero-hit scan for them would prove nothing.
  */
 export function otherSecretNeedles(
   databaseUrl: string | null,
-  authSecret: string | null
+  authSecret: string | null,
+  googleClientSecret: string | null
 ): { needles: Array<{ label: string; value: string }>; unscannable: string[] } {
   const passwordForms = databaseUrl ? databasePasswordForms(databaseUrl) : [];
   const needles = [
     ...passwordForms.map((value, i) => ({ label: i === 0 ? "database password" : "database password, decoded", value })),
     { label: "BETTER_AUTH_SECRET value", value: authSecret ?? "" },
+    { label: "GOOGLE_CLIENT_SECRET value", value: googleClientSecret ?? "" },
   ];
   const unscannable = [
     ...(passwordForms.length === 0 ? ["database password"] : []),
@@ -396,7 +398,8 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   const control = readEnvVar(CONTROL_VAR);
   const { needles: otherSecrets, unscannable } = otherSecretNeedles(
     readEnvVar("DATABASE_URL"),
-    readEnvVar("BETTER_AUTH_SECRET")
+    readEnvVar("BETTER_AUTH_SECRET"),
+    readEnvVar("GOOGLE_CLIENT_SECRET")
   );
 
   const available = BUNDLE_DIRS.filter((b) => existsSync(b.path));
@@ -454,7 +457,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
       scan.valueHits.length + scan.signatureHits.length + scan.nameHits.length;
     const otherLeaked = scan.secretHits.reduce((sum, { hits }) => sum + hits.length, 0);
     if (leaked > 0) problems.push(`${leaked} service-role reference(s) in browser-served output`);
-    if (otherLeaked > 0) problems.push(`${otherLeaked} database password or Better Auth secret value(s) in browser-served output`);
+    if (otherLeaked > 0) problems.push(`${otherLeaked} database password, Better Auth secret or Google client secret value(s) in browser-served output`);
     if (leaked + otherLeaked === 0 && scan.controlHits.length > 0) {
       console.info("  PASS");
     }
@@ -473,9 +476,10 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
     console.error(`FAILED — ${problems.length} problem(s):`);
     for (const p of problems) console.error(`  - ${p}`);
     console.error(
-      "\nThe service-role key bypasses RLS, and the database password and Better" +
-        "\nAuth's secret open every login. Anything reaching the browser with one of" +
-        "\nthem grants every visitor that access. Do not deploy."
+      "\nThe service-role key bypasses RLS, the database password and Better Auth's" +
+        "\nsecret open every login, and the Google client secret lets anyone act as" +
+        "\nthis app to Google. Anything reaching the browser with one of them grants" +
+        "\nevery visitor that access. Do not deploy."
     );
     return 1;
   }

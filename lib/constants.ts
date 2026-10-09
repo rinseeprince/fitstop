@@ -288,9 +288,22 @@ export const CHECK_IN_REVIEW_TIMEOUT_MS = 120_000;
 // reflection is the longest), so a client's own words reach the model whole.
 export const AI_PROMPT_TEXT_LIMIT = 5000;
 
+// The login page: where a Google sign-in that fails or is refused lands, as
+// the button's errorCallbackURL and Better Auth's errorURL, with ?error=.
+export const LOGIN_PAGE = "/login";
 // The error the proxy sends a signed-in visitor to /login with when
 // their role cannot be read; the login page's notice is its only reader.
 export const LOGIN_ERROR_PROFILE_UNAVAILABLE = "profile_unavailable";
+// The two errors Better Auth sends a refused Continue with Google to /login
+// with (rule 8, D23), its own codes: a Google address no login has (Google
+// never makes one), and one whose login Better Auth won't link it to. The
+// login page's notice says the same sentence for both.
+export const LOGIN_ERROR_GOOGLE_NO_ACCOUNT = "signup_disabled";
+export const LOGIN_ERROR_GOOGLE_NOT_LINKED = "account_not_linked";
+// Google's own code for a person who said no on Google's page: their choice,
+// so the login page says nothing and Sentry hears nothing. Any other error a
+// Google sign-in lands on /login with is a failure.
+export const LOGIN_ERROR_GOOGLE_CANCELLED = "access_denied";
 
 // The lengths Better Auth holds every password it sets to (D19): scrypt has
 // no 72-byte limit, so the longest is bcrypt's no longer.

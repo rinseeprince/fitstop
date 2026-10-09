@@ -99,7 +99,7 @@ describe("moveEmail: the command", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, "info").mockImplementation(() => {});
-    mocks.moveLoginEmail.mockResolvedValue({ moved: true, userId: "user-1", sessionsEnded: 3 });
+    mocks.moveLoginEmail.mockResolvedValue({ moved: true, userId: "user-1", linkedAccountsRemoved: 1, sessionsEnded: 3 });
     mocks.backgroundWorkSettled.mockResolvedValue(undefined);
     mocks.endPool.mockResolvedValue(undefined);
   });
@@ -122,7 +122,7 @@ describe("moveEmail: the command", () => {
     expect(mocks.loaded).toEqual({ auth: false, accountService: false });
   });
 
-  it("on DEV: moves the login, waits for the email's send before the pool ends, and prints the move, the sessions ended and the link's landing", async () => {
+  it("on DEV: moves the login, waits for the email's send before the pool ends, and prints the move, the Google accounts unlinked, the sessions ended and the link's landing", async () => {
     vi.stubEnv("BETTER_AUTH_URL", "http://localhost:3000");
     const moveEmail = await freshCommand();
     await moveEmail(flagsFor(DEV_REF), () => envOf(DEV_REF));
@@ -130,6 +130,7 @@ describe("moveEmail: the command", () => {
     expect(mocks.backgroundWorkSettled.mock.invocationCallOrder[0]).toBeLessThan(mocks.endPool.mock.invocationCallOrder[0]);
     expect(vi.mocked(console.info).mock.calls.map(([line]) => line)).toEqual([
       `Moved the login of ${CURRENT} to ${NEW} (user id user-1), its coach and client rows with it.`,
+      "Unlinked 1 Google account(s): none signs it in any more.",
       "Ended 3 session(s): every device it was signed in on is signed out.",
       `"Reset your password" sent to ${NEW}. Its link lasts one hour and lands on http://localhost:3000/reset-password.`,
       `If it doesn't arrive: npm run auth:last-link -- --email ${NEW}`,

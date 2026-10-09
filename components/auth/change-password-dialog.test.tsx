@@ -83,6 +83,11 @@ describe("ChangePasswordDialog", () => {
 
   it.each([
     ["too many attempts (429)", { status: 429 }, "Too many attempts. Wait a moment and try again."],
+    [
+      "a login with no password yet (a coach who signs in with Google)",
+      { status: 400, code: "CREDENTIAL_ACCOUNT_NOT_FOUND" },
+      'Your account has no password yet. Log out, then use "Forgot your password?" on the sign-in page to set one.',
+    ],
     ["any other refusal", { status: 500, code: "FAILED_TO_GET_SESSION" }, "Something went wrong. Try again."],
   ])("%s is said in a toast, and the dialog stays open", async (_label, error, sentence) => {
     answers({ data: null, error });

@@ -16,6 +16,13 @@ describe("authErrorSentence", () => {
     expect(authErrorSentence({ status: 400, code: "TOKEN_EXPIRED" })).toBe("This link has expired. Request a new one.");
   });
 
+  it("a login with no password, refused by Change password or Delete account, is told how to set one", () => {
+    expect(authErrorSentence({ status: 400, code: "CREDENTIAL_ACCOUNT_NOT_FOUND" })).toBe(
+      'Your account has no password yet. Log out, then use "Forgot your password?" on the sign-in page to set one.'
+    );
+    expect(AUTH_ERROR_SENTENCES.noPassword).not.toMatch(/—/);
+  });
+
   it("the limiter's answer says to wait, whatever its code (rule 15)", () => {
     expect(authErrorSentence({ status: 429 })).toBe("Too many attempts. Wait a moment and try again.");
     expect(authErrorSentence({ status: 429, code: "INVALID_EMAIL_OR_PASSWORD" })).toBe(AUTH_ERROR_SENTENCES.tooManyAttempts);

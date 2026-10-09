@@ -879,7 +879,7 @@
 
   ## 19. Configuration
   - .env files: .env.local
-  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` with the optional `AUTH_ADMIN_USER_IDS` (all four at their read site in `lib/auth.ts`), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY` with the optional `EMAIL_FROM` (the sender, at its read site in `services/email-service.ts`), `NEXT_PUBLIC_APP_URL`, and `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`. If you create `.env.example`, backfill it from those.
+  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` with the optional `AUTH_ADMIN_USER_IDS`, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (Continue with Google; all six at their read site in `lib/auth.ts`), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY` with the optional `EMAIL_FROM` (the sender, at its read site in `services/email-service.ts`), `NEXT_PUBLIC_APP_URL`, and `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`. If you create `.env.example`, backfill it from those.
   - Secrets: Never in code, use vault/secrets manager for prod
   ## 20. Units
 

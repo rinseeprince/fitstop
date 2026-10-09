@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, afterAll, afterEach, beforeEach } from "vitest"
+import { createHash } from "node:crypto"
 import bcrypt from "bcryptjs"
 import type { BetterAuthOptions } from "better-auth"
 import { hashPassword } from "better-auth/crypto"
@@ -21,6 +22,8 @@ const ENV = vi.hoisted(() => ({
   BETTER_AUTH_SECRET: "test-secret-that-is-at-least-thirty-two-characters",
   BETTER_AUTH_URL: "http://localhost:3000",
   NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+  GOOGLE_CLIENT_ID: "test-client-id.apps.googleusercontent.com",
+  GOOGLE_CLIENT_SECRET: "test-google-client-secret",
 }))
 vi.hoisted(() => {
   for (const [name, value] of Object.entries(ENV)) vi.stubEnv(name, value)
@@ -67,7 +70,13 @@ import { after } from "next/server"
 
 /** Every piece of background work handed to after() so far, settled. */
 const backgroundSettled = () => Promise.all(vi.mocked(after).mock.calls.map(([task]) => task as Promise<unknown>))
-import { ACCOUNT_DELETED_PAGE, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/constants"
+import {
+  ACCOUNT_DELETED_PAGE,
+  LOGIN_ERROR_GOOGLE_NO_ACCOUNT,
+  LOGIN_ERROR_GOOGLE_NOT_LINKED,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+} from "@/lib/constants"
 import { SUPABASE_ROOT_CA } from "@/lib/supabase-connection"
 
 /** What lib/auth.ts handed Better Auth, read as Better Auth's own option type. */
@@ -77,13 +86,18 @@ type Row = Record<string, unknown>
 
 /**
  * The real Better Auth with lib/auth.ts's options, its rows in memory; email
- * and password may be swapped. Under NODE_ENV=test Better Auth skips its origin
- * check unless told not to; `originCheck` runs it, as the server always does.
+ * and password, and the social providers, may be swapped. Under NODE_ENV=test
+ * Better Auth skips its origin check unless told not to; `originCheck` runs
+ * it, as the server always does.
  */
 async function liveAuth(
   emailAndPassword?: BetterAuthOptions["emailAndPassword"],
   db: Record<string, Row[]> = { user: [], session: [], account: [], verification: [], rateLimit: [] },
-  { originCheck = false, rateLimited = false }: { originCheck?: boolean; rateLimited?: boolean } = {}
+  {
+    originCheck = false,
+    rateLimited = false,
+    socialProviders,
+  }: { originCheck?: boolean; rateLimited?: boolean; socialProviders?: BetterAuthOptions["socialProviders"] } = {}
 ) {
   const { betterAuth } = await vi.importActual<typeof import("better-auth")>("better-auth")
   const instance = betterAuth({
@@ -93,6 +107,7 @@ async function liveAuth(
     advanced: { ...auth.options.advanced, ...(originCheck ? { disableOriginCheck: false } : {}) },
     // The limiter runs in production only; rateLimited switches it on, its rules as lib/auth.ts wrote them.
     ...(rateLimited ? { rateLimit: { ...auth.options.rateLimit, enabled: true, storage: "memory" as const } } : {}),
+    socialProviders: socialProviders ?? auth.options.socialProviders,
   })
   return { instance, db }
 }
@@ -1134,5 +1149,297 @@ describe("delete account's two callbacks", () => {
     expect(refused).toBeInstanceOf(APIError)
     expect(refused).toMatchObject({ statusCode: 500, body: { message: ACCOUNT_NOT_DELETED, code: "ACCOUNT_NOT_DELETED" } })
     expect(captureApiError).not.toHaveBeenCalled()
+  })
+})
+
+/** Google's sign-in page, the callback Google sends the browser back to, and Google's token endpoint, which the callback asks. */
+const GOOGLE_AUTHORIZE = "https://accounts.google.com/o/oauth2/v2/auth"
+const GOOGLE_CALLBACK = "http://localhost:3000/api/auth/callback/google"
+const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
+
+/** The login page's Continue with Google, as authClient.signIn.social posts it: landing on /, or refused, on /login. */
+const askGoogle = (instance: LiveInstance) =>
+  instance.handler(
+    new Request("http://localhost:3000/api/auth/sign-in/social", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://localhost:3000" },
+      body: JSON.stringify({ provider: "google", callbackURL: "/", errorCallbackURL: "/login" }),
+    })
+  )
+
+/** A Google account, as its ID token describes it. */
+type GoogleAccount = { sub: string; email: string; email_verified: boolean; name?: string }
+
+/**
+ * The ID token Google's token endpoint answers with. Better Auth reads it from
+ * the answer to its own request to Google and checks no signature there, so
+ * an unsigned one stands in for Google's.
+ */
+function googleIdToken(account: GoogleAccount): string {
+  const part = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url")
+  const now = Math.floor(Date.now() / 1000)
+  const claims = { iss: "https://accounts.google.com", aud: ENV.GOOGLE_CLIENT_ID, iat: now, exp: now + 3600, name: "Google Name", ...account }
+  return [part({ alg: "RS256", kid: "test", typ: "JWT" }), part(claims), "signature"].join(".")
+}
+
+/** The button's request answered: Google's sign-in page, and the browser's state cookie, as the browser carries them to Google and back. */
+async function startGoogle(instance: LiveInstance) {
+  const asked = await askGoogle(instance)
+  const authorize = new URL(asked.headers.get("location") ?? "")
+  const cookie = asked.headers.getSetCookie().map((set) => set.split(";")[0]).join("; ")
+  return { authorize, state: authorize.searchParams.get("state") ?? "", cookie }
+}
+
+/**
+ * Google sending the browser back to the callback, `query` its own (a code,
+ * or Google's error), with the browser's state cookie unless `cookie` is
+ * empty. Better Auth trades a code at Google's token endpoint, answered here
+ * as Google answers for `account`, or with `refusal` (a trade Google refuses).
+ * Returns the callback's answer and each trade's form.
+ */
+async function returnFromGoogle(
+  instance: LiveInstance,
+  { state, cookie }: { state: string; cookie: string },
+  account: GoogleAccount,
+  { query = "code=google-code", refusal }: { query?: string; refusal?: Response } = {}
+) {
+  const trades: URLSearchParams[] = []
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url !== GOOGLE_TOKEN) return Promise.reject(new Error(`No other request leaves the callback: ${url}`))
+      trades.push(new URLSearchParams(String(init?.body)))
+      return Promise.resolve(
+        refusal ??
+          Response.json({ access_token: "google-access-token", expires_in: 3599, token_type: "Bearer", scope: "openid email profile", id_token: googleIdToken(account) })
+      )
+    })
+  )
+  try {
+    const back = await instance.handler(new Request(`${GOOGLE_CALLBACK}?${query}&state=${state}`, { headers: cookie ? { cookie } : {} }))
+    return { back, trades }
+  } finally {
+    vi.unstubAllGlobals()
+  }
+}
+
+/** Continue with Google from the click to the landing, Google answering for `account`. */
+async function signInWithGoogle(instance: LiveInstance, account: GoogleAccount) {
+  return returnFromGoogle(instance, await startGoogle(instance), account)
+}
+
+describe("Continue with Google (rule 8, D3, D23): sign-in only, to the login that has the Google address", () => {
+  it("is Google alone, its keys from the env, sign-up off, the account chooser every time, and the login's address never rewritten", () => {
+    expect(Object.keys(options.socialProviders ?? {})).toEqual(["google"])
+    expect(options.socialProviders?.google).toEqual({
+      clientId: ENV.GOOGLE_CLIENT_ID,
+      clientSecret: ENV.GOOGLE_CLIENT_SECRET,
+      disableSignUp: true,
+      prompt: "select_account",
+      overrideUserInfoOnSignIn: false,
+    })
+  })
+
+  it("links by address as Better Auth does by default: no trusted provider, and nothing of the Google profile copied onto the login", () => {
+    expect(options.account?.accountLinking).toEqual({ enabled: true })
+  })
+
+  it("in Better Auth's pipeline: the button's request answers Google's sign-in page, with the app's callback, the chooser and a PKCE challenge", async () => {
+    const { instance, db } = await liveAuth()
+    const asked = await askGoogle(instance)
+    expect(asked.status).toBe(200)
+    const body = (await asked.json()) as { url: string; redirect: boolean }
+    expect(body.redirect).toBe(true)
+    expect(asked.headers.get("location")).toBe(body.url)
+    const url = new URL(body.url)
+    expect(`${url.origin}${url.pathname}`).toBe(GOOGLE_AUTHORIZE)
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      client_id: ENV.GOOGLE_CLIENT_ID,
+      redirect_uri: GOOGLE_CALLBACK,
+      response_type: "code",
+      prompt: "select_account",
+      code_challenge_method: "S256",
+    })
+    expect(url.searchParams.get("scope")?.split(" ").sort()).toEqual(["email", "openid", "profile"])
+    expect(url.searchParams.get("state")).toBeTruthy()
+    expect(url.searchParams.get("code_challenge")).toBeTruthy()
+    expect(body.url).not.toContain(ENV.GOOGLE_CLIENT_SECRET)
+    // The state the callback checks, kept for ten minutes.
+    expect(db.verification).toHaveLength(1)
+  })
+
+  it("in Better Auth's pipeline: a Google address no login has lands on /login?error=signup_disabled, and nothing is made", async () => {
+    const { instance, db } = await liveAuth()
+    const { back, trades } = await signInWithGoogle(instance, { sub: "google-1", email: "stranger@example.com", email_verified: true })
+    expect(back.status).toBe(302)
+    expect(back.headers.get("location")).toBe(`/login?error=${LOGIN_ERROR_GOOGLE_NO_ACCOUNT}`)
+    expect(db.user).toEqual([])
+    expect(db.account).toEqual([])
+    expect(db.session).toEqual([])
+    // The code was traded once, with the callback the button sent Google.
+    expect(trades.map((form) => form.get("redirect_uri"))).toEqual([GOOGLE_CALLBACK])
+  })
+
+  it("in Better Auth's pipeline: with Google's own refusal off, the guard on making a login still refuses it, and nothing is made", async () => {
+    const { instance, db } = await liveAuth(undefined, undefined, {
+      socialProviders: {
+        google: { clientId: ENV.GOOGLE_CLIENT_ID, clientSecret: ENV.GOOGLE_CLIENT_SECRET, disableSignUp: false, prompt: "select_account", overrideUserInfoOnSignIn: false },
+      },
+    })
+    const { back } = await signInWithGoogle(instance, { sub: "google-1", email: "stranger@example.com", email_verified: true })
+    // Better Auth answers the guard's refusal itself, with no redirect: the second lock, behind disableSignUp.
+    expect(back.status).toBe(403)
+    expect(await back.json()).toMatchObject({ message: "Accounts are created by invitation." })
+    expect(db.user).toEqual([])
+    expect(db.account).toEqual([])
+    expect(db.session).toEqual([])
+  })
+
+  it("in Better Auth's pipeline: a Google address a login has signs that login in, links the Google account to it, lands on /, and changes nothing of the login", async () => {
+    const { instance, db } = await liveAuth()
+    const id = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const { back } = await signInWithGoogle(instance, { sub: "google-1", email: "Coach@Example.com", email_verified: true, name: "Someone Else" })
+    expect(back.status).toBe(302)
+    expect(back.headers.get("location")).toBe("/")
+    expect(await signedInAs(instance, sessionCookie(back)!)).toBe(id)
+    expect(db.account).toEqual([
+      expect.objectContaining({ providerId: "credential", userId: id }),
+      expect.objectContaining({ providerId: "google", accountId: "google-1", userId: id }),
+    ])
+    expect(db.user).toEqual([expect.objectContaining({ id, email: "coach@example.com", name: "Proof", emailVerified: true })])
+  })
+
+  it.each([
+    ["Google hasn't verified that the address is the account's", false, true],
+    ["the login's address isn't verified", true, false],
+  ])(
+    "in Better Auth's pipeline: a Google address a login has is not linked when %s: /login?error=account_not_linked, and nothing is made",
+    async (_label, googleVerified, loginVerified) => {
+      const { instance, db } = await liveAuth()
+      const id = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4), loginVerified)
+      const { back } = await signInWithGoogle(instance, { sub: "google-1", email: "coach@example.com", email_verified: googleVerified })
+      expect(back.status).toBe(302)
+      expect(back.headers.get("location")).toBe(`/login?error=${LOGIN_ERROR_GOOGLE_NOT_LINKED}`)
+      expect(db.account).toEqual([expect.objectContaining({ providerId: "credential", userId: id })])
+      expect(db.session).toEqual([])
+    }
+  )
+
+  it("in Better Auth's pipeline: a linked Google account signs its login in by the account, after the login's address moved too, and never rewrites the address", async () => {
+    const { instance, db } = await liveAuth()
+    const id = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    await signInWithGoogle(instance, { sub: "google-1", email: "coach@example.com", email_verified: true })
+    // As a change of email, or the owner's auth:move-email before it removes the link, leaves it.
+    db.user[0].email = "moved@example.com"
+    const { back } = await signInWithGoogle(instance, { sub: "google-1", email: "coach@example.com", email_verified: true })
+    expect(back.headers.get("location")).toBe("/")
+    expect(await signedInAs(instance, sessionCookie(back)!)).toBe(id)
+    expect(db.user[0]).toMatchObject({ id, email: "moved@example.com" })
+  })
+
+  it("in Better Auth's pipeline: a login with no password that Google signed in is answered CREDENTIAL_ACCOUNT_NOT_FOUND by change password and delete account", async () => {
+    const { instance, db } = await liveAuth()
+    // As coach:create makes it: verified, no password until the set-password link.
+    const made = await instance.api.createUser({ body: { email: "coach@example.com", name: "Coach", data: { emailVerified: true } } })
+    const { back } = await signInWithGoogle(instance, { sub: "google-1", email: "coach@example.com", email_verified: true })
+    const cookie = sessionCookie(back)!
+    expect(await signedInAs(instance, cookie)).toBe(made.user.id)
+    const changed = await postAsSignedIn(instance, "/change-password", { currentPassword: PASSWORD, newPassword: NEW_PASSWORD, revokeOtherSessions: true }, cookie)
+    const deleting = await postAsSignedIn(instance, "/delete-user", { password: PASSWORD, callbackURL: ACCOUNT_DELETED_PAGE }, cookie)
+    expect([changed.status, deleting.status]).toEqual([400, 400])
+    expect(await changed.json()).toMatchObject({ code: "CREDENTIAL_ACCOUNT_NOT_FOUND" })
+    expect(await deleting.json()).toMatchObject({ code: "CREDENTIAL_ACCOUNT_NOT_FOUND" })
+    expect(db.account).toEqual([expect.objectContaining({ providerId: "google", userId: made.user.id })])
+  })
+
+  it("sends a Google sign-in that fails before its own landing is known to the login page, never Better Auth's own error page", () => {
+    expect(options.onAPIError?.errorURL).toBe("/login")
+  })
+
+  /** Every report Sentry was handed for a failed Google sign-in. */
+  const googleFailures = () =>
+    vi.mocked(captureApiError).mock.calls.filter(([error]) => error instanceof Error && error.message.startsWith("Continue with Google failed"))
+
+  it("in Better Auth's pipeline: a code Google won't trade, as with a wrong client secret, lands on /login?error=invalid_code, makes nothing, and reaches Sentry", async () => {
+    vi.mocked(captureApiError).mockClear()
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const refusal = Response.json({ error: "invalid_client", error_description: "The OAuth client was not found." }, { status: 401 })
+    const { back } = await returnFromGoogle(instance, await startGoogle(instance), { sub: "google-1", email: "coach@example.com", email_verified: true }, { refusal })
+    expect(back.status).toBe(302)
+    expect(back.headers.get("location")).toBe("/login?error=invalid_code")
+    expect(db.session).toEqual([])
+    expect(googleFailures()).toHaveLength(1)
+    expect(googleFailures()[0][1]).toMatchObject({ route: expect.stringMatching(/^\/api\/auth\/callback\//), error: "invalid_code" })
+  })
+
+  it("in Better Auth's pipeline: a state used once already, Back to Google's page after signing in, lands on /login?error=state_mismatch and reaches Sentry", async () => {
+    vi.mocked(captureApiError).mockClear()
+    const { instance, db } = await liveAuth()
+    const id = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const started = await startGoogle(instance)
+    const account = { sub: "google-1", email: "coach@example.com", email_verified: true }
+    expect((await returnFromGoogle(instance, started, account)).back.headers.get("location")).toBe("/")
+    const again = await returnFromGoogle(instance, started, account)
+    expect(again.back.status).toBe(302)
+    expect(again.back.headers.get("location")).toBe("/login?error=state_mismatch")
+    expect(db.session.map((row) => row.userId)).toEqual([id])
+    expect(googleFailures().map(([, context]) => (context as { error: string }).error)).toEqual(["state_mismatch"])
+  })
+
+  it.each([
+    ["a Google address no login has", { sub: "google-1", email: "stranger@example.com", email_verified: true }, "code=google-code", LOGIN_ERROR_GOOGLE_NO_ACCOUNT],
+    ["an address Google hasn't verified", { sub: "google-1", email: "coach@example.com", email_verified: false }, "code=google-code", LOGIN_ERROR_GOOGLE_NOT_LINKED],
+    ["a person who said no on Google's page", { sub: "google-1", email: "coach@example.com", email_verified: true }, "error=access_denied", "access_denied"],
+  ])("in Better Auth's pipeline: %s is an expected refusal: it lands on /login with its code and never reaches Sentry", async (_label, account, query, code) => {
+    vi.mocked(captureApiError).mockClear()
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const { back } = await returnFromGoogle(instance, await startGoogle(instance), account, { query })
+    expect(back.headers.get("location")).toBe(`/login?error=${code}`)
+    expect(captureApiError).not.toHaveBeenCalled()
+  })
+
+  it("in Better Auth's pipeline: a return to the callback without the browser's state cookie, another browser's, is refused and signs nobody in", async () => {
+    vi.mocked(captureApiError).mockClear()
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const { state } = await startGoogle(instance)
+    const { back, trades } = await returnFromGoogle(instance, { state, cookie: "" }, { sub: "google-1", email: "coach@example.com", email_verified: true })
+    expect(back.status).toBe(302)
+    expect(back.headers.get("location")).toMatch(/^\/login\?error=state_/)
+    expect(trades).toEqual([])
+    expect(db.session).toEqual([])
+    expect(db.account.map((row) => row.providerId)).toEqual(["credential"])
+    expect(googleFailures()).toHaveLength(1)
+  })
+
+  it("in Better Auth's pipeline: the code is traded with the verifier whose S256 is the challenge Google was sent (PKCE)", async () => {
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const started = await startGoogle(instance)
+    const { trades } = await returnFromGoogle(instance, started, { sub: "google-1", email: "coach@example.com", email_verified: true })
+    const verifier = trades[0]?.get("code_verifier") ?? ""
+    expect(verifier).not.toBe("")
+    expect(createHash("sha256").update(verifier).digest("base64url")).toBe(started.authorize.searchParams.get("code_challenge"))
+    expect(trades[0]?.get("client_id")).toBe(ENV.GOOGLE_CLIENT_ID)
+  })
+
+  it.each([
+    ["a landing", { callbackURL: "https://evil.example/" }],
+    ["an error landing", { errorCallbackURL: "https://evil.example/login" }],
+  ])("in Better Auth's pipeline: %s on another site is refused before Google is asked (its origin check)", async (_label, landing) => {
+    const { instance, db } = await liveAuth(undefined, undefined, { originCheck: true })
+    const asked = await instance.handler(
+      new Request("http://localhost:3000/api/auth/sign-in/social", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost:3000" },
+        body: JSON.stringify({ provider: "google", callbackURL: "/", errorCallbackURL: "/login", ...landing }),
+      })
+    )
+    expect(asked.status).toBe(403)
+    expect(asked.headers.get("location")).toBeNull()
+    expect(db.verification).toEqual([])
   })
 })

@@ -9,15 +9,23 @@ export const AUTH_ERROR_SENTENCES = {
   wrongCurrentPassword: "Wrong password.",
   tooManyAttempts: "Too many attempts. Wait a moment and try again.",
   expiredLink: "This link has expired. Request a new one.",
+  noPassword: 'Your account has no password yet. Log out, then use "Forgot your password?" on the sign-in page to set one.',
   generic: "Something went wrong. Try again.",
 } as const;
 
-/** Better Auth's codes, and the sentence each shows (rules 1, 4 and 6). */
+/**
+ * Better Auth's codes, and the sentence each shows (rules 1, 4 and 6). A
+ * login with no password, a coach who signs in with Google and never used
+ * the "Set your password" link, is answered CREDENTIAL_ACCOUNT_NOT_FOUND by
+ * Change password and Delete account, which both need one; sign-in never
+ * answers it, so the sentence tells nobody signed out about an account.
+ */
 const SENTENCE_BY_CODE = new Map<string, string>([
   ["INVALID_EMAIL_OR_PASSWORD", AUTH_ERROR_SENTENCES.wrongPassword],
   ["INVALID_PASSWORD", AUTH_ERROR_SENTENCES.wrongCurrentPassword],
   ["INVALID_TOKEN", AUTH_ERROR_SENTENCES.expiredLink],
   ["TOKEN_EXPIRED", AUTH_ERROR_SENTENCES.expiredLink],
+  ["CREDENTIAL_ACCOUNT_NOT_FOUND", AUTH_ERROR_SENTENCES.noPassword],
 ]);
 
 /** The HTTP status Better Auth's limiter answers with (rule 15). */
