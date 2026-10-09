@@ -1,6 +1,8 @@
 # Better Auth — every login moves off Supabase Auth, and the account screens that were never built
 
-**Status: all eleven commits SHIPPED (the last, 9, on 2026-10-10); the PROD switch (§8.2) is the owner's.** Eleven commits (§6: 1 to 9, 5.1 and 5.5), each with a pasteable prompt, each gated.
+**Status: eleven commits SHIPPED (1 to 9, 5.1 and 5.5; the last, 9, on 2026-10-10); 10 and 11 added 2026-10-10, not
+built; the PROD switch (§8.2), after them, is the owner's.** Thirteen commits (§6: 1 to 11, 5.1 and 5.5), each with a
+pasteable prompt, each gated.
 **The logins move in commits 1–3.** Better Auth stands up beside Supabase Auth with today's logins and their
 password hashes copied in (1); every sign-in, the invite, forgot password and reset switch over, and the user
 keys move (2); the seed and proof scripts make their logins through Better Auth (3). **The account features are
@@ -8,12 +10,15 @@ commits 4–8:** the owner creates a coach and the coach sets a password from an
 email, sign out everywhere (5); every screen and email says the product's name, Atletafit (5.1); a client changes
 their email too, every copy of an address follows it in one write, and the owner moves the login of someone who
 lost their inbox (5.5); delete account (6); Continue with Google (7);
-the server ready for the client app (8). **Commit 9** writes the docs. This plan adds
-migrations 208, 209, 210, 211, 212 and 213: DEV and PROD hold all six (PROD took 208 and 209 on 2026-10-08 and 210 to
-213 on 2026-10-09, §8.2). **Billing is not here:** Better Auth's
+the server ready for the client app (8). **Commit 9** writes the docs. **Commits 10 and 11** close two gaps the owner
+found after commit 9 (2026-10-10), both before PROD switches (§8.2): the Invite box always lets a coach send while the
+client has no account, says what is true, and a failed email changes nothing (10); the sign-in pages and every email
+look like atletafit.com, the marketing site a coach arrives from (11). This plan adds migrations 208 to 213, which DEV
+and PROD hold (PROD took 208 and 209 on 2026-10-08 and 210 to 213 on 2026-10-09, §8.2), and commit 10's, the next free
+number when it is built (§2.1). **Billing is not here:** Better Auth's
 Stripe plugin later adds one column and one table and touches nothing this plan builds (D27). Every file and line
-named here was grepped on 2026-10-07 at `d5f23299`; every Better Auth fact is from its docs and source at
-**1.7.7** (§2.9), the version commit 1 pins.
+named here was grepped on 2026-10-07 at `d5f23299` (commits 10 and 11: 2026-10-10 at `56c8c7b7`); every Better Auth
+fact is from its docs and source at **1.7.7** (§2.9), the version commit 1 pins.
 
 **The owner's model, in their words (2026-10-07):** "I need to build out better auth … i haven't even built a way
 for coaches to even sign up, manage their account, delete their account, change passwords, forgot passwords etc.";
@@ -30,7 +35,9 @@ email, sign out everywhere, delete account) and on the client's Settings (change
 account); a login's address the same everywhere it shows, changed in one write; the owner's `auth:move-email`
 command for a lost inbox; the product's name, Atletafit, on every screen, email and tab title (5.1, D30); Continue
 with Google for sign-in; Better Auth's bearer and Expo plugins switched on and proven, so the client app can be
-built on them; the retirement of Supabase Auth; docs; seven smokes. **Not in scope:** billing (D27 leaves the room);
+built on them; the retirement of Supabase Auth; docs; the Invite box's sending and what it says, and the invitation
+sent at activation (10); the look of the sign-in pages and of every email the app sends, after atletafit.com (11);
+nine smokes. **Not in scope:** billing (D27 leaves the room); the marketing site itself (its own repo);
 the React Native app itself; the coach chat's Claude connector (on Better Auth's MCP plugin, COACH-CHAT-PLAN.md
 commits 8–9); a list of signed-in devices; a lockout per account (TECHNICAL-DEBT :282 stays
 open); a data export before deletion; a coach deleting a client's records (a client deletes their own);
@@ -41,7 +48,8 @@ head, §1–§5, §6's "How every commit runs" and its own entry, and only the A
 build without a plan review. "How every commit runs" sets each session's weight and wins over a prompt's heavier lines. A session stops only when
 a §3 decision it needs is blank, when building as listed would break a CONVENTIONS rule that §4 does not mark for
 rewriting, when a gate's root fix lies outside its commit, or when a Better Auth fact in §2.9 turns out false at
-1.7.7 (it says so and stops; the plan is corrected before anyone builds on it). When a commit ships, its session
+1.7.7 (it says so and stops; the plan is corrected before anyone builds on it). Commit 11 also stops once, for the
+owner to see its look before it is applied everywhere (its prompt). When a commit ships, its session
 replaces that commit's STATUS line in §6 and commits this file with its work. When every smoke in §7 has passed
 and PROD has switched (§8), this document is deleted on the owner's confirmation (ARCHITECTURE holds the shape,
 git holds this file).
@@ -137,6 +145,38 @@ nothing should break"):
     your password" goes to the new address. An address with no login, or a new address in use anywhere, is refused
     with nothing changed. There is no recovery email (D39).
 
+The Invite box (commit 10; the owner, 2026-10-10, after a failed invitation email left a client's box on "Pending"
+with no button):
+20. The Invite box opens from the person-plus icon at the top right of a client's page, which says "Invite" when
+    hovered. While the client has no account it always has a button: "Send invitation", or "Resend invitation" once
+    one has gone.
+21. It says what is true, worked out from the dates: "Not invited yet.", "Sent 8 Oct. The link works until 15 Oct.",
+    "Sent 1 Oct. The link expired on 8 Oct.", or "<Name> has an account." with no button. If it can't load, it says
+    "Couldn't load the invitation." with Try again, never "Not invited yet."
+22. A send that works closes the box with "Invitation sent". A send that fails changes nothing: the box stays open
+    with its button, the link the client already has keeps working, and the coach reads "Invitation not sent" with a
+    plain reason ("The email couldn't be sent. Try again."), never the email service's own words. A resend that works
+    sends a new link and the earlier one stops working, as today.
+23. Adding a client with the questionnaire sends the invitation as today; when it doesn't send, the coach reads the
+    warning "Client added" with "The invitation email didn't send. Send it from Invite on their page." Activating a
+    client sends one only when the client has no account and no link that still works, so a client invited before
+    activation gets no second email; when it doesn't send, the coach reads "<Name> is now active" with the same
+    sentence. Opening the box and sending from it no longer run out after five in a quarter of an hour.
+
+How the sign-in pages and the emails look (commit 11; the owner, 2026-10-10: "Sign in page should look similar to the
+marketing page, because it's domain will be app.atletafit.com and navigable from the marketing page. Emails should look
+like the marketing page too."):
+24. Sign in, Forgot password, Reset password, Set password and a client's invite page look like atletafit.com, the
+    site a coach comes from: its dark teal-black background with the teal glow, "atletafit" with its teal dot at the
+    top left (it opens atletafit.com), and the waitlist's white card with its type, fields, teal button and red. The
+    product's name moves from the sign-in card to that wordmark; every other word, and everything each page does,
+    stays as it is. Continue with Google stays white with Google's own "G".
+25. Every email the app sends looks like atletafit.com: "atletafit" on a dark band at the top, a white card, the teal
+    button, the site's type and greys, a pasted link that wraps on a phone, and the site's footer line under it
+    ("© <year> Atletafit" and atletafit.com). Every email keeps its words.
+26. Everything behind sign-in keeps the product's own look (`docs/newdesignsystem.md`), Settings' Account card and its
+    boxes included.
+
 ### 1.2 Frame test (CONVENTIONS §7, "No frame disagrees")
 
 Every auth screen has one source for who is signed in: Better Auth's session, read by `authClient.useSession()`
@@ -159,22 +199,28 @@ form state. The address carries a token (`?token=`), a notice (`?error=`, `?dele
 | F11 | Continue with Google | the session (set by Better Auth's callback) | the Google page → `/` → the role's home by the proxy's redirect (one hop, no flash: `/` is never rendered for a signed-in person today either) |
 | F12 | A client's Change email dialog (5.5) | its form; the login and its copies change only at the second emailed link, in one write | dialog → toast "We've emailed <current address> to approve the change." → closed; the Profile card shows the old address until the second link, whose landing (`/client/settings`, loaded fresh) shows the new one |
 | F13 | A coach saves a client's details (5.5) | the client row, the email left as it is for a client with an account | as today: the field is shown read-only, so nothing between the click and the settled sheet shows another address |
+| F14 | Open the Invite box (10) | its read, cleared as the box opens | the box with the client's name and address → its sentence and button when the read lands (pending text meanwhile, no guessed state); a read that fails → "Couldn't load the invitation." with Try again |
+| F15 | Send or Resend in the Invite box (10) | the invitation, written only once its email has gone | button busy → the box closed with toast "Invitation sent" in the same tick; a failure → the box open and unchanged, toast "Invitation not sent" |
+| F16 | Activate a client (10) | the client row; an invitation only when one is needed, awaited | as today (button busy → dialog closed with its toast in the same tick); the toast a warning when the invitation didn't send |
+| F17 | Any sign-in page or the invite page (11) | nothing new: F1 to F6 and F11's sources | the background, the wordmark and the card are in the prerendered page; only the card's content waits on the address, behind its own Suspense boundary, as today |
 
-No entrance animation. Busy states use the dialog pattern's `Loader2` (CONVENTIONS lines 177–185).
+No entrance animation but the sign-in card's one rise (§2.13), which replaces the entrance those pages have today. Busy
+states use the dialog pattern's `Loader2` (CONVENTIONS lines 177–185).
 
 ### 1.3 What a session proves on DEV, not a person
 
 The proxy's 401 for `/api/…` (rule 16), bearer-token sign-in for the client app (§2.8), the guard that refuses any
 login made outside the owner's command and the invite (D9), the compensation when the app's rows can't be written
 after a login is made (D10), rate limits (rule 15), that a login's address and its copies change in one write or
-not at all (rule 17, D37) and the migrations' row counts are proved by scripts and tests (§5), not by the smokes
-(§7).
+not at all (rule 17, D37), that a resend that fails leaves the client's link working and that activation sends no
+second invitation (rules 22 and 23, D41, D42), and the migrations' row counts are proved by scripts and tests (§5),
+not by the smokes (§7).
 
 ---
 
 ## 2. Target shape
 
-### 2.1 Data model: migrations 208, 209, 210, 211, 212 and 213
+### 2.1 Data model: migrations 208, 209, 210, 211, 212 and 213, and commit 10's (215)
 
 **Better Auth's tables live in their own schema, `better_auth`, under Better Auth's own names and column names
 (D5).** PostgREST serves `public` alone, so nothing on the Data API can reach them with any key; only Better
@@ -437,6 +483,32 @@ finds the link; the key's index also serves that lookup, which read the whole ta
 shape, holds the trigger to the new function, the old one gone, the key unique and valid, and the schema's
 privileges the owner's alone.
 
+The invitation migration (commit 10, owner 2026-10-10) takes the next free number when it is built. On 2026-10-10
+that is 215: 214 is `214_delete_account_audit_rows.sql`, and `docs/COACH-CHAT-PLAN.md` names 215 and 216 for its own
+two, unbuilt, so whichever plan is built second takes the numbers after the other's (CONVENTIONS §8: never skip,
+never reuse). It is written below as 215. It drops `client_invitations.status`, and with it the column's CHECK, its
+default and `idx_client_invitations_status`. The column said the wrong thing twice: `pending` was written only when
+an email failed, and `expired` never, expiry being `expires_at`, read when the link is opened. From 215 an invitation
+row exists only once its email has gone (§2.12, D40): `invited_at` says when, `expires_at` until when its link works,
+`accepted_at` that it was used, and whether the client has an account is `clients.user_id`. Before the drop it refuses
+an `accepted` row with no `accepted_at`, whose link the drop would make live again. DEV on 2026-10-10 held 30
+`accepted` rows, every one with `accepted_at`, and 6 `pending` rows, failed sends all past `expires_at`, which read
+as expired links after the drop and are left as they are; PROD holds no invitation.
+
+```sql
+-- 215_invitation_dates_decide.sql: an invitation's state is its dates (docs/BETTER-AUTH-PLAN.md 2.12). Pure ASCII.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.client_invitations WHERE status = 'accepted' AND accepted_at IS NULL) THEN
+    RAISE EXCEPTION 'an accepted invitation has no accepted_at: dropping status would make its link live again';
+  END IF;
+END $$;
+ALTER TABLE public.client_invitations DROP COLUMN status;   -- its CHECK, its default and idx_client_invitations_status go with it
+COMMENT ON TABLE public.client_invitations IS
+  'One invitation per client, written only once its email has gone: invited_at when, expires_at until when its link works, accepted_at when it was used. Whether the client has an account is clients.user_id.';
+-- Closing check, in 201's shape: no status column, no idx_client_invitations_status, the UNIQUE (client_id) key still there.
+```
+
 **Alternatives considered** (CONVENTIONS §8: the data model is a decision):
 - **Where the tables live:** their own schema (chosen) or `public` with Better Auth's names. In `public` they'd sit on
   the Data API behind RLS and the lockdown's revoked grants, appear in `types/database.ts`, and the service-role key
@@ -463,6 +535,11 @@ privileges the owner's alone.
   UPDATE every path makes, so Settings' change of email, the owner's command, the admin plugin and SQL are all
   covered and a change that fails keeps them. `moveLoginEmail`'s own DELETE (commit 7, which 213 replaces) covered
   the command alone, and a Better Auth hook after the update would run once the change had committed.
+- **An invitation's state (215, D40):** its dates (chosen): a row exists only once its email has gone, so sent is the
+  row, a working link is no `accepted_at` and `expires_at` ahead, used is `accepted_at`, and the box and the invite
+  page judge a link with one predicate. Keeping `status` with honest values only would repeat `accepted_at` and the
+  row's existence, a second answer kept in step by hand; adding a `failed` value would store a failure the coach is
+  told of at the moment it happens, and a resend that failed would still need the earlier link alive beside it.
 
 ### 2.2 The server
 
@@ -665,7 +742,8 @@ check accepts any page of the app as `redirectTo`, and `lib/auth.ts`'s before ho
 review). The sender comes
 from `EMAIL_FROM` (falling back to `<the product's name> <onboarding@resend.dev>`, Atletafit from 5.1, D30); Resend's sandbox delivers to the
 owner's one verified address only (TECHNICAL-DEBT :256), so the smokes say where each email must go until the
-owner verifies a domain (§9.1).
+owner verifies a domain (§9.1). From commit 11 all seven templates wrap their words in one layout in atletafit.com's
+look (§2.13).
 
 ### 2.6 Deleting an account (commit 6)
 
@@ -901,6 +979,149 @@ reads:
   the words they were run with.
 - Nothing else changes: no route, no data, no behaviour.
 
+### 2.12 The Invite box, and every invitation the app sends (commit 10)
+
+Three paths send an invitation, all through `sendInvitation` (`services/invitation-service.ts`): the Invite box's Send
+on a client's page (`components/clients/invite-client-dialog.tsx`, through `POST /api/invitations/send`), the
+questionnaire add (`createClient`, `services/client-service.ts`) and activation (`app/api/clients/[id]/activate/route.ts`).
+As built before commit 10:
+- `sendInvitation` wrote the new token with `status: 'sent'`, then sent the email, then set `status: 'pending'` when
+  the email failed: a failed resend had already replaced the link the client held, and Resend's own error text
+  reached the coach's toast.
+- The box offered Send for no row or `expired` and Resend for `sent`. `pending` had neither button, and since nothing
+  writes `expired`, a link past `expires_at` read "Invitation sent".
+- Activation sent one to every client with no login, an invited one included, in the background after its answer (an
+  unawaited promise, no `after()`): a second email whose link replaced the first, and a failure that reached nobody
+  after the coach had read "They have been emailed and can see their plans."
+- The box's read (`GET /api/invitations/status/[clientId]`) and its send sat on `authRateLimit`, five a quarter hour
+  per IP, shared with the invite link's two public routes: a sixth open was refused, and the box then showed its
+  first state, "Not invited" with Send, for any client. Both answers carried the invitation's token, which no screen
+  uses.
+
+From commit 10:
+- **The send (D41, rule 22).** `sendInvitation(clientId)` reads the client and its coach, refuses a client with a
+  login or no address, makes a token and an expiry seven days out, sends the email with that link, and only then
+  writes the client's row in one upsert on its UNIQUE `client_id` (migration 022): the token, the address,
+  `invited_at` now, `expires_at`, `accepted_at` empty. A failed email writes nothing, so the link the client holds
+  still opens; the email service's own error goes to Sentry (`captureApiError`) and the caller gets a plain sentence.
+  A write that fails after the email went (CONVENTIONS §2, item 13) leaves an email whose link opens nothing: the
+  coach reads "Invitation not sent" and the next send works. The new link could be opened only in the moment between
+  the email leaving and the row's write, which no email arrives inside.
+- **One predicate for a link (D40).** `invitationLinkWorks(row, now)` beside it: no `accepted_at`, and `expires_at`
+  ahead or empty, as `findLiveInvitation` reads an old row today. `findLiveInvitation` refuses a used link by
+  `accepted_at`, and `acceptClientInvitation`'s last write (`services/login-service.ts`), "only while still pending",
+  sets `accepted_at` on a row whose `accepted_at` is empty.
+- **The box's routes (D43).** `GET` and `POST /api/clients/[id]/invitation`, in the coach's own area: `coachApiRateLimit`,
+  CSRF on the POST, `getAuthenticatedCoachId(request)`, the client's ownership (404 for another coach's client), as
+  every `/api/clients/*` route. The GET answers `{ hasAccount, invitation: { sentOn, expiresOn, linkWorks } | null }`,
+  the two dates the coach's calendar days (`coaches.timezone`, through `getTodayDateStringInTimezone`), and never the
+  token. The POST sends and answers the same, with `recordAuditEvent` (`INVITATION_SEND`) as the old route did.
+  `app/api/invitations/send/`, `app/api/invitations/status/[clientId]/` and `lib/validations/invitation.ts` are
+  deleted; `/api/invitations/` keeps the invite link's two public routes, on `authRateLimit`.
+- **The box (rules 20 to 22).** Rebuilt in CONVENTIONS' dialog pattern to the design system's Dialog
+  (`docs/newdesignsystem.md` → Overlays): a `THUMB_CLASS` thumb with `UserPlus`, the title "Invite <name>", the client's
+  address as its description, then one sans sentence and its button from the read. No row: "Not invited yet." and
+  Send invitation. A working link: "Sent 8 Oct. The link works until 15 Oct." and Resend invitation. A link that
+  doesn't work: "Sent 1 Oct. The link expired on 8 Oct." and Resend invitation. A login: "<Name> has an account." and
+  no button. The dates are sans, through `formatDateOnlyShort`. The read is an SWR hook exporting its key and a clear
+  (CONVENTIONS §7: "Not invited yet." is a claim, so the read is cleared, never merely revalidated), cleared as the
+  box opens; pending, the sentence is `TextSkeleton` text and no button shows; failed, it reads "Couldn't load the
+  invitation." with Try again. A send closes the box in the same tick its answer lands, with
+  `toast.success("Invitation sent", { description: "Sent to <address>." })`; a refusal leaves it open and unchanged,
+  with `toast.error("Invitation not sent", { description })`, the description "The email couldn't be sent. Try
+  again." or the route's own plain sentence (no address, already has an account, too many tries). The trigger, the
+  person-plus icon in the client page's header (`components/clients/client-detail-layout.tsx`), gets `aria-label` and
+  `title` "Invite".
+- **The questionnaire add (rule 23).** `createClient` sends as today; when the send fails,
+  `components/add-client-dialog.tsx` says `toast.warning("Client added", { description: "The invitation email didn't
+  send. Send it from Invite on their page." })` in place of the red toast with a dash in it.
+- **Activation (rule 23, D42).** `fireAndForgetInviteIfNeeded` goes: the route awaits a send when the client has no
+  login and no working link (`invitationLinkWorks`), and answers `invitation: "sent" | "failed" | "not_needed"`.
+  `components/coach/client-activation-dialog.tsx` words a failure as `toast.warning("<name> is now active", {
+  description: "The invitation email didn't send. Send it from Invite on their page." })`, and clears the box's read
+  on success. The activation email stays as it is.
+- **What else reads the column.** `types/auth.ts` loses `InvitationStatus` and the row type's `status`;
+  `types/database.ts` is regenerated; the scripts that write `status: "sent"` (`scripts/auth-fixtures.ts`,
+  `scripts/sign-in-proof.ts`, `scripts/email-follows-proof.ts`, `scripts/seed/generate.ts`) write a sent row as a send
+  does, `expires_at` included. Nothing else reads it (grepped 2026-10-10).
+
+### 2.13 The sign-in pages and the emails look like atletafit.com (commit 11)
+
+The product lives at `app.atletafit.com`, and a coach reaches its sign-in page from atletafit.com, the marketing site
+(D44). So the pages a signed-out person sees, and every email the app sends, take the marketing site's look; everything
+behind sign-in keeps the product's (Teal Summit, `docs/newdesignsystem.md`). The marketing site is its own repository,
+on the owner's machine at `/Users/samkalepa/Desktop/atletafit-marketing-main` (`rinseeprince/atletafit-marketing`),
+read here and never edited, built or run. While its prelaunch gate is up, atletafit.com serves its waitlist page
+alone, and that page's hero is the reference: a dark teal-black ground, white type and a white form card. Its site
+navigation, behind the gate, already links "Log in" to `https://app.atletafit.com/login`.
+
+As built before commit 11: `/login`, `/forgot-password`, `/reset-password`, `/set-password` and the invite page each
+copy one frame (TECHNICAL-DEBT P2 #12) on the OKLCH layer the design doc retires: grey-blue page, borders and text, a
+10px card, bright red errors, a green circle, floating blobs, the name as plain text, 44px controls;
+`scripts/check-labels-whitelist.ts` skips `app/login/page.tsx` and `app/invite/` as not yet migrated. The seven emails
+each copy one style block in a stock look: a purple-blue `#656ee8` button, grey-blue text, no logo, no side padding, no
+viewport meta, and a pasted link that can't wrap, so at a phone's width the email runs past the screen's edge.
+
+The marketing site's look, read from its source on 2026-10-10 (`app/globals.css`, `tailwind.config.ts`,
+`components/ui/Button.tsx`, `components/waitlist/WaitlistForm.tsx`, `WaitlistNav.tsx`, `WaitlistFooter.tsx`,
+`HeroSection.tsx`, `components/marketing/FinalCTA.tsx`, `lib/legal.ts`):
+
+| Piece | Marketing value |
+|---|---|
+| Colours | ink `#0c1a1e`, ink-2 `#2a3d42`, muted `#5a7d82`, soft `#93b0b4`, teal `#0d9488` and its hover `#0f766e` (the product's hover is `#0b7f75`), page `#f4f7f6`, dark `#0f2027`, border `rgba(13,148,136,0.10)`, hairline `rgba(13,148,136,0.06)`, the waitlist form's red `#b4483f` |
+| Type | Instrument Sans; JetBrains Mono for labels and eyebrows, uppercase and tracked; headings bold, letter-spacing −0.03em to −0.035em |
+| Wordmark | the name in lower case, bold, 22px (19px below 561px wide), letter-spacing −0.035em, then a 5px teal dot on its baseline |
+| Dark ground | `#0f2027`, under the closing section's teal glow, `radial-gradient(circle at 50% 120%, rgba(13,148,136,0.3), transparent 60%)` |
+| Form card | white, 18px corners, shadow `0 40px 90px -30px rgba(0,0,0,0.55)`, padding 40px (26px by 22px below 561px) |
+| Heading, sentence | 26px bold, −0.03em (23px below 561px); 14px muted, line-height 1.5 |
+| Label | mono, uppercase, 10px (11px below 561px), tracking 0.1em, soft |
+| Field | 15px ink on white, padding 13px by 15px, 8px corners, the border; focus: a teal border and a 3px `rgba(13,148,136,0.12)` glow; in error, the red border and glow |
+| Error line | mono 11px, the red, tracking 0.02em |
+| Button | full width, teal, white 15px semibold, padding 15px by 16px, 8px corners, hover `#0f766e`, pressed 1px down, busy at 60% |
+| Success | a 56px circle in `rgba(13,148,136,0.1)` with a teal mark, a 24px bold heading, a muted sentence |
+| Link | muted, underlined, teal on hover |
+| Footer line | `© 2026 Atletafit` (`LEGAL.copyright`) |
+
+- **One sign-in frame** (closes TECHNICAL-DEBT P2 #12): `components/auth/sign-in-frame.tsx`, used by `/login`,
+  `/forgot-password`, `/reset-password` and `/set-password` (through `components/auth/password-link-page.tsx`) and
+  `/invite/[token]` in each of its states. The dark ground under the glow, full height; the wordmark white at the top
+  left, a link to atletafit.com (`MARKETING_SITE_URL`, `lib/constants.ts`) named with the product's name; the card
+  centred, 440px wide at most, 22px from a phone's edges. Each page's heading and sentence head the card: the login
+  card's is "Sign in to your account", the name having moved to the wordmark. The card rises once into place with the
+  marketing site's reveal (24px and a fade, 0.9s, `cubic-bezier(0.2,0.7,0.2,1)`), which `MotionPreferencesProvider`
+  reduces to the fade under reduced motion; the floating blobs go. The frame is in the prerendered page, and each
+  page's reader of the address stays behind its own Suspense boundary inside the card (CONVENTIONS §7).
+- **The pieces inside the card** are spelled once, in `components/auth/brand-tokens.ts`, from the table above, and the
+  sign-in pages use them in place of the product's `Input`, `Label`, `Button` and `Alert`, which the design doc forbids
+  restyling at a call site: a field (label, input, error line), the primary button, the secondary white button (Send
+  another email, Request a new link), the link, the "Or continue with" divider (a hairline and the mono label), the
+  success state, and the login page's notices, which become lines in the card, the errors in the red and "Your account
+  has been deleted." in muted. The invite page's two facts, its coach and the masked address, take the waitlist's
+  "Reserved for" row (a mono label and the value beside it, on the page colour). `scripts/check-labels.ts` lists
+  `brand-tokens.ts` among its `TOKEN_MODULES` (it spells mono uppercase labels and the marketing focus), and its
+  whitelist loses `app/login/page.tsx` and `app/invite/`.
+- **Continue with Google** stays as built (D23, CONVENTIONS §5's one exception): white, Google's own "G" unchanged, 20px
+  and 10px before the words; only its corners, border and height follow the card's fields.
+- **What the pages say and do doesn't change** (rules 1 to 4 and 8 to 11): every sentence, label, button word, error,
+  link and redirect as built, and their tests keep passing on the same words, but for the login page's name test,
+  which follows the name to the wordmark.
+- **One email layout**: `emails/email-layout.tsx`, its styles in `emails/brand.ts`, the only file in `emails/` that
+  spells a colour (a test scans the folder). Each of the seven templates keeps its words and wraps them in the layout:
+  the page `#f4f7f6`; a card 560px wide at most with 18px corners (square in a mail app that ignores them), a dark band
+  on top with the wordmark white and its teal dot as live text (an image is blocked by default in many mail apps),
+  then the white body: the heading (24px bold ink), the words (15px ink-2, line-height 1.6), the teal button (white
+  15px semibold, 8px corners), the pasted link (13px muted, breaking anywhere so it wraps), a hairline, the fine print
+  and the sign-off (13px muted). Under the card, the site's footer line in soft 12px: "© <year> Atletafit" and
+  atletafit.com as a link. Instrument Sans first in the font stack (React Email's `Font`, for the mail apps that load
+  it), the system's sans after; a `viewport` meta, so a phone lays the email out at its own width. The plain-text
+  bodies (`services/email-service.ts`, `services/auth-email-service.ts`) are unchanged.
+- **The wordmark** reads `PRODUCT_NAME` lower-cased, on the pages and in the emails: `lib/product-name-ownership.test.ts`
+  fails the name spelled anywhere but `lib/constants.ts`, and `MARKETING_SITE_URL` is an address, which passes.
+- **The design doc** gains "Sign-in pages and emails" (`docs/newdesignsystem.md`): that they follow atletafit.com and
+  why (D44); the table above; where they are spelled (`brand-tokens.ts`, `emails/brand.ts`, the frame, the layout);
+  and the departures from the product's rules that are deliberate there and nowhere else: mono labels, 8px and 18px
+  corners, the hover `#0f766e`, the red `#b4483f` and the focus glow.
+
 ---
 
 ## 3. Decisions
@@ -940,7 +1161,7 @@ can be vetoed before its commit starts.
 | D28 | `DATABASE_URL` is Supabase's transaction pooler string for the `postgres` user; one pool of four per bundle (the proxy's and the routes' are separate bundles). | Serverless-safe; `postgres` owns the schema, so RLS never bites Better Auth; a direct connection is IPv6-only on Supabase. |
 | D29 | Env: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (= `NEXT_PUBLIC_APP_URL`), `DATABASE_URL`, `AUTH_ADMIN_USER_IDS`, `EMAIL_FROM`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`; `NEXT_PUBLIC_SUPABASE_ANON_KEY` has no reader after commit 3 and leaves `.env.local`. | Documented per CONVENTIONS 852 (no `.env.example`): at the read site and in §19's list. |
 | D30 | The emails use one sender (`EMAIL_FROM`, falling back to `onboarding@resend.dev`), one look, and the product's name, Atletafit, written once (`PRODUCT_NAME`, `lib/constants.ts`) and read by every screen, email and tab title (commit 5.1). Commits 1–5 shipped the old name, "CoachHub". | Owner, 2026-10-09: "It's not called coachub." One constant, so the name can't drift between an email's sender and its sign-off. |
-| D31 | Migrations: 208 (schema + copy, additive), 209 (the switch), 210 (a login's address and its copies in one write, commit 5.5), 211 (delete functions, commit 6), 212 (an index on every foreign key a deletion's cascades walk, commit 6, owner 2026-10-09: a 20-client seed coach's delete took 14.9 s against the Data API's 8 s, 2.8 s with them), 213 (a login's Google links go when its address changes, and one Google account links to one login, after commit 7, owner 2026-10-09). The coach chat plan's "migration 208" takes the next free number when it is built (§9.3). | CONVENTIONS: next number, never skip; this plan ships first; 5.5 is built before 6, so it takes 210. |
+| D31 | Migrations: 208 (schema + copy, additive), 209 (the switch), 210 (a login's address and its copies in one write, commit 5.5), 211 (delete functions, commit 6), 212 (an index on every foreign key a deletion's cascades walk, commit 6, owner 2026-10-09: a 20-client seed coach's delete took 14.9 s against the Data API's 8 s, 2.8 s with them), 213 (a login's Google links go when its address changes, and one Google account links to one login, after commit 7, owner 2026-10-09), and commit 10's, an invitation's state as its dates, the next free number when it is built (215 on 2026-10-10, after 214, the deletion's audit rows; `docs/COACH-CHAT-PLAN.md` names 215 and 216 for its own, and the plan built second takes the numbers after the other's, §2.1). | CONVENTIONS: next number, never skip; this plan ships first; 5.5 is built before 6, so it takes 210. |
 | D32 | Undo (§8.3): revert the switch commit, then a new migration re-points the FKs to `auth.users` as `NOT VALID` and restores the trigger from 107; logins made after the switch are re-invited; passwords changed after it revert to the old ones. | Supabase's rows are never touched by the switch, so the old door reopens. |
 | D33 | Supabase Auth is retired, not deleted, until the undo window closes: providers off, sign-ups off; the owner deletes `auth.users` after (§9.1). | The undo needs the rows. |
 | D34 | `proof-session.ts` mints a session by inserting a `better_auth.session` row through the pool and sending its token as a bearer token; cookie-path proofs sign in over HTTP with a throwaway's password. | The old magic-link mint is Supabase's; a bare token is accepted by the bearer plugin (its default); no secret-signing in scripts. |
@@ -949,6 +1170,12 @@ can be vetoed before its commit starts.
 | D37 | `coaches.email` and `clients.email` are copies of the login's address, written in the statement that changes it by a trigger on `better_auth."user"` (migration 210), whatever changes it; the invite's acceptance writes the client's at birth. Commit 5's after hook (`mirrorLoginEmail`) is deleted. | Owner, 2026-10-09: "nothing should break". A copy written after the login's change can fail on its own and leave the coach seeing, and the app emailing, an old address; one write can't half-happen (§2.1's alternatives). |
 | D38 | A coach can't change the email of a client who has an account: the details sheet shows it read-only, and the client route refuses a different address with 409. Before the invite is accepted, the field is the coach's as today. | Owner, 2026-10-09: "prevent a coach from editing as it's the clients to change." A coach's edit moved only the copy, never the address the client signs in with. |
 | D39 | No recovery email. Someone who has lost their sign-in inbox asks the owner, who confirms who they are and runs `npm run auth:move-email`: the address moves everywhere (D37), every session of the login ends, and "Reset your password" goes to the new address. | Owner, 2026-10-09. A recovery address is a second key to every account, with its own takeover risk and its own upkeep for every person; "forgot which email I use" is answered by the coach (a client's) and the owner (a coach's). |
+| D40 | **An invitation is its dates.** A row exists only once its email has gone; `invited_at`, `expires_at` and `accepted_at` say when it was sent, until when its link works and that it was used; whether the client has an account is `clients.user_id`. `client_invitations.status` goes (commit 10's migration, §2.1), and one predicate judges a link for the Invite box and the invite page alike. | Owner, 2026-10-10 (agreed: the saved label goes, the dates already say everything). The column said "pending" only when an email had failed and never said "expired", so the box built on it left a coach with no button. |
+| D41 | **A send that fails changes nothing.** The email goes first and the row after it; a failed email leaves the client's earlier link working and gives the coach a plain reason, never the email service's own words. | A resend that failed had already replaced the link the client held. Writing first and undoing after a failure leaves the same gap the other way round. |
+| D42 | **Activation sends an invitation only to a client with no account and no working link, and waits for the answer.** | A client invited before activation got a second email whose link killed the first, and a failure in the background reached nobody after the coach had read "They have been emailed". |
+| D43 | **The Invite box lives with the coach's client routes** (`GET`/`POST /api/clients/[id]/invitation`, `coachApiRateLimit`), and its answers never carry the link's token. The invite link's own two routes keep `/api/invitations/` and `authRateLimit`. | The box shared the public link's five a quarter hour: a sixth open in fifteen minutes was refused, and commit 10's own smoke opens it seven times. No screen uses the token, and whoever holds it can set up the client's account. |
+| D44 | **The sign-in pages and every email look like atletafit.com**, from one frame and one email layout, spelled in two files (`components/auth/brand-tokens.ts`, `emails/brand.ts`); everything behind sign-in keeps Teal Summit, and Continue with Google stays white with Google's "G". | Owner, 2026-10-10: "Sign in page should look similar to the marketing page, because it's domain will be app.atletafit.com and navigable from the marketing page. Emails should look like the marketing page too." The design doc had no recipe for either, so each page copied the old OKLCH look and each email a stock template. |
+| D45 | **Two commits**, 10 (the Invite box) and 11 (the look), both before PROD switches (§8.2). | Owner, 2026-10-10. One changes what happens and the other how things look, so each has its own smoke and a failure in one can't hide in the other; a coach first meets both on PROD. |
 
 ---
 
@@ -959,7 +1186,7 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | Subsystem | Today | After | Commit |
 |---|---|---|---|
 | `package.json` | `@supabase/ssr`, no auth library | `better-auth@1.7.7`, `pg`, `kysely`, `bcryptjs`, later `@better-auth/expo`; `@supabase/ssr` gone (3) | 1, 3, 8 |
-| `supabase/migrations/` | 207 | 208 (schema + copy), 209 (switch), 210 (a login's address in one write), 211 (delete functions), 212 (the delete's foreign-key indexes), 213 (Google links: gone with an address, one login each) | 1, 2, 5.5, 6, 7 |
+| `supabase/migrations/` | 207 | 208 (schema + copy), 209 (switch), 210 (a login's address in one write), 211 (delete functions), 212 (the delete's foreign-key indexes), 213 (Google links: gone with an address, one login each), commit 10's (an invitation's state is its dates; 215 on 2026-10-10) | 1, 2, 5.5, 6, 7, 10 |
 | `lib/auth.ts`, `lib/auth-client.ts`, `app/api/auth/[...all]/route.ts` | none | new | 1, 2 |
 | `middleware.ts` + `middleware.test.ts` | Edge; Supabase `getUser()`; 307 for `/api/**` | `proxy.ts` + `proxy.test.ts`; Node; `auth.api.getSession`; 401 JSON for `/api/**`; `/api/auth/` and `/set-password` public | 1 (the `/api/auth/` skip only), 2 |
 | `lib/auth-helpers.ts` + test | `createServerSupabaseClient().auth.getUser()` | `auth.api.getSession({ headers })`; bearer accepted | 2 |
@@ -983,7 +1210,15 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | `lib/constants.ts` and the 15 files that say "CoachHub" (`emails/*`, `services/email-service.ts`, `services/auth-email-service.ts`, `services/content-metadata-service.ts`, `app/layout.tsx`, `app/login/page.tsx`, `app/invite/[token]/page.tsx`, `app/(marketing)/layout.tsx`, `components/marketing/marketing-navbar.tsx`, `components/client-portal/nav/client-nav.tsx`), the two rails' monogram, their tests, the docs' titles | "CoachHub" written out in each | `PRODUCT_NAME` ("Atletafit") read by each; a scan test holds it | 5.1 |
 | `services/login-service.ts`, `services/client-service.ts`, `app/api/clients/[id]/route.ts`, `components/clients/details/details-groups.tsx` | the invite links `user_id` alone; the coach edits any client's email | the invite writes `clients.email` with the link; a client with an account keeps their address against the coach's edit (409, read-only field) | 5.5 |
 | `lib/csrf-protection.ts` + test | Origin/Referer always | bearer requests pass | 8 |
-| `docs/ARCHITECTURE.md` | Auth Model, Onboarding (1298), Database clients on Supabase Auth | current shape only | 2 (Auth Model), 9 (the rest) |
+| `services/invitation-service.ts`, `services/client-service.ts` (`createClient`'s send), `services/login-service.ts` (the acceptance's mark), `types/auth.ts`, `types/database.ts` | `status` written and read; the token written before the email; the token in the coach's answers | the email first and the row after; one link predicate; `accepted_at` marks a used link; no `status` | 10 |
+| `app/api/invitations/send/`, `app/api/invitations/status/[clientId]/`, `lib/validations/invitation.ts`, `app/api/clients/[id]/invitation/` (new) | the box's read and send under `/api/invitations/` on `authRateLimit` | `GET`/`POST /api/clients/[id]/invitation` on `coachApiRateLimit`; the old two and the schema deleted | 10 |
+| `app/api/clients/[id]/activate/route.ts`, `components/coach/client-activation-dialog.tsx` | an invitation in the background to every client with no login | awaited, only without a working link; the toast warns when it didn't send | 10 |
+| `components/clients/invite-client-dialog.tsx` (+ its read hook), `components/clients/client-detail-layout.tsx`, `components/add-client-dialog.tsx` | buttons by `status`; an unnamed icon; a red "Client added" with a dash, raw errors | rules 20 to 23, the design system's Dialog | 10 |
+| `scripts/auth-fixtures.ts`, `scripts/sign-in-proof.ts`, `scripts/email-follows-proof.ts`, `scripts/seed/generate.ts`, `scripts/proof-mailbox.ts`, `scripts/invitation-proof.ts` (new) | write `status: "sent"`; the mailbox takes every email | a sent row as a send writes it; the mailbox can refuse an address; proof 10 | 10 |
+| `components/auth/sign-in-frame.tsx` and `brand-tokens.ts` (new), `app/login/page.tsx`, `app/forgot-password/page.tsx`, `components/auth/password-link-page.tsx`, `reset-password-form.tsx`, `login-notice.tsx`, `app/invite/[token]/page.tsx`, `lib/constants.ts` (`MARKETING_SITE_URL`) | the same OKLCH frame copied four times | one frame in atletafit.com's look | 11 |
+| `emails/*` (seven templates), `emails/email-layout.tsx` and `emails/brand.ts` (new) | one stock style block copied seven times | one layout in atletafit.com's look, the words unchanged | 11 |
+| `scripts/check-labels.ts`, `scripts/check-labels-whitelist.ts`, `docs/newdesignsystem.md`, `TECHNICAL-DEBT.md` | login and invite skipped as not migrated; no chapter for sign-in pages or emails; P2 #12 open | `brand-tokens.ts` a token module and the two entries gone; "Sign-in pages and emails"; P2 #12 closed | 11 |
+| `docs/ARCHITECTURE.md` | Auth Model, Onboarding (1298), Database clients on Supabase Auth | current shape only | 2 (Auth Model), 9 (the rest), 10 ("Client Onboarding Flow", the acceptance's mark), 11 ("Emails") |
 | `CONVENTIONS.md`, `TECHNICAL-DEBT.md`, `CLIENT-APP-REFERENCE.md` | see below | see below | 2, 9 |
 
 **CONVENTIONS rules marked for rewriting** (built as §2 says; the words change in commit 2 for the first four
@@ -1018,12 +1253,13 @@ so.
 
 - **Gates after every commit:** `npx tsc --noEmit`, `npx eslint .` (and `grep -rn "console.log"` on changed
   files), `npx vitest run`, `npm run check:labels`, `grep -rn "as any"` and `grep -rn "TODO\|FIXME\|HACK\|DEBUG"`
-  on changed files, `npx knip`, `npm run check:service-key`. Plus `npm run check:rls` for commits 1, 2, 5.5 and 6
-  (migrations), and `npm run build` (which chains `check:prerender`) for commits 1, 2, 4, 5, 5.1, 5.5, 6, 7 and 8 (the
-  proxy, a route handler, pages or Settings change). Commit 9's doc edits need none. **The security, load and
+  on changed files, `npx knip`, `npm run check:service-key`. Plus `npm run check:rls` for commits 1, 2, 5.5, 6 and 10
+  (migrations), and `npm run build` (which chains `check:prerender`) for commits 1, 2, 4, 5, 5.1, 5.5, 6, 7, 8, 10 and
+  11 (the proxy, a route handler, pages or Settings change). Commit 9's doc edits need none. **The security, load and
   performance review** (CONVENTIONS §2) is reported for every commit but 9; for 2 it covers every redirect and
   cookie the proxy and the accept route emit; for 5.5 every path that changes an address and every row the
-  trigger writes; for 6 every row the two functions reach. The
+  trigger writes; for 6 every row the two functions reach; for 10 every path that writes an invitation and what each
+  answers. The
   `components/client-portal/**` set-tracker test is known to flake in full runs (a fetch race): if it alone fails,
   rerun it alone and say so.
 - **Proofs on DEV** (the shape of `scripts/proof-session.ts` after commit 2 and `scripts/goal-routes-proof.ts`, run
@@ -1086,6 +1322,16 @@ so.
     the coach in every table of §2.6 is 0, both buckets hold none of the keys, the clients' logins are gone; a
     forced object-removal failure → refused, every row intact.
   - 8: the bearer proof of §2.8.
+  - 10: `scripts/invitation-proof.ts`, its email read from `scripts/proof-mailbox.ts` as commit 5's proof reads it,
+    the mailbox gaining a refusal for chosen addresses (Resend's error answer); a throwaway coach and pending
+    clients of theirs. The box's read with no invitation → `{ hasAccount: false, invitation: null }`, and no token in
+    any answer; a send the mailbox refuses → the plain sentence, no row; one it takes → the row, and the email's
+    link opens the invite page; a resend refused → the earlier link still opens, the row unchanged; a resend taken →
+    the earlier link refused, the new one opens; a row expired through the pool → `linkWorks: false`, and a send
+    works; another coach's client → 404 from both routes; activation of a client with a working link → no email,
+    the link unchanged; with none → one email; with the mailbox refusing → the client active and `invitation:
+    "failed"`; the questionnaire add refused → `inviteSent: false`, no row; an acceptance → `accepted_at` set, the
+    read `hasAccount: true`, the link refused as used; ten reads of the box in a row → none refused.
 - **Tests** (vitest; Better Auth's `auth.api` and the pool mocked the way `supabaseAdmin` is mocked elsewhere):
   the proxy's decisions (the two skip lists, 401 JSON under `/api/`, 307 for pages, role redirects, fail-closed,
   the folder ⟷ list binding); the seam (null session → null, bearer header reaches `getSession`, cache untouched);
@@ -1099,10 +1345,18 @@ so.
   screen's wording read from `PRODUCT_NAME`; for 5.5, migration 210's file read for its trigger, its function's grants and its
   closing check, the new address's check over Better Auth's pipeline (cookie and bearer, a held address, no
   session), the client card's Change email and both Settings pages' notice, the details sheet's read-only field,
-  the route's 409 and its same-address pass, the invite's email write, and `moveLoginEmail`'s refusals and writes.
+  the route's 409 and its same-address pass, the invite's email write, and `moveLoginEmail`'s refusals and writes;
+  for 10, the send's order (a refused email writes nothing; a write that fails after the email is reported), the one
+  link predicate (used, expired, working, an old row with no expiry), both routes' chain and answers (no token, 404
+  for another coach's client), the box's four states, its pending and failed reads, its clear on open and its two
+  toasts, the trigger's name, the activation rule and its toast, the questionnaire add's warning, and the
+  migration's file (its refusal, its drop, its closing check); for 11, the frame on every sign-in page and the invite
+  page (the wordmark's link, the heading, the card), each page's words and behaviour as built (their tests unchanged
+  but for the name's), Google's "G" unchanged, the layout around all seven emails (the wordmark, the teal button,
+  the footer line, the viewport meta), and the scan that no file in `emails/` but `emails/brand.ts` spells a colour.
   **A test and a mutation for every new rule.**
 - **The browser smokes** are the owner's: §7.1 after commit 2, §7.2 after 4, §7.3 after 5, §7.3a after 5.1, §7.3b
-  after 5.5, §7.4 after 6, §7.5 after 7.
+  after 5.5, §7.4 after 6, §7.5 after 7, §7.6 after 10, §7.7 after 11.
 
 ---
 
@@ -1124,9 +1378,9 @@ every rule), this block wins:
 3. **Tests:** a test for every new rule; a deliberate break (a mutation) only for the rules the prompt names and
    for any security guard. While building, run only the affected test files.
 4. **Review:** one independent review of the diff once the build is done. Fix its blockers and should-fix items at
-   the root, list its nits in the handover for the owner to decide, and run no second review, except in the four
-   security-heavy commits, 2 (the switch), 5.5 (moving a login's address), 6 (deleting accounts) and 8 (app
-   tokens): there a second independent
+   the root, list its nits in the handover for the owner to decide, and run no second review, except in the five
+   security-heavy commits, 2 (the switch), 5.5 (moving a login's address), 6 (deleting accounts), 8 (app
+   tokens) and 10 (when an invitation's link is written, and who is sent it): there a second independent
    review reads the first review's fixes, and its blockers and should-fix items are fixed the same way.
 5. **Proof and gates:** the commit's DEV proof once, on the finished code; the full gates once, after the last
    review's fixes. Commit 9, docs only, runs no gates.
@@ -2045,6 +2299,187 @@ shipped and the list of TECHNICAL-DEBT entries closed and opened. There is no
 browser smoke; the PROD switch (§8.2) is mine to schedule.
 ```
 
+### Commit 10 — `fix(invitations): the Invite box always lets a coach send and says what is true; a failed email changes nothing`
+
+**STATUS: PLANNED 2026-10-10, not built.**
+
+Found by the owner after commit 9 (2026-10-10): an invitation email that failed left the client's invitation on
+"Pending", for which the Invite box shows neither Send nor Resend, so a coach told to "send manually from their
+profile" found no button there. The review of that path found the rest (§2.12). Rules 20 to 23, D40 to D43, the
+frames F14 to F16.
+- The migration (§2.1: 215, or the next free number when built) on DEV: `client_invitations.status` dropped after its
+  refusal check, with its closing check; `types/database.ts` regenerated and read; `types/auth.ts` without
+  `InvitationStatus`.
+- `services/invitation-service.ts`: `sendInvitation` sends first and writes after (D41); `invitationLinkWorks` (D40);
+  `findLiveInvitation` refuses a used link by `accepted_at`. `services/login-service.ts`: the acceptance's mark on
+  `accepted_at` alone.
+- `GET` and `POST /api/clients/[id]/invitation` (D43) in place of `app/api/invitations/send/` and
+  `app/api/invitations/status/[clientId]/`, with `lib/validations/invitation.ts` deleted; no token in either answer.
+- The Invite box (rules 20 to 22): `components/clients/invite-client-dialog.tsx` rebuilt on a read hook with its key
+  and its clear; the header icon named "Invite" (`components/clients/client-detail-layout.tsx`).
+- Activation (rule 23, D42): `app/api/clients/[id]/activate/route.ts` awaits a needed invitation and answers its
+  outcome; `components/coach/client-activation-dialog.tsx` warns when it didn't send. The questionnaire add's
+  warning (`components/add-client-dialog.tsx`).
+- The scripts that write `status: "sent"` (§2.12's last bullet); `scripts/proof-mailbox.ts` learns to refuse an
+  address; `scripts/invitation-proof.ts` (§5, proof 10).
+- Docs: ARCHITECTURE's "Client Onboarding Flow" (the email before the row, the box's states, activation's rule) and
+  "Making a login"'s line on the acceptance's mark, current shape only; TECHNICAL-DEBT's P2 #4 (the send route's
+  local `ClientRow`) closed by the route's deletion.
+- The smoke seed (§7.6).
+
+```text
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5,
+§6's "How every commit runs", this commit's entry and §7.6. From
+docs/ARCHITECTURE.md read "Client Onboarding Flow" (to its state machine), the
+"Making a login" bullets and "Emails". From docs/newdesignsystem.md read
+"Overlays" (Dialog and Toasts) and "Loading & async states". Also read
+components/clients/invite-client-dialog.tsx, components/clients/client-detail-
+layout.tsx, components/add-client-dialog.tsx, components/coach/client-
+activation-dialog.tsx, services/invitation-service.ts, services/email-
+service.ts, services/client-service.ts (createClient), services/login-
+service.ts (acceptClientInvitation), everything under app/api/invitations/,
+app/api/clients/[id]/activate/route.ts and one route beside it, types/auth.ts,
+hooks/use-client-overview.ts (a read's key and its clear), supabase/
+migrations/022 and 028 (the table) with 201 (a closing check), and scripts/
+proof-mailbox.ts, scripts/proof-server.ts and scripts/auth-fixtures.ts (the
+proof's shape). Open another section only when something you touch points to
+it.
+
+Job: Commit 10 of docs/BETTER-AUTH-PLAN.md §6 — `fix(invitations): the Invite
+box always lets a coach send and says what is true; a failed email changes
+nothing`. Build exactly what that section lists, to §2.1 (the invitation
+migration), §2.12, D40 to D43 and rules 20 to 23. The frames are §1.2's F14,
+F15 and F16. Before writing the migration, list supabase/migrations/ and take
+the next free number (215 unless docs/COACH-CHAT-PLAN.md's two have been built
+since); write the number you took into §2.1, D31 and §4.
+
+You have my go: don't show me a plan and don't wait for my review. Stop and ask
+me only if a §3 decision this commit needs is blank, if building exactly what
+this commit lists would break a CONVENTIONS.md rule that §4 does not mark for
+rewriting, or if a gate fails and its root fix lies outside this commit.
+
+Done when: everything that section lists is built; the migration is on DEV
+with its closing check passing, types/database.ts showing exactly its change,
+and npm run check:rls passing; scripts/invitation-proof.ts passes on DEV
+(every check of §5's proof 10, every throwaway removed in finally); an
+independent review of the whole diff, docs included, has run and every finding
+is fixed at the root; a second independent review of those fixes has run and
+its findings are fixed; and every gate passes after the second review's fixes:
+npx tsc --noEmit, npx eslint ., npx vitest run, npm run check:labels, npx
+knip, npm run check:service-key, npm run check:rls, npm run build. Never skip,
+weaken or delete a test to make a gate pass. Report the security, load and
+performance review (CONVENTIONS §2), naming every path that writes an
+invitation and what each answers.
+
+Working method: the Edit tool; grep at execution time for every dependant (§4
+is a map, not a promise); a test and a mutation for every new rule (a refused
+email writes nothing, the link predicate, the activation rule, no token in an
+answer, the box always offering a send to a client with no account), each test
+green on the real code first, each mutation from a cp backup in the
+scratchpad, never git stash or git checkout --; the proof starts its own next
+dev on a free port, lsof -i :3000 first, never :3000. Before the push, confirm
+supabase/.temp/project-ref reads aeaphsslctwcmebldrzx (DEV); supabase db push
+--dry-run immediately before the push (from the Bash tool the push confirms
+itself; if it is classifier-blocked, hand it to me with !), then gen types and
+read the diff.
+
+The seed: a throwaway script in the session scratchpad (npx tsx --tsconfig
+./tsconfig.json, @/scripts/env-bootstrap) that makes under my coach
+(samuel.k@taboola.com), through the app's own services, exactly what §7.6's
+steps need, deleting any earlier "Smoke · invite …" clients first, and prints
+each one's page. Save its recipe to memory (reference_dev_seed_invite_box_
+smoke.md, indexed in reference_dev_seeds.md).
+
+Then commit directly to main (this plan file included), replace this commit's
+STATUS line in §6 with SHIPPED, the hash and the date, and hand over: what
+shipped; anything you decided that the plan did not say; the proof's output;
+and §7.6's smoke list with each seeded client's page and, for each email,
+where it arrives. The browser smoke is mine.
+```
+
+### Commit 11 — `feat(brand): the sign-in pages and every email look like atletafit.com`
+
+**STATUS: PLANNED 2026-10-10, not built.**
+
+Asked for by the owner after commit 9 (2026-10-10): every coach-facing screen and email this plan built looked unlike
+the product, and the sign-in pages and the emails are to look like atletafit.com (D44, rules 24 to 26, §2.13, F17).
+- `components/auth/sign-in-frame.tsx` and `components/auth/brand-tokens.ts`; `/login`, `/forgot-password`,
+  `/reset-password`, `/set-password` and `/invite/[token]` on them; the login page's notices as lines in the card;
+  `MARKETING_SITE_URL` in `lib/constants.ts`.
+- `emails/email-layout.tsx` and `emails/brand.ts`; the seven templates inside the layout, their words unchanged; the
+  scan of `emails/`.
+- `scripts/check-labels.ts`: `brand-tokens.ts` among its token modules; its whitelist without `app/login/page.tsx`
+  and `app/invite/`.
+- Docs: `docs/newdesignsystem.md` gains "Sign-in pages and emails" (§2.13's last bullet); ARCHITECTURE's "Emails"
+  names the layout; TECHNICAL-DEBT's P2 #12 closed.
+- One stop for the owner's eye, once `/login` and the reset email are built (the prompt).
+- The smoke seed (§7.7): a pending client and its invite link.
+
+```text
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5,
+§6's "How every commit runs", this commit's entry and §7.7. From
+docs/newdesignsystem.md read "How to use this doc", the "Non-negotiables
+checklist", "Typography", "Animations" and "Anti-patterns"; from
+docs/ARCHITECTURE.md, "Emails". The look comes from the marketing site, its own
+repo at /Users/samkalepa/Desktop/atletafit-marketing-main: read its CLAUDE.md's
+"Design tokens", app/globals.css, tailwind.config.ts, components/ui/Button.tsx,
+components/waitlist/WaitlistForm.tsx, WaitlistNav.tsx, WaitlistFooter.tsx and
+HeroSection.tsx, components/marketing/FinalCTA.tsx and lib/legal.ts, and never
+edit, build or run that project. In this repo read app/login/page.tsx,
+app/forgot-password/page.tsx, components/auth/password-link-page.tsx,
+reset-password-form.tsx and login-notice.tsx with their tests, app/invite/
+[token]/page.tsx, every file in emails/, services/email-service.ts and
+services/auth-email-service.ts with their tests, scripts/check-labels.ts and
+its whitelist, lib/product-name-ownership.test.ts, scripts/check-prerender.ts
+and app/layout.tsx. Open another section only when something you touch points
+to it.
+
+Job: Commit 11 of docs/BETTER-AUTH-PLAN.md §6 — `feat(brand): the sign-in
+pages and every email look like atletafit.com`. Build exactly what that
+section lists, to §2.13, D44 and rules 24 to 26; the frame is §1.2's F17. Only
+the look changes: every word, every behaviour, every redirect and every test
+of them stays as it is, but for the product's name moving from the login card
+to the wordmark.
+
+You have my go: don't show me a plan and don't wait for my review. One stop is
+built in: once the frame, /login and the reset email are built, start your own
+next dev on a free port (lsof -i :3000 first, never :3000), write the reset
+email rendered with sample words to an .html file in your scratchpad, hand me
+/login's address and the file's path, and build the rest only on my go.
+Otherwise stop and ask me only if a §3 decision this commit needs is blank, if
+building exactly what this commit lists would break a CONVENTIONS.md rule that
+§4 does not mark for rewriting, or if a gate fails and its root fix lies
+outside this commit.
+
+Done when: everything that section lists is built; every sign-in page and the
+invite page stand in the frame and every email in the layout; an independent
+review of the whole diff, docs included, has run and every finding is fixed at
+the root; and every gate passes after the review's fixes: npx tsc --noEmit,
+npx eslint ., npx vitest run, npm run check:labels, npx knip, npm run
+check:service-key, npm run build. Never skip, weaken or delete a test to make
+a gate pass. Report the security, load and performance review (CONVENTIONS
+§2); for a change of look, not applicable is a valid answer.
+
+Working method: the Edit tool; grep at execution time; a test for every new
+rule and a mutation for two (the scan that only emails/brand.ts spells an
+email's colour, the wordmark's link), each test green on the real code first,
+each mutation from a cp backup in the scratchpad, never git stash or git
+checkout --.
+
+The seed: a throwaway script in the session scratchpad (npx tsx --tsconfig
+./tsconfig.json, @/scripts/env-bootstrap) that makes a pending client "Smoke ·
+invite look" under my coach (samuel.k@taboola.com) through the app's own
+invitation service with the address s.kalepa91+invite-look@gmail.com,
+deleting any earlier one of that name first, and prints the invite link. Save
+its recipe to memory (reference_dev_seed_brand_look_smoke.md, indexed in
+reference_dev_seeds.md).
+
+Then commit directly to main (this plan file included), replace this commit's
+STATUS line in §6 with SHIPPED, the hash and the date, and hand over: what
+shipped; anything you decided that the plan did not say; and §7.7's smoke list
+with the invite link. The browser smoke is mine.
+```
+
 ---
 
 ## 7. The smokes
@@ -2159,6 +2594,49 @@ session prints.
    "There's no account for that Google email."
 3. If one of your client logins is a Google account you can open, repeat step 1 with it: you land on `/client`.
 
+### 7.6 The Invite box (after commit 10)
+
+The seed, under your coach: "Smoke · invite expired", invited nine days before the smoke, so its link ended two days
+before it; "Smoke · invite sent", added by hand and ready to activate, invited when the seed ran (the email is in your
+inbox); "Smoke · no invite", added by hand and ready to activate, never invited. "Test intake form bug" has an
+account.
+1. In `.env.local` put `#` at the start of the `EMAIL_FROM` line and restart `npm run dev`. Until step 5, every email
+   to an address but s.kalepa91@gmail.com fails, as before the domain was verified.
+2. On `/clients` add a client with "Send intake questionnaire": "Smoke · invite fails",
+   s.kalepa91+invite-fails@gmail.com. A warning says "Client added" and "The invitation email didn't send. Send it
+   from Invite on their page."
+3. Open Smoke · invite fails's page and hover the person-plus icon at the top right: it says "Invite". Click it: "Not
+   invited yet." and a Send invitation button.
+4. Click Send invitation: "Invitation not sent" and "The email couldn't be sent. Try again." The box stays open with
+   its button.
+5. Take the `#` out of `EMAIL_FROM`, restart `npm run dev` and reload the page.
+6. Open Invite and click Send invitation: "Invitation sent", "Sent to s.kalepa91+invite-fails@gmail.com.", and the box
+   closes. The email arrives.
+7. Open Invite again: "Sent <today>. The link works until <a week on>." and Resend invitation.
+8. Open Smoke · invite expired's Invite: "Sent <date>. The link expired on <date>." and Resend invitation.
+9. Open Test intake form bug's Invite: "Test intake form bug has an account." and no send button.
+10. Activate Smoke · invite sent: "Smoke · invite sent is now active". No second invitation arrives, and the seed's
+    email still opens the invite page.
+11. Activate Smoke · no invite: its invitation email arrives.
+
+### 7.7 The sign-in pages and the emails (after commit 11)
+
+The seed: a pending client "Smoke · invite look" under your coach, its invitation sent to
+s.kalepa91+invite-look@gmail.com, its link in the handover.
+1. In a private window open `/login`. It looks like atletafit.com: the dark background with the teal glow,
+   "atletafit" and its teal dot at the top left, and a white card headed "Sign in to your account" with the
+   waitlist's fields and a teal Sign in button. Continue with Google is white, with Google's "G".
+2. Click "atletafit" at the top left: atletafit.com opens. Go back.
+3. Sign in with <the coach address the session names> and a wrong password: "Wrong email or password." under the
+   form, in the card's red.
+4. Click "Forgot your password?", enter that address and send: the card says "Check your email", in the same look.
+5. Open the "Reset your password" email: "atletafit" on a dark band, a white card, a teal button, and "© <year>
+   Atletafit" under it. On your phone nothing runs past the screen's edge.
+6. Click its button: `/reset-password` in the same look. Set a new password: "Password updated", then `/login`.
+7. Sign in with it: `/dashboard`, and every screen after it, look as they did.
+8. Open the invite link in the private window: the invite page in the same look, with your name as the coach.
+9. Open the invitation email at s.kalepa91+invite-look@gmail.com: the same look as step 5.
+
 ---
 
 ## 8. The switch-over: DEV first, then PROD; sessions; undo
@@ -2171,7 +2649,9 @@ session prints.
   cookie is ignored: the owner (and any other signed-in person on DEV) signs in again with the password they have
   (D8). Pending invite links keep working. A Supabase reset email sent before the switch is dead: ask for a new one.
   Nothing is deleted from `auth.users`.
-- **Commits 3–9** are additive on DEV.
+- **Commits 3–9 and 11** are additive on DEV.
+- **Commit 10**'s session pushes its migration (§2.1), which drops `client_invitations.status`, then starts the code
+  that no longer reads it.
 
 ### 8.2 PROD
 
@@ -2180,7 +2660,8 @@ of the deploy), with no app deployed against it, holding no logins (208 copied n
 the marketing site's waitlist alone (8 rows on 2026-10-09). The app's PROD
 deployment and its env will live wherever the owner runs it (no file in the repo describes it). The session that
 runs this counts PROD's `auth.users` first: with no app on PROD none should appear, and a login found there is
-copied by rerunning 209's section 1 (idempotent) before the deploy.
+copied by rerunning 209's section 1 (idempotent) before the deploy. Commits 10 and 11 ship before this runs (D45), so
+step 3's push carries commit 10's migration with any other added after 213.
 
 1. **Before, the owner (§9.1 "before PROD"):** PROD's `DATABASE_URL`, a new `BETTER_AUTH_SECRET`,
    `BETTER_AUTH_URL` = the coaches' https address, `EMAIL_FROM` on the verified domain, Google's PROD redirect URI
@@ -2215,7 +2696,9 @@ copied by rerunning 209's section 1 (idempotent) before the deploy.
 
 - **A commit after 2** is undone by `git revert` of that commit alone; 211's two functions may stay (nothing calls
   them without commit 6), and so may 210's trigger without 5.5's code (all it does is copy an address and, from
-  213, delete Google links, which only commit 7 makes).
+  213, delete Google links, which only commit 7 makes). Commit 10 also needs a new migration that puts `status` back
+  before its revert is deployed, since the reverted code reads it: `text NOT NULL DEFAULT 'pending'` under 022's CHECK,
+  `accepted` where `accepted_at` is set and `sent` everywhere else.
 - **The switch itself:** `git revert` commit 2 (and every later one that landed), redeploy, and push a new
   migration (the next free number) with the SQL below. Sign-ins return to Supabase Auth with the passwords it
   holds: a password changed after the switch reverts to the old one; a login made after the switch does not exist
