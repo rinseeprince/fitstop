@@ -113,7 +113,7 @@ describe("the bundle clause's positive control (D35)", () => {
     expect(browserInit).toContain(`process.env.${CONTROL_VAR}`)
   })
 
-  it("is no Supabase key: the browser holds no Supabase client", () => {
+  it("is no Supabase key", () => {
     const gate = readFileSync(join(__dirname, "check-service-key-leak.ts"), "utf8")
     expect(gate).not.toMatch(/readEnvVar\(\s*["']NEXT_PUBLIC_SUPABASE/)
   })

@@ -184,14 +184,14 @@ describe("the guard on making a login (D9)", () => {
 })
 
 describe("the two-way password check (D7)", () => {
-  // Supabase stores $2a$ hashes; bcryptjs writes $2b$, the same algorithm
-  // under the newer prefix.
-  const supabaseHash = bcrypt.hashSync(PASSWORD, 10).replace(/^\$2b\$/, "$2a$")
+  // A stored bcrypt hash may carry $2a$; bcryptjs writes $2b$, the same
+  // algorithm under the newer prefix.
+  const bcryptHash = bcrypt.hashSync(PASSWORD, 10).replace(/^\$2b\$/, "$2a$")
 
-  it("checks a copied Supabase hash with bcrypt", async () => {
-    expect(supabaseHash.startsWith("$2a$10$")).toBe(true)
-    await expect(verifyBcryptOrScrypt({ hash: supabaseHash, password: PASSWORD })).resolves.toBe(true)
-    await expect(verifyBcryptOrScrypt({ hash: supabaseHash, password: WRONG })).resolves.toBe(false)
+  it("checks a bcrypt hash with bcrypt", async () => {
+    expect(bcryptHash.startsWith("$2a$10$")).toBe(true)
+    await expect(verifyBcryptOrScrypt({ hash: bcryptHash, password: PASSWORD })).resolves.toBe(true)
+    await expect(verifyBcryptOrScrypt({ hash: bcryptHash, password: WRONG })).resolves.toBe(false)
   })
 
   it("checks a password set through Better Auth with its scrypt", async () => {
@@ -207,7 +207,7 @@ describe("the two-way password check (D7)", () => {
   })
 
   it.each([
-    ["a copied Supabase hash", () => Promise.resolve(supabaseHash)],
+    ["a bcrypt hash", () => Promise.resolve(bcryptHash)],
     ["a Better Auth hash", () => hashPassword(PASSWORD)],
   ])("in Better Auth's pipeline: sign-in works with %s and refuses the wrong password", async (_label, makeHash) => {
     const { instance, db } = await liveAuth()
@@ -222,7 +222,7 @@ describe("the two-way password check (D7)", () => {
 
   it("in Better Auth's pipeline: an unverified address is refused even with the right password (D4)", async () => {
     const { instance, db } = await liveAuth()
-    seedLogin(db, "unverified@example.com", supabaseHash, false)
+    seedLogin(db, "unverified@example.com", bcryptHash, false)
     await expect(
       instance.api.signInEmail({ body: { email: "unverified@example.com", password: PASSWORD } })
     ).rejects.toMatchObject({ status: "FORBIDDEN", body: { code: "EMAIL_NOT_VERIFIED" } })

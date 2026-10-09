@@ -203,9 +203,9 @@ export const refuseBeforeEndpoint = createAuthMiddleware((ctx) => {
 })
 
 /**
- * Today's logins carry Supabase's bcrypt hashes, copied by migration 208; a
- * password set through Better Auth is its scrypt (D7). Better Auth's scrypt
- * check throws on a bcrypt hash, so the hash's own prefix picks the check.
+ * A login's password is a bcrypt hash (`$2…`) or, once set through Better
+ * Auth, its scrypt (D7). Better Auth's scrypt check throws on a bcrypt hash,
+ * so the hash's own prefix picks the check.
  * Hashing stays Better Auth's: every new password is scrypt.
  */
 export function verifyBcryptOrScrypt({ hash, password }: { hash: string; password: string }): Promise<boolean> {
@@ -421,7 +421,7 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     disableSignUp: true, // D1, D9: no public sign-up, ever
-    requireEmailVerification: true, // D4: every copied login is born verified
+    requireEmailVerification: true, // D4: every login is made verified
     minPasswordLength: PASSWORD_MIN_LENGTH,
     maxPasswordLength: PASSWORD_MAX_LENGTH,
     revokeSessionsOnPasswordReset: true, // a reset signs every other device out

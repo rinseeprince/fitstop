@@ -7,8 +7,10 @@ logic (5). **Commit 6 builds the page and the sidebar icon. Commit 7** writes th
 seeds DEV, and hands over the chat's browser smoke (§7.1). **The Claude connector is commits 8–9** (owner,
 2026-10-07: "Can you add it into this plan?"): the same reads, served to the coach's own Claude through a
 connector, behind a "Connect Claude" page in the app (8) and an MCP endpoint (9), with its own smoke (§7.2).
-DEV is at migration 207 and this plan adds 208; PROD is at 184 owing 185–207, and 208 joins that queue for the
-owner's PROD push. Every file and function named here was grepped on 2026-10-07 at `d5f23299`.
+This plan adds migrations 215 (the chat, commit 1) and 216 (the connector's tables, commit 8), the next free
+numbers on 2026-10-10 (a session that finds one taken takes the next free); each joins the owner's PROD push.
+Every file and function named here was grepped on 2026-10-07 at `d5f23299`; the connector's sign-in (§2.8) was
+read against Better Auth 1.7.7 on 2026-10-10.
 
 **The owner's model, in their words (2026-10-02 to 10-07):** "the text box to basically allow the coach to ask
 anything to do with their clients"; "show me every client who isn't improving on their bench press"; "Just
@@ -121,10 +123,10 @@ No entrance animation (the owner asks for none). The pulsing dot is a status ind
 
 ## 2. Target shape
 
-### 2.1 Data model: migration 208
+### 2.1 Data model: migration 215
 
 ```sql
--- 208_coach_chat.sql: the coach chat add-on (docs/COACH-CHAT-PLAN.md section 2.1).
+-- 215_coach_chat.sql: the coach chat add-on (docs/COACH-CHAT-PLAN.md section 2.1).
 -- A per-coach switch and a per-question usage ledger. Pure ASCII.
 
 ALTER TABLE public.coaches
@@ -447,8 +449,8 @@ startNewChat }` **first**, and `NavItem` gains `onReselect?: () => void`. Both r
 `collapsed-icon-strip.tsx`) call `item.onReselect?.()` when an item is clicked while its path is already
 active. That is a generic rule: the rails learn nothing about chat. The item shows for every coach (§3 D1), so
 `components/persistent-sidebar.test.tsx` and `scripts/check-prerender.ts`'s markers (`>Chat<`,
-`title="Chat"`) hold without special cases. `middleware.ts` `trainerRoutes` gains `"/chat"` with the
-`app/(coach)/chat/` folder in the same change (`middleware.test.ts` binds them both ways).
+`title="Chat"`) hold without special cases. `proxy.ts` `trainerRoutes` gains `"/chat"` with the
+`app/(coach)/chat/` folder in the same change (`proxy.test.ts` binds them both ways).
 `components/rail-ownership.test.ts`'s `SHELLS` gains `ChatShell`.
 
 ### 2.7 Shared AI pieces, cost and limits
@@ -476,8 +478,9 @@ questions. The owner sets the real price and limit from `npm run report:chat-usa
 
 ### 2.8 The Claude connector (commits 8–9)
 
-No OAuth server code of our own: **Supabase Auth's OAuth 2.1 server is the authorization server**, and the app
-supplies the consent page, the MCP endpoint and its metadata. Claude's connector rules (claude.com/docs/
+No OAuth server code of our own: **Better Auth's MCP plugin is the authorization server** (`@better-auth/mcp`,
+Better Auth's OAuth 2.1 provider configured for MCP, D21), inside the app beside every other login, and the app
+supplies the consent page and the MCP endpoint. Claude's connector rules (claude.com/docs/
 connectors/building/authentication, read 2026-10-07): a `401` carrying `WWW-Authenticate: Bearer
 resource_metadata="…"`; protected resource metadata whose `resource` equals the address the coach enters and
 whose first `authorization_servers` entry is the issuer; PKCE S256; DCR (or CIMD); redirect URIs
@@ -485,52 +488,62 @@ whose first `authorization_servers` entry is the issuer; PKCE S256; DCR (or CIMD
 `http://127.0.0.1:<any port>/callback`); the consent screen shows the redirect address's host; the discovery,
 registration and token endpoints answer within 10 seconds; calls come from `160.79.104.0/21`.
 
-- **Supabase settings** (the owner, in the dashboard; DEV for commits 8–9, PROD in §8): Authentication → OAuth
-  Server → turn the OAuth 2.1 server on, turn on dynamic client registration, set the authorization path to
-  `/oauth/consent`. Its metadata is then at `https://<ref>.supabase.co/.well-known/oauth-authorization-server/
-  auth/v1`, with a `registration_endpoint` and S256. Its access tokens are ordinary Supabase JWTs carrying
-  `sub`, `role` and `client_id`, valid for an hour, refreshed with rotation by Supabase.
-- **The consent page** `/oauth/consent?authorization_id=<id>` (`app/(coach)/oauth/consent/page.tsx`, so
-  `trainerRoutes` gains `"/oauth"` with the folder; `authorization_id` is read behind a Suspense boundary,
-  CONVENTIONS §7): `supabase.auth.oauth.getAuthorizationDetails(authorizationId)` (supabase-js 2.81.0 has it)
-  gives the client's name and redirect address. The page shows §1.3 rule 3's words with that name and host,
-  then calls `supabase.auth.oauth.approveAuthorization` or `denyAuthorization` and sends the browser to the
-  `redirect_url` Supabase returns. A coach without the add-on gets rule 4 (Don't allow only). An unknown or
-  expired id shows "This connection request has expired. Start again from Claude." A redirect address on
-  `localhost` or `127.0.0.1` adds the own-computer line. The look: one white card on `#f4f7f6`, the Dialog
+- **The plugin** (`lib/auth.ts`; facts read from `@better-auth/mcp@1.7.7` and `@better-auth/oauth-provider@1.7.7`
+  on 2026-10-10): `jwt()` and `mcp({ loginPage: "/login", consentPage: "/oauth/consent", resource:
+  NEXT_PUBLIC_APP_URL + "/api/mcp", scopes, allowDynamicClientRegistration: true,
+  allowUnauthenticatedClientRegistration: true })` beside the plugins already there. Registration is off until
+  switched on, and Claude registers before anyone signs in, hence both. Its access tokens are JWTs signed with the
+  `jwt()` plugin's keys and bound to the resource (their audience); refresh tokens rotate. Its endpoints are
+  Better Auth's under `/api/auth` (`/oauth2/register`, `/oauth2/authorize`, `/oauth2/consent`, `/oauth2/token`,
+  …), which the proxy already leaves to Better Auth. The browser side is the provider's `oauthProviderClient()`
+  in `lib/auth-client.ts`.
+- **Its tables** (migration 216, from `npx auth@1.7.7 generate`, ids `uuid` as in migration 208): in
+  `better_auth`, `oauthClient`, `oauthAccessToken`, `oauthRefreshToken`, `oauthConsent`, `oauthClientAssertion`,
+  `oauthResource`, `oauthClientResource`, and the `jwt()` plugin's `jwks`; RLS on, no policy, postgres's alone,
+  as `npm run check:rls` clause 6 holds every table there.
+- **Discovery:** the issuer is `<the app's URL>/api/auth`, and RFC 8414's address for it,
+  `/.well-known/oauth-authorization-server/api/auth`, lies outside `/api/auth`, so the app serves it:
+  `app/.well-known/oauth-authorization-server/api/auth/route.ts`, the provider's
+  `oauthProviderAuthServerMetadata(auth)`. The protected resource metadata (RFC 9728) is the MCP plugin's, at
+  its path under `/api/auth`; Claude asks for it at `/.well-known/oauth-protected-resource/api/mcp` and at the
+  401's `resource_metadata`, so the app serves that address too unless the plugin's answer already names one
+  Claude reaches. Commit 8's session fetches each address on DEV and states which routes it added; the metadata's
+  `resource` is `NEXT_PUBLIC_APP_URL + "/api/mcp"` and its first authorization server is the issuer.
+- **The consent page** `/oauth/consent` (`app/(coach)/oauth/consent/page.tsx`, so `trainerRoutes` gains
+  `"/oauth"` with the folder; its query is read behind a Suspense boundary, CONVENTIONS §7): the provider sends
+  the coach there with the authorization's signed query, naming the client and the scopes asked for. The page
+  reads the client's name and redirect address from the provider (its public-client endpoint), shows §1.3 rule
+  3's words with that name and host, then sends Allow or Don't allow to the provider's consent endpoint and
+  sends the browser where the provider answers. A coach without the add-on gets rule 4 (Don't allow only). A
+  query the provider refuses (expired or altered) shows "This connection request has expired. Start again from
+  Claude." A redirect address on `localhost` or `127.0.0.1` adds the own-computer line (`lib/oauth-consent.ts`).
+  The look: one white card on `#f4f7f6`, the Dialog
   recipe (`rounded-[6px] p-6`, an 18px semibold title, `text-sm text-[#5a7d82]` body), "Don't allow" ghost then
   "Allow" in the teal primary, each showing `Loader2` while it runs. **Frames:** `PageLoading label="Loading…"`
   until both the coach and the request's details are known, then the one card; a click disables both buttons,
-  spins the one clicked, and the browser leaves for the `redirect_url`. No screen in between.
-- **Coming back after sign-in:** the middleware sends a signed-out visitor of `/oauth/consent` to
-  `/login?next=<that path and query>`, and the login page follows `next` **only** when it matches
-  `^/oauth/consent\?authorization_id=[0-9a-f-]{36}$` (a pure validator, `lib/oauth-consent.ts`, tested against
-  every open-redirect shape: absolute URLs, `//host`, backslashes, encoded slashes, extra parameters). Every
-  other redirect stays as it is: this is the "write together with a same-site validator" the middleware's
-  "Deliberately no ?redirectTo=" comment asks for. If Google sign-in can carry `next` through
-  `/auth/callback` with the same validator, it does; if it can't safely, it lands on the dashboard and the coach
-  starts again from Claude. The session reads the callback, decides, and says which.
+  spins the one clicked, and the browser leaves for the address the provider answers with. No screen in between.
+- **Coming back after sign-in:** the provider sends a signed-out coach to `/login` carrying its signed query,
+  and `oauthProviderClient()` resumes the authorization once they sign in, so they land on the consent page.
+  The app adds no return path of its own, and the proxy's "Deliberately no ?redirectTo=" stays. Commit 8's
+  session checks the way back after email and password and after Google, and states each.
 - **The MCP endpoint** `/api/mcp`: `mcp-handler@1.1.0` with `@modelcontextprotocol/sdk@1.26.0` (the pair the
   handler pins; both accept the repo's zod 3.25. `mcp-handler@2` needs zod 4 across the repo, which this plan
   doesn't do). Stateless Streamable HTTP: no SSE, no Redis. The route file is `app/api/mcp/route.ts` with
   `createMcpHandler`'s `basePath: "/api"`, so it answers at `/api/mcp` only (no `[transport]` catch-all
-  under `/api`). Wrapped in `withMcpAuth(handler, verifyToken, { required: true, resourceMetadataPath:
-  "/.well-known/oauth-protected-resource", resourceUrl })`.
-- **`/.well-known/oauth-protected-resource`** (`app/.well-known/oauth-protected-resource/route.ts`):
-  `protectedResourceHandler({ authServerUrls: [NEXT_PUBLIC_SUPABASE_URL + "/auth/v1"], resourceUrl })` and
-  `metadataCorsOptionsRequestHandler()` for OPTIONS. `resourceUrl` is `NEXT_PUBLIC_APP_URL + "/api/mcp"` in both
-  places, never worked out from the request. With `NEXT_PUBLIC_APP_URL` unset, both routes answer 500 "The
-  connector isn't set up on this server yet."
-- **The middleware** lets exactly `/api/mcp`, `/.well-known/oauth-protected-resource` and
-  `/.well-known/oauth-protected-resource/api/mcp` (Claude's fallback probe) through without a cookie session:
-  exact paths in `skipAuthRoutes`, never a prefix (the file's own warning).
-- **`verifyToken(req, bearerToken)`:** `supabaseAdmin.auth.getUser(bearerToken)` checks the token; its claims
-  must carry a `client_id` (Supabase issued it through the OAuth server, so a web session's token is refused with
-  401); the user must be a coach (`coaches.user_id`). It returns `AuthInfo { token, clientId, scopes, extra: {
-  coachId } }`. Then, on every request: `chat_enabled` false → `403 { error: "Chat isn't switched on for this
-  account." }`; `connectorRateLimit(request, coachId)` (new tier: 120 calls per 5 minutes, key
-  `connector:${coachId}`, prefix `ratelimit:connector`). **No IP-keyed limit on this route:** every coach's
-  Claude calls arrive from Anthropic's one egress range, so an IP limit would throttle all coaches together.
+  under `/api`). Wrapped in `requireMcpAuth(auth, handler, { resource })` (`@better-auth/mcp`): it checks the
+  bearer token against the app's keys (signature, issuer, audience, expiry), answers a missing or bad one 401
+  with `WWW-Authenticate: Bearer resource_metadata="…"`, and hands the handler the token's claims. `resource` is
+  `NEXT_PUBLIC_APP_URL + "/api/mcp"`, never worked out from the request; with `NEXT_PUBLIC_APP_URL` unset the
+  route answers 500 "The connector isn't set up on this server yet."
+- **The proxy** lets exactly `/api/mcp` and the well-known addresses the app serves through without a session:
+  exact paths beside `PUBLIC_PAGES`, never a prefix.
+- **Who is asking** (`services/coach-chat/connector-auth.ts`, `coachForConnectorToken(claims)`): the token's
+  `sub` is the Better Auth user id, the same id a web session names, and it must be a coach's
+  (`coaches.user_id`); anyone else → 401. Then, on every request: `chat_enabled` false → `403 { error: "Chat
+  isn't switched on for this account." }`; `connectorRateLimit(request, coachId)` (new tier: 120 calls per 5
+  minutes, key `connector:${coachId}`, prefix `ratelimit:connector`). **No IP-keyed limit on this route:** every
+  coach's Claude calls arrive from Anthropic's one egress range, so an IP limit would throttle all coaches
+  together.
 - **The tools:** `services/coach-chat/tools/mcp-adapter.ts` registers `[...ROSTER_TOOLS, ...CLIENT_TOOLS]` with
   `server.registerTool(name, { title, description, inputSchema: tool.input.shape, annotations: { title,
   readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, handler)`. The
@@ -543,10 +556,9 @@ registration and token endpoints answer within 10 seconds; calls come from `160.
   "Each client's `page` is their page in Atletafit; link to it when you name them."
 - **Audit:** every tool call records `recordAuditEvent` (`void`-prefixed) with a new
   `AUDIT_ACTIONS.CONNECTOR_READ`, metadata `{ tool, clientId? }`: what Claude read and for whom, never any data.
-- **Not built, recorded in TECHNICAL-DEBT by commit 9:** listing or revoking Claude's access inside the app
-  (supabase-js 2.81.0 has no grant listing; `getUserGrants` and `revokeGrant` arrive in a later version), so the
-  coach disconnects in Claude and the add-on switch cuts access; and audience binding (Supabase tokens carry no
-  per-resource audience, so the `client_id` check is what keeps a web session's token out).
+- **Not built, recorded in TECHNICAL-DEBT by commit 9:** listing or revoking Claude's access inside the app.
+  The provider keeps each consent and token (its get-consents and delete-consent endpoints), so the screen can
+  come later (D29); until then the coach disconnects in Claude and the add-on switch cuts access.
 
 ---
 
@@ -578,15 +590,15 @@ the owner's rules or the code.
 | D18 | No em dash in UI copy, and the model is told not to write one. | CONVENTIONS §2. |
 | D19 | The notice has no contact line yet. | The owner adds one when there is a way to buy it. |
 | D20 | **The connector is part of the chat add-on:** the same `chat_enabled` switch gates the consent page and every connector call. | One thing to sell and switch on. If the owner wants to sell them apart, a second column splits them later. |
-| D21 | Supabase Auth's OAuth 2.1 server (dynamic client registration on) is the authorization server; the app hosts only the consent page. | It's the project's existing auth, it meets Claude's rules (PKCE S256, DCR, refresh rotation), and an OAuth server of our own is security code nobody needs to write. |
-| D22 | `mcp-handler@1.1.0` + `@modelcontextprotocol/sdk@1.26.0`: two new packages, approved by the owner's go on this plan (CONVENTIONS §2). | The official MCP library and Vercel's Next.js adapter for it; the 1.x pair works with the repo's zod 3.25, and the SDK below 1.26.0 has a published vulnerability. |
+| D21 | Better Auth's MCP plugin (its OAuth 2.1 provider, dynamic client registration on) is the authorization server; the app hosts the consent page and the MCP endpoint. | It is the app's own sign-in, so a token names the same user id as a web session; it meets Claude's rules (PKCE S256, DCR, refresh rotation, tokens bound to the resource); and an OAuth server of our own is security code nobody needs to write. |
+| D22 | `@better-auth/mcp@1.7.7` + `@better-auth/oauth-provider@1.7.7` (commit 8), `mcp-handler@1.1.0` + `@modelcontextprotocol/sdk@1.26.0` (commit 9): new packages, approved by the owner's go on this plan (CONVENTIONS §2). | Better Auth's pair is the plugin, at Better Auth's pinned version (the provider carries its own zod 4 as a dependency of its own). The official MCP library and Vercel's Next.js adapter for it; the 1.x pair works with the repo's zod 3.25, and the SDK below 1.26.0 has a published vulnerability. |
 | D23 | Stateless Streamable HTTP at `NEXT_PUBLIC_APP_URL + "/api/mcp"`; no SSE, no Redis. | What Claude uses; nothing to keep between calls. |
-| D24 | Only OAuth-issued tokens (a `client_id` claim) of a coach with the add-on; a web session's token is refused. | Every connection went through the consent page and belongs to one Claude client. |
+| D24 | Only a token the plugin issued for this resource, of a coach with the add-on; a web session's token is refused. | Every connection went through the consent page and belongs to one Claude client. |
 | D25 | `connectorRateLimit` 120 calls per 5 minutes per coach; no IP-keyed limit on `/api/mcp`. | Claude's calls for every coach share one egress range. |
 | D26 | The same twelve tools with read-only annotations; `list_clients` adds each client's page address; the server instructions carry the data rules. | "Build once, use twice" (2026-10-02); Claude can link back into the app. |
 | D27 | Every connector tool call writes an audit event (coach, tool, client id; no data). | The coach's data leaves the app on each call, so the trail matters more than in the in-app chat. |
-| D28 | A sign-in return path for the consent page alone, through a strict same-site validator. | Supabase's flow needs it; the middleware's own comment says how to add one safely. |
-| D29 | No "connected apps" screen; the coach disconnects in Claude, and the add-on switch cuts access. | supabase-js 2.81.0 can't list or revoke grants; recorded in TECHNICAL-DEBT. |
+| D28 | No sign-in return path of the app's own: the provider's browser plugin resumes the authorization after sign-in. | The proxy keeps no `?redirectTo=`, so no redirect can be steered through it. |
+| D29 | No "connected apps" screen yet; the coach disconnects in Claude, and the add-on switch cuts access. | The provider keeps consents, so the screen can come later; recorded in TECHNICAL-DEBT. |
 
 ---
 
@@ -610,19 +622,22 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | `app/api/coach/chat/route.ts`, `services/coach-chat/chat-turn-service.ts`, `chat-system-prompt.ts`, `lib/validations/coach-chat.ts`, `types/coach-chat.ts` | none | new | 4 |
 | `lib/coach-chat/answer-markup.ts`, `lib/coach-chat/chat-session-store.ts`, `hooks/use-coach-chat.ts` | none | new | 5 |
 | `lib/navigation.ts`, `components/sidebar-nav.tsx`, `components/collapsed-icon-strip.tsx` | 7 items | Chat first; `onReselect` | 6 |
-| `middleware.ts` + `middleware.test.ts` | 5 trainer routes | + `/chat` | 6 |
+| `proxy.ts` + `proxy.test.ts` | 5 trainer routes | + `/chat` | 6 |
 | `components/rail-ownership.test.ts` | 4 shells | + `ChatShell` | 6 |
 | `scripts/check-prerender.ts` | 8 pages | + `/chat` with the strip | 6 |
 | `components/clients/training/program-builder/assistant/assistant-panel.tsx` | local textarea fit | `lib/ui/fit-textarea.ts` | 6 |
 | `app/(coach)/chat/**`, `components/coach-chat/**` | none | new | 6 |
 | `docs/ARCHITECTURE.md`, `CONVENTIONS.md`, `TECHNICAL-DEBT.md` | no chat | describe it (current shape only) | 7 |
 | `scripts/chat-usage-report.ts`, `package.json` | none | `npm run report:chat-usage` | 7 |
-| `middleware.ts` + `middleware.test.ts` | 6 trainer routes; no `next` on `/login` | + `/oauth`; a signed-out `/oauth/consent` goes to `/login?next=…` | 8 |
-| `app/login/page.tsx` (and `app/auth/callback/route.ts` if it can carry `next`) | lands on the role's home | follows a validated `next` | 8 |
+| `package.json` | no MCP packages | + `@better-auth/mcp@1.7.7`, `@better-auth/oauth-provider@1.7.7` | 8 |
+| `lib/auth.ts`, `lib/auth-client.ts` | `admin`, `bearer()`, `expo()`; `createAuthClient()` | + `jwt()`, `mcp(…)`; + `oauthProviderClient()` | 8 |
+| `better_auth` | Better Auth's five tables | + the provider's seven and `jwks` (migration 216) | 8 |
+| `proxy.ts` + `proxy.test.ts` | 6 trainer routes; 3 exact public pages | + `/oauth`; + the authorization-server address | 8 |
+| `app/.well-known/oauth-authorization-server/api/auth/route.ts` | none | new | 8 |
 | `lib/oauth-consent.ts`, `app/(coach)/oauth/consent/page.tsx` (+ its components) | none | new | 8 |
-| `middleware.ts` `skipAuthRoutes` | 3 exact paths | + `/api/mcp` and the two well-known paths | 9 |
-| `package.json` | no MCP packages | + `mcp-handler@1.1.0`, `@modelcontextprotocol/sdk@1.26.0` | 9 |
-| `app/api/mcp/route.ts`, `app/.well-known/oauth-protected-resource/route.ts`, `services/coach-chat/tools/mcp-adapter.ts`, `services/coach-chat/connector-auth.ts` (`verifyToken`) | none | new | 9 |
+| `proxy.ts` | | + `/api/mcp` and the protected-resource address | 9 |
+| `package.json` | | + `mcp-handler@1.1.0`, `@modelcontextprotocol/sdk@1.26.0` | 9 |
+| `app/api/mcp/route.ts`, the protected-resource address's route if the app serves it (§2.8), `services/coach-chat/tools/mcp-adapter.ts`, `services/coach-chat/connector-auth.ts` (`coachForConnectorToken`) | none | new | 9 |
 | `lib/rate-limit.ts`; `AUDIT_ACTIONS` in `lib/constants.ts` | | + `connectorRateLimit`; + `CONNECTOR_READ` | 9 |
 | `docs/ARCHITECTURE.md`, `CONVENTIONS.md`, `TECHNICAL-DEBT.md` | the chat | + the connector | 9 |
 
@@ -630,8 +645,7 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 connector): §9 and §10's list of routes that rate-limit after auth (gains `chatRateLimit`, then
 `connectorRateLimit`, the one route with no IP guard, and why); §11 (gains the chat, then the connector); §6
 (the folder map gains `services/coach-chat/`, `components/coach-chat/`, `lib/coach-chat/`, `lib/ai/`); §19
-(`NEXT_PUBLIC_APP_URL` becomes required for the connector). The middleware's "Deliberately no ?redirectTo="
-comment is rewritten in commit 8 to name the one validated return path. **ARCHITECTURE lines that
+(`NEXT_PUBLIC_APP_URL` becomes required for the connector). **ARCHITECTURE lines that
 describe the old shape** and change in commit 7: "Coach route group" ("the five folders", around lines
 1232–1239), "Session bootstrap" (the coach fields), "Route namespaces", the AI program assistant's paragraphs
 naming its private fence and price table.
@@ -664,22 +678,22 @@ naming its private fence and price table.
     at the budget → 402; then, with the add-on on, "Who needs my attention today?" streams `start`, `text`
     and `done` and writes one usage row; a second question within five minutes has `cache_read_tokens > 0`.
     It prints both answers. The two questions cost a few cents; that is approved.
-  - 8: `scripts/connector-consent-proof.ts`: registers a throwaway OAuth client on DEV's Supabase through its
-    `registration_endpoint` (redirect `http://localhost:8765/callback`, nothing listening), starts an
-    authorization with PKCE S256, and follows Supabase's redirect to `/oauth/consent?authorization_id=…`.
-    Signed out, that address answers 307 to `/login?next=…`; `/login?next=https://evil.example` and the other
-    open-redirect shapes are ignored. As the owner's coach (a minted session) with the add-on on, approving
-    returns a `redirect_url` carrying a code; the code and verifier exchange at Supabase's token endpoint for an
-    access token whose claims carry `client_id`. With the add-on off, the page offers only Don't allow. The
-    throwaway client is deleted in `finally` (through Supabase's admin API if it has one; otherwise the session
-    names it in the handover).
+  - 8: `scripts/connector-consent-proof.ts` against `next dev` on DEV: the metadata at
+    `/.well-known/oauth-authorization-server/api/auth` lists a `registration_endpoint` and S256; it registers a
+    throwaway client there (redirect `http://localhost:8765/callback`, nothing listening) and starts an
+    authorization with PKCE S256. Signed out, it lands on `/login` carrying the provider's query. As the owner's
+    coach (a minted session) with the add-on on, it reaches `/oauth/consent`, and Allow answers with the
+    callback carrying a code; the code and verifier exchange at `/api/auth/oauth2/token` for an access token
+    whose audience is `NEXT_PUBLIC_APP_URL + "/api/mcp"` and whose `sub` is the coach's user id. With the add-on
+    off, the page offers only Don't allow. The throwaway client, its consent and its tokens are deleted in
+    `finally`.
   - 9: `scripts/connector-mcp-proof.ts` against `next dev`, with a token from commit 8's flow: no token → 401
     with `WWW-Authenticate: Bearer resource_metadata="…"`; the metadata's `resource` is
-    `NEXT_PUBLIC_APP_URL + "/api/mcp"` and its first authorization server is DEV's `…/auth/v1`; a web session's
-    access token → 401; the add-on off → 403; then `initialize`, `tools/list` (twelve tools, each
-    `readOnlyHint: true`), `tools/call list_clients` (the owner's clients, with `page`), and
-    `get_client_training` with another coach's client id → "That client isn't one of yours.". One audit event
-    per call.
+    `NEXT_PUBLIC_APP_URL + "/api/mcp"` and its first authorization server is the issuer,
+    `NEXT_PUBLIC_APP_URL + "/api/auth"`; a web session's bearer token → 401; a client's token → 401; the add-on
+    off → 403; then `initialize`, `tools/list` (twelve tools, each `readOnlyHint: true`), `tools/call
+    list_clients` (the owner's clients, with `page`), and `get_client_training` with another coach's client id →
+    "That client isn't one of yours.". One audit event per call.
 - **Tests** (vitest; services mocked as elsewhere, so ownership and statuses are also proved by the proofs):
   every tool's output and bounds; a foreign client id → the sentence and no service call; units; fencing; the
   truncation note; the route's handler order and every status; the stream's event order; stop → `stopped` and a
@@ -687,9 +701,9 @@ naming its private fence and price table.
   (last 12 answered turns, trims); the prompt's seven points and size; the markup (every rule in §2.5,
   including a split mention); the store (every action, sessionStorage round trip and a corrupt value, one
   question in flight, a line split across chunks); the page's frames F1–F9; reselect on both rails; the binding,
-  rail-ownership and prerender updates. The connector: the `next` validator against every open-redirect shape;
-  the consent page's states (signed in, no add-on, expired id, loopback warning, approve and deny pending);
-  `verifyToken` (no `client_id` → 401, not a coach → 401, add-on off → 403); the middleware's new exact paths
+  rail-ownership and prerender updates. The connector: the plugin's options (registration, the resource, the
+  login and consent pages); the consent page's states (signed in, no add-on, a refused request, loopback warning,
+  approve and deny pending); `coachForConnectorToken` (not a coach → 401, add-on off → 403); the proxy's new exact paths
   (and that a longer path under them is NOT skipped); the adapter (twelve tools, annotations, `isError`); the
   connector tier; an audit event per call. **A test and a mutation for every new rule.**
 - **The browser smokes** are the owner's: the chat's after commit 7 (§7.1), the connector's after commit 9
@@ -707,7 +721,7 @@ over when everything the commit lists is built and every gate passes.
 
 **STATUS: NOT STARTED.**
 
-- Migration 208 (§2.1), applied to DEV, `types/database.ts` regenerated in the same commit.
+- Migration 215 (§2.1), applied to DEV, `types/database.ts` regenerated in the same commit.
 - `Coach.chatEnabled`, `mapCoachRow`, and the services of §4's commit-1 rows: `getCoachChatAccess(coachId)`
   (the coach's flag, name, timezone, units), `getChatSpendThisMonth(coachId, coachToday)` (the month starts at
   00:00 on the 1st in the coach's time zone; returns `{ spentUsd, resetsOn }`), `recordChatUsage(row)`.
@@ -737,7 +751,7 @@ decision this commit needs is blank, if building exactly what this commit lists
 would break a CONVENTIONS.md rule that §4 does not mark for rewriting, or if a
 gate fails and its root fix lies outside this commit.
 
-Done when: everything that section lists is built; migration 208 is on DEV and
+Done when: everything that section lists is built; migration 215 is on DEV and
 types/database.ts shows exactly its changes; scripts/coach-chat-ledger-proof.ts
 passes on DEV; an independent review of the whole diff, docs included, has run
 and every finding is fixed at the root; and every gate passes after the build
@@ -999,7 +1013,7 @@ smoke for this commit: the tests are the evidence.
 Read CONVENTIONS.md (whole) and docs/COACH-CHAT-PLAN.md (whole), and from
 docs/newdesignsystem.md: "Non-negotiables checklist", "Typography", "Buttons",
 "Loading & async states" and "Layout". From docs/ARCHITECTURE.md read only:
-"Auth Model" → "Coach route group (app/(coach)/)" and "Middleware routing";
+"Auth Model" → "Coach route group (app/(coach)/)" and "Proxy routing";
 "Coach-side Data Flow" → "Client page tab structure". Also read
 components/programs/programs-shell.tsx and app/(coach)/dashboard/programs/
 layout.tsx (a strip shell and its layout), components/collapsed-icon-strip.tsx,
@@ -1100,17 +1114,16 @@ shipped; anything you decided that the plan did not say; and §7.1's smoke list,
 words, no database edits and no faked dates. The browser smoke is mine.
 ```
 
-### Commit 8 — `feat(connector): the "Connect Claude" page and the sign-in path back to it`
+### Commit 8 — `feat(connector): the "Connect Claude" page, on Better Auth's MCP plugin`
 
 **STATUS: NOT STARTED.**
 
-- **The owner's prerequisite on DEV** (§2.8): the Supabase OAuth server on, dynamic client registration on, the
-  authorization path `/oauth/consent`. The session checks DEV's authorization-server metadata first and stops
-  with §2.8's three dashboard steps if it has no `registration_endpoint`.
-- `lib/oauth-consent.ts` (the `next` validator; the loopback check), the consent page and its card (§1.3 rules
-  2–4, §2.8), `trainerRoutes` + `"/oauth"` with the folder, the middleware's signed-out redirect carrying
-  `next`, the login page following a validated `next` (and the Google path, decided and stated), and the
-  middleware's "Deliberately no ?redirectTo=" comment rewritten to name the one return path.
+- The two Better Auth packages (D22); `jwt()` and `mcp(…)` in `lib/auth.ts`, `oauthProviderClient()` in
+  `lib/auth-client.ts`; migration 216 applied to DEV; the authorization-server address and its exact path in the
+  proxy (§2.8).
+- `lib/oauth-consent.ts` (the loopback check), the consent page and its card (§1.3 rules 2–4, §2.8),
+  `trainerRoutes` + `"/oauth"` with the folder, and the way back after sign-in, email and password and Google,
+  checked and stated.
 - Tests (§5) and `scripts/connector-consent-proof.ts` run on DEV.
 - No MCP endpoint yet, so an approved connection has nothing to call until commit 9.
 
@@ -1118,20 +1131,17 @@ words, no database edits and no faked dates. The browser smoke is mine.
 Read CONVENTIONS.md (whole) and docs/COACH-CHAT-PLAN.md (whole), and from
 docs/newdesignsystem.md: "Non-negotiables checklist", "Buttons", "Overlays" →
 "Dialog", and "Loading & async states". From docs/ARCHITECTURE.md read only:
-"Auth Model" (whole). Also read middleware.ts, middleware.test.ts,
-app/login/page.tsx, app/auth/callback/route.ts, contexts/auth-context.tsx and
-scripts/proof-session.ts. For Supabase's OAuth server, read
-https://supabase.com/docs/guides/auth/oauth-server/oauth-flows and
-https://supabase.com/docs/guides/auth/oauth-server/mcp-authentication, and the
-AuthOAuthServerApi type in node_modules/@supabase/auth-js. Open another section
-only when something you touch points to it.
+"Auth Model" (whole). Also read lib/auth.ts, lib/auth-client.ts, proxy.ts,
+proxy.test.ts, app/login/page.tsx, contexts/auth-context.tsx and
+scripts/proof-session.ts. For the plugin, install exactly @better-auth/mcp@1.7.7
+and @better-auth/oauth-provider@1.7.7 (D22, approved) by CONVENTIONS §2's
+lockfile route, then read their type definitions in node_modules before using
+them. Open another section only when something you touch points to it.
 
 Job: Commit 8 of docs/COACH-CHAT-PLAN.md §6 — `feat(connector): the "Connect
-Claude" page and the sign-in path back to it`. Build exactly what that section
-lists, to §1.3 and §2.8, with every word of copy as §1.3 gives it. First fetch
-https://aeaphsslctwcmebldrzx.supabase.co/.well-known/oauth-authorization-server/auth/v1:
-if it lists no registration_endpoint, stop and hand me §2.8's three dashboard
-steps.
+Claude" page, on Better Auth's MCP plugin`. Build exactly what that section
+lists, to §1.3 and §2.8, with every word of copy as §1.3 gives it. If a plugin
+fact §2.8 states is false at 1.7.7, say so and stop.
 
 You have my go: don't show me a plan and don't wait for my review. Plan for
 yourself, build it, and hand over when it is done. Stop and ask me only if a §3
@@ -1139,16 +1149,15 @@ decision this commit needs is blank, if building exactly what this commit lists
 would break a CONVENTIONS.md rule that §4 does not mark for rewriting, or if a
 gate fails and its root fix lies outside this commit.
 
-Done when: everything that section lists is built;
-scripts/connector-consent-proof.ts passes on DEV (Supabase redirects to its Site
-URL plus the authorization path, so read authorization_id from that Location
-whatever its host); an independent review of the whole diff, docs included, has
-run and every finding is fixed at the root; and every gate passes after the
-build and again after the review's fixes: npx tsc --noEmit, npx eslint ., npx
-vitest run, npm run check:labels, npx knip, npm run check:service-key, npm run
+Done when: everything that section lists is built; migration 216 is on DEV;
+scripts/connector-consent-proof.ts passes against next dev on DEV; an
+independent review of the whole diff, docs included, has run and every finding
+is fixed at the root; and every gate passes after the build and again after the
+review's fixes: npx tsc --noEmit, npx eslint ., npx vitest run, npm run
+check:labels, npx knip, npm run check:service-key, npm run check:rls, npm run
 build. Never skip, weaken or delete a test to make a gate pass. Report the
-security, load and performance review (CONVENTIONS §2), every open-redirect
-shape included.
+security, load and performance review (CONVENTIONS §2), registration open to
+anyone and every state of the consent page included.
 
 Working method: the Edit tool, not shell edit scripts; grep at execution time
 for every dependant (§4 is a map, not a promise); a test and a mutation for
@@ -1159,23 +1168,24 @@ lsof -i :3000 and never stop a server you didn't start.
 
 Then commit directly to main (this plan file included), replace this commit's
 STATUS line in §6 with SHIPPED, the hash and the date, and hand over: what
-shipped; anything you decided that the plan did not say (the Google sign-in
-path among them); every coach-visible rule you built, one plain sentence each;
-and the proof's output. The browser smoke comes after commit 9.
+shipped; anything you decided that the plan did not say (the way back after a
+Google sign-in among them); every coach-visible rule you built, one plain
+sentence each; and the proof's output. The browser smoke comes after commit 9.
 ```
 
 ### Commit 9 — `feat(connector): Claude reads a coach's clients through an MCP endpoint, with the chat's twelve reads`
 
 **STATUS: NOT STARTED.**
 
-- The two packages (D22), `app/api/mcp/route.ts`, `app/.well-known/oauth-protected-resource/route.ts`,
-  `services/coach-chat/connector-auth.ts` (`verifyToken`), `services/coach-chat/tools/mcp-adapter.ts`,
-  `connectorRateLimit`, `AUDIT_ACTIONS.CONNECTOR_READ`, and the middleware's three exact paths (§2.8).
+- The two MCP packages (D22), `app/api/mcp/route.ts` inside `requireMcpAuth`, the protected-resource address
+  if the app serves it, `services/coach-chat/connector-auth.ts` (`coachForConnectorToken`),
+  `services/coach-chat/tools/mcp-adapter.ts`, `connectorRateLimit`, `AUDIT_ACTIONS.CONNECTOR_READ`, and the
+  proxy's exact paths (§2.8).
 - Tests (§5) and `scripts/connector-mcp-proof.ts` run against `next dev` on DEV.
 - Docs, current shape only: ARCHITECTURE gains "Coach-side Data Flow → Claude connector" (the consent page,
-  the endpoint and its metadata, the token rule, the tier, the audit) and the "Auth Model" and "Middleware
-  routing" lines it changes; CONVENTIONS the rules §4 marks for commit 9; TECHNICAL-DEBT §2.8's two "Not built"
-  items.
+  the plugin, the endpoint and its metadata, the token rule, the tier, the audit) and the "Auth Model" and
+  "Proxy routing" lines it changes; CONVENTIONS the rules §4 marks for commit 9; TECHNICAL-DEBT §2.8's "Not
+  built" item.
 - The connector smoke (§7.2): commit 7's seed rerun just before the handover, and the list.
 
 ```text
@@ -1183,12 +1193,13 @@ Read CONVENTIONS.md (whole) and docs/COACH-CHAT-PLAN.md (whole). From
 docs/ARCHITECTURE.md read only: "Auth Model" (whole), "API Route Structure",
 and "Coach-side Data Flow" → "Coach chat (/chat)". Also read services/coach-chat/
 (the tools you serve), app/api/coach/chat/route.ts (the handler shape to
-mirror), lib/rate-limit.ts, middleware.ts and scripts/connector-consent-proof.ts
-(how to get a token). For Claude's rules, read
+mirror), lib/rate-limit.ts, lib/auth.ts, proxy.ts and
+scripts/connector-consent-proof.ts (how to get a token). For Claude's rules, read
 https://claude.com/docs/connectors/building/authentication. For the library,
 install exactly mcp-handler@1.1.0 and @modelcontextprotocol/sdk@1.26.0 (D22,
-approved; don't upgrade zod), then read their README and type definitions in
-node_modules before using them. Open another section only when something you
+approved; don't upgrade zod) by CONVENTIONS §2's lockfile route, then read their
+README and type definitions in node_modules, and requireMcpAuth's in
+node_modules/@better-auth/mcp, before using them. Open another section only when something you
 touch points to it.
 
 Job: Commit 9 of docs/COACH-CHAT-PLAN.md §6 — `feat(connector): Claude reads a
@@ -1217,7 +1228,7 @@ Working method: the Edit tool, not shell edit scripts; grep at execution time
 for every dependant (§4 is a map, not a promise); a test and a mutation for
 every new rule, each test run green on the real code first, each mutation from
 a cp backup in the scratchpad, never git stash or git checkout --; the
-middleware's new paths are exact strings, never prefixes. Before rm -rf .next,
+proxy's new paths are exact strings, never prefixes. Before rm -rf .next,
 run lsof -i :3000 and never stop a server you didn't start.
 
 Then commit directly to main (this plan file included), replace this commit's
@@ -1298,7 +1309,7 @@ commits 8 and 9's proofs and the tests.
 - **Privacy.** When a coach asks a question, Anthropic processes that coach's clients' health data. The privacy
   policy (and anything clients agree to) should name Anthropic as a processor. Under UK GDPR, health data is a
   special category.
-- **PROD.** Migration 208 joins the owner's PROD push (185–208). Chat needs `ANTHROPIC_API_KEY` on PROD.
+- **PROD.** Migrations 215 and 216 join the owner's PROD push. Chat needs `ANTHROPIC_API_KEY` on PROD.
   ⚠ TECHNICAL-DEBT says the builder's AI assistant was "disabled for launch", but nothing in the code switches
   it off (`AssistantDock` mounts unconditionally). If it is off on PROD only because PROD has no key, adding the
   key for chat switches the builder's assistant on too, with no spend limit. Decide that before adding the key.
@@ -1306,8 +1317,7 @@ commits 8 and 9's proofs and the tests.
   Supabase SQL editor (`false` turns it off).
 - **The price and the limit:** after a week or two of real use, run `npm run report:chat-usage` and set the add-on's
   price and `CHAT_MONTHLY_BUDGET_USD` from what a question really costs.
-- **The connector on PROD:** the same three Supabase OAuth Server settings as DEV (§2.8), on PROD's project;
-  `NEXT_PUBLIC_APP_URL` set to the address coaches will use, so the connector's address is that plus `/api/mcp`.
+- **The connector on PROD:** migration 216 on PROD, and `NEXT_PUBLIC_APP_URL` set to the address coaches will use, so the connector's address is that plus `/api/mcp`.
   Then the claude.ai check the DEV smoke couldn't do: in claude.ai, Settings → Connectors → Add custom connector,
   name it Atletafit, paste the address, Connect, Allow, and ask the bench question.
 - **Privacy, for the connector:** what Claude reads lands in each coach's own Claude account, under the settings

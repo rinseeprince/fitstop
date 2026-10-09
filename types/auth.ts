@@ -1,7 +1,7 @@
 // User role types
 export type UserRole = "trainer" | "client"
 
-// Profile type linked to auth.users
+// A login's role, keyed on its Better Auth user id
 export type Profile = {
   id: string
   userId: string

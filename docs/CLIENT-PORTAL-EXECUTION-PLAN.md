@@ -77,7 +77,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.5 | Scale test fixtures + performance baseline | 3 Scale hardening |
 | 3.6 | Exercise analytics: SQL aggregation + windowing + indexes | 3 Scale hardening | COMPLETE
 | 3.7 | Read-path hot spots: streak, check-in counts, check-in context | 3 Scale hardening | COMPLETE
-| 3.8 | Per-request auth resolution caching | 3 Scale hardening | COMPLETE
+| 3.8 | Per-request auth resolution caching (session body in git) | 3 Scale hardening | COMPLETE
 | 3.9 | Render-ready payloads + bounded/keyset contract + exercise catalog delta-sync | 3 Scale hardening | COMPLETE
 | 3.10 | Re-key client rate limiting from IP to client identity | 3 Scale hardening | COMPLETE
 | 4.1 | Habits detail page | 4 Habits | COMPLETE
@@ -1022,7 +1022,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - **Phase coupling dropped after manual verification failed.** Initial service implementation followed the task spec's resolution ("find the active phase, then `training_plans` where `phase_id = phaseId`"). Manual test on a real test client (Samuel James, active PPL+Rest plan placed from library) hit the empty state — root cause: `training_plans.phase_id` is **nullable** per `docs/ARCHITECTURE.md:29,33,59`. Plans placed via the current UI (`/api/clients/[id]/training/place-from-library`) accept `phaseId` as optional and Samuel James's plan had `phase_id = NULL`. The placement service (`library-placement-service.ts::calculatePlacementEndDate`) already caps the placement window at the client's containing-phase end date regardless of the column link, so the link is essentially redundant metadata for the calendar-as-SOT model. Fix: drop the `phase-service` import and the `phase_id` filter; resolve by `client_id + status='active' + deleted_at IS NULL + effective_until IS NULL` ordered by `created_at DESC, LIMIT 1` (mirrors `getActiveTrainingPlan`'s resolution). Service tests simplified to drop the `phase-service` mock; the obsolete "returns null when no active phase exists" case was deleted.
 - **Legacy `getClientTrainingPlan` retired and 3 consumers retargeted (bundled scope per user direction, Option 3).** The original spec named the new service's exported function `getClientTrainingPlan`, which would have collided with `services/client-portal-training.ts::getClientTrainingPlan` (a session-scoped legacy reader that pre-dated CONVENTIONS §8 Shape B). Per user direction, the legacy was deleted instead of coexisting. Consumers retargeted to `getActiveTrainingPlan` from `services/training-service.ts`: `app/api/client/training/route.ts`, `app/api/client/daily-logs/route.ts`, `services/client-portal-service.ts` (the nutrition-target cascade). The legacy file's three completion helpers (`getWeeklyCompletions`, `markSessionComplete`, `removeSessionCompletion`) are preserved alongside `createPortalClient` — only `getClientTrainingPlan` was removed. A stale `vi.mock('./client-portal-training')` block in `services/daily-logs-service.test.ts` was verified-dead (no `vi.mocked(getClientTrainingPlan).mockResolvedValue(...)` call sites) and removed.
 - **`effective_until` filter shift (Decision 4 in plan).** The replacement `getActiveTrainingPlan` adds `effective_until IS NULL` to the active-plan query — tighter than the legacy filter, which only checked `status='active' AND deleted_at IS NULL`. The two are equivalent in any consistent DB state (`status='active' AND effective_until IS NOT NULL` is an invariant violation that the writers in `promoteTrainingPlanIfReady` and `createTrainingPlanAtomic` never produce). Accepted as a defensive tightening. A one-line SQL smoke (`SELECT COUNT(*) FROM training_plans WHERE status='active' AND effective_until IS NOT NULL AND deleted_at IS NULL`) was added to the verification checklist. **⊘ Superseded by events-SOT (Session 2):** `getActiveTrainingPlan` was re-resolved to be fully **date-driven** (`getTrainingPlanForDate` — the provenance plan whose `[effective_from, effective_until]` covers today; `effective_until` stays NULL on placed plans), and `promoteTrainingPlanIfReady` was **deleted**. The `status='active'` + promotion model described here no longer applies.
-- **Defense-in-depth user-ownership re-check removed.** The legacy `getClientTrainingPlan` did an inline `user_id`-based ownership check (`supabase.auth.getUser()` + `clients.eq("user_id", user.id)`) before fetching the plan. The replacement does not — `requireClientAuth` already produces `auth.clientId` from the verified JWT join per §8 Shape B, so the in-service re-check was redundant.
+- **Defense-in-depth user-ownership re-check removed.** The legacy `getClientTrainingPlan` did an inline `user_id`-based ownership check before fetching the plan. The replacement does not — `requireClientAuth` already produces `auth.clientId` from the verified JWT join per §8 Shape B, so the in-service re-check was redundant.
 
 **Commit message**: `feat(client-portal): add training plan overview card on program page with sessions drill-in`
 
@@ -1447,39 +1447,6 @@ The web app is a logic/API test harness; the React-Native app is the real client
 
 ---
 
-## Session 3.8: Per-request auth resolution caching
-
-**Status**: COMPLETE
-
-**Commit message**: `perf(auth): cache user→client resolution to drop redundant per-request lookups`
-
-**Objective**: Every client API request runs `getAuthenticatedClientId`, which validates the JWT via `supabase.auth.getUser()` (kept) **and** does a `clients` lookup to map `user_id → client_id`. Across a multi-request page that's N redundant lookups. Cache the mapping so the per-request DB hit goes away — without weakening auth.
-
-**Read first**:
-- `lib/auth-helpers.ts` (`getAuthenticatedClientId`), `lib/require-client-auth.ts`.
-- `lib/rate-limit.ts` (existing Upstash Redis — reuse the infra).
-- CONVENTIONS §9 (getUser mandatory; never getSession).
-
-**Plan (report before implementing)**:
-- Cache layer: short-TTL Upstash keyed by `user_id`. Note: each App-Router route is a separate request, so per-request memo doesn't help across the page's parallel calls — a short-TTL shared cache is the lever.
-- Invalidation: TTL-only (the mapping effectively never changes); document it.
-- `getUser()` stays on every request — only the `clients` row lookup is cached.
-
-**Implement**:
-1. Cached `user_id → client_id` resolver (Upstash get/set + TTL) used by `getAuthenticatedClientId`.
-2. Leave the `getUser()` call unchanged.
-
-**Do NOT**: Replace `getUser()` with `getSession()` (§9 — security). Cache the JWT/auth result itself. Touch web-render.
-
-**Tests to write**:
-- `lib/auth-helpers.test.ts` (extend): second call returns cached client id without a second DB lookup (assert via mock); cache miss falls back to DB; null user → null (unchanged).
-
-**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
-
-> **CONVENTIONS override (authorized):** §2 "don't add caching strategies unless explicitly requested" — explicitly requested for scale. §9's `getUser()` requirement is **honored**, not overridden.
-
----
-
 ## Session 3.9: Render-ready payloads + bounded/keyset contract + exercise catalog delta-sync
 
 **Status**: COMPLETE
@@ -1545,7 +1512,7 @@ The web app is a logic/API test harness; the React-Native app is the real client
 2. Retune the existing IP-keyed `clientApiRateLimit` to a generous abuse-only burst guard.
 3. Document the two-tier model in `docs/CLIENT-PORTAL-REDESIGN.md`.
 
-**Do NOT**: Remove rate limiting (§9). Replace `getUser()` with `getSession()` (§9). Apply the per-client limit before auth resolves (id isn't known yet). Touch web-render.
+**Do NOT**: Remove rate limiting (§9). Apply the per-client limit before auth resolves (id isn't known yet). Touch web-render.
 
 **Tests to write**:
 - `lib/rate-limit.test.ts` / `lib/require-client-auth.test.ts` (extend): same client over the limit → 429; two different clients sharing one IP do NOT throttle each other (the carrier-NAT case); unauthenticated flood still hits the IP guard.

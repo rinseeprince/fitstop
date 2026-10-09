@@ -369,7 +369,7 @@ export type CheckInFormData = SubjectiveMetrics &
 // Coach record from database
 export type Coach = {
   id: string;
-  userId?: string; // Reference to auth.users
+  userId?: string; // The coach's Better Auth user id
   name: string;
   email: string;
   avatarUrl?: string;

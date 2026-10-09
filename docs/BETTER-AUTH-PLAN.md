@@ -1,6 +1,6 @@
 # Better Auth — every login moves off Supabase Auth, and the account screens that were never built
 
-**Status: PLAN, nothing built (2026-10-08).** Eleven commits (§6: 1 to 9, 5.1 and 5.5), each with a pasteable prompt, each gated.
+**Status: all eleven commits SHIPPED (the last, 9, on 2026-10-10); the PROD switch (§8.2) is the owner's.** Eleven commits (§6: 1 to 9, 5.1 and 5.5), each with a pasteable prompt, each gated.
 **The logins move in commits 1–3.** Better Auth stands up beside Supabase Auth with today's logins and their
 password hashes copied in (1); every sign-in, the invite, forgot password and reset switch over, and the user
 keys move (2); the seed and proof scripts make their logins through Better Auth (3). **The account features are
@@ -31,8 +31,8 @@ account); a login's address the same everywhere it shows, changed in one write; 
 command for a lost inbox; the product's name, Atletafit, on every screen, email and tab title (5.1, D30); Continue
 with Google for sign-in; Better Auth's bearer and Expo plugins switched on and proven, so the client app can be
 built on them; the retirement of Supabase Auth; docs; seven smokes. **Not in scope:** billing (D27 leaves the room);
-the React Native app itself; the coach chat's Claude connector (rebuilt on Better Auth's MCP plugin by its own plan
-later; §9.3 lists what it will need); a list of signed-in devices; a lockout per account (TECHNICAL-DEBT :282 stays
+the React Native app itself; the coach chat's Claude connector (on Better Auth's MCP plugin, COACH-CHAT-PLAN.md
+commits 8–9); a list of signed-in devices; a lockout per account (TECHNICAL-DEBT :282 stays
 open); a data export before deletion; a coach deleting a client's records (a client deletes their own);
 two-factor; magic links; a recovery email address (D39: the owner's `auth:move-email` serves a lost inbox).
 
@@ -818,7 +818,7 @@ address changes, which deletes it in the same statement, and one Google account 
     `better-auth.session_token`, `__Secure-` prefixed under https; `telemetry: { enabled: false }`.
     https://www.better-auth.com/docs/reference/options, https://www.better-auth.com/docs/concepts/cookies.
 13. Room left: the Stripe plugin adds `user.stripeCustomerId` and a `subscription` table; the MCP plugin
-    (`@better-auth/mcp`, with `jwt()`) adds its OAuth tables and serves the well-known endpoints itself (§9.3).
+    (`@better-auth/mcp`, with `jwt()`) adds its OAuth tables (COACH-CHAT-PLAN.md §2.8).
     https://www.better-auth.com/docs/plugins/stripe, https://www.better-auth.com/docs/plugins/mcp.
 14. Found by commit 5 in the installed source: every before hook is handed the request as it came, and the
     top-level `hooks.before` runs before every plugin's, the bearer plugin's included, which is the hook that turns
@@ -2244,7 +2244,7 @@ GRANT ALL ON public.profiles, public.coaches TO supabase_auth_admin;
 
 ---
 
-## 9. What the owner does, and what the coach chat's connector will need
+## 9. What the owner does
 
 ### 9.1 The owner's own steps, in order
 
@@ -2287,33 +2287,3 @@ the app reads its data through them as before. `NEXT_PUBLIC_SUPABASE_ANON_KEY` l
   commit 4's proof is the check, and `adminUserIds` is the fallback (the owner's script signs in first).
 - Supabase's pooler with Kysely is a general Postgres fact, not a Better Auth doc line; commit 1's proof exercises
   it.
-
-### 9.3 What the coach chat's connector (COACH-CHAT-PLAN.md commits 8–9) will need from Better Auth
-
-The chat plan's §2.8, D21, D24, D28, D29, its proofs 8–9 and both prompts assume Supabase's OAuth server. When
-the connector is built, on Better Auth 1.7.7:
-- `@better-auth/mcp` with the `jwt()` plugin in `lib/auth.ts`: `mcp({ loginPage: "/login", consentPage:
-  "/oauth/consent", resource: NEXT_PUBLIC_APP_URL + "/api/mcp", scopes, allowDynamicClientRegistration: true,
-  allowUnauthenticatedClientRegistration: true })` — Claude registers a client before anyone signs in, and the
-  plugin never enables registration by itself.
-- A migration (the next free number after this plan's; the chat plan's "208" is renumbered when built) for the
-  plugin's tables in `better_auth`: `oauthClient`, `oauthAccessToken`, `oauthRefreshToken`, `oauthConsent`,
-  `oauthClientAssertion`, and jwt's `jwks`; from `npx auth@<the installed better-auth version> generate`, ids as `uuid` like §2.1.
-- The authorization server is the app itself: `/.well-known/oauth-authorization-server` and
-  `/.well-known/oauth-protected-resource` are served by the plugin (no `app/.well-known/...` route; the proxy's
-  skip list gains `/.well-known/`); `/oauth2/authorize`, `/oauth2/token`, `/oauth2/userinfo` are Better Auth's
-  under `/api/auth`. The chat plan's D21 and D28 are rewritten; the three Supabase dashboard settings in its §8
-  disappear.
-- `verifyToken` (`supabaseAdmin.auth.getUser(bearerToken)` + the `client_id` claim) becomes
-  `requireMcpAuth(auth, handler, { resource })` (renamed from `withMcpAuth` in 1.7); `mcpHandler` became
-  `createMcpProtectedRequestHandler`; the MCP SDK the plugin expects (v2's `createMcpHandler`) must be checked
-  against the chat plan's D22 (`mcp-handler@1.1.0` + `@modelcontextprotocol/sdk@1.26.0`) before installing.
-- The consent page calls the plugin's consent endpoints instead of `supabase.auth.oauth.getAuthorizationDetails`
-  / `approveAuthorization` / `denyAuthorization`, and the query it receives is the plugin's, not
-  `?authorization_id=`; the `lib/oauth-consent.ts` validator matches that shape. The signed-out return path
-  (`/login?next=…`) becomes the plugin's `loginPage` continuation.
-- Identity is unchanged: the token's subject is the Better Auth user id, the same uuid as today, so
-  `coaches.user_id` and the `chat_enabled` check stand. Tokens carry the resource as audience, so the chat plan's
-  D24 ("a web session's token is refused") becomes "only a token the plugin issued for this resource".
-- The chat plan's D29 (no disconnect in the app) can be revisited: the plugin stores consents and tokens, so a
-  revoke screen is possible.

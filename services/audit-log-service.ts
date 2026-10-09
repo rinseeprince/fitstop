@@ -12,7 +12,7 @@ import { captureApiError } from "@/lib/error-handler";
  *   audit write must not fail the user's action; failures go to Sentry instead.
  * - Writes via supabaseAdmin (service_role); audit_logs is RLS deny-all otherwise.
  * - actor_id is a coaches.id for trainer actions / clients.id for client actions,
- *   disambiguated by actor_role (no FK — avoids an auth.users lookup per write).
+ *   disambiguated by actor_role (no FK: the column holds either).
  */
 
 type AuditActorRole = "trainer" | "client" | "system";

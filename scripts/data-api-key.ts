@@ -1,9 +1,8 @@
 /**
  * The project's public key (Supabase's anon key), for the proofs that knock on
- * the Data API's side door with it. The app holds it no more (D29): every
- * read goes through the server and the browser carries no Supabase client.
- * But every browser bundle carried it until Better Auth, so anyone may hold it
- * still, and the lock of migration 201 is what refuses it.
+ * the Data API's side door with it. No bundle of the app carries it: every
+ * read goes through the server. It is public by nature, so anyone may hold
+ * it, and the lock of migration 201 is what refuses it.
  *
  * Read from the project's API keys through the Supabase CLI's own login, for
  * the project NEXT_PUBLIC_SUPABASE_URL names: the one the proofs send to.

@@ -74,7 +74,7 @@ const MIN_SCANNABLE_SECRET = 16;
 /**
  * Clause 2's positive control: a public value every browser bundle carries
  * (D35). instrumentation-client.ts inlines the Sentry DSN, public by design;
- * the browser holds no Supabase client, so the anon key is no longer in it.
+ * no Supabase key is in it.
  */
 export const CONTROL_VAR = "NEXT_PUBLIC_SENTRY_DSN";
 

@@ -64,7 +64,13 @@ A modern fitness coaching platform that helps trainers manage clients, create pe
    npm run dev
    ```
 
-5. **Open [http://localhost:3000](http://localhost:3000)**
+5. **Create your coach login**
+   ```bash
+   npm run coach:create -- --project <your_project_ref> --email you@example.com --name "Your Name"
+   ```
+   Nobody can sign up on the site: this command makes a coach's login and emails "Set your password" to that address. `--project` must name the project your repo is linked to (`npx supabase link`), the one `DATABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL` point at. On any project but the team's DEV project, `BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL` must be an https address, which the emailed link opens. Without `EMAIL_FROM`, Resend's sandbox delivers only to the Resend account's own address; on DEV, `npm run auth:last-link -- --email you@example.com` prints the link instead.
+
+6. **Open [http://localhost:3000](http://localhost:3000)** and sign in.
 
 ## Environment Variables
 
@@ -110,12 +116,12 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 ```
 ├── app/                        # Next.js App Router pages
+│   ├── (coach)/               # Coach pages: dashboard/, clients/, crm/, automation/, settings/
+│   ├── (marketing)/           # Public marketing pages
+│   ├── client/                # Client portal pages
 │   ├── api/                   # API routes
 │   ├── login/, forgot-password/, reset-password/, set-password/  # Sign-in and the password pages
-│   ├── clients/               # Client management pages
-│   ├── check-in/              # Check-in submission pages
-│   ├── invite/                # Client invitation pages
-│   └── settings/              # App settings
+│   └── invite/                # Client invitation pages
 ├── components/                # React components
 │   ├── ui/                   # Base UI components (shadcn)
 │   ├── clients/              # Client-specific components
