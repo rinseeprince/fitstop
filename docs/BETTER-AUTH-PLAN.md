@@ -1,13 +1,16 @@
 # Better Auth — every login moves off Supabase Auth, and the account screens that were never built
 
-**Status: PLAN, nothing built (2026-10-08).** Nine commits (§6), each with a pasteable prompt, each gated.
+**Status: PLAN, nothing built (2026-10-08).** Eleven commits (§6: 1 to 9, 5.1 and 5.5), each with a pasteable prompt, each gated.
 **The logins move in commits 1–3.** Better Auth stands up beside Supabase Auth with today's logins and their
 password hashes copied in (1); every sign-in, the invite, forgot password and reset switch over, and the user
 keys move (2); the seed and proof scripts make their logins through Better Auth (3). **The account features are
 commits 4–8:** the owner creates a coach and the coach sets a password from an email (4); change password, change
-email, sign out everywhere (5); delete account (6); Continue with Google (7); the server ready for the client app
-(8). **Commit 9** writes the docs and the PROD runbook. This plan adds migrations 208, 209 and 210: DEV and PROD
-hold 208 and 209 (PROD since 2026-10-08), and PROD takes 210 by §8.2. **Billing is not here:** Better Auth's
+email, sign out everywhere (5); every screen and email says the product's name, Atletafit (5.1); a client changes
+their email too, every copy of an address follows it in one write, and the owner moves the login of someone who
+lost their inbox (5.5); delete account (6); Continue with Google (7);
+the server ready for the client app (8). **Commit 9** writes the docs and the PROD runbook. This plan adds
+migrations 208, 209, 210 and 211: DEV and PROD hold 208 and 209 (PROD since 2026-10-08), and PROD takes 210 and 211
+by §8.2. **Billing is not here:** Better Auth's
 Stripe plugin later adds one column and one table and touches nothing this plan builds (D27). Every file and line
 named here was grepped on 2026-10-07 at `d5f23299`; every Better Auth fact is from its docs and source at
 **1.7.7** (§2.9), the version commit 1 pins.
@@ -23,14 +26,15 @@ first sign-in, and an account made through an emailed link counts as verified.
 **Scope:** the move of every login (coaches, clients, the owner's own) to Better Auth on the same user ids and the
 same passwords; the login, forgot-password, reset-password, set-password and invite screens on Better Auth; the
 owner's `coach:create` command and its email; an Account card on the coach's Settings (change password, change
-email, sign out everywhere, delete account) and on the client's Settings (change password, delete account);
-Continue with Google for sign-in; Better Auth's bearer and Expo plugins switched on and proven, so the client app
-can be built on them; the retirement of Supabase Auth; docs; five smokes. **Not in scope:** billing (D27 leaves
-the room); the React Native app itself; the coach chat's Claude connector (rebuilt on Better Auth's MCP plugin by
-its own plan later; §9.3 lists what it will need); a list of signed-in devices; a lockout per account
-(TECHNICAL-DEBT :282 stays open); a data export before deletion; a coach deleting a client's records (a client
-deletes their own); two-factor; magic links; a client changing their email; renaming the product (emails and
-screens keep saying "CoachHub", as `app/layout.tsx:16` does).
+email, sign out everywhere, delete account) and on the client's Settings (change password, change email, delete
+account); a login's address the same everywhere it shows, changed in one write; the owner's `auth:move-email`
+command for a lost inbox; the product's name, Atletafit, on every screen, email and tab title (5.1, D30); Continue
+with Google for sign-in; Better Auth's bearer and Expo plugins switched on and proven, so the client app can be
+built on them; the retirement of Supabase Auth; docs; seven smokes. **Not in scope:** billing (D27 leaves the room);
+the React Native app itself; the coach chat's Claude connector (rebuilt on Better Auth's MCP plugin by its own plan
+later; §9.3 lists what it will need); a list of signed-in devices; a lockout per account (TECHNICAL-DEBT :282 stays
+open); a data export before deletion; a coach deleting a client's records (a client deletes their own);
+two-factor; magic links; a recovery email address (D39: the owner's `auth:move-email` serves a lost inbox).
 
 **How this plan is used.** Each commit's prompt tells a fresh session to read `CONVENTIONS.md` whole, this file's
 head, §1–§5, §6's "How every commit runs" and its own entry, and only the ARCHITECTURE sections it names, and to
@@ -51,9 +55,10 @@ gets an Account card in Settings with Change password, Change email, Sign out ev
 new coach starts from a "Set your password" email the owner sends.
 
 **A client** opens the same invite link, sets a password and signs in as today (once more, after the switch), and
-gets an Account card in Settings with Change password and Delete account.
+gets an Account card in Settings with Change password, Change email and Delete account.
 
-**The owner** creates a coach with one command, and the coach gets the email.
+**The owner** creates a coach with one command, and the coach gets the email. With another, the owner moves the
+login of someone who has lost their sign-in inbox to a new address.
 
 ### 1.1 The rules, one line each
 
@@ -82,7 +87,8 @@ The coach's side:
 8. **Continue with Google** (commit 7) on `/login` signs in to the account that already has that email address.
    A Google address with no account shows "There's no account for that Google email." on `/login`. Google never
    creates an account.
-9. A new coach gets the email "Set your password for CoachHub" from the owner's command (rule 14). Its link (one
+9. A new coach gets the email "Set your password for Atletafit" (the product's name from 5.1; commit 4 sent it as
+   "CoachHub") from the owner's command (rule 14). Its link (one
    hour) opens `/set-password`: password twice, "Password set", then `/login`. The address counts as verified
    the moment the link is used; nothing else is asked.
 10. **Delete account**: the sentence "This deletes your account, every client you coach, all of their records and
@@ -96,7 +102,8 @@ The client's side:
     works once. An address that already has a login says "This email already has an account. Sign in instead."
 12. `/login`, Log out (the avatar menu's "Sign out"), forgot password and reset work exactly as rules 1, 2 and 4;
     Google as rule 8.
-13. Settings gets an **Account** card between Profile and Units: **Change password** (as rule 6) and **Delete
+13. Settings gets an **Account** card between Profile and Units: **Change password** (as rule 6), **Change email**
+    (as rule 6, from commit 5.5; rule 17) and **Delete
     account**: "This deletes your account and everything recorded about you, including your photos. Your coach
     keeps none of it. It can't be undone.", the password, Delete, the confirmation email, the link, and `/login`
     with "Your account has been deleted." The coach's roster no longer lists the client.
@@ -110,6 +117,24 @@ Everyone:
 16. Every page a signed-out person opens sends them to `/login`, as today. A signed-out request to any `/api/…`
     address gets a plain "Unauthorized" answer instead of the login page (nothing a person sees; the client app
     needs it).
+
+A login's address (commit 5.5, owner 2026-10-09: "changing their email needs to be reflected platform wide …
+nothing should break"):
+17. A coach or a client who changes their email (rule 6) has the new address everywhere from the moment the second
+    link is opened: they sign in with it, their Settings shows it, the coach sees a client's new address on their
+    profile and in every list, and the app's emails to them go to it. Nothing else about them changes, and they
+    stay signed in. The address and every copy of it change together or not at all. A new address that any account,
+    coach or client on the platform already uses gets the same answer and no email, as Better Auth already answers
+    an address with a login. A link that can no longer be used lands back on Settings with "This link has expired.
+    Request a new one."
+18. On a client's details sheet the coach can't change the email of a client who has an account: the field shows
+    the address, with "The client changes this from their Settings." under it, and a save keeps it. Before the
+    client accepts the invite the field is the coach's to edit, as today.
+19. Someone who has lost access to their sign-in inbox (they can't approve a change or get a reset link) asks the
+    owner, who confirms who they are and runs `npm run auth:move-email -- --project <ref> --email <current> --to
+    <new>`. The login moves to the new address everywhere at once (rule 17), every session of it ends, and "Reset
+    your password" goes to the new address. An address with no login, or a new address in use anywhere, is refused
+    with nothing changed. There is no recovery email (D39).
 
 ### 1.2 Frame test (CONVENTIONS §7, "No frame disagrees")
 
@@ -131,6 +156,8 @@ form state. The address carries a token (`?token=`), a notice (`?error=`, `?dele
 | F9 | Sign out everywhere | the session (all revoked) | confirm → `/login` |
 | F10 | Delete account dialog | its form; the rows go only at the emailed link | dialog → toast "Check your email to confirm." → closed; the link's page is Better Auth's redirect to `/login?deleted=1`, which shows the notice |
 | F11 | Continue with Google | the session (set by Better Auth's callback) | the Google page → `/` → the role's home by the proxy's redirect (one hop, no flash: `/` is never rendered for a signed-in person today either) |
+| F12 | A client's Change email dialog (5.5) | its form; the login and its copies change only at the second emailed link, in one write | dialog → toast "We've emailed <current address> to approve the change." → closed; the Profile card shows the old address until the second link, whose landing (`/client/settings`, loaded fresh) shows the new one |
+| F13 | A coach saves a client's details (5.5) | the client row, the email left as it is for a client with an account | as today: the field is shown read-only, so nothing between the click and the settled sheet shows another address |
 
 No entrance animation. Busy states use the dialog pattern's `Loader2` (CONVENTIONS lines 177–185).
 
@@ -138,19 +165,21 @@ No entrance animation. Busy states use the dialog pattern's `Loader2` (CONVENTIO
 
 The proxy's 401 for `/api/…` (rule 16), bearer-token sign-in for the client app (§2.8), the guard that refuses any
 login made outside the owner's command and the invite (D9), the compensation when the app's rows can't be written
-after a login is made (D10), rate limits (rule 15) and the migrations' row counts are proved by scripts and tests
-(§5), not by the smokes (§7).
+after a login is made (D10), rate limits (rule 15), that a login's address and its copies change in one write or
+not at all (rule 17, D37) and the migrations' row counts are proved by scripts and tests (§5), not by the smokes
+(§7).
 
 ---
 
 ## 2. Target shape
 
-### 2.1 Data model: migrations 208, 209 and 210
+### 2.1 Data model: migrations 208, 209, 210 and 211
 
 **Better Auth's tables live in their own schema, `better_auth`, under Better Auth's own names and column names
 (D5).** PostgREST serves `public` alone, so nothing on the Data API can reach them with any key; only Better
-Auth's own connection (the `postgres` user through Supabase's pooler, D28) and the two delete functions of
-migration 210 touch them. The ids are `uuid` with the database's default, so today's user ids carry over (D6).
+Auth's own connection (the `postgres` user through Supabase's pooler, D28), the address trigger of migration 210
+and the two delete functions of migration 211 touch them. The ids are `uuid` with the database's default, so
+today's user ids carry over (D6).
 Columns are Better Auth's camelCase (its docs, CLI and plugins assume them; the app never reads these tables
 through PostgREST, so CONVENTIONS' snake_case examples don't apply, §4). `"user"` is a reserved word and is quoted
 in every statement.
@@ -167,7 +196,7 @@ below plus an explicit REVOKE of every role on the five tables and a closing che
 CREATE SCHEMA IF NOT EXISTS better_auth;
 REVOKE ALL ON SCHEMA better_auth FROM PUBLIC;
 COMMENT ON SCHEMA better_auth IS
-  'Better Auth''s tables (logins, sessions, credentials, one-time tokens, its rate limiter). Off the Data API: PostgREST serves public only. Reached by Better Auth''s own connection and by the delete functions of migration 210.';
+  'Better Auth''s tables (logins, sessions, credentials, one-time tokens, its rate limiter). Off the Data API: PostgREST serves public only. Reached by Better Auth''s own connection, which owns them.';
 
 CREATE TABLE IF NOT EXISTS better_auth."user" (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -323,7 +352,31 @@ END $$;
 ```
 
 ```sql
--- 210_delete_account_functions.sql: the app's records go in one statement each when a login is deleted (2.6).
+-- 210_login_email_follows.sql: a login's address and every copy of it change in one write (2.10, D37). Pure ASCII.
+-- coaches.email and clients.email copy the address a login signs in with. Better Auth changes an address in one
+-- UPDATE of better_auth."user" (its verify-email endpoint; the owner's auth:move-email through its adapter); this
+-- trigger rewrites the login's coach row and client row inside that same statement, so a copy that cannot be
+-- written (coaches.email is UNIQUE) undoes the login's change with it.
+CREATE OR REPLACE FUNCTION better_auth.copy_login_email() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, better_auth AS $$
+BEGIN
+  UPDATE public.coaches SET email = NEW.email WHERE user_id = NEW.id AND email IS DISTINCT FROM NEW.email;
+  UPDATE public.clients SET email = NEW.email WHERE user_id = NEW.id AND email IS DISTINCT FROM NEW.email;
+  RETURN NULL;
+END $$;
+REVOKE ALL ON FUNCTION better_auth.copy_login_email() FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS login_email_follows ON better_auth."user";
+CREATE TRIGGER login_email_follows AFTER UPDATE OF email ON better_auth."user"
+  FOR EACH ROW WHEN (OLD.email IS DISTINCT FROM NEW.email) EXECUTE FUNCTION better_auth.copy_login_email();
+COMMENT ON SCHEMA better_auth IS
+  'Better Auth''s tables (logins, sessions, credentials, one-time tokens, its rate limiter). Off the Data API: PostgREST serves public only. Reached by Better Auth''s own connection, and by migration 210''s trigger, which copies a login''s address to its coach and client rows.';
+-- Closing check, in 201's shape: the trigger is on better_auth."user", and the function grants nothing to PUBLIC
+-- or any role but its owner.
+```
+
+```sql
+-- 211_delete_account_functions.sql: the app's records go in one statement each when a login is deleted (2.6).
+-- Also extends the better_auth schema's COMMENT to name these two functions beside 210's trigger.
 CREATE OR REPLACE FUNCTION public.delete_client_records(p_user_id uuid) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE n integer;
@@ -364,6 +417,14 @@ Neither function deletes the caller's own login row: Better Auth does that itsel
   Auth's Node migration script from its Supabase guide (a second tool and a second connection string on push day).
 - **Role:** the app's `profiles.role` stays the role (chosen). Better Auth's `user.role` is the admin plugin's and
   is empty for everyone; the owner's admin standing comes from `adminUserIds` (D24).
+- **A login's address and its copies (210, D37):** a trigger on the login (chosen): the copy is written inside the
+  statement that changes the address, whichever path changes it, so the two can't disagree. Better Auth's hook
+  after it updates a login (commit 5's `mirrorLoginEmail`, which 5.5 deletes) wrote the copy after the login's
+  change had committed, and a copy that failed left the coach seeing, and the app emailing, the old address. No
+  copy at all, reading the address from the login wherever it shows: a client row exists before its login (an
+  invited client), and the app reads `public` through `supabaseAdmin`, which never reaches `better_auth`. An RPC
+  the app calls: Better Auth makes the write itself, inside its verify-email endpoint, so nothing of the app's
+  runs in that transaction.
 
 ### 2.2 The server
 
@@ -543,7 +604,8 @@ holds a link).
   `app/client/settings/page.tsx` between Profile and Units (`:164-166`). Each button opens a dialog in CONVENTIONS'
   dialog pattern (RHF + zod, `Loader2`, save closes in the same tick, Sonner toast): `authClient.changePassword({
   currentPassword, newPassword, revokeOtherSessions: true })`, `authClient.changeEmail({ newEmail, callbackURL:
-  "/settings" })` (coach only), `authClient.revokeSessions()` then `/login`, `authClient.deleteUser({ password,
+  "/settings" })` (the coach's from commit 5; the client's from 5.5, landing on `/client/settings`, §2.10),
+  `authClient.revokeSessions()` then `/login`, `authClient.deleteUser({ password,
   callbackURL: "/login?deleted=1" })`. Design: `docs/newdesignsystem.md`'s Card, Button and Dialog, the Settings
   page's existing `cardClass`/`headerClass`, no new tokens; the client card matches the client Settings page's
   cards.
@@ -562,7 +624,7 @@ the `url` it is given (`/set-password` vs `/reset-password`, D17); nothing else 
 own call may ask for `/set-password`: over HTTP `request-password-reset` is open to anyone signed out and its origin
 check accepts any page of the app as `redirectTo`, and `lib/auth.ts`'s before hook refuses that landing (commit 4's
 review). The sender comes
-from `EMAIL_FROM` (default today's `CoachHub <onboarding@resend.dev>`, D30); Resend's sandbox delivers to the
+from `EMAIL_FROM` (falling back to `<the product's name> <onboarding@resend.dev>`, Atletafit from 5.1, D30); Resend's sandbox delivers to the
 owner's one verified address only (TECHNICAL-DEBT :256), so the smokes say where each email must go until the
 owner verifies a domain (§9.1).
 
@@ -671,6 +733,81 @@ refused with `account_not_linked` (none is: D4). Google's console needs the redi
 13. Room left: the Stripe plugin adds `user.stripeCustomerId` and a `subscription` table; the MCP plugin
     (`@better-auth/mcp`, with `jwt()`) adds its OAuth tables and serves the well-known endpoints itself (§9.3).
     https://www.better-auth.com/docs/plugins/stripe, https://www.better-auth.com/docs/plugins/mcp.
+14. Found by commit 5 in the installed source: every before hook is handed the request as it came, and the
+    top-level `hooks.before` runs before every plugin's, the bearer plugin's included, which is the hook that turns
+    `Authorization: Bearer` into the session cookie (`api/dispatch.mjs` `getHooks`, `runBeforeHooks`;
+    `plugins/bearer/index.mjs`). A hook that must know who is asking reads `readSessionUserId(ctx.headers)`, which
+    runs Better Auth's own get-session with every hook. Change email's links are JWTs signed with the secret and
+    never stored; verify-email's failures redirect to the landing with `?error=TOKEN_EXPIRED|INVALID_TOKEN|
+    USER_NOT_FOUND|INVALID_USER`; its second link, opened with no session, makes one for the login.
+
+### 2.10 A login's address, everywhere (commit 5.5)
+
+The address a login signs in with is copied twice in `public`: `coaches.email` (UNIQUE) for a coach and
+`clients.email` for a client. Every screen and email of the app reads one of those, the Account card and the coach
+menus aside (they read the session). From 5.5 the copies follow the login in one write, for both roles:
+- **The write.** Migration 210's trigger (§2.1) rewrites the login's coach row and client row in the statement that
+  changes its address, whoever changes it: Better Auth's verify-email (the second link of a change, rule 17) or the
+  owner's command (rule 19). Commit 5's `mirrorLoginEmail` (`lib/auth.ts`) and `mirrorEmailToCoachRow`
+  (`services/account-service.ts`), and the `user.update.after` hook that ran them, are deleted. A copy that fails
+  fails the login's change with it: Better Auth then answers the link with its 500 (to Sentry through
+  `reportEndpointFailure`) and nothing has changed, so the link can be opened again once the conflict is gone.
+- **From birth.** `acceptClientInvitation` (`services/login-service.ts`) writes `clients.email` with `user_id`: the
+  invited address, lower-cased as the login's. A coach who edited a pending client's address after the invite went
+  out (the details sheet already says "An invitation already sent stays addressed to the old email.") no longer
+  leaves the client row on an address the client doesn't sign in with. `createCoachLogin` already writes the
+  login's address to the coach row.
+- **Who may change it.** Coaches and clients alike (D18). Commit 5's `refuseEmailChangeUnlessCoach` becomes the
+  check of the new address: a change to an address that a coach row or a client row of another login, or of no
+  login, already holds is answered as Better Auth answers an address with a login (`{ status: true }`, no email),
+  so no answer tells anyone which addresses are in use, and a pending client's invite can never meet an address
+  someone else took. It still reads who is asking through `readSessionUserId` first (no session: the endpoint's
+  own 401, so the check answers nobody signed out) and runs on `/change-email` alone (§2.9 #14).
+- **The client's card.** `components/client-portal/account-card.tsx` gains Change email. The dialog moves from
+  `components/coach/` to `components/auth/` (both audiences) and takes its landing: `COACH_SETTINGS_PAGE` or a new
+  `CLIENT_SETTINGS_PAGE` (`/client/settings`, `lib/constants.ts`); the client card hands it the session's address.
+  `ChangeEmailLinkNotice` moves to `components/auth/` the same way, each Settings page hosting it behind its own
+  Suspense boundary with its own landing (the client page is prerendered too).
+- **The coach's lock (D38).** `components/clients/details/details-groups.tsx` shows the Email field read-only, with
+  "The client changes this from their Settings.", for a client whose record carries `userId` (`lib/mappers.ts`).
+  The sheet sends `email` on every save, so the server's rule is about a change, not the field: `PATCH
+  /api/clients/[id]` answers 409 "This client changes their own email." for an `email` that differs from the
+  row's on a client row with a `user_id`, and the same address passes. A pending client's address stays the coach's.
+- **The owner's command (D39, rule 19).** `scripts/move-email.ts` (`npm run auth:move-email -- --project <ref>
+  --email <current> --to <new>`) with `create-coach.ts`'s refusals (`scripts/project-ref.ts`: `--project`, the
+  linked ref, `DATABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL` agree; off DEV only with an https `BETTER_AUTH_URL`),
+  calling `moveLoginEmail({ email, to })` in `services/account-service.ts`: it refuses an address with no login
+  and a new one that any login, coach row or client row holds, then changes the login's address, verified, through
+  Better Auth's own adapter (`(await auth.$context).internalAdapter.updateUser`, so Better Auth stays the writer of
+  its tables and the trigger copies the rows), ends every session of the login (`deleteUserSessions`), and asks for
+  "Reset your password" at the new address (`requestPasswordReset`, landing on `/reset-password`), awaiting
+  `backgroundWorkSettled()` before it exits. It prints the move, the session count it ended and, on DEV, the
+  `auth:last-link` line.
+
+### 2.11 The product's name (commit 5.1)
+
+The product is Atletafit (owner, 2026-10-09). Commits 1–5 shipped "CoachHub" in 41 places across 15 files, and
+5.1 replaces every one a person reads, writing the name once as `PRODUCT_NAME` (`lib/constants.ts`) that each place
+reads:
+- **Emails:** the six templates in `emails/` (headings, sentences, "The Atletafit Team"), their text bodies and
+  subjects in `services/email-service.ts` and `services/auth-email-service.ts` ("You're invited to join
+  Atletafit by …", "… has set up your plan on Atletafit", "Set your password for Atletafit"), and the sender's
+  fallback, `EMAIL_SENDER`: `<PRODUCT_NAME> <onboarding@resend.dev>` when `EMAIL_FROM` is missing.
+- **Screens:** the login page's name, the invite page's sentence and its "Welcome to …" toast, the client portal's
+  header (`components/client-portal/nav/client-nav.tsx`), the marketing navbar and footer, the tab's title
+  (`app/layout.tsx`: "Atletafit - Client Management Platform"), and the coach rails' monogram, whose alt text
+  already says it (`components/persistent-sidebar.tsx`, `components/collapsed-icon-strip.tsx`).
+- **What no person reads but still carries the name:** the link-preview fetcher's User-Agent
+  (`services/content-metadata-service.ts`), `Atletafit-MetadataBot/1.0`.
+- **The guard:** a scan test fails "CoachHub", in any case, anywhere in the shipped tree (`app/`, `components/`,
+  `emails/`, `services/`, `lib/`, `contexts/`, `hooks/`, `scripts/`), and "Atletafit" spelled out in code outside
+  `lib/constants.ts`, so the old name can't come back and the new one can't drift. Lower-case `atletafit` in a
+  domain (`seed.atletafit.test`), a file name or the app's scheme (`atletafit://`, commit 8) is an address, not
+  the name, and passes.
+- **Docs:** each document's own name for the product (`CONVENTIONS.md`, `docs/ARCHITECTURE.md`,
+  `docs/newdesignsystem.md`, `README.md`), and this plan's lines that describe shipped wording. Passed smokes keep
+  the words they were run with.
+- Nothing else changes: no route, no data, no behaviour.
 
 ---
 
@@ -698,7 +835,7 @@ can be vetoed before its commit starts.
 | D15 | Sessions last seven days from their last renewal, and a use a day or more after it renews them (Better Auth's defaults); no cookie cache. | Revocation, deletion and sign-out-everywhere take effect on the next request. |
 | D16 | Better Auth's limiter, stored in its own table, on in production only (its default); the app's Upstash limiter and tiers are untouched. | No Redis coupling for the auth endpoints; the proofs run under `next dev` where it is off. Per-account lockout stays unbuilt (TECHNICAL-DEBT :282). |
 | D17 | "Set your password" and "Reset your password" are one Better Auth flow with two templates, told apart by the page the link lands on (`/set-password` vs `/reset-password`). | No user column, no hook, no flag to clear; the owner's command simply asks for the other landing page. |
-| D18 | A coach's email change is two emails (approve at the current address, confirm at the new); `coaches.email` follows the login's address through a hook. Clients don't change email. | Better Auth's flow at 1.7.7; the owner's list gives clients no change-email. |
+| D18 | A coach and a client change their email the same way: two emails (approve at the current address, confirm at the new), and only the second link changes it (commit 5 for coaches, 5.5 for clients). Every copy of the address follows it in one write (D37). A new address already in use anywhere gets Better Auth's no-email answer. | Better Auth's flow at 1.7.7. Owner, 2026-10-09: "changing their email needs to be reflected platform wide. client side and coach side etc. … nothing should break." (Commit 5 shipped coaches only, from a list that had given clients no change-email.) |
 | D19 | Change password asks for the current password and signs out every other device; passwords are 8–128 characters everywhere (the invite's 72 was bcrypt's limit). | Better Auth's `revokeOtherSessions`; scrypt has no 72-byte limit. |
 | D20 | Delete account asks for the password, then an emailed link; photos and files go first, then one SQL function per role, then Better Auth deletes the login. | The password check is free; the link makes a stolen session useless for deletion; objects first so a retry can always finish. |
 | D21 | A client's delete removes their client row and everything under it; the coach sees the client gone and keeps nothing. | UK GDPR erasure of what the app holds about the person; the owner wasn't asked for anything softer. |
@@ -710,13 +847,16 @@ can be vetoed before its commit starts.
 | D27 | Billing's room: Better Auth's Stripe plugin later adds `user.stripeCustomerId` and a `subscription` table in the same schema by its own migration; nothing here is shaped for it and nothing blocks it. | The owner's "leave room … build nothing of it". |
 | D28 | `DATABASE_URL` is Supabase's transaction pooler string for the `postgres` user; one pool of four per bundle (the proxy's and the routes' are separate bundles). | Serverless-safe; `postgres` owns the schema, so RLS never bites Better Auth; a direct connection is IPv6-only on Supabase. |
 | D29 | Env: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (= `NEXT_PUBLIC_APP_URL`), `DATABASE_URL`, `AUTH_ADMIN_USER_IDS`, `EMAIL_FROM`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`; `NEXT_PUBLIC_SUPABASE_ANON_KEY` has no reader after commit 3 and leaves `.env.local`. | Documented per CONVENTIONS 852 (no `.env.example`): at the read site and in §19's list. |
-| D30 | The new emails use today's sender, product name and look (`CoachHub`, `onboarding@resend.dev` until `EMAIL_FROM` is set). | Renaming is not this plan's job; one sender constant. |
-| D31 | Migrations: 208 (schema + copy, additive), 209 (the switch), 210 (delete functions). The coach chat plan's "migration 208" takes the next free number when it is built (§9.3). | CONVENTIONS: next number, never skip; this plan ships first. |
+| D30 | The emails use one sender (`EMAIL_FROM`, falling back to `onboarding@resend.dev`), one look, and the product's name, Atletafit, written once (`PRODUCT_NAME`, `lib/constants.ts`) and read by every screen, email and tab title (commit 5.1). Commits 1–5 shipped the old name, "CoachHub". | Owner, 2026-10-09: "It's not called coachub." One constant, so the name can't drift between an email's sender and its sign-off. |
+| D31 | Migrations: 208 (schema + copy, additive), 209 (the switch), 210 (a login's address and its copies in one write, commit 5.5), 211 (delete functions, commit 6). The coach chat plan's "migration 208" takes the next free number when it is built (§9.3). | CONVENTIONS: next number, never skip; this plan ships first; 5.5 is built before 6, so it takes 210. |
 | D32 | Undo (§8.3): revert the switch commit, then a new migration re-points the FKs to `auth.users` as `NOT VALID` and restores the trigger from 107; logins made after the switch are re-invited; passwords changed after it revert to the old ones. | Supabase's rows are never touched by the switch, so the old door reopens. |
 | D33 | Supabase Auth is retired, not deleted, until the undo window closes: providers off, sign-ups off; the owner deletes `auth.users` after (§9.1). | The undo needs the rows. |
 | D34 | `proof-session.ts` mints a session by inserting a `better_auth.session` row through the pool and sending its token as a bearer token; cookie-path proofs sign in over HTTP with a throwaway's password. | The old magic-link mint is Supabase's; a bare token is accepted by the bearer plugin (its default); no secret-signing in scripts. |
 | D35 | `check:service-key`'s positive control becomes `NEXT_PUBLIC_SENTRY_DSN` (public by design, inlined by `instrumentation-client.ts`). | The anon key, today's control, leaves the bundle with the browser client. |
 | D36 | `next.config.mjs`'s CSP is untouched: after commit 2 the browser makes no request to Supabase's auth server, and the `*.supabase.co` entries still serve storage images and signed links. | Trimming the CSP is not this plan's job; nothing in it refers to auth. |
+| D37 | `coaches.email` and `clients.email` are copies of the login's address, written in the statement that changes it by a trigger on `better_auth."user"` (migration 210), whatever changes it; the invite's acceptance writes the client's at birth. Commit 5's after hook (`mirrorLoginEmail`) is deleted. | Owner, 2026-10-09: "nothing should break". A copy written after the login's change can fail on its own and leave the coach seeing, and the app emailing, an old address; one write can't half-happen (§2.1's alternatives). |
+| D38 | A coach can't change the email of a client who has an account: the details sheet shows it read-only, and the client route refuses a different address with 409. Before the invite is accepted, the field is the coach's as today. | Owner, 2026-10-09: "prevent a coach from editing as it's the clients to change." A coach's edit moved only the copy, never the address the client signs in with. |
+| D39 | No recovery email. Someone who has lost their sign-in inbox asks the owner, who confirms who they are and runs `npm run auth:move-email`: the address moves everywhere (D37), every session of the login ends, and "Reset your password" goes to the new address. | Owner, 2026-10-09. A recovery address is a second key to every account, with its own takeover risk and its own upkeep for every person; "forgot which email I use" is answered by the coach (a client's) and the owner (a coach's). |
 
 ---
 
@@ -727,7 +867,7 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | Subsystem | Today | After | Commit |
 |---|---|---|---|
 | `package.json` | `@supabase/ssr`, no auth library | `better-auth@1.7.7`, `pg`, `kysely`, `bcryptjs`, later `@better-auth/expo`; `@supabase/ssr` gone (3) | 1, 3, 8 |
-| `supabase/migrations/` | 207 | 208 (schema + copy), 209 (switch), 210 (delete functions) | 1, 2, 6 |
+| `supabase/migrations/` | 207 | 208 (schema + copy), 209 (switch), 210 (a login's address in one write), 211 (delete functions) | 1, 2, 5.5, 6 |
 | `lib/auth.ts`, `lib/auth-client.ts`, `app/api/auth/[...all]/route.ts` | none | new | 1, 2 |
 | `middleware.ts` + `middleware.test.ts` | Edge; Supabase `getUser()`; 307 for `/api/**` | `proxy.ts` + `proxy.test.ts`; Node; `auth.api.getSession`; 401 JSON for `/api/**`; `/api/auth/` and `/set-password` public | 1 (the `/api/auth/` skip only), 2 |
 | `lib/auth-helpers.ts` + test | `createServerSupabaseClient().auth.getUser()` | `auth.api.getSession({ headers })`; bearer accepted | 2 |
@@ -744,10 +884,12 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | `lib/session-client-ownership.test.ts` | positive control requires the Supabase session clients | no file may build a Supabase session client; `lib/auth.ts` the only `betterAuth(`/`new Pool(` (test files aside: `lib/auth.test.ts` builds one over the memory adapter); `lib/auth-client.ts` the only `createAuthClient(`; the receiver rule stays | 2 |
 | `scripts/check-service-key-leak.ts` | anon key as the bundle control | Sentry DSN as the control (D35) | 2 |
 | `scripts/proof-session.ts` and every script that mints a Supabase session or login (`sign-in-proof.ts`, `measurement-edit-proof.ts`, `content-access-proof.ts`, `data-api-locked-proof.ts`, `data-api-writes-proof.ts`, `habit-routes-proof.ts`, `clear-training-log-proof.ts`, `wire-proof-measurements.ts`, `check-in-as-of-proof.ts`, `seed/teardown.ts`, `seed-scale.ts`, `seed-scale-client.ts`) | `generateLink`/`verifyOtp`/`auth.admin.createUser` | `mintSession` (bearer) and `createThrowawayLogin` / `deleteThrowawayLogin` from `scripts/auth-fixtures.ts` | 2 (`proof-session.ts`), 3 (the rest) |
-| `scripts/create-coach.ts`, `scripts/auth-last-link.ts`, `package.json` scripts | none | `coach:create`, `auth:last-link` | 4 |
-| `app/(coach)/settings/page.tsx`, `components/coach/account-card.tsx` (+ dialogs) | mock Profile card | the Account card | 5, 6 |
-| `app/client/settings/page.tsx`, `components/client-portal/account-card.tsx` (+ dialogs) | Profile, Units, Timezone | + Account | 5, 6 |
-| `services/account-service.ts`, `services/storage-service.ts` | none; upload only | delete paths; object removal by key list | 6 |
+| `scripts/create-coach.ts`, `scripts/auth-last-link.ts`, `scripts/move-email.ts`, `package.json` scripts | none | `coach:create`, `auth:last-link`, `auth:move-email` | 4, 5.5 |
+| `app/(coach)/settings/page.tsx`, `components/coach/account-card.tsx` (+ dialogs), `components/auth/change-email-dialog.tsx` and `change-email-link-notice.tsx` (moved from `components/coach/` in 5.5) | mock Profile card | the Account card | 5, 5.5, 6 |
+| `app/client/settings/page.tsx`, `components/client-portal/account-card.tsx` (+ dialogs) | Profile, Units, Timezone | + Account (Change password; Change email and the link notice from 5.5) | 5, 5.5, 6 |
+| `services/account-service.ts`, `services/storage-service.ts` | none; upload only | 5: the coach-email mirror (deleted by 5.5); 5.5: `moveLoginEmail` and the new address's check; 6: delete paths, object removal by key list | 5, 5.5, 6 |
+| `lib/constants.ts` and the 15 files that say "CoachHub" (`emails/*`, `services/email-service.ts`, `services/auth-email-service.ts`, `services/content-metadata-service.ts`, `app/layout.tsx`, `app/login/page.tsx`, `app/invite/[token]/page.tsx`, `app/(marketing)/layout.tsx`, `components/marketing/marketing-navbar.tsx`, `components/client-portal/nav/client-nav.tsx`), the two rails' monogram, their tests, the docs' titles | "CoachHub" written out in each | `PRODUCT_NAME` ("Atletafit") read by each; a scan test holds it | 5.1 |
+| `services/login-service.ts`, `services/client-service.ts`, `app/api/clients/[id]/route.ts`, `components/clients/details/details-groups.tsx` | the invite links `user_id` alone; the coach edits any client's email | the invite writes `clients.email` with the link; a client with an account keeps their address against the coach's edit (409, read-only field) | 5.5 |
 | `lib/csrf-protection.ts` + test | Origin/Referer always | bearer requests pass | 8 |
 | `docs/ARCHITECTURE.md` | Auth Model, Onboarding (1298), Database clients on Supabase Auth | current shape only | 2 (Auth Model), 9 (the rest) |
 | `CONVENTIONS.md`, `TECHNICAL-DEBT.md`, `CLIENT-APP-REFERENCE.md` | see below | see below | 2, 9 |
@@ -784,11 +926,12 @@ so.
 
 - **Gates after every commit:** `npx tsc --noEmit`, `npx eslint .` (and `grep -rn "console.log"` on changed
   files), `npx vitest run`, `npm run check:labels`, `grep -rn "as any"` and `grep -rn "TODO\|FIXME\|HACK\|DEBUG"`
-  on changed files, `npx knip`, `npm run check:service-key`. Plus `npm run check:rls` for commits 1, 2 and 6
-  (migrations), and `npm run build` (which chains `check:prerender`) for commits 1, 2, 4, 5, 6, 7 and 8 (the
+  on changed files, `npx knip`, `npm run check:service-key`. Plus `npm run check:rls` for commits 1, 2, 5.5 and 6
+  (migrations), and `npm run build` (which chains `check:prerender`) for commits 1, 2, 4, 5, 5.1, 5.5, 6, 7 and 8 (the
   proxy, a route handler, pages or Settings change). Commit 9's doc edits need none. **The security, load and
   performance review** (CONVENTIONS §2) is reported for every commit but 9; for 2 it covers every redirect and
-  cookie the proxy and the accept route emit; for 6 every row the two functions reach. The
+  cookie the proxy and the accept route emit; for 5.5 every path that changes an address and every row the
+  trigger writes; for 6 every row the two functions reach. The
   `components/client-portal/**` set-tracker test is known to flake in full runs (a fetch race): if it alone fails,
   rerun it alone and say so.
 - **Proofs on DEV** (the shape of `scripts/proof-session.ts` after commit 2 and `scripts/goal-routes-proof.ts`, run
@@ -826,6 +969,21 @@ so.
     dead; change email → the approval token appears for the old address and nothing changes; following it → the
     confirmation token for the new address; following that → `better_auth."user".email` and `coaches.email` both
     read the new address; `revokeSessions` → every session of the user gone from the table.
+  - 5.5: `scripts/email-follows-proof.ts`, its email read from `scripts/proof-mailbox.ts` as commit 5's proof reads
+    it, the throwaways a coach and two clients of theirs (one with an account, one only invited): a client's change of
+    email by its two links → `better_auth."user".email` and `clients.email` both new, the client signs in with it
+    and stays signed in on the session that asked, the coach's `GET /api/clients/<id>` answers the new address, the
+    client's `GET /api/client/me` too; a coach's change → `coaches.email` follows (the trigger, the hook gone);
+    one write: a coach row with no login holding an address, and the throwaway coach's login changed to it
+    through the pool (the guard bypassed on purpose) → the coach row's UNIQUE key fails the statement, and the
+    login and its coach row both keep their address; a change to an address a client row or a coach row holds → 200, no email,
+    nothing changed; the coach's `PATCH /api/clients/<id>` with another address for the client with an account →
+    409, the row unchanged; with the same address → 200; for the invited client → 200, changed; the invite's
+    acceptance after the coach edited the pending address → the client row reads the invited address;
+    `npm run auth:move-email` for the throwaway client → the login and the client row on the new address, its
+    sessions 0, "Reset your password" in the mailbox for the new address (the command's Resend pointed at it),
+    the reset works; refused with nothing changed: an address with no login, a `--to` that any login, coach row or
+    client row holds, and PROD's ref against DEV's env.
   - 6: `scripts/delete-account-proof.ts`: a throwaway coach with two throwaway clients, one holding a check-in
     with a photo object and a content item assigned (`assigned_by` the coach); as a client: delete-user with the
     password → the token appears; the callback → the client row and every row under it gone, the photo object
@@ -842,9 +1000,14 @@ so.
   the email picker (`/set-password` vs `/reset-password`); each dialog's states and its call; the login notices;
   `beforeDelete` (role → keys → objects → function; refusal on each failure); the CSRF bearer pass; the
   `auth-last-link` parser against Better Auth's memory adapter; the ownership scan's new clauses; the
-  `check:service-key` control. **A test and a mutation for every new rule.**
-- **The browser smokes** are the owner's: §7.1 after commit 2, §7.2 after 4, §7.3 after 5, §7.4 after 6, §7.5
-  after 7.
+  `check:service-key` control; for 5.1, the name's scan (the old name, a second spelling) and each email's and
+  screen's wording read from `PRODUCT_NAME`; for 5.5, migration 210's file read for its trigger, its function's grants and its
+  closing check, the new address's check over Better Auth's pipeline (cookie and bearer, a held address, no
+  session), the client card's Change email and both Settings pages' notice, the details sheet's read-only field,
+  the route's 409 and its same-address pass, the invite's email write, and `moveLoginEmail`'s refusals and writes.
+  **A test and a mutation for every new rule.**
+- **The browser smokes** are the owner's: §7.1 after commit 2, §7.2 after 4, §7.3 after 5, §7.3a after 5.1, §7.3b
+  after 5.5, §7.4 after 6, §7.5 after 7.
 
 ---
 
@@ -865,8 +1028,9 @@ every rule), this block wins:
 3. **Tests:** a test for every new rule; a deliberate break (a mutation) only for the rules the prompt names and
    for any security guard. While building, run only the affected test files.
 4. **Review:** one independent review of the diff once the build is done. Fix its blockers and should-fix items at
-   the root, list its nits in the handover for the owner to decide, and run no second review, except in the three
-   security-heavy commits, 2 (the switch), 6 (deleting accounts) and 8 (app tokens): there a second independent
+   the root, list its nits in the handover for the owner to decide, and run no second review, except in the four
+   security-heavy commits, 2 (the switch), 5.5 (moving a login's address), 6 (deleting accounts) and 8 (app
+   tokens): there a second independent
    review reads the first review's fixes, and its blockers and should-fix items are fixed the same way.
 5. **Proof and gates:** the commit's DEV proof once, on the finished code; the full gates once, after the last
    review's fixes.
@@ -1240,11 +1404,160 @@ and §7.3's smoke list, naming for each email where it will arrive. The browser
 smoke is mine.
 ```
 
-### Commit 6 — `feat(account): delete account, the coach's and the client's; migration 210`
+### Commit 5.1 — `feat(brand): every screen, email and tab title says Atletafit`
 
 **STATUS: NOT STARTED.**
 
-- Migration 210 (§2.1) on DEV. `services/account-service.ts` (§2.6: `deleteAccountRecords` as `beforeDelete`,
+Asked for by the owner on 2026-10-09 ("It's not called coachub"), after commit 5 (D30; rule 9's subject; §2.11).
+- `PRODUCT_NAME = "Atletafit"` in `lib/constants.ts`, read by every place §2.11 lists: the six email templates,
+  their text bodies and subjects, `EMAIL_SENDER`'s fallback, the login and invite pages and the invite's toast, the
+  client portal's header, the marketing navbar and footer, the tab's title, the rails' monogram alt text and the
+  metadata fetcher's User-Agent. Nothing else about any of them changes.
+- The scan test of §2.11's guard, and the wording tests that read the old name (`services/auth-email-service.test.ts`,
+  `components/client-portal/nav/client-nav.test.tsx`, and any grep finds) to the new one, never loosened.
+- Docs: the product's name in `CONVENTIONS.md`, `docs/ARCHITECTURE.md`, `docs/newdesignsystem.md` and `README.md`,
+  and this plan's lines that describe shipped wording (§2.5, D30, rule 9 and §9.1 already do).
+- No proof script: nothing but words changes; the tests, the build and §7.3a are the evidence.
+
+```text
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head,
+§1–§5, §6's "How every commit runs" and this commit's entry. Then grep the
+tree for CoachHub (any case) and read every file it finds, and lib/constants.ts
+where PRODUCT_NAME goes. Open another file only when something you touch
+points to it.
+
+Job: Commit 5.1 of docs/BETTER-AUTH-PLAN.md §6 — `feat(brand): every screen,
+email and tab title says Atletafit`. Build exactly what that section lists, to
+§2.11 and D30. Only words change: no route, no data, no behaviour, no layout.
+
+You have my go: don't show me a plan and don't wait for my review. Stop and ask
+me only if a place that says CoachHub isn't one §2.11 names and you can't tell
+whether a person reads it, or if a gate fails and its root fix lies outside
+this commit.
+
+Done when: grep finds no CoachHub (any case) in app/, components/, emails/,
+services/, lib/, contexts/, hooks/, scripts/, CONVENTIONS.md, README.md or
+docs/ outside this plan (which tells the rename); "Atletafit" is spelled out in code only in
+lib/constants.ts; an independent review of the whole diff has run and every
+finding is fixed at the root; and every gate passes after the review's fixes:
+npx tsc --noEmit, npx eslint ., npx vitest run, npm run check:labels, npx knip,
+npm run check:service-key, npm run build. Never skip, weaken or delete a test
+to make a gate pass.
+
+Working method: the Edit tool; grep at execution time; a test and a mutation
+for the scan (the old name brought back in one file, a second spelling of the
+new one), each test green on the real code first, each mutation from a cp
+backup in the scratchpad, never git stash or git checkout --.
+
+Then commit directly to main (this plan file included), replace this commit's
+STATUS line in §6 with SHIPPED, the hash and the date, and hand over what
+shipped and §7.3a's smoke list. The browser smoke is mine.
+```
+
+### Commit 5.5 — `feat(account): clients change their email too, every copy of an address follows it in one write (migration 210), and the owner's auth:move-email`
+
+**STATUS: NOT STARTED.**
+
+Asked for by the owner on 2026-10-09, after commit 5 shipped coaches only (D18, D37, D38, D39; rules 13, 17, 18, 19).
+- Migration 210 (§2.1, D37) on DEV: the trigger that copies a login's address to its coach and client rows in the
+  same statement, its function postgres's alone, the schema's COMMENT naming it, a closing check in 201's shape.
+  `types/database.ts` regenerated and read (expected: no change, the function lives in `better_auth`);
+  `npm run check:rls` holds clause 6.
+- `lib/auth.ts`: `mirrorLoginEmail` and the `user.update.after` hook deleted, with `services/account-service.ts`'s
+  `mirrorEmailToCoachRow` and `isCoachLogin` and their tests. `refuseEmailChangeUnlessCoach` becomes the new
+  address's check (§2.10), still through `readSessionUserId` and on `/change-email` alone; `lib/auth.test.ts`'s guard
+  tests are rewritten to it and keep their cookie, bearer and cookie-plus-bearer cases.
+- `services/login-service.ts`: the invite's link writes `clients.email` with `user_id` (§2.10, "From birth").
+- The client's Settings (rule 13): Change email on `components/client-portal/account-card.tsx`; the dialog and
+  `ChangeEmailLinkNotice` move to `components/auth/` with a landing prop; `CLIENT_SETTINGS_PAGE` in
+  `lib/constants.ts`; `app/client/settings/page.tsx` hosts the notice behind its own Suspense boundary.
+- The coach's lock (D38, rule 18): the details sheet's read-only Email field with its sentence, for a client whose
+  record carries `userId`; `PATCH /api/clients/[id]` refuses a different address for a client with a login (409
+  "This client changes their own email."), checked against the client the route already loads for its ownership
+  check, and lets the same address through.
+- The owner's command (D39, rule 19): `scripts/move-email.ts`, `npm run auth:move-email`, `moveLoginEmail` in
+  `services/account-service.ts` (§2.10), with `create-coach.ts`'s refusals before anything that reaches a database
+  loads.
+- `scripts/email-follows-proof.ts` (§5, proof 5.5); `scripts/account-proof.ts`'s step 3, the client refused, becomes
+  the new address's check by cookie, by bearer token and by both: an address a client row holds → 200, no email.
+- Docs: ARCHITECTURE's "Account changes" to the shape this commit leaves (both roles, the trigger as the one writer
+  of the copies after birth, the lock, the command), current shape only.
+- The smoke seed (§7.3b): a pending client "Smoke · change email" under the owner's coach, its invite link in the
+  handover.
+
+```text
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5,
+§6's "How every commit runs" and this commit's entry, then lib/auth.ts,
+services/account-service.ts, services/login-service.ts (acceptClientInvitation),
+services/client-service.ts (updateClient), app/api/clients/[id]/route.ts,
+components/clients/details/details-groups.tsx and components/clients/overview/
+use-client-profile-edit.ts, components/coach/change-email-dialog.tsx and
+change-email-link-notice.tsx, components/client-portal/account-card.tsx,
+app/client/settings/page.tsx, scripts/create-coach.ts with scripts/project-
+ref.ts, scripts/account-proof.ts with scripts/proof-mailbox.ts, and supabase/
+migrations/201_lock_the_database.sql (a closing check) with 209 (a migration on
+better_auth). From docs/ARCHITECTURE.md read "Auth Model" as it stands. Open
+another section only when something you touch points to it.
+
+Job: Commit 5.5 of docs/BETTER-AUTH-PLAN.md §6 — `feat(account): clients
+change their email too, every copy of an address follows it in one write
+(migration 210), and the owner's auth:move-email`. Build exactly what that
+section lists, to §2.1 (migration 210), §2.10, D18, D37, D38, D39 and rules 13,
+17, 18 and 19. Read Better Auth's installed source for the write that changes
+an address (verify-email's updateUserByEmail: one UPDATE statement), the
+internal adapter's updateUser and deleteUserSessions, and auth.$context; if
+§2.9 #14 or a fact there is false at 1.7.7, stop and say which.
+
+You have my go: don't show me a plan and don't wait for my review. Stop and ask
+me only if a §3 decision this commit needs is blank, if building exactly what
+this commit lists would break a CONVENTIONS.md rule that §4 does not mark for
+rewriting, or if a gate fails and its root fix lies outside this commit.
+
+Done when: everything that section lists is built; migration 210 is on DEV
+with its closing check passing, types/database.ts read after gen types, and
+npm run check:rls passing; scripts/email-follows-proof.ts passes on DEV (every
+check of §5's proof 5.5) and scripts/account-proof.ts passes as rewritten; an
+independent review of the whole diff has run and every finding is fixed at the
+root; a second independent review of those fixes has run and its findings are
+fixed; and every gate passes after the second review's fixes: npx tsc --noEmit,
+npx eslint ., npx vitest run, npm run check:labels, npx knip, npm run
+check:service-key, npm run check:rls, npm run build. Never skip, weaken or
+delete a test to make a gate pass. Report the security, load and performance
+review (CONVENTIONS §2), naming every path that changes an address and every
+row the trigger writes.
+
+Working method: the Edit tool; grep at execution time; a test and a mutation
+for every new rule (the trigger's two copies and its grants, the new address's
+check, the lock and its same-address pass, the invite's email write, the
+command's refusals and writes), each test green on the real code first, each
+mutation from a cp backup in the scratchpad, never git stash or git checkout
+--; the proofs start their own next dev on a free port, lsof -i :3000 first,
+never :3000. Before the push, confirm supabase/.temp/project-ref reads
+aeaphsslctwcmebldrzx (DEV); supabase db push --dry-run immediately before the
+push (from the Bash tool the push confirms itself; if it is classifier-blocked,
+hand it to me with !), then gen types and read the diff.
+
+The seed: a throwaway script in the session scratchpad (npx tsx --tsconfig
+./tsconfig.json, @/scripts/env-bootstrap) that makes a pending client "Smoke ·
+change email" under my coach (samuel.k@taboola.com) through the app's own
+invitation service with the address s.kalepa91+change-email-smoke@gmail.com,
+deleting any earlier one of that name first, and prints the invite link. Save
+its recipe to memory (reference_dev_seed_change_email_smoke.md, indexed in
+reference_dev_seeds.md).
+
+Then commit directly to main (this plan file included), replace this commit's
+STATUS line in §6 with SHIPPED, the hash and the date, and hand over: what
+shipped; anything you decided that the plan did not say; the proofs' output;
+and §7.3b's smoke list with the invite link and, for each email, where it
+arrives (EMAIL_FROM must be on the verified domain first). The browser smoke is
+mine; offer to run its terminal step.
+```
+
+### Commit 6 — `feat(account): delete account, the coach's and the client's; migration 211`
+
+**STATUS: NOT STARTED.**
+
+- Migration 211 (§2.1) on DEV. `services/account-service.ts` (§2.6: `deleteAccountRecords` as `beforeDelete`,
   the key collection, `services/storage-service.ts` gains `removeObjects(bucket, keys)`); `user.deleteUser` in
   `lib/auth.ts`; `emails/confirm-delete-account-email.tsx` (two wordings, one template with a role prop).
 - The Delete account button and dialog on both Account cards (rules 10 and 13); `?deleted=1` on the login notice.
@@ -1252,8 +1565,10 @@ smoke is mine.
   landing, so `auth:last-link` prints a delete-account link with that constant, and the two must stay one.
 - `scripts/delete-account-proof.ts` (§5, proof 6).
 - The smoke seed (§7.4): a throwaway coach "Smoke · delete coach" with two clients and the records the steps name.
-- Found by commit 5: `services/account-service.ts` exists (`isCoachLogin`, `mirrorEmailToCoachRow`), so `deleteAccountRecords`
-  joins it. Both Account cards host their dialogs with `useDialogSubject` over a dialog kind (`CoachAccountCard`'s
+- Found by commits 5 and 5.5: `services/account-service.ts` exists (5.5's `moveLoginEmail` and the new address's
+  check; 5's `isCoachLogin` is gone, so `beforeDelete` reads the role itself), and `deleteAccountRecords` joins it.
+  Migration 211 also rewrites the `better_auth` schema's COMMENT to name its two functions beside 210's trigger.
+  Both Account cards host their dialogs with `useDialogSubject` over a dialog kind (`CoachAccountCard`'s
   `AccountDialog`, `ClientAccountCard`'s): the Delete account dialog joins those, keyed by `openKey`. `lib/auth.ts` sends
   every Better Auth email through `sendWithEmailService`, and its one before hook is `refuseBeforeEndpoint`. A hook that
   must know who is asking reads `readSessionUserId(ctx.headers)`, never the request's own cookie: every before hook is
@@ -1271,8 +1586,8 @@ Model" and the storage paragraphs grep finds for progress-photos and content-
 library. Open another section only when something you touch points to it.
 
 Job: Commit 6 of docs/BETTER-AUTH-PLAN.md §6 — `feat(account): delete account,
-the coach's and the client's; migration 210`. Build exactly what that section
-lists, to §2.1 (migration 210), §2.6, D2, D20, D21 and rules 10 and 13. Before
+the coach's and the client's; migration 211`. Build exactly what that section
+lists, to §2.1 (migration 211), §2.6, D2, D20, D21 and rules 10 and 13. Before
 the first edit, list every table the two functions reach by grepping the
 migrations for every FK to clients and to coaches and compare with §2.6; a
 table §2.6 misses is added to the plan's list in this commit. Read Better
@@ -1284,7 +1599,7 @@ me only if a §3 decision this commit needs is blank, if building exactly what
 this commit lists would break a CONVENTIONS.md rule that §4 does not mark for
 rewriting, or if a gate fails and its root fix lies outside this commit.
 
-Done when: everything that section lists is built; migration 210 is on DEV and
+Done when: everything that section lists is built; migration 211 is on DEV and
 types/database.ts shows exactly its functions; scripts/delete-account-proof.ts
 passes on DEV (every check of §5's proof 6, every throwaway removed in finally
 even when a check fails); an independent review of the whole diff has run and
@@ -1328,8 +1643,8 @@ arrives or the auth:last-link command. The browser smoke is mine.
   the evidence.
 - Found by commit 5: Better Auth's change password needs the login's password row (`findCredentialAccount`); a coach
   who never used the "Set your password" link and signs in with Google has none, and Change password answers
-  `CREDENTIAL_ACCOUNT_NOT_FOUND`, which the dialog words as "Something went wrong. Try again." Every update of a login
-  runs `mirrorLoginEmail` (a no-op unless its address changed).
+  `CREDENTIAL_ACCOUNT_NOT_FOUND`, which the dialog words as "Something went wrong. Try again." A change of a login's
+  address, whatever makes it, runs migration 210's trigger (5.5); Google's linking changes no address.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -1388,9 +1703,9 @@ mine.
   shows a bearer session past `updateAge` renewed there.
 - Found by commit 5: a Better Auth before hook sees the request before the bearer plugin's hook turns its token into
   the session cookie, so a guard reading the request's own cookie misses a bearer request, or names the cookie's login
-  when a bearer token rides beside it. The coach-only change of email (`refuseEmailChangeUnlessCoach`) reads who is
-  asking through `readSessionUserId`, and `scripts/account-proof.ts` step 3 proves a client's bearer token refused;
-  this commit's review of what a bearer request may do covers every before-hook guard the same way.
+  when a bearer token rides beside it. Change email's check of the new address (commit 5's guard as 5.5 rewrites
+  it) reads who is asking through `readSessionUserId`, and `scripts/account-proof.ts` step 3 drives it by bearer
+  token; this commit's review of what a bearer request may do covers every before-hook guard the same way.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -1439,8 +1754,9 @@ shipped and the proof's output. There is no browser smoke for this commit.
 
 - `docs/ARCHITECTURE.md`: "Auth Model" complete for the account features, Google, the bearer path, the delete
   paths; the Settings pages' Account cards under their pages; the emails list; the "Client Onboarding Flow" line
-  for the invite; current shape only. Commit 5 wrote "Account changes" (change password, change email and the
-  `coaches.email` copy, sign out everywhere): it is completed, not restarted.
+  for the invite; current shape only. Commits 5 and 5.5 wrote "Account changes" (change password, change email for
+  both roles and the address's copies, the coach's lock, the owner's `auth:move-email`, sign out everywhere): it is
+  completed, not restarted.
 - `CONVENTIONS.md`: the rules §4 marks for rewriting that commit 2 didn't take (§9's tiers, §6's map, §19's env
   list, the soft-delete exception, the packages line, the "additive over breaking" line).
 - `TECHNICAL-DEBT.md`: the entries §4 closes, each deleted or marked with the hash, and with them the open P2 rows
@@ -1550,6 +1866,32 @@ As Smoke coach from §7.2 (the session names the login if that one is gone):
    and Units with Change password. Change it to a new password, log out, sign in with the new one: `/client`.
    Change it back to the old one.
 
+### 7.3a The product's name (after commit 5.1)
+
+`EMAIL_FROM` set to `"Atletafit <hello@atletafit.com>"` first.
+1. Open `/login`. The page and the browser tab say Atletafit; nothing says CoachHub.
+2. Click "Forgot your password?", enter your coach address and send. The "Reset your password" email arrives from
+   Atletafit and is signed "The Atletafit Team".
+3. Sign in as "Test intake form bug". The client portal's header says Atletafit.
+
+### 7.3b A client's email, everywhere (after commit 5.5)
+
+The seed: a pending client "Smoke · change email" under the owner's coach, on a deliverable address, its invite
+link in the handover. `EMAIL_FROM` on the verified domain first (every step's email goes to a `+` address).
+1. Open the invite link, type a password twice and create the account. You land on the intake form.
+2. Open `/client/settings`. The Account card has Change password and Change email.
+3. Click Change email, type <the second address>, save. "We've emailed <the first address> to approve the change."
+   The Profile card still shows the first address.
+4. Open "Approve your email change" and click its button: `/client/settings`, still the first address. Open
+   "Confirm your new email" and click its button: `/client/settings` shows the second address.
+5. In another browser, as your coach, open Smoke · change email's profile: the second address. Open its details
+   sheet: the email can't be edited, and says "The client changes this from their Settings."
+6. Back as the client, log out and sign in with the second address and your password: you're in.
+7. Run `npm run auth:move-email -- --project aeaphsslctwcmebldrzx --email <the second address> --to <a third
+   address>` (or let the session run it). It says the login moved. The client's open page goes to `/login` on its
+   next request. Open "Reset your password" at the third address, set a password, and sign in with it.
+8. As your coach, reload the client's profile: the third address.
+
 ### 7.4 Delete account (after commit 6)
 
 The seed: a coach "Smoke · delete coach" with two clients, "Smoke · delete client A" (a sent check-in with a
@@ -1593,7 +1935,7 @@ session prints.
 ### 8.2 PROD
 
 PROD is `etezzztgafcotyahgijk`. It took 185–209 on 2026-10-08 with no app deployed against it, holding no logins
-(208 copied none) and no coaching data: it serves the marketing site's waitlist alone. It owes 210; the app's PROD
+(208 copied none) and no coaching data: it serves the marketing site's waitlist alone. It owes 210 and 211; the app's PROD
 deployment and its env will live wherever the owner runs it (no file in the repo describes it). The session that
 runs this counts PROD's `auth.users` first: with no app on PROD none should appear, and a login found there is
 copied by rerunning 209's section 1 (idempotent) before the deploy.
@@ -1605,10 +1947,10 @@ copied by rerunning 209's section 1 (idempotent) before the deploy.
    chain, set `advanced.ipAddress` (the header, or the trusted proxies) in `lib/auth.ts` first, or every caller
    shares one count per path and three sign-ins in ten seconds lock everyone out.
 2. `npx supabase link --project-ref etezzztgafcotyahgijk < /dev/null`; `npx supabase migration list --linked`
-   (expect 210 pending, nothing else); count `auth.users`, `profiles`, `coaches`, `clients` with
+   (expect 210 and 211 pending, nothing else); count `auth.users`, `profiles`, `coaches`, `clients` with
    `db query --linked` and write the numbers in the handover.
 3. `npx supabase db push --dry-run`, read it, then the owner runs `npx supabase db push` (Claude Code's auto mode
-   refuses a push to PROD): 210 adds the functions.
+   refuses a push to PROD): 210 adds the address trigger, 211 the delete functions.
 4. Deploy `main` with the env of step 1.
 5. If PROD held logins, each person signs in again (D8). If it held none, `npm run coach:create -- --project
    etezzztgafcotyahgijk …` for the owner's own coach, from the repo while it is linked to PROD (step 2), with PROD's
@@ -1623,8 +1965,8 @@ copied by rerunning 209's section 1 (idempotent) before the deploy.
 
 ### 8.3 Undo
 
-- **A commit after 2** is undone by `git revert` of that commit alone; 210's two functions may stay (nothing calls
-  them without commit 6).
+- **A commit after 2** is undone by `git revert` of that commit alone; 211's two functions may stay (nothing calls
+  them without commit 6), and so may 210's trigger without 5.5's code (all it does is copy an address).
 - **The switch itself:** `git revert` commit 2 (and every later one that landed), redeploy, and push a new
   migration (the next free number) with the SQL below. Sign-ins return to Supabase Auth with the passwords it
   holds: a password changed after the switch reverts to the old one; a login made after the switch does not exist
@@ -1665,8 +2007,8 @@ GRANT ALL ON public.profiles, public.coaches TO supabase_auth_admin;
   samuel.k@taboola.com); leave it empty until then.
 
 **Before commit 4's smoke (and every email after it): Resend.** Resend → Domains → Add domain → the DNS records it
-shows (DKIM, SPF / return-path, DMARC) at your registrar → Verified. Then `EMAIL_FROM="CoachHub <no-reply@<your
-domain>>"` in `.env.local`. Until this is done every email the app sends reaches only your Resend account's
+shows (DKIM, SPF / return-path, DMARC) at your registrar → Verified. Then `EMAIL_FROM="Atletafit <no-reply@<your
+domain>>"` in `.env.local` (DEV's verified `atletafit.com`: `EMAIL_FROM="Atletafit <hello@atletafit.com>"`). Until this is done every email the app sends reaches only your Resend account's
 address, and the smokes use `npm run auth:last-link` for the rest.
 
 **Before commit 7: Google.** Google Cloud Console → APIs & Services → OAuth consent screen (External; the app's
