@@ -1630,7 +1630,8 @@ mine; offer to run its terminal step.
 
 ### Commit 6 — `feat(account): delete account, the coach's and the client's; migrations 211 and 212`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `115747e8` (2026-10-09).** Migrations 211 and 212 on DEV (PROD owes 210–212); proof 6 passes on
+DEV (43 checks); browser smoke §7.4 owed.
 
 - Migration 211 (§2.1) on DEV, and 212, its foreign keys' indexes (§2.1, owner 2026-10-09). `services/account-service.ts` (§2.6: `deleteAccountRecords` as `beforeDelete`,
   the key collection, `services/storage-service.ts` gains `removeObjects(bucket, keys)` and, from commit 6's review,
