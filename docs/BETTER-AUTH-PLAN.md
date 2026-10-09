@@ -1462,7 +1462,7 @@ shipped and §7.3a's smoke list. The browser smoke is mine.
 
 ### Commit 5.5 — `feat(account): clients change their email too, every copy of an address follows it in one write (migration 210), and the owner's auth:move-email`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `fcdee834` 2026-10-09.**
 
 Asked for by the owner on 2026-10-09, after commit 5 shipped coaches only (D18, D37, D38, D39; rules 13, 17, 18, 19).
 - Migration 210 (§2.1, D37) on DEV: the trigger that copies a login's address to its coach and client rows in the
