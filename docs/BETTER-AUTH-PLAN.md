@@ -9,8 +9,8 @@ email, sign out everywhere (5); every screen and email says the product's name, 
 their email too, every copy of an address follows it in one write, and the owner moves the login of someone who
 lost their inbox (5.5); delete account (6); Continue with Google (7);
 the server ready for the client app (8). **Commit 9** writes the docs. This plan adds
-migrations 208, 209, 210, 211, 212 and 213: DEV and PROD hold 208 and 209 (PROD since 2026-10-08), and PROD takes 210
-to 213 by §8.2. **Billing is not here:** Better Auth's
+migrations 208, 209, 210, 211, 212 and 213: DEV and PROD hold all six (PROD took 208 and 209 on 2026-10-08 and 210 to
+213 on 2026-10-09, §8.2). **Billing is not here:** Better Auth's
 Stripe plugin later adds one column and one table and touches nothing this plan builds (D27). Every file and line
 named here was grepped on 2026-10-07 at `d5f23299`; every Better Auth fact is from its docs and source at
 **1.7.7** (§2.9), the version commit 1 pins.
@@ -1665,7 +1665,7 @@ mine; offer to run its terminal step.
 
 ### Commit 6 — `feat(account): delete account, the coach's and the client's; migrations 211 and 212`
 
-**STATUS: SHIPPED `115747e8` (2026-10-09).** Migrations 211 and 212 on DEV (PROD owes 210–212); proof 6 passes on
+**STATUS: SHIPPED `115747e8` (2026-10-09).** Migrations 211 and 212 on DEV (PROD took 210–212 on 2026-10-09); proof 6 passes on
 DEV (43 checks); browser smoke §7.4 PASSED 2026-10-09.
 
 - Migration 211 (§2.1) on DEV, and 212, its foreign keys' indexes (§2.1, owner 2026-10-09). `services/account-service.ts` (§2.6: `deleteAccountRecords` as `beforeDelete`,
@@ -1749,7 +1749,7 @@ arrives or the auth:last-link command. The browser smoke is mine.
 ### Commit 7 — `feat(auth): Continue with Google, for sign-in only`
 
 **STATUS: SHIPPED `0a54cc5e` (2026-10-09); its follow-up, migration 213, SHIPPED `6544f59c` (2026-10-09).** 213 on
-DEV (PROD owes 210 to 213); proof 5.5 passes on DEV (53 checks, every path's Google unlink among them); browser smoke
+DEV (PROD took 210 to 213 on 2026-10-09); proof 5.5 passes on DEV (53 checks, every path's Google unlink among them); browser smoke
 §7.5 PASSED 2026-10-09. The Google keys are in `.env.local` (2026-10-09), the consent screen in Testing with the
 smoke's three Google accounts as its test users.
 
@@ -2124,8 +2124,9 @@ session prints.
 
 ### 8.2 PROD
 
-PROD is `etezzztgafcotyahgijk`. It took 185–209 on 2026-10-08 with no app deployed against it, holding no logins
-(208 copied none) and no coaching data: it serves the marketing site's waitlist alone. It owes 210 to 213; the app's PROD
+PROD is `etezzztgafcotyahgijk`. It took 185–209 on 2026-10-08 and 210 to 213 on 2026-10-09 (steps 2, 3 and 6, ahead
+of the deploy), with no app deployed against it, holding no logins (208 copied none) and no coaching data: it serves
+the marketing site's waitlist alone (8 rows on 2026-10-09). The app's PROD
 deployment and its env will live wherever the owner runs it (no file in the repo describes it). The session that
 runs this counts PROD's `auth.users` first: with no app on PROD none should appear, and a login found there is
 copied by rerunning 209's section 1 (idempotent) before the deploy.
@@ -2138,11 +2139,13 @@ copied by rerunning 209's section 1 (idempotent) before the deploy.
    chain, set `advanced.ipAddress` (the header, or the trusted proxies) in `lib/auth.ts` first, or every caller
    shares one count per path and three sign-ins in ten seconds lock everyone out.
 2. `npx supabase link --project-ref etezzztgafcotyahgijk < /dev/null`; `npx supabase migration list --linked`
-   (expect 210, 211, 212 and 213 pending, nothing else); count `auth.users`, `profiles`, `coaches`, `clients` with
+   (expect nothing pending but migrations added after 213); count `auth.users`, `profiles`, `coaches`, `clients` with
    `db query --linked` and write the numbers in the handover.
-3. `npx supabase db push --dry-run`, read it, then the owner runs `npx supabase db push` (Claude Code's auto mode
-   refuses a push to PROD): 210 adds the address trigger, 211 the delete functions, 212 the indexes on the foreign
-   keys their cascades walk, 213 the Google links' two rules (each migration's closing check runs in the push).
+3. `npx supabase db push --dry-run`, read it, then `npx supabase db push` (Claude Code's auto mode may refuse a push
+   to PROD; then the owner runs it). Done for 210 to 213 on 2026-10-09 from the session, on the owner's word: 210 the
+   address trigger, 211 the delete functions, 212 the indexes on the foreign keys their cascades walk, 213 the Google
+   links' two rules, each migration's closing check run in the push; before it PROD held 0 logins, profiles,
+   coaches and clients, and after it its ledger, catalog, `check:rls` and generated types matched DEV's.
 4. Deploy `main` with the env of step 1.
 5. If PROD held logins, each person signs in again (D8). If it held none, `npm run coach:create -- --project
    etezzztgafcotyahgijk …` for the owner's own coach, from the repo while it is linked to PROD (step 2), with PROD's
