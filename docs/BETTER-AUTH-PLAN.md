@@ -8,7 +8,7 @@ commits 4–8:** the owner creates a coach and the coach sets a password from an
 email, sign out everywhere (5); every screen and email says the product's name, Atletafit (5.1); a client changes
 their email too, every copy of an address follows it in one write, and the owner moves the login of someone who
 lost their inbox (5.5); delete account (6); Continue with Google (7);
-the server ready for the client app (8). **Commit 9** writes the docs and the PROD runbook. This plan adds
+the server ready for the client app (8). **Commit 9** writes the docs. This plan adds
 migrations 208, 209, 210 and 211: DEV and PROD hold 208 and 209 (PROD since 2026-10-08), and PROD takes 210 and 211
 by §8.2. **Billing is not here:** Better Auth's
 Stripe plugin later adds one column and one table and touches nothing this plan builds (D27). Every file and line
@@ -1022,7 +1022,8 @@ nothing a coach or client sees changes until commit 2, and from commit 2 every s
 Better Auth fact checked against docs and source, every review finding fixed, every gate run twice, a mutation for
 every rule), this block wins:
 1. **Read** CONVENTIONS.md whole; from this plan its head, §1–§5, this block, the commit's own §6 entry, and the §7
-   smoke and §8 step it names. ARCHITECTURE only where the prompt names it.
+   smoke and §8 step it names. ARCHITECTURE only where the prompt names it. Commit 9, docs only, reads §4 and §9.1
+   in place of §1–§5.
 2. **Better Auth facts:** check only the ones this commit's code relies on, against the installed source in
    `node_modules` (the source is the truth; no docs sweep). A §2.9 fact found false still stops the session.
 3. **Tests:** a test for every new rule; a deliberate break (a mutation) only for the rules the prompt names and
@@ -1033,7 +1034,7 @@ every rule), this block wins:
    tokens): there a second independent
    review reads the first review's fixes, and its blockers and should-fix items are fixed the same way.
 5. **Proof and gates:** the commit's DEV proof once, on the finished code; the full gates once, after the last
-   review's fixes.
+   review's fixes. Commit 9, docs only, runs no gates.
 6. **Scope:** build what the commit lists. A security defect in the commit's own code is fixed in the commit; a
    fact that changes how a later commit must be built goes into that commit's entry here; anything else worth
    doing goes in the handover as a recommendation, not into the diff.
@@ -1748,7 +1749,7 @@ STATUS line in §6 with SHIPPED, the hash and the date, and hand over what
 shipped and the proof's output. There is no browser smoke for this commit.
 ```
 
-### Commit 9 — `docs(auth): ARCHITECTURE, CONVENTIONS, TECHNICAL-DEBT and CLIENT-APP-REFERENCE describe the logins as they are; the PROD runbook`
+### Commit 9 — `docs(auth): ARCHITECTURE, CONVENTIONS, TECHNICAL-DEBT and CLIENT-APP-REFERENCE describe the logins as they are`
 
 **STATUS: NOT STARTED.**
 
@@ -1769,7 +1770,7 @@ shipped and the proof's output. There is no browser smoke for this commit.
 - §8.2's runbook stays in this file until PROD has switched (it is deleted with the file).
 
 ```text
-Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then the code
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §4, §9.1, §6's "How every commit runs" and this commit's entry, then the code
 commits 1–8 built (lib/auth.ts, lib/auth-client.ts, proxy.ts, services/login-
 service.ts, services/account-service.ts, services/auth-email-service.ts,
 app/api/auth/, app/set-password/, components/coach/account-card.tsx,
@@ -1782,7 +1783,7 @@ touch points to it.
 
 Job: Commit 9 of docs/BETTER-AUTH-PLAN.md §6 — `docs(auth): ARCHITECTURE,
 CONVENTIONS, TECHNICAL-DEBT and CLIENT-APP-REFERENCE describe the logins as
-they are; the PROD runbook`. Build exactly what that section lists. Docs
+they are`. Build exactly what that section lists. Docs
 describe the shape the code has now, current shape only: no history, no "used
 to", no sentence about Supabase Auth except the retirement steps still owed;
 where a doc line disagrees with the code, the code wins and the line is fixed.
