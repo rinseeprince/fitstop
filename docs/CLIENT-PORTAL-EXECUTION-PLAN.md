@@ -106,12 +106,12 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 7.9–7.12 | Goal/roadmap lifecycle — REMOVED: roadmaps/phases deleted 2026-07-25 (rebuild post-launch; sessions + history in git, tag roadmap-v2-pre-removal) | 7 | REMOVED
 | 8.1–8.3 | Units — SUPERSEDED: units canonicalization shipped 2026-08-07 as canonical kg/cm storage with the preference on the viewer (migs 140+141), not render-time conversion over per-record tags (session bodies in git) | 8 | SUPERSEDED
 | 9.1 | Document required environment variables in .env.example | 9 Pre-launch hardening |
-| 9.2 | Auth callback rate limit + magic-link onboarding fix | 9 |
+| 9.2 | Auth callback rate limit + magic-link onboarding fix — SUPERSEDED: on Better Auth (`9f136a30`) there is no `/auth/callback` and no magic link (session body in git) | 9 | SUPERSEDED
 | 9.3 | Sentry capture on fire-and-forget background tasks | 9 |
 | 9.4 | Resolve real ESLint bugs (await-thenable, misused-promise) | 9 |
 | 9.5 | Coach API response shape consistency sweep | 9 Mobile prep |
 | 9.6 | Cache-Control: no-store sweep on coach GET routes | 9 |
-| 9.7 | Bearer token auth path for native clients | 9 |
+| 9.7 | Bearer token auth path for native clients — SUPERSEDED: Better Auth's bearer plugin (`a8aaf698`; `CLIENT-APP-REFERENCE.md` → Authentication) (session body in git) | 9 | SUPERSEDED
 | 9.8 | API versioning policy + Client-Version header gate | 9 |
 | 9.9 | TECHNICAL-DEBT.md sweep (mark resolved items) | 9 |
 | 9.10 | Root-level doc rewrite (README) + CLIENT-APP-REFERENCE.md audit | 9 |
@@ -2696,37 +2696,6 @@ Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Se
 
 ---
 
-## Session 9.2: Auth callback rate limit + magic-link onboarding fix
-
-**Commit message**: `fix(auth): rate-limit OAuth callback and gate magic-link onboarding correctly`
-
-**Objective**: Two unrelated auth bugs flagged in `TECHNICAL-DEBT.md` (Auth P0 #4 and P2 #13). Bundling because both touch auth flows and are small.
-
-**Read first**:
-- `app/auth/callback/route.ts` (OAuth callback handler).
-- `lib/rate-limit.ts` (`authRateLimit` definition).
-- The magic-link entrypoint (grep for `user_metadata?.password_set` or `needsOnboarding`).
-- `TECHNICAL-DEBT.md` Auth P0 #4 and P2 #13 entries.
-
-**Plan (report before implementing)**:
-- Where the auth callback runs and which rate-limit tier applies (`authRateLimit` matches the surrounding auth routes' tier).
-- Where `password_set` should actually be written and read. The current check `!user.user_metadata?.password_set` is always true because nothing writes that key. Decide: write it on password creation, or replace the check with a different signal (e.g. an `onboarding_status` column on `clients`, or `walkthrough_completed_at`).
-- Whether the fix is a metadata write or a check-side change. Prefer the simpler one.
-
-**Implement**:
-- Add `authRateLimit(request)` as the first check in `app/auth/callback/route.ts`. Match the pattern from `app/api/auth/login/route.ts` or similar.
-- Fix the magic-link onboarding gate per the planning decision. If writing metadata: add `await supabase.auth.updateUser({ data: { password_set: true } })` at password-creation time. If replacing the check: switch to `clients.onboarding_status === 'active'` or equivalent.
-
-**Do NOT**: Refactor `app/auth/callback/route.ts` beyond adding the rate limit. Restructure the onboarding flow. Add new metadata fields beyond what's needed.
-
-**Tests to write**:
-- Auth callback route test: 200 happy path; 429 when rate limit exceeded.
-- Magic-link onboarding test: previously-onboarded user does not see onboarding; new user does. (If the test infra makes this hard, manual verification with two test accounts.)
-
-**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: trigger the OAuth callback rapidly; verify rate limit. Sign in via magic link with a previously-onboarded test client; verify no onboarding redirect. Mark TECHNICAL-DEBT.md entries Auth P0 #4 and P2 #13 as Resolved. Commit.
-
----
-
 ## Session 9.3: Sentry capture on fire-and-forget background tasks
 
 **Commit message**: `fix(observability): wire captureApiError into fire-and-forget background tasks`
@@ -2849,40 +2818,6 @@ Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Se
 
 ---
 
-## Session 9.7: Bearer token auth path for native clients
-
-**Commit message**: `feat(auth): support Authorization bearer header alongside cookie session`
-
-**Objective**: Native iOS/Android apps work better with bearer tokens than with cookies. Today `lib/auth-helpers.ts` reads JWT only from Supabase session cookies. Add a parallel `Authorization: Bearer <jwt>` path so mobile can authenticate without reverse-engineering cookie behaviour.
-
-**Decision required before this session**: Is mobile using bearer tokens, or accepting a cookie-jar approach? This session assumes bearer. If you choose cookie-jar, this session can be skipped.
-
-**Read first**:
-- `lib/auth-helpers.ts:getAuthenticatedClientId`, `getAuthenticatedCoachId`.
-- `lib/require-client-auth.ts` (auth chain helper).
-- `lib/csrf-protection.ts` (CSRF policy — bearer-token auth typically bypasses CSRF since there's no ambient credential).
-- Supabase auth docs for `supabase.auth.setSession()` / verifying a JWT manually.
-
-**Plan (report before implementing)**:
-- The order: try bearer first, fall back to cookie. Or try cookie first, fall back to bearer. Recommend bearer-first because it's the explicit signal.
-- CSRF behavior: when bearer-authed, skip CSRF (no ambient credential to forge). Document the exception.
-- How to verify the JWT. Supabase exposes `supabase.auth.getUser(jwt)` which validates server-side. Use that, not local-decode.
-- Rate limit: keep IP-based for bearer routes (and add user-based as a follow-up).
-
-**Implement**:
-- Extend `getAuthenticatedClientId(request)` and `getAuthenticatedCoachId(request)` to check the `Authorization` header first. If `Bearer <token>` is present, call `supabase.auth.getUser(token)` to verify and extract user id; map to client/coach id as today.
-- In `lib/require-client-auth.ts` and any coach equivalent, skip `requireCSRFProtection` when the request was authenticated via bearer. Document the exception inline.
-
-**Do NOT**: Change cookie auth behaviour. Add bearer issuance endpoints (Supabase already issues the JWT during sign-in; the mobile app captures it). Touch route logic. Add bearer support to non-API routes (middleware-protected pages stay cookie-only; mobile uses APIs only).
-
-**Tests to write**:
-- Auth helper tests: bearer-authed request returns the right id; invalid bearer returns null; missing both bearer and cookie returns null; cookie-authed request still works.
-- One route test (any client API route) with bearer auth instead of cookie — confirm 200 + CSRF bypassed.
-
-**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual via curl: hit a client route with `Authorization: Bearer <jwt>` and confirm 200; same with bad token returns 401. Commit.
-
----
-
 ## Session 9.8: API versioning policy + Client-Version header gate
 
 **Commit message**: `feat(api): add Client-Version header gate and deprecation framework`
@@ -2893,7 +2828,7 @@ Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Se
 
 **Read first**:
 - `CONVENTIONS.md` §10 (currently says no version prefix; this session adds version handling without changing the URL structure).
-- `middleware.ts` for global request handling.
+- `proxy.ts` for global request handling.
 - `lib/require-client-auth.ts` for the existing chain.
 
 **Plan (report before implementing)**:

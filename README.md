@@ -35,8 +35,8 @@ A modern fitness coaching platform that helps trainers manage clients, create pe
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or pnpm
+- Node.js 22+
+- npm
 - Supabase account
 
 ### Setup
@@ -111,7 +111,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 ├── app/                        # Next.js App Router pages
 │   ├── api/                   # API routes
-│   ├── login/                 # Sign-in (and forgot-password/, reset-password/, set-password/)
+│   ├── login/, forgot-password/, reset-password/, set-password/  # Sign-in and the password pages
 │   ├── clients/               # Client management pages
 │   ├── check-in/              # Check-in submission pages
 │   ├── invite/                # Client invitation pages
