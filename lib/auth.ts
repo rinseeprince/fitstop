@@ -1,3 +1,4 @@
+import { expo } from "@better-auth/expo"
 import { betterAuth, type GenericEndpointContext } from "better-auth"
 import { APIError, createAuthMiddleware, isAPIError } from "better-auth/api"
 import { verifyPassword } from "better-auth/crypto"
@@ -7,6 +8,7 @@ import { PostgresDialect } from "kysely"
 import { after } from "next/server"
 import { Pool, TypeOverrides, types } from "pg"
 import {
+  CLIENT_APP_SCHEME,
   LOGIN_ERROR_GOOGLE_CANCELLED,
   LOGIN_ERROR_GOOGLE_NO_ACCOUNT,
   LOGIN_ERROR_GOOGLE_NOT_LINKED,
@@ -129,6 +131,46 @@ function refuseSetPasswordLandingOverHttp(ctx: GenericEndpointContext): void {
   }
 }
 
+/** Change email's endpoint, where Settings asks for its two emails. */
+const CHANGE_EMAIL_PATH = "/change-email"
+
+/**
+ * The emailed links that hand their landing a credential, by the field each
+ * endpoint takes the landing in: forgot password's link carries the token
+ * that sets the password, and change email's confirmation link, opened where
+ * no one is signed in, makes a session, which the Expo plugin's after hook on
+ * /verify-email hands the landing as a cookie when the landing is the client
+ * app's scheme.
+ */
+const CREDENTIAL_LINK_LANDINGS = new Map<string, "redirectTo" | "callbackURL">([
+  [REQUEST_PASSWORD_RESET_PATH, "redirectTo"],
+  [CHANGE_EMAIL_PATH, "callbackURL"],
+])
+
+/** Whether a landing resolves, as a browser resolves it, to a page of the app's own origin, `baseURL`'s. */
+function landsOnTheApp(landing: string, baseURL: string): boolean {
+  const appOrigin = new URL(baseURL).origin
+  return URL.canParse(landing, appOrigin) && new URL(landing, appOrigin).origin === appOrigin
+}
+
+/**
+ * A password link and change email's links land on a page of the app, never
+ * on the client app's scheme, which Better Auth trusts beside the app's pages
+ * (D25): on a phone where another app has claimed atletafit://, that app, not
+ * the person, would be handed the token or the session the link carries.
+ * Forgot password is open to anyone signed out, for any address. A landing
+ * off the app's own origin is refused before any address is looked up,
+ * whoever asks, the server's own calls included; the client app names a page
+ * of the web app, as the site does.
+ */
+function refuseCredentialLinkOffTheApp(ctx: GenericEndpointContext): void {
+  const field = CREDENTIAL_LINK_LANDINGS.get(ctx.path)
+  const landing: unknown = field ? (ctx.body as Record<string, unknown> | undefined)?.[field] : undefined
+  if (typeof landing === "string" && !landsOnTheApp(landing, ctx.context.baseURL)) {
+    throw new APIError("FORBIDDEN", { message: "An emailed link lands on a page of the app." })
+  }
+}
+
 /** Delete account's endpoint, where the dialog asks for the confirmation link. */
 const DELETE_USER_PATH = "/delete-user"
 /** Its limit: sign-in's (three in ten seconds, per IP), since it answers whether a password is right. */
@@ -148,12 +190,14 @@ function refuseDeleteWithoutPassword(ctx: GenericEndpointContext): void {
 }
 
 /**
- * Better Auth's before hook: it refuses the set-password landing over HTTP
- * and a delete-account request without a password, and lets every other
- * request through.
+ * Better Auth's before hook: it refuses the set-password landing over HTTP,
+ * a password link or change email's links landing off the app, and a
+ * delete-account request without a password, and lets every other request
+ * through.
  */
 export const refuseBeforeEndpoint = createAuthMiddleware((ctx) => {
   refuseSetPasswordLandingOverHttp(ctx)
+  refuseCredentialLinkOffTheApp(ctx)
   refuseDeleteWithoutPassword(ctx)
   return Promise.resolve()
 })
@@ -369,7 +413,11 @@ export const auth = betterAuth({
     schemaName: "better_auth",
     transaction: true,
   },
-  trustedOrigins: [appUrl],
+  // The app's pages, and the client app's scheme (D25), bare and with Better
+  // Auth's wildcard: the app signs in at these same endpoints, its requests
+  // naming the scheme as their origin. Under next dev the Expo plugin adds
+  // Expo Go's exp:// too.
+  trustedOrigins: [appUrl, CLIENT_APP_SCHEME, `${CLIENT_APP_SCHEME}*`],
   emailAndPassword: {
     enabled: true,
     disableSignUp: true, // D1, D9: no public sign-up, ever
@@ -398,8 +446,9 @@ export const auth = betterAuth({
       sendChangeEmailConfirmation: sendApprovalUnlessHeld,
     },
     // Delete account (rules 10 and 13, D20): the password, then an emailed
-    // link, opened where the person is signed in, which deletes the app's
-    // records first (beforeDelete) and then the login.
+    // link, opened where the person is signed in (a browser's cookie, or the
+    // client app requesting it with its bearer token), which deletes the
+    // app's records first (beforeDelete) and then the login.
     deleteUser: {
       enabled: true,
       sendDeleteAccountVerification: sendDeletionConfirmation,
@@ -438,7 +487,11 @@ export const auth = betterAuth({
   // address it was started on until Google sends the browser back, and that
   // return checks no session, so a link begun before the owner's
   // auth:move-email could be finished after it, on the moved login.
-  disabledPaths: ["/link-social", "/unlink-account"],
+  // The Expo plugin's Google proxy answers 404 too, until the client app's
+  // Continue with Google is built: whatever browser opens its link stores the
+  // Google sign-in the link names, so an attacker could finish their own
+  // sign-in in someone else's browser and leave it signed in as them.
+  disabledPaths: ["/link-social", "/unlink-account", "/expo-authorization-proxy"],
   // Better Auth's defaults, written down: a session lasts seven days from its
   // last renewal, and a use a day or more after that renews it. No cookie
   // cache, so a revoked session ends on its next request (D15).
@@ -460,7 +513,14 @@ export const auth = betterAuth({
   // login kept its Supabase one: every login's id has the type of the user_id
   // columns that point at it.
   advanced: { database: { generateId: "uuid" }, backgroundTasks: { handler: runAfterAnswer } },
-  plugins: [admin({ adminUserIds }), bearer()],
+  // bearer(): every answer that sets the session cookie carries its value in
+  // set-auth-token too, and Authorization: Bearer <that value> is that session
+  // wherever a session is read. expo(): the plugin's client in the app names
+  // the app's origin in expo-origin, which stands in for the Origin a phone's
+  // fetch doesn't send, and a sign-in or change email's link landing on the
+  // scheme is handed the session in its address (held off here: Google's
+  // proxy is off above, and the before hook keeps emailed links on the app).
+  plugins: [admin({ adminUserIds }), bearer(), expo()],
   telemetry: { enabled: false },
 })
 
@@ -470,11 +530,11 @@ export const auth = betterAuth({
  * the auth seam and GET /api/auth/me ask here.
  *
  * The read never renews the session (disableRefresh). A renewal moves the
- * session's expiry and answers with a new cookie, and only Better Auth's own
- * GET /api/auth/get-session, which the browser's useSession() calls, hands
- * that cookie back. Renewed here, the row's expiry would move while the
- * browser kept a cookie set to lapse a week after sign-in, and someone using
- * the app every day would be signed out at the week's end.
+ * session's expiry and answers with a new cookie, which only Better Auth's own
+ * endpoints hand back, GET /api/auth/get-session among them, which the
+ * browser's useSession() calls. Renewed here, the row's expiry would move
+ * while the browser kept a cookie set to lapse a week after sign-in, and
+ * someone using the app every day would be signed out at the week's end.
  *
  * Throws when the session cannot be read (a database fault), and the caller
  * treats the request as signed out. Every such fault reaches Sentry once:

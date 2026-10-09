@@ -337,3 +337,6 @@ export const LOGGED_OUT_PAGE = `/login?${LOGGED_OUT_PARAM}=1`;
 export const COACH_SETTINGS_PAGE = "/settings";
 export const CLIENT_SETTINGS_PAGE = "/client/settings";
 export type SettingsPage = typeof COACH_SETTINGS_PAGE | typeof CLIENT_SETTINGS_PAGE;
+// The client app's own scheme (D25), which Better Auth trusts beside the app's
+// pages: the origin the app's requests to /api/auth name.
+export const CLIENT_APP_SCHEME = "atletafit://";

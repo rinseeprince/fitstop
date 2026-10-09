@@ -560,7 +560,8 @@ async function refuseUnlessOwnerOrInvite(_user: unknown, ctx: { path?: string } 
 - **CSRF.** `lib/csrf-protection.ts` passes a request whose `Authorization` header starts with `Bearer ` (commit 8):
   a bearer token is attached by code that holds it, never by a browser form, and the proxy and seam accept it only
   through Better Auth. Everything else about it stays. Better Auth's own endpoints check `Origin` against
-  `trustedOrigins` themselves.
+  `trustedOrigins` themselves. (As built in commit 8: the bearer request passes when it carries neither `Origin`
+  nor `Referer`, which no browser's write lacks; one naming another site is refused as any request is.)
 - **Rate limits.** Better Auth's limiter covers `/api/auth/*`: 3 per 10 s on sign-in, change-password and
   change-email, 3 per minute on reset and verification requests, 100 per 10 s otherwise, per IP, stored in
   `better_auth."rateLimit"`, on in production and off under `next dev` (§2.9 #5). `apiRateLimit` stays on `/me`;
@@ -737,13 +738,20 @@ address changes, which deletes it in the same statement, and one Google account 
   branch of its own. The token follows the session's life (seven days, extended daily; revoked with it).
 - `expo()` and the scheme `atletafit://` in `trustedOrigins` (D25): a future Expo app signs in at the same
   `/api/auth` routes, keeps the session in SecureStore and sends it as a `Cookie` header, and Google sign-in
-  from the app returns through `atletafit://…`. Dev-only `exp://` origins are added by the plugin under
-  `NODE_ENV=development`. Nothing else on the server changes for the app, ever (§2.9 #4).
+  from the app waits for the commit that builds it (the as-built bullet below). Dev-only `exp://` origins are added by the plugin under
+  `NODE_ENV=development`. Nothing else in Better Auth's setup changes for the app (§2.9 #4); the as-built bullet
+  below names what does.
 - The proxy's JSON 401 (rule 16) and the CSRF pass for bearer requests (§2.2) are the two app-side changes.
 - Proof (§5): a sign-in over HTTP with a client's credentials, the token from `set-auth-token`, then
   `GET /api/client/me` with the header and no cookie → 200; `PATCH /api/client/settings` with the header, no
   cookie and no `Origin` → 200; a garbage token → 401 JSON; a revoked one → 401; a POST to `/api/auth/sign-in/email`
   with `Origin: atletafit://` → accepted, with `Origin: https://evil.example` → 403.
+- As built (commit 8): a link Better Auth emails that carries a credential (the password link, change email's links)
+  lands on the app's own origin, never the scheme (`lib/auth.ts`'s before hook). The Expo plugin's Google proxy,
+  `/expo-authorization-proxy`, answers 404 until the app's Continue with Google is built, which decides between
+  Google's ID token and the proxy. An app user confirms a deletion by requesting the emailed link with its bearer
+  token. Serving the two app-link files under `/.well-known/`, past the proxy, is server work that comes with the
+  app. `CLIENT-APP-REFERENCE.md`'s Authentication bullets are the app's contract.
 
 ### 2.9 Better Auth facts this plan relies on (1.7.7, read 2026-10-07)
 
@@ -1882,9 +1890,9 @@ mine.
   app's contract): sign-in is `POST /api/auth/sign-in/email`, the token is `set-auth-token`, every `/api/client/**`
   call carries `Authorization: Bearer`, a dead token is 401 JSON.
 - What commit 2 left for this commit: the proxy and the seam read a session without renewing it
-  (`readSessionUserId`, `disableRefresh`), so a session is renewed only by `GET /api/auth/get-session`. The app
-  must call it (the Expo client's `useSession()` does) or its session ends seven days after sign-in; the proof
-  shows a bearer session past `updateAge` renewed there.
+  (`readSessionUserId`, `disableRefresh`), so a session is renewed only by Better Auth's own endpoints, `GET
+  /api/auth/get-session` the one to call. The app must call it (the Expo client's `useSession()` does) or its
+  session ends seven days after sign-in; the proof shows a bearer session past `updateAge` renewed there.
 - Found by commit 6: delete account's emailed link deletes only when opened where the person is signed in as that
   login (Better Auth's callback reads the session from the request; the link carries none). An app user's session
   is a bearer token the phone's browser never holds, so the link opened there answers Better Auth's JSON 404 and
@@ -1896,6 +1904,43 @@ mine.
   when a bearer token rides beside it. Change email's check of the new address (commit 5's guard as 5.5 rewrites
   it) reads who is asking through `readSessionUserId`, and `scripts/account-proof.ts` step 3 drives it by bearer
   token; this commit's review of what a bearer request may do covers every before-hook guard the same way.
+- Decided by commit 8 (each in its handover, for the owner to veto):
+  - The CSRF pass is narrower than §2.2's sentence: a bearer request passes when it carries neither `Origin` nor
+    `Referer`, and one whose `Origin` or `Referer` names another site is refused as any request is, so the pass
+    never leans on the app answering no CORS preflight. The scheme is read as the bearer plugin reads it: any case,
+    a token after it.
+  - An app user confirms a deletion by requesting the emailed link, exactly as emailed, with the app's bearer token:
+    Better Auth's callback reads the session from the token and deletes the records first (`beforeDelete`), then
+    the login, as for a browser signed in on the web. The link reaches the app because the app claims its https
+    address as a universal link and an app link, which needs `/.well-known/apple-app-site-association` and
+    `/.well-known/assetlinks.json` served by the web app and let through the proxy signed out: server work that
+    comes with the app.
+  - A link Better Auth emails that carries a credential lands on the app's own origin, never the scheme, whoever asks,
+    the server's own calls included (`lib/auth.ts`'s before hook). Forgot password, open to anyone for any address,
+    emails the token that sets the password; change email's confirmation link, opened where no one is signed in,
+    makes a session, which the Expo plugin hands a scheme landing as a cookie. With `atletafit://` trusted, either
+    could go to whichever app has claimed the scheme on the person's phone. The plugin's client turns every landing
+    starting with `/` into the scheme, so the app passes a page of the web app written out in full.
+  - The Expo plugin's Google proxy (`/expo-authorization-proxy`) is off (`disabledPaths`, 404) until the app's
+    Continue with Google is built: whatever browser opens its link stores the Google sign-in the link names, so an
+    attacker who owns a login linked to their Google account could finish their own Google sign-in in someone else's
+    browser and leave it signed in as them. The first review showed it end to end, through a first build that held
+    the proxy to the app's own Google sign-in page. The commit that builds the app's Google sign-in chooses between
+    Google's ID token (`signIn.social` with `idToken`, no proxy) and the proxy, with this risk; until then the app
+    offers no Continue with Google.
+- Found by commit 8 in Better Auth 1.7.7's installed source:
+  - `atletafit://` alone trusts every address on the scheme (`auth/trusted-origins.mjs`: the scheme matches and the
+    entry pins no host or path); `atletafit://*` matches a one-segment subset and skips the control-character
+    refusal. Kept as listed; only the configuration test notices it gone.
+  - The plugin's dev-only `exp://` reaches Better Auth's checks over HTTP alone: the handler recomputes the trusted
+    origins per request from the options the plugins added to (`auth/base.mjs`), and `auth.$context.trustedOrigins`
+    never holds it.
+  - Every Better Auth endpoint that reads the session renews it when it is due, not `get-session` alone
+    (`getSessionFromCtx` passes no `disableRefresh`); only the app's own routes never do (`readSessionUserId`).
+  - Installing the plugin hoisted `@better-auth/core` and `better-call` out of `better-auth`'s own folder to the top
+    level, one copy each; `better-call` now resolves the app's zod 3 for its OpenAPI generator, which Better Auth
+    switches off. Zod 4.6.5 sits in three nested copies (under `better-auth`, `@better-auth/core` and
+    `@better-auth/expo`) where `better-auth` and core shared one: worth knowing before the next upgrade.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -1948,7 +1993,11 @@ shipped and the proof's output. There is no browser smoke for this commit.
   both roles and the address's copies, the coach's lock, the owner's `auth:move-email`, sign out everywhere): it is
   completed, not restarted.
 - `CONVENTIONS.md`: the rules §4 marks for rewriting that commit 2 didn't take (§9's tiers, §6's map, §19's env
-  list, the soft-delete exception, the packages line, the "additive over breaking" line).
+  list, the soft-delete exception, the packages line, the "additive over breaking" line), and §6's
+  `lib/csrf-protection.ts` line, which since commit 8 also passes the client app's bearer request.
+- `docs/ARCHITECTURE.md`'s "Auth Model" takes commit 8's shape with the bearer path: the CSRF pass, the scheme and
+  the Expo plugin, emailed links held to the app, the Google proxy off, renewal (the app's routes never renew a
+  session; `get-session` does), and an app user's deletion by the emailed link.
 - `TECHNICAL-DEBT.md`: the entries §4 closes, each deleted or marked with the hash, and with them the open P2 rows
   commit 2's deletions and rewrites closed, which §4 does not name (:302 the server-client factories, :310 `error: any`
   in the auth pages, :311 their missing zod, :312 the browser client's cookie parsing, :314 the callback's metadata

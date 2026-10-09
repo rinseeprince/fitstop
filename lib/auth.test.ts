@@ -72,6 +72,7 @@ import { after } from "next/server"
 const backgroundSettled = () => Promise.all(vi.mocked(after).mock.calls.map(([task]) => task as Promise<unknown>))
 import {
   ACCOUNT_DELETED_PAGE,
+  CLIENT_APP_SCHEME,
   LOGIN_ERROR_GOOGLE_NO_ACCOUNT,
   LOGIN_ERROR_GOOGLE_NOT_LINKED,
   PASSWORD_MAX_LENGTH,
@@ -1106,6 +1107,35 @@ describe("delete account (rules 10 and 13, D20): the password, then the emailed 
     expect(deleteAccountRecords).not.toHaveBeenCalled()
     expect(db.user.map((user) => user.id).sort()).toEqual([id, other].sort())
   })
+
+  it("in Better Auth's pipeline: the client app confirms by requesting the link with its bearer token alone, and the records go first, then the login", async () => {
+    vi.mocked(readLoginRole).mockResolvedValue("client")
+    const { instance, db } = await liveAuth()
+    const id = seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const token = (await postSignIn(instance, "client@example.com", PASSWORD)).headers.get("set-auth-token")!
+    const asked = await instance.handler(
+      new Request("http://localhost:3000/api/auth/delete-user", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ password: PASSWORD, callbackURL: ACCOUNT_DELETED_PAGE }),
+      })
+    )
+    expect(asked.status).toBe(200)
+    await backgroundSettled()
+    let loginWhenRecordsWent: number | null = null
+    vi.mocked(deleteAccountRecords).mockImplementation((user) => {
+      loginWhenRecordsWent = db.user.filter((row) => row.id === user.id).length
+      return Promise.resolve()
+    })
+    // The app's request of the link it was handed: its bearer token, no cookie and no Origin.
+    const opened = await instance.handler(new Request(emailedLink().url, { headers: { authorization: `Bearer ${token}` } }))
+    expect(opened.status).toBe(302)
+    expect(vi.mocked(deleteAccountRecords).mock.calls[0]?.[0]).toMatchObject({ id })
+    expect(loginWhenRecordsWent).toBe(1)
+    expect(db.user).toHaveLength(0)
+    expect(db.session).toHaveLength(0)
+    expect(db.account).toHaveLength(0)
+  })
 })
 
 describe("delete account's two callbacks", () => {
@@ -1246,7 +1276,7 @@ describe("Continue with Google (rule 8, D3, D23): sign-in only, to the login tha
   })
 
   it("turns off linking and unlinking a Google account by hand: Google is for sign-in only", () => {
-    expect(options.disabledPaths).toEqual(["/link-social", "/unlink-account"])
+    expect(options.disabledPaths).toEqual(expect.arrayContaining(["/link-social", "/unlink-account"]))
   })
 
   it("in Better Auth's pipeline: a signed-in login's request to link or unlink a Google account answers 404, and its accounts stay as they were", async () => {
@@ -1485,5 +1515,214 @@ describe("Continue with Google (rule 8, D3, D23): sign-in only, to the login tha
     expect(asked.status).toBe(403)
     expect(asked.headers.get("location")).toBeNull()
     expect(db.verification).toEqual([])
+  })
+})
+
+/** A sign-in posted as the client app's fetch posts one: no cookie, its origin named by `headers`. */
+const signInFromApp = (instance: LiveInstance, headers: Record<string, string>) =>
+  instance.handler(
+    new Request("http://localhost:3000/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify({ email: "client@example.com", password: PASSWORD }),
+    })
+  )
+
+/** Continue with Google asked from the client app, as the Expo plugin's client asks: its origin in expo-origin, its landings on the scheme. */
+const askGoogleFromApp = (instance: LiveInstance, landings: Record<string, string>) =>
+  instance.handler(
+    new Request("http://localhost:3000/api/auth/sign-in/social", {
+      method: "POST",
+      headers: { "content-type": "application/json", "expo-origin": CLIENT_APP_SCHEME },
+      body: JSON.stringify({ provider: "google", ...landings }),
+    })
+  )
+
+describe("the client app's scheme (D25, §2.8): trusted beside the app's pages, through the Expo plugin", () => {
+  it("is atletafit://, trusted bare and with Better Auth's wildcard after the app's own origin, the Expo plugin beside the bearer plugin", () => {
+    expect(CLIENT_APP_SCHEME).toBe("atletafit://")
+    expect(options.trustedOrigins).toEqual([ENV.NEXT_PUBLIC_APP_URL, "atletafit://", "atletafit://*"])
+    expect(options.plugins?.map((plugin) => plugin.id)).toEqual(["admin", "bearer", "expo"])
+  })
+
+  it("in Better Auth's pipeline: a sign-in from the app's scheme is accepted, named by Origin or by the Expo plugin's expo-origin, and answers a bearer token", async () => {
+    const { instance, db } = await liveAuth(undefined, undefined, { originCheck: true })
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    for (const headers of [{ origin: "atletafit://" }, { "expo-origin": "atletafit://" }] as Record<string, string>[]) {
+      const accepted = await signInFromApp(instance, headers)
+      expect(accepted.status, JSON.stringify(headers)).toBe(200)
+      expect(accepted.headers.get("set-auth-token"), JSON.stringify(headers)).toBeTruthy()
+    }
+  })
+
+  it.each([
+    ["another site", { origin: "https://evil.example" }],
+    ["another site named in expo-origin", { "expo-origin": "https://evil.example" }],
+    ["another app's scheme", { origin: "evilapp://" }],
+    ["Expo Go, outside next dev", { origin: "exp://192.168.1.2:8081" }],
+  ])("in Better Auth's pipeline: a sign-in from %s is refused and signs nobody in", async (_label, headers) => {
+    const { instance, db } = await liveAuth(undefined, undefined, { originCheck: true })
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const refused = await signInFromApp(instance, headers)
+    expect(refused.status).toBe(403)
+    expect(await refused.json()).toMatchObject({ code: "INVALID_ORIGIN" })
+    expect(refused.headers.get("set-auth-token")).toBeNull()
+    expect(db.session).toEqual([])
+  })
+
+  it("in Better Auth's pipeline: under next dev the Expo plugin trusts Expo Go's exp:// too", async () => {
+    const environment = process.env.NODE_ENV
+    vi.stubEnv("NODE_ENV", "development")
+    try {
+      const { instance, db } = await liveAuth(undefined, undefined, { originCheck: true })
+      seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+      expect((await signInFromApp(instance, { origin: "exp://192.168.1.2:8081" })).status).toBe(200)
+    } finally {
+      vi.stubEnv("NODE_ENV", environment)
+    }
+  })
+
+  it("in Better Auth's pipeline: Continue with Google from the app may land anywhere on the scheme; another scheme or site is refused before Google is asked", async () => {
+    const { instance, db } = await liveAuth(undefined, undefined, { originCheck: true })
+    for (const callbackURL of ["atletafit://", "atletafit://client", "atletafit://client/settings"]) {
+      expect((await askGoogleFromApp(instance, { callbackURL, errorCallbackURL: "atletafit://login" })).status, callbackURL).toBe(200)
+    }
+    for (const callbackURL of ["evilapp://client", "https://evil.example/"]) {
+      expect((await askGoogleFromApp(instance, { callbackURL })).status, callbackURL).toBe(403)
+    }
+    // One state for each sign-in begun.
+    expect(db.verification).toHaveLength(3)
+  })
+
+  it("in Better Auth's pipeline: a Google sign-in landing on the scheme is handed the session in its address, the Expo plugin's way; one landing on the site is not", async () => {
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const google = { sub: "google-1", email: "client@example.com", email_verified: true }
+    const asked = await askGoogleFromApp(instance, { callbackURL: "atletafit://client" })
+    const state = new URL(asked.headers.get("location") ?? "").searchParams.get("state") ?? ""
+    const cookie = asked.headers.getSetCookie().map((set) => set.split(";")[0]).join("; ")
+    const fromApp = (await returnFromGoogle(instance, { state, cookie }, google)).back.headers.get("location") ?? ""
+    expect(fromApp.startsWith("atletafit://client?cookie=")).toBe(true)
+    // The callback's whole Set-Cookie header, the session's among the cookies it clears.
+    expect(new URL(fromApp).searchParams.get("cookie")).toMatch(/(^|, )better-auth\.session_token=[^;]+;/)
+    expect((await signInWithGoogle(instance, google)).back.headers.get("location")).toBe("/")
+  })
+})
+
+describe("the Expo plugin's Google proxy is off until the client app's Continue with Google is built", () => {
+  it("is among the paths Better Auth answers 404", () => {
+    expect(options.disabledPaths).toContain("/expo-authorization-proxy")
+  })
+
+  it("in Better Auth's pipeline: its link naming the app's own Google sign-in answers 404, stores no state and sends the browser nowhere, and no other spelling of the path reaches it", async () => {
+    const { instance } = await liveAuth()
+    const authorizationURL = (await askGoogleFromApp(instance, { callbackURL: "atletafit://client" })).headers.get("location") ?? ""
+    expect(authorizationURL.startsWith(GOOGLE_AUTHORIZE)).toBe(true)
+    // The first is the path the rule turns off; Better Auth's router finds no endpoint at the others.
+    for (const path of ["/expo-authorization-proxy", "/expo-authorization-proxy/", "/Expo-Authorization-Proxy", "/expo%2Dauthorization-proxy"]) {
+      const opened = await instance.handler(new Request(`http://localhost:3000/api/auth${path}?${new URLSearchParams({ authorizationURL })}`))
+      expect(opened.status, path).toBe(404)
+      expect(opened.headers.get("location"), path).toBeNull()
+      expect(opened.headers.getSetCookie(), path).toEqual([])
+    }
+  })
+})
+
+describe("an emailed link that carries a credential lands on a page of the app (D25): never the client app's scheme, whoever asks", () => {
+  afterEach(() => {
+    delete (auth as { api?: unknown }).api
+  })
+
+  /** A change of email asked for by a signed-in client, by the cookie's or the bearer token's session, its links landing on `callbackURL`. */
+  const askToChange = (instance: LiveInstance, headers: Record<string, string>, callbackURL: string) =>
+    instance.handler(
+      new Request("http://localhost:3000/api/auth/change-email", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify({ newEmail: "new@example.com", callbackURL }),
+      })
+    )
+
+  /** A client signed in, as the browser holds the session and as the client app does. */
+  async function signedInBothWays() {
+    vi.mocked(after).mockClear()
+    vi.mocked(sendApproveEmailChangeEmail).mockReset()
+    vi.mocked(isAddressHeldElsewhere).mockReset()
+    vi.mocked(isAddressHeldElsewhere).mockResolvedValue(false)
+    const { instance, db } = await liveAuthAsApp()
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const signedIn = await postSignIn(instance, "client@example.com", PASSWORD)
+    const ways: Record<string, string>[] = [
+      { cookie: sessionCookie(signedIn)!, origin: "http://localhost:3000" },
+      { authorization: `Bearer ${signedIn.headers.get("set-auth-token")!}` },
+    ]
+    return { instance, db, ways }
+  }
+
+  it.each(["atletafit://client/settings", "atletafit://", "https://evil.example/settings", "//evil.example/settings"])(
+    "in Better Auth's pipeline: change email asked to land on %s is refused by cookie and by bearer token, and nothing is sent or changed",
+    async (callbackURL) => {
+      const { instance, db, ways } = await signedInBothWays()
+      for (const headers of ways) {
+        const refused = await askToChange(instance, headers, callbackURL)
+        expect(refused.status, JSON.stringify(Object.keys(headers))).toBe(403)
+        expect(await refused.json()).toMatchObject({ message: "An emailed link lands on a page of the app." })
+      }
+      await backgroundSettled()
+      expect(isAddressHeldElsewhere).not.toHaveBeenCalled()
+      expect(sendApproveEmailChangeEmail).not.toHaveBeenCalled()
+      expect(db.user[0].email).toBe("client@example.com")
+    }
+  )
+
+  it("in Better Auth's pipeline: change email landing on the app's own page, as Settings asks or written out in full, is let through and its approval sent", async () => {
+    const { instance, ways } = await signedInBothWays()
+    for (const callbackURL of ["/client/settings", "http://localhost:3000/client/settings"]) {
+      for (const headers of ways) expect((await askToChange(instance, headers, callbackURL)).status, callbackURL).toBe(200)
+    }
+    await backgroundSettled()
+    expect(sendApproveEmailChangeEmail).toHaveBeenCalledTimes(4)
+  })
+
+  it.each(["atletafit://reset-password", "atletafit://", "https://evil.example/reset-password", "//evil.example/reset-password"])(
+    "in Better Auth's pipeline: a request over HTTP asking for %s is refused, one answer for every address, and nothing is written or sent",
+    async (landing) => {
+      vi.mocked(sendPasswordLinkEmail).mockClear()
+      vi.mocked(after).mockClear()
+      const { instance, db } = await liveAuth()
+      seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+      const known = await postResetRequest(instance, "client@example.com", landing)
+      const unknown = await postResetRequest(instance, "nobody@example.com", landing)
+      expect([known.status, unknown.status]).toEqual([403, 403])
+      expect(await known.json()).toEqual(await unknown.json())
+      await backgroundSettled()
+      expect(db.verification).toEqual([])
+      expect(sendPasswordLinkEmail).not.toHaveBeenCalled()
+    }
+  )
+
+  it("in Better Auth's pipeline: the app's own page written out in full is asked for as before", async () => {
+    vi.mocked(sendPasswordLinkEmail).mockClear()
+    vi.mocked(after).mockClear()
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    expect((await postResetRequest(instance, "client@example.com", "http://localhost:3000/reset-password")).status).toBe(200)
+    await backgroundSettled()
+    expect(sendPasswordLinkEmail).toHaveBeenCalledTimes(1)
+    expect(db.verification).toHaveLength(1)
+  })
+
+  it("in Better Auth's pipeline: the server's own call is held to it too, where Better Auth checks no landing", async () => {
+    const { instance, db } = await liveAuth()
+    seedLogin(db, "client@example.com", bcrypt.hashSync(PASSWORD, 4))
+    for (const redirectTo of ["atletafit://reset-password", "https://evil.example/reset-password"]) {
+      await expect(instance.api.requestPasswordReset({ body: { email: "client@example.com", redirectTo } }), redirectTo).rejects.toMatchObject({
+        statusCode: 403,
+        message: "An emailed link lands on a page of the app.",
+      })
+    }
+    expect(db.verification).toEqual([])
+    await instance.api.requestPasswordReset({ body: { email: "client@example.com", redirectTo: "/reset-password" } })
+    expect(db.verification).toHaveLength(1)
   })
 })
