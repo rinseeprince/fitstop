@@ -28,7 +28,7 @@ import {
 } from "lucide-react"
 import { motion } from "framer-motion"
 import { authClient } from "@/lib/auth-client"
-import { PASSWORD_MIN_LENGTH } from "@/lib/constants"
+import { PASSWORD_MIN_LENGTH, PRODUCT_NAME } from "@/lib/constants"
 import { newPasswordSchema, type NewPasswordFormData } from "@/lib/validations/auth"
 import type { AcceptInvitationResponse, InvitationDetails, InvitationDetailsResponse } from "@/types/auth"
 
@@ -109,7 +109,7 @@ export default function InvitePage() {
       }
 
       await refetchSession()
-      toast.success("Account created successfully! Welcome to CoachHub.")
+      toast.success(`Account created successfully! Welcome to ${PRODUCT_NAME}.`)
 
       // The client home sends a new client on to their intake form
       router.push("/client")
@@ -206,7 +206,7 @@ export default function InvitePage() {
             </div>
             <CardTitle className="text-2xl">You're Invited!</CardTitle>
             <p className="text-muted-foreground">
-              {invitation?.coachName} has invited you to join CoachHub to track your fitness journey together.
+              {invitation?.coachName} has invited you to join {PRODUCT_NAME} to track your fitness journey together.
             </p>
           </CardHeader>
 

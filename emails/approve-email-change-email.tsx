@@ -9,6 +9,7 @@ import {
   Hr,
   Heading,
 } from '@react-email/components'
+import { PRODUCT_NAME } from '@/lib/constants'
 
 interface ApproveEmailChangeEmailProps {
   name: string
@@ -31,7 +32,7 @@ export default function ApproveEmailChangeEmail({ name, newEmail, approveUrl }: 
             <Heading style={h1}>Approve your email change</Heading>
             <Text style={text}>Hi {name},</Text>
             <Text style={text}>
-              Someone asked to change the email you sign in to CoachHub with to {newEmail}. Click the button below to
+              Someone asked to change the email you sign in to {PRODUCT_NAME} with to {newEmail}. Click the button below to
               approve the change. We'll then email {newEmail} a link to confirm it, and your email changes once that
               link is opened.
             </Text>
@@ -52,7 +53,7 @@ export default function ApproveEmailChangeEmail({ name, newEmail, approveUrl }: 
             <Text style={footer}>
               Best regards,
               <br />
-              The CoachHub Team
+              The {PRODUCT_NAME} Team
             </Text>
           </Section>
         </Container>

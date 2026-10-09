@@ -614,7 +614,7 @@ Both suites now run cleanly; preserved for historical context.
 
 Reviewed: 2026-04-23
 
-CoachHub runs in a backend-mediated shape (browser → Next.js API → Supabase). The primary security control is route-level auth + ownership checks (the IDOR chain); service functions accept `clientId` explicitly and use `supabaseAdmin` internally; the database behind them is locked — RLS on every table with no policies, no public-role privilege (migration 201) — so the browser-shipped key opens nothing. This is a valid and common pattern for apps with a dedicated backend, multiple audiences, cross-user reads, and server-only integrations (OpenAI, Stripe, email).
+Atletafit runs in a backend-mediated shape (browser → Next.js API → Supabase). The primary security control is route-level auth + ownership checks (the IDOR chain); service functions accept `clientId` explicitly and use `supabaseAdmin` internally; the database behind them is locked — RLS on every table with no policies, no public-role privilege (migration 201) — so the browser-shipped key opens nothing. This is a valid and common pattern for apps with a dedicated backend, multiple audiences, cross-user reads, and server-only integrations (OpenAI, Stripe, email).
 
 The consequence: the route layer **is** the security perimeter. Gaps in route-level auth are not caught by a second line of defense. The items below close that perimeter. Bundle into a pre-launch hardening session after the client portal redesign ships - do NOT mix into redesign work, it muddies the diffs.
 

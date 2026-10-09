@@ -1,6 +1,6 @@
-# CoachHub Design System — Teal Summit
+# Atletafit Design System — Teal Summit
 
-Single source of truth for the CoachHub visual design. Every new page and component must follow these specifications. This doc is written to be **copy-paste actionable**: prefer importing the components/tokens it names, and when you must write fresh markup, paste the literal class strings in the recipes below.
+Single source of truth for the Atletafit visual design. Every new page and component must follow these specifications. This doc is written to be **copy-paste actionable**: prefer importing the components/tokens it names, and when you must write fresh markup, paste the literal class strings in the recipes below.
 
 ---
 

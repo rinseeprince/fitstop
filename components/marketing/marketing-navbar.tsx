@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Dumbbell } from "lucide-react"
+import { PRODUCT_NAME } from "@/lib/constants"
 
 export function MarketingNavbar() {
   return (
@@ -12,7 +13,7 @@ export function MarketingNavbar() {
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Dumbbell className="h-5 w-5" />
           </div>
-          <span className="text-xl font-bold">CoachHub</span>
+          <span className="text-xl font-bold">{PRODUCT_NAME}</span>
         </Link>
 
         <div className="flex items-center gap-3">

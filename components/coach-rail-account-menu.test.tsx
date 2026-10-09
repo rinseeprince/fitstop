@@ -28,6 +28,7 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
 
 import { PersistentSidebar } from "./persistent-sidebar"
 import { CollapsedIconStrip } from "./collapsed-icon-strip"
+import { PRODUCT_NAME } from "@/lib/constants"
 
 const RAILS = [
   ["the full rail (PersistentSidebar)", PersistentSidebar],
@@ -58,5 +59,15 @@ describe("the coach rails' account menus", () => {
     const label = screen.getByTestId("account-menu-label")
     expect(label).toHaveTextContent("Loading...")
     expect(label).not.toHaveTextContent("sam@example.com")
+  })
+})
+
+/** Both rails head themselves with the product's monogram, named for the product (D30). */
+describe("the coach rails' monogram", () => {
+  afterEach(() => cleanup())
+
+  it.each(RAILS)("%s names its monogram for the product", (_label, Rail) => {
+    render(<Rail />)
+    expect(screen.getByAltText(PRODUCT_NAME)).toHaveAttribute("src", "/monogram-af.png")
   })
 })

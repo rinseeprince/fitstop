@@ -13,6 +13,7 @@ import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { loginSchema, type LoginFormData } from "@/lib/validations/auth";
 import { authErrorSentence } from "@/lib/auth-error-messages";
+import { PRODUCT_NAME } from "@/lib/constants";
 import { LoginNotice } from "@/components/auth/login-notice";
 
 export default function LoginPage() {
@@ -89,7 +90,7 @@ export default function LoginPage() {
               transition={{ delay: 0.2 }}
               className="text-3xl font-semibold mb-2 text-foreground"
             >
-              CoachHub
+              {PRODUCT_NAME}
             </motion.h1>
             <motion.p
               initial={{ opacity: 0 }}

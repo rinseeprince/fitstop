@@ -14,6 +14,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import InvitePage from "./page";
 import { toast } from "sonner";
+import { PRODUCT_NAME } from "@/lib/constants";
 
 const DETAILS = { success: true, invitation: { coachName: "Sam Coach", emailMasked: "s•••e@gmail.com", expiresAt: null } };
 
@@ -59,6 +60,15 @@ describe("the invite page (rule 11)", () => {
     expect(JSON.parse(init.body as string)).toEqual({ token: TOKEN, password: "a strong password" });
     expect(refetch).toHaveBeenCalledTimes(1);
     expect(refetch.mock.invocationCallOrder[0]).toBeLessThan(push.mock.invocationCallOrder[0]);
+  });
+
+  it("names the product in the invitation and in the welcome", async () => {
+    stubFetch(DETAILS, { status: 200, body: { success: true } });
+    await createAccount();
+    expect(
+      screen.getByText(`Sam Coach has invited you to join ${PRODUCT_NAME} to track your fitness journey together.`)
+    ).toBeInTheDocument();
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(`Account created successfully! Welcome to ${PRODUCT_NAME}.`));
   });
 
   it("an address that already has an account says so, and stays", async () => {

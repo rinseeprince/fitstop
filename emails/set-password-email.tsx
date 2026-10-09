@@ -9,13 +9,14 @@ import {
   Hr,
   Heading,
 } from '@react-email/components'
+import { PRODUCT_NAME } from '@/lib/constants'
 
 interface SetPasswordEmailProps {
   name: string
   setPasswordUrl: string
 }
 
-/** The "Set your password for CoachHub" email the owner's coach:create sends a new coach: its link lasts one hour and opens /set-password (docs/BETTER-AUTH-PLAN.md 1.1 rule 9). */
+/** The "Set your password for ${PRODUCT_NAME}" email the owner's coach:create sends a new coach: its link lasts one hour and opens /set-password (docs/BETTER-AUTH-PLAN.md 1.1 rule 9). */
 export default function SetPasswordEmail({ name, setPasswordUrl }: SetPasswordEmailProps) {
   return (
     <Html>
@@ -26,7 +27,7 @@ export default function SetPasswordEmail({ name, setPasswordUrl }: SetPasswordEm
             <Heading style={h1}>Set your password</Heading>
             <Text style={text}>Hi {name},</Text>
             <Text style={text}>
-              Your coach account on CoachHub is ready. Click the button below to choose your password, then sign in
+              Your coach account on {PRODUCT_NAME} is ready. Click the button below to choose your password, then sign in
               with this email address.
             </Text>
             <Section style={buttonContainer}>
@@ -46,7 +47,7 @@ export default function SetPasswordEmail({ name, setPasswordUrl }: SetPasswordEm
             <Text style={footer}>
               Best regards,
               <br />
-              The CoachHub Team
+              The {PRODUCT_NAME} Team
             </Text>
           </Section>
         </Container>

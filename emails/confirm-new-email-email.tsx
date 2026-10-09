@@ -9,6 +9,7 @@ import {
   Hr,
   Heading,
 } from '@react-email/components'
+import { PRODUCT_NAME } from '@/lib/constants'
 
 interface ConfirmNewEmailEmailProps {
   name: string
@@ -30,7 +31,7 @@ export default function ConfirmNewEmailEmail({ name, confirmUrl }: ConfirmNewEma
             <Heading style={h1}>Confirm your new email</Heading>
             <Text style={text}>Hi {name},</Text>
             <Text style={text}>
-              Click the button below to confirm this address. Once you do, you sign in to CoachHub with this email.
+              Click the button below to confirm this address. Once you do, you sign in to {PRODUCT_NAME} with this email.
             </Text>
             <Section style={buttonContainer}>
               <Button style={button} href={confirmUrl}>
@@ -48,7 +49,7 @@ export default function ConfirmNewEmailEmail({ name, confirmUrl }: ConfirmNewEma
             <Text style={footer}>
               Best regards,
               <br />
-              The CoachHub Team
+              The {PRODUCT_NAME} Team
             </Text>
           </Section>
         </Container>

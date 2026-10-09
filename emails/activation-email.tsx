@@ -9,6 +9,7 @@ import {
   Hr,
   Heading,
 } from '@react-email/components'
+import { PRODUCT_NAME } from '@/lib/constants'
 
 interface ActivationEmailProps {
   coachName: string
@@ -30,11 +31,11 @@ export default function ActivationEmail({
             <Heading style={h1}>Your plan is ready!</Heading>
             <Text style={text}>Hi {clientName},</Text>
             <Text style={text}>
-              {coachName} has finished setting up your personalised plan on CoachHub.
+              {coachName} has finished setting up your personalised plan on {PRODUCT_NAME}.
               Everything is ready for you to get started.
             </Text>
             <Text style={text}>
-              Click the button below to open CoachHub and see your plan:
+              Click the button below to open {PRODUCT_NAME} and see your plan:
             </Text>
             <Section style={buttonContainer}>
               <Button style={button} href={appUrl}>
@@ -48,7 +49,7 @@ export default function ActivationEmail({
             <Text style={footer}>
               Best regards,
               <br />
-              The CoachHub Team
+              The {PRODUCT_NAME} Team
             </Text>
           </Section>
         </Container>

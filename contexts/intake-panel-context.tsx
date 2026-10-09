@@ -42,7 +42,7 @@ type IntakePanelContextType = {
   togglePanel: () => void
 }
 
-const STORAGE_KEY = "coachhub:intake-panel"
+const STORAGE_KEY = "atletafit:intake-panel"
 
 const IntakePanelContext = createContext<IntakePanelContextType | null>(null)
 

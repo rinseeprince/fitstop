@@ -6,6 +6,12 @@
 // Type-only: erased at compile, so this file stays a runtime leaf.
 import type { ActivityLevel, CheckInStatus } from "@/types/check-in";
 
+// The product's name, spelled here and nowhere else (D30): every screen,
+// email and tab title that names the product reads it, and
+// lib/product-name-ownership.test.ts fails the name written out anywhere
+// else in the code.
+export const PRODUCT_NAME = "Atletafit";
+
 // Days past the expected check-in date at which "overdue" becomes
 // "critically overdue". Read by getOverdueSeverity and by the Clients roster's
 // stat band, which used to restate the boundary as its own literal.

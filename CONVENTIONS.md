@@ -1,6 +1,6 @@
   **This file is mandatory reading.** Claude Code must read this file in full before planning or implementing any code changes. Do not skip sections. Do not assume patterns - follow what is documented here.
 
-  # CoachHub Development Conventions
+  # Atletafit Development Conventions
 
   ## 1. Engineering Philosophy
   - **No band-aid fixes**: Never work around symptoms. Always investigate and understand the root cause before implementing a fix.
@@ -494,7 +494,7 @@
 
   ### Auth & data-access architecture (Shape B)
 
-  CoachHub runs in a backend-mediated shape: the browser calls Next.js API routes, routes authenticate the user and verify ownership, routes call service functions scoped by `clientId`, service functions read/write through `supabaseAdmin`. The database is locked behind that server: RLS is enabled on every table with **no policies**, and `anon` and `authenticated` — the roles the browser-shipped public key can act as — hold **no privilege** on any table, view or sequence in `public`, so the Data API (`/rest/v1`) refuses every request that does not carry the service key. RLS is the lock, not a rule set, and it is no second line of defence for the app's own path: `service_role` bypasses it (see "RLS policies" below). This is a valid pattern for apps with a dedicated backend, multiple user audiences (coach + client), cross-user aggregation reads, and server-only integrations (OpenAI, Anthropic, Resend). See `TECHNICAL-DEBT.md → Auth Architecture Hygiene` for the rationale and for open hardening items.
+  Atletafit runs in a backend-mediated shape: the browser calls Next.js API routes, routes authenticate the user and verify ownership, routes call service functions scoped by `clientId`, service functions read/write through `supabaseAdmin`. The database is locked behind that server: RLS is enabled on every table with **no policies**, and `anon` and `authenticated` — the roles the browser-shipped public key can act as — hold **no privilege** on any table, view or sequence in `public`, so the Data API (`/rest/v1`) refuses every request that does not carry the service key. RLS is the lock, not a rule set, and it is no second line of defence for the app's own path: `service_role` bypasses it (see "RLS policies" below). This is a valid pattern for apps with a dedicated backend, multiple user audiences (coach + client), cross-user aggregation reads, and server-only integrations (OpenAI, Anthropic, Resend). See `TECHNICAL-DEBT.md → Auth Architecture Hygiene` for the rationale and for open hardening items.
 
   The consequence: the route layer **is** the security perimeter. Gaps in route-level auth are not caught by a second line of defense. Treat the route's auth chain and the service function's scoping parameter as non-optional.
 

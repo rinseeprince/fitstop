@@ -12,6 +12,7 @@ vi.mock("@/contexts/auth-context", () => ({ useAuth: () => ({ login }) }));
 
 import LoginPage from "./page";
 import { AuthRefusal } from "@/lib/auth-error-messages";
+import { PRODUCT_NAME } from "@/lib/constants";
 
 async function signIn(password = "a password") {
   render(<LoginPage />);
@@ -31,6 +32,11 @@ describe("the login page (rules 1, 3, 15)", () => {
     expect(screen.queryByText(/google/i)).toBeNull();
     expect(screen.queryByRole("link", { name: /sign up/i })).toBeNull();
     expect(document.querySelector('a[href="/signup"]')).toBeNull();
+  });
+
+  it("is headed by the product's name", () => {
+    render(<LoginPage />);
+    expect(screen.getByRole("heading", { level: 1, name: PRODUCT_NAME })).toBeInTheDocument();
   });
 
   it("a wrong pair shows 'Wrong email or password.' under the form, and goes nowhere", async () => {

@@ -6,7 +6,7 @@ This document is the architecture reference for replacing the current Daily Puls
 
 ## Strategic purpose
 
-The daily logs are not the product. They are the feedstock for the two systems that differentiate CoachHub:
+The daily logs are not the product. They are the feedstock for the two systems that differentiate Atletafit:
 
 1. **Coach attention feed** (`components/dashboard/needs-attention-feed.tsx`): passive signals derived from log data so coaches notice mood drops, adherence slips, and training misses without the client flagging them.
 2. **Auto-populated weekly check-in** (`services/check-in-context-service.ts`): pre-fills the Sunday check-in form from the week's daily logs, so the client reviews and annotates rather than refilling.

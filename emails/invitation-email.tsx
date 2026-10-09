@@ -9,6 +9,7 @@ import {
   Hr,
   Heading,
 } from '@react-email/components'
+import { PRODUCT_NAME } from '@/lib/constants'
 
 interface InvitationEmailProps {
   coachName: string
@@ -27,10 +28,10 @@ export default function InvitationEmail({
       <Body style={main}>
         <Container style={container}>
           <Section>
-            <Heading style={h1}>You're invited to join CoachHub!</Heading>
+            <Heading style={h1}>You're invited to join {PRODUCT_NAME}!</Heading>
             <Text style={text}>Hi {clientName},</Text>
             <Text style={text}>
-              {coachName} has invited you to track your fitness journey together on CoachHub.
+              {coachName} has invited you to track your fitness journey together on {PRODUCT_NAME}.
               This platform will help you stay connected with your coach and monitor your progress.
             </Text>
             <Text style={text}>
@@ -52,7 +53,7 @@ export default function InvitationEmail({
             <Text style={footer}>
               Best regards,
               <br />
-              The CoachHub Team
+              The {PRODUCT_NAME} Team
             </Text>
           </Section>
         </Container>

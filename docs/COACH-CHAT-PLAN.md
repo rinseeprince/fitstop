@@ -385,7 +385,7 @@ from `start` into blocks:
 **The store** (`lib/coach-chat/chat-session-store.ts`, client-only, safe to import on the server: no `window` at
 import): `{ turns: ChatTurn[]; clients: Record<id, { name, avatarUrl }> }`, `ChatTurn = { id, question, answer,
 status: "reading" | "writing" | "done" | "stopped" | "failed", message? }`. Mirrored to sessionStorage key
-`coachhub:coach-chat` on every change; read lazily on the first client snapshot; every storage call in try/catch,
+`atletafit:coach-chat` on every change; read lazily on the first client snapshot; every storage call in try/catch,
 a corrupt value read as empty (`contexts/intake-panel-context.tsx`'s pattern). It exposes `subscribe`,
 `getSnapshot`, `getServerSnapshot` (empty), and the actions:
 - `ask(question)`: one question in flight at a time. It appends the turn (`reading`), POSTs `{ question,

@@ -3,6 +3,7 @@ import ApproveEmailChangeEmail from "@/emails/approve-email-change-email"
 import ConfirmNewEmailEmail from "@/emails/confirm-new-email-email"
 import ResetPasswordEmail from "@/emails/reset-password-email"
 import SetPasswordEmail from "@/emails/set-password-email"
+import { PRODUCT_NAME } from "@/lib/constants"
 import { captureApiError } from "@/lib/error-handler"
 import { landsOnSetPassword } from "@/lib/password-link"
 import { EMAIL_SENDER, resend } from "@/services/email-service"
@@ -45,20 +46,20 @@ function isSetPasswordLink(url: string): boolean {
   return landing !== null && landsOnSetPassword(landing, url)
 }
 
-/** The email a password link goes out as: "Set your password for CoachHub" for a new coach (rule 9), else "Reset your password" (rule 4). */
+/** The email a password link goes out as: "Set your password for ${PRODUCT_NAME}" for a new coach (rule 9), else "Reset your password" (rule 4). */
 async function passwordLinkEmail({ user, url }: PasswordLink): Promise<Email> {
   if (isSetPasswordLink(url)) {
     return {
-      subject: "Set your password for CoachHub",
+      subject: `Set your password for ${PRODUCT_NAME}`,
       html: await render(SetPasswordEmail({ name: user.name, setPasswordUrl: url })),
       text: `Hi ${user.name},
 
-Your coach account on CoachHub is ready. Open this link to choose your password, then sign in with this email address: ${url}
+Your coach account on ${PRODUCT_NAME} is ready. Open this link to choose your password, then sign in with this email address: ${url}
 
 This link expires in one hour and works once. If it has expired, open the sign-in page and click "Forgot your password?" for a new one.
 
 Best regards,
-The CoachHub Team`,
+The ${PRODUCT_NAME} Team`,
     }
   }
   return {
@@ -66,12 +67,12 @@ The CoachHub Team`,
     html: await render(ResetPasswordEmail({ name: user.name, resetUrl: url })),
     text: `Hi ${user.name},
 
-Someone asked to reset the password for your CoachHub account. Open this link to choose a new one: ${url}
+Someone asked to reset the password for your ${PRODUCT_NAME} account. Open this link to choose a new one: ${url}
 
 This link expires in one hour and works once. If you didn't ask for it, you can ignore this email: your password stays as it is.
 
 Best regards,
-The CoachHub Team`,
+The ${PRODUCT_NAME} Team`,
   }
 }
 
@@ -103,12 +104,12 @@ export async function sendApproveEmailChangeEmail({ user, newEmail, url }: { use
     html: await render(ApproveEmailChangeEmail({ name: user.name, newEmail, approveUrl: url })),
     text: `Hi ${user.name},
 
-Someone asked to change the email you sign in to CoachHub with to ${newEmail}. Open this link to approve the change: ${url}
+Someone asked to change the email you sign in to ${PRODUCT_NAME} with to ${newEmail}. Open this link to approve the change: ${url}
 
 We'll then email ${newEmail} a link to confirm it, and your email changes once that link is opened. This link expires in one hour. If you didn't ask for this, you can ignore this email: your email stays as it is.
 
 Best regards,
-The CoachHub Team`,
+The ${PRODUCT_NAME} Team`,
   }))
 }
 
@@ -127,9 +128,9 @@ export async function sendConfirmNewEmailEmail({ user, url }: { user: Recipient;
 
 Open this link to confirm this address: ${url}
 
-Once you do, you sign in to CoachHub with this email. This link expires in one hour. If you didn't ask for this, you can ignore this email: nothing changes.
+Once you do, you sign in to ${PRODUCT_NAME} with this email. This link expires in one hour. If you didn't ask for this, you can ignore this email: nothing changes.
 
 Best regards,
-The CoachHub Team`,
+The ${PRODUCT_NAME} Team`,
   }))
 }

@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { toast } from "sonner"
 import { useClientAttentionCount } from "@/hooks/use-client-attention"
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
+import { PRODUCT_NAME } from "@/lib/constants"
 import { navigation } from "@/lib/navigation"
 import {
   DropdownMenu,
@@ -50,7 +51,7 @@ export function CollapsedIconStrip() {
     <aside className="hidden lg:flex w-[52px] flex-col bg-[#0f2027] fixed inset-y-0 left-0 z-20">
       {/* Logo */}
       <div className="flex h-[52px] items-center justify-center">
-        <img src="/monogram-af.png" alt="Atletafit" className="h-11 w-11" />
+        <img src="/monogram-af.png" alt={PRODUCT_NAME} className="h-11 w-11" />
       </div>
 
       {/* Nav icons */}

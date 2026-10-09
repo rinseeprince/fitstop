@@ -1,4 +1,5 @@
 import type { VideoMetadata, LinkMetadata } from "@/types/content";
+import { PRODUCT_NAME } from "@/lib/constants";
 
 // --- URL Metadata Operations ---
 
@@ -110,7 +111,7 @@ export const fetchLinkMetadata = async (
 
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "CoachHub-MetadataBot/1.0",
+        "User-Agent": `${PRODUCT_NAME}-MetadataBot/1.0`,
       },
       // SSRF hardening: do NOT follow redirects. The host was checked against the
       // allowlist, but a redirect could send us to an internal IP. A 3xx response

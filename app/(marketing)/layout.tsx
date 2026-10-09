@@ -1,4 +1,5 @@
 import { MarketingNavbar } from "@/components/marketing/marketing-navbar"
+import { PRODUCT_NAME } from "@/lib/constants"
 
 export default function MarketingLayout({
   children,
@@ -13,7 +14,7 @@ export default function MarketingLayout({
         <div className="container px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
             <p className="text-sm text-muted-foreground">
-              &copy; {new Date().getFullYear()} CoachHub. All rights reserved.
+              &copy; {new Date().getFullYear()} {PRODUCT_NAME}. All rights reserved.
             </p>
             <div className="flex gap-6 text-sm text-muted-foreground">
               <a href="#" className="hover:text-foreground">

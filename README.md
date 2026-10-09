@@ -1,4 +1,4 @@
-# CoachHub
+# Atletafit
 
 A modern fitness coaching platform that helps trainers manage clients, create personalized nutrition and training plans, and track progress through regular check-ins.
 
@@ -176,7 +176,7 @@ All API endpoints return consistent JSON:
 
 ## Client Invitation System
 
-CoachHub features a secure token-based invitation system that allows coaches to seamlessly onboard clients:
+Atletafit features a secure token-based invitation system that allows coaches to seamlessly onboard clients:
 
 ### How It Works
 1. **Coach sends invitation** - Creates client profile and sends invitation via email

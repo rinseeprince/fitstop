@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, BarChart3, Dumbbell, BookOpen, LogOut, Settings } from "lucide-react";
 import type { SessionUser } from "@/lib/auth-client";
+import { PRODUCT_NAME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -53,7 +54,7 @@ export function ClientTopBar({ client, user }: ClientTopBarProps) {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Dumbbell className="h-4 w-4" strokeWidth={1.5} />
           </div>
-          <span className="font-semibold">CoachHub</span>
+          <span className="font-semibold">{PRODUCT_NAME}</span>
         </Link>
 
         <div className="flex items-center gap-2">

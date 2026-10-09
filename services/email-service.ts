@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { render } from '@react-email/render'
 import InvitationEmail from '@/emails/invitation-email'
 import ActivationEmail from '@/emails/activation-email'
+import { PRODUCT_NAME } from '@/lib/constants'
 
 // Initialize Resend client
 export const resend = new Resend(process.env.RESEND_API_KEY)
@@ -10,7 +11,7 @@ export const resend = new Resend(process.env.RESEND_API_KEY)
 // The sender of every email the app sends (D30), as "Name <address>". Set
 // EMAIL_FROM to an address on a domain verified in Resend; until then Resend's
 // sandbox sender, which delivers to the Resend account's own address alone.
-export const EMAIL_SENDER = process.env.EMAIL_FROM || 'CoachHub <onboarding@resend.dev>'
+export const EMAIL_SENDER = process.env.EMAIL_FROM || `${PRODUCT_NAME} <onboarding@resend.dev>`
 
 /**
  * Send an invitation email to a client
@@ -44,19 +45,19 @@ export async function sendInvitationEmail(
     const { error } = await resend.emails.send({
       from: EMAIL_SENDER,
       to: clientEmail,
-      subject: `You're invited to join CoachHub by ${coachName}`,
+      subject: `You're invited to join ${PRODUCT_NAME} by ${coachName}`,
       html: emailHtml,
       // Optional: Add plain text version
       text: `Hi ${clientName},
 
-${coachName} has invited you to track your fitness journey together on CoachHub.
+${coachName} has invited you to track your fitness journey together on ${PRODUCT_NAME}.
 
 Click this link to create your account: ${inviteUrl}
 
 This invitation expires in 7 days.
 
 Best regards,
-The CoachHub Team`,
+The ${PRODUCT_NAME} Team`,
     })
 
     if (error) {
@@ -104,16 +105,16 @@ export async function sendActivationEmail(
     const { error } = await resend.emails.send({
       from: EMAIL_SENDER,
       to: clientEmail,
-      subject: `${coachName} has set up your plan on CoachHub`,
+      subject: `${coachName} has set up your plan on ${PRODUCT_NAME}`,
       html: emailHtml,
       text: `Hi ${clientName},
 
-${coachName} has finished setting up your personalised plan on CoachHub. Everything is ready for you to get started.
+${coachName} has finished setting up your personalised plan on ${PRODUCT_NAME}. Everything is ready for you to get started.
 
-Open CoachHub to view your plan: ${appUrl}
+Open ${PRODUCT_NAME} to view your plan: ${appUrl}
 
 Best regards,
-The CoachHub Team`,
+The ${PRODUCT_NAME} Team`,
     })
 
     if (error) {

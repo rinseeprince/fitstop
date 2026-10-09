@@ -8,12 +8,13 @@ import { IntakePanelProvider } from "@/contexts/intake-panel-context"
 import { UnitsProvider } from "@/contexts/units-context"
 import { Toaster } from "@/components/ui/sonner"
 import { FloatingIntakePanel } from "@/components/coach/floating-intake-panel"
+import { PRODUCT_NAME } from "@/lib/constants"
 
 const instrumentSans = Instrument_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"] })
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-mono-display" })
 
 export const metadata: Metadata = {
-  title: "CoachHub - Client Management Platform",
+  title: `${PRODUCT_NAME} - Client Management Platform`,
   description: "Manage your fitness coaching clients with ease",
   generator: "v0.app",
   icons: {

@@ -1,19 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/services/email-service", () => ({
-  EMAIL_SENDER: "CoachHub <no-reply@example.com>",
-  resend: { emails: { send: vi.fn() } },
-}));
+vi.mock("@/services/email-service", async () => {
+  const { PRODUCT_NAME } = await vi.importActual<typeof import("@/lib/constants")>("@/lib/constants");
+  return { EMAIL_SENDER: `${PRODUCT_NAME} <no-reply@example.com>`, resend: { emails: { send: vi.fn() } } };
+});
 vi.mock("@/lib/error-handler", () => ({ captureApiError: vi.fn() }));
 
 import { sendApproveEmailChangeEmail, sendConfirmNewEmailEmail, sendPasswordLinkEmail } from "./auth-email-service";
-import { resend } from "@/services/email-service";
+import { EMAIL_SENDER, resend } from "@/services/email-service";
 import { captureApiError } from "@/lib/error-handler";
+import { PRODUCT_NAME } from "@/lib/constants";
 
 const LINK = {
   user: { email: "coach@example.com", name: "Sam" },
   url: "http://localhost:3000/api/auth/reset-password/tok123?callbackURL=%2Freset-password",
 };
+
+/** An email's html as a person reads it: React marks where a value meets its sentence (<!-- -->); the text reads it whole. */
+function readable(html: string | undefined): string {
+  return (html ?? "").replace(/<!-- -->/g, "");
+}
+
+/** Signed by the product's team, in the html and the text alike. */
+function expectSignedByTheTeam(message: { html?: string; text?: string }) {
+  expect(readable(message.html)).toContain(`The ${PRODUCT_NAME} Team`);
+  expect(message.text).toContain(`The ${PRODUCT_NAME} Team`);
+}
 
 describe("sendPasswordLinkEmail", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -23,9 +35,12 @@ describe("sendPasswordLinkEmail", () => {
     await sendPasswordLinkEmail(LINK);
     expect(resend.emails.send).toHaveBeenCalledTimes(1);
     const [message] = vi.mocked(resend.emails.send).mock.calls[0];
-    expect(message).toMatchObject({ from: "CoachHub <no-reply@example.com>", to: "coach@example.com", subject: "Reset your password" });
+    expect(message).toMatchObject({ from: EMAIL_SENDER, to: "coach@example.com", subject: "Reset your password" });
     expect(message.html).toContain(LINK.url.replace(/&/g, "&amp;"));
     expect(message.text).toContain(LINK.url);
+    expect(readable(message.html)).toContain(`Someone asked to reset the password for your ${PRODUCT_NAME} account.`);
+    expect(message.text).toContain(`Someone asked to reset the password for your ${PRODUCT_NAME} account.`);
+    expectSignedByTheTeam(message);
     expect(message.text).not.toContain("—");
     expect(captureApiError).not.toHaveBeenCalled();
   });
@@ -54,13 +69,14 @@ describe("the email a password link goes out as (D17): picked by the page the li
 
   it("a link landing on /set-password, the owner's coach:create's, is the Set your password email (rule 9)", async () => {
     const { url, message } = await sentFor("?callbackURL=%2Fset-password");
-    expect(message).toMatchObject({ from: "CoachHub <no-reply@example.com>", to: "coach@example.com", subject: "Set your password for CoachHub" });
+    expect(message).toMatchObject({ from: EMAIL_SENDER, to: "coach@example.com", subject: `Set your password for ${PRODUCT_NAME}` });
     expect(message.html).toContain("Set your password");
-    expect(message.html).toContain("Your coach account on CoachHub is ready.");
+    expect(readable(message.html)).toContain(`Your coach account on ${PRODUCT_NAME} is ready.`);
     expect(message.html).toContain(url.replace(/&/g, "&amp;"));
     expect(message.html).not.toContain("Reset your password");
     expect(message.text).toContain(url);
-    expect(message.text).toContain("Your coach account on CoachHub is ready.");
+    expect(message.text).toContain(`Your coach account on ${PRODUCT_NAME} is ready.`);
+    expectSignedByTheTeam(message);
     expect(`${message.html}${message.text}`).not.toContain("—");
     expect(captureApiError).not.toHaveBeenCalled();
   });
@@ -69,7 +85,7 @@ describe("the email a password link goes out as (D17): picked by the page the li
     ["the same page named by its full address", `?callbackURL=${encodeURIComponent("http://localhost:3000/set-password")}`],
     ["the page with a query of its own", `?callbackURL=${encodeURIComponent("/set-password?from=owner")}`],
   ])("%s is still /set-password", async (_label, query) => {
-    expect((await sentFor(query)).message.subject).toBe("Set your password for CoachHub");
+    expect((await sentFor(query)).message.subject).toBe(`Set your password for ${PRODUCT_NAME}`);
   });
 
   it.each([
@@ -81,7 +97,7 @@ describe("the email a password link goes out as (D17): picked by the page the li
   ])("a link landing on %s is the Reset your password email", async (_label, query) => {
     const { message } = await sentFor(query);
     expect(message.subject).toBe("Reset your password");
-    expect(message.html).not.toContain("Your coach account on CoachHub is ready.");
+    expect(readable(message.html)).not.toContain(`Your coach account on ${PRODUCT_NAME} is ready.`);
   });
 });
 
@@ -103,13 +119,13 @@ describe("change email's first email: Approve your email change, to the address 
     vi.mocked(resend.emails.send).mockResolvedValue({ data: { id: "e1" }, error: null } as never);
     await sendApproveEmailChangeEmail({ user: { email: "coach@example.com", name: "Sam" }, newEmail: "new@example.com", url: APPROVE_URL });
     const { message, both } = sentEmail();
-    expect(message).toMatchObject({ from: "CoachHub <no-reply@example.com>", to: "coach@example.com", subject: "Approve your email change" });
+    expect(message).toMatchObject({ from: EMAIL_SENDER, to: "coach@example.com", subject: "Approve your email change" });
     expect(message.html).toContain("Approve your email change");
     expect(message.html).toContain(APPROVE_URL.replace(/&/g, "&amp;"));
     expect(message.text).toContain(APPROVE_URL);
-    // React marks where a value meets its sentence (<!-- -->) in the html; the text reads it whole.
-    expect((message.html ?? "").replace(/<!-- -->/g, "")).toContain("CoachHub with to new@example.com.");
-    expect(message.text).toContain("CoachHub with to new@example.com.");
+    expect(readable(message.html)).toContain(`Someone asked to change the email you sign in to ${PRODUCT_NAME} with to new@example.com.`);
+    expect(message.text).toContain(`Someone asked to change the email you sign in to ${PRODUCT_NAME} with to new@example.com.`);
+    expectSignedByTheTeam(message);
     expect(both).toContain("This link expires in one hour.");
     expect(both).not.toContain("Confirm your new email");
     expect(both).not.toContain("—");
@@ -135,12 +151,13 @@ describe("change email's second email: Confirm your new email, to the new addres
     vi.mocked(resend.emails.send).mockResolvedValue({ data: { id: "e2" }, error: null } as never);
     await sendConfirmNewEmailEmail({ user: { email: "new@example.com", name: "Sam" }, url: CONFIRM_URL });
     const { message, both } = sentEmail();
-    expect(message).toMatchObject({ from: "CoachHub <no-reply@example.com>", to: "new@example.com", subject: "Confirm your new email" });
+    expect(message).toMatchObject({ from: EMAIL_SENDER, to: "new@example.com", subject: "Confirm your new email" });
     expect(message.html).toContain("Confirm your new email");
     expect(message.html).toContain(CONFIRM_URL.replace(/&/g, "&amp;"));
     expect(message.text).toContain(CONFIRM_URL);
-    expect(message.html).toContain("Once you do, you sign in to CoachHub with this email.");
-    expect(message.text).toContain("Once you do, you sign in to CoachHub with this email.");
+    expect(readable(message.html)).toContain(`Once you do, you sign in to ${PRODUCT_NAME} with this email.`);
+    expect(message.text).toContain(`Once you do, you sign in to ${PRODUCT_NAME} with this email.`);
+    expectSignedByTheTeam(message);
     expect(both).toContain("This link expires in one hour.");
     expect(both).not.toContain("Approve your email change");
     expect(both).not.toContain("—");

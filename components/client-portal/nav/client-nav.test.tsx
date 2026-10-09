@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { SessionUser } from "@/lib/auth-client";
+import { PRODUCT_NAME } from "@/lib/constants";
 import type { ReactNode } from "react";
 
 import { ClientTopBar, ClientBottomTabBar } from "./client-nav";
@@ -170,7 +171,7 @@ describe("ClientTopBar", () => {
 
   it("renders logo and brand name", () => {
     render(<ClientTopBar client={makeClient()} user={makeUser()} />);
-    expect(screen.getByText("CoachHub")).toBeInTheDocument();
+    expect(screen.getByText(PRODUCT_NAME)).toBeInTheDocument();
   });
 
   it("renders avatar fallback with initials from client.name", () => {
