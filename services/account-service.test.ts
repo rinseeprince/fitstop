@@ -12,10 +12,8 @@ const adapter = vi.hoisted(() => ({
   listSessions: vi.fn(),
   deleteUserSessions: vi.fn(),
 }));
-/** Better Auth's database adapter, for the statement moveLoginEmail writes itself. */
-const database = vi.hoisted(() => ({ deleteMany: vi.fn() }));
 vi.mock("@/lib/auth", () => ({
-  auth: { $context: Promise.resolve({ internalAdapter: adapter, adapter: database }), api: { requestPasswordReset: vi.fn() } },
+  auth: { $context: Promise.resolve({ internalAdapter: adapter }), api: { requestPasswordReset: vi.fn() } },
 }));
 
 import { deleteAccountRecords, isAddressHeldElsewhere, moveLoginEmail, MovedLoginUnfinishedError, readLoginRole } from "./account-service";
@@ -94,14 +92,6 @@ describe("isAddressHeldElsewhere: a change of email's new address is no one else
 const LOGIN = { user: { id: "user-1", email: "lost@example.com" }, accounts: [] };
 const CURRENT = "lost@example.com";
 const NEW = "found@example.com";
-/** The one statement that unlinks: every account row of the login but its password row. */
-const UNLINK = {
-  model: "account",
-  where: [
-    { field: "userId", value: "user-1" },
-    { field: "providerId", operator: "ne", value: "credential" },
-  ],
-};
 
 describe("moveLoginEmail: the owner moves a login to a new address (rule 19, D39)", () => {
   const requestPasswordReset = vi.mocked(auth.api.requestPasswordReset);
@@ -111,7 +101,6 @@ describe("moveLoginEmail: the owner moves a login to a new address (rule 19, D39
     stubSupabase();
     adapter.findUserByEmail.mockImplementation((email: string) => Promise.resolve(email === CURRENT ? LOGIN : null));
     adapter.updateUser.mockResolvedValue({ ...LOGIN.user, email: NEW });
-    database.deleteMany.mockResolvedValue(1);
     adapter.listSessions.mockResolvedValue([{ id: "s1" }, { id: "s2" }]);
     adapter.deleteUserSessions.mockResolvedValue(undefined);
     requestPasswordReset.mockResolvedValue({ status: true } as never);
@@ -119,37 +108,16 @@ describe("moveLoginEmail: the owner moves a login to a new address (rule 19, D39
 
   const move = () => moveLoginEmail({ email: CURRENT, to: NEW });
 
-  it("moves the address, verified, through Better Auth's adapter, then removes its Google link, then ends every session, then asks for the reset at the new address", async () => {
-    await expect(move()).resolves.toEqual({ moved: true, userId: "user-1", linkedAccountsRemoved: 1, sessionsEnded: 2 });
+  it("moves the address, verified, through Better Auth's adapter, then ends every session, then asks for the reset at the new address", async () => {
+    await expect(move()).resolves.toEqual({ moved: true, userId: "user-1", sessionsEnded: 2 });
     expect(adapter.updateUser).toHaveBeenCalledWith("user-1", { email: NEW, emailVerified: true });
-    expect(database.deleteMany).toHaveBeenCalledTimes(1);
-    expect(database.deleteMany).toHaveBeenCalledWith(UNLINK);
     expect(adapter.deleteUserSessions).toHaveBeenCalledWith("user-1");
     expect(requestPasswordReset).toHaveBeenCalledWith({ body: { email: NEW, redirectTo: "/reset-password" } });
     const order = (fn: unknown) => vi.mocked(fn as () => void).mock.invocationCallOrder[0];
-    // After the move no Google account can link again by the old address; before the sessions end, so none made meanwhile lives on.
-    expect(order(adapter.updateUser)).toBeLessThan(order(database.deleteMany));
-    expect(order(database.deleteMany)).toBeLessThan(order(adapter.deleteUserSessions));
+    expect(order(adapter.updateUser)).toBeLessThan(order(adapter.deleteUserSessions));
     expect(order(adapter.deleteUserSessions)).toBeLessThan(order(requestPasswordReset));
-    // The copies are the trigger's: nothing here writes a coach or client row.
+    // The copies and the Google unlink are the trigger's (migrations 210 and 213): nothing here writes a coach or client row.
     expect(statements.every((statement) => statement.calls.every(([verb]) => verb === "select" || verb === "eq"))).toBe(true);
-  });
-
-  it("a login with no Google account unlinks none, and the move goes on", async () => {
-    database.deleteMany.mockResolvedValue(0);
-    await expect(move()).resolves.toEqual({ moved: true, userId: "user-1", linkedAccountsRemoved: 0, sessionsEnded: 2 });
-    expect(adapter.deleteUserSessions).toHaveBeenCalledWith("user-1");
-  });
-
-  it("Google accounts that can't be unlinked after the move throw, saying the address moved and what finishes it, and nothing after it runs", async () => {
-    database.deleteMany.mockRejectedValue(new Error("pool down"));
-    const failed = move();
-    await expect(failed).rejects.toBeInstanceOf(MovedLoginUnfinishedError);
-    await expect(failed).rejects.toThrow(
-      `The login moved to ${NEW} with its coach and client rows, but the Google accounts linked to it could not be unlinked: pool down. Any Google account linked to it still signs it in until its rows in better_auth.account other than its password are deleted; then a password reset from "Forgot your password?" at ${NEW} ends every session of it.`
-    );
-    expect(adapter.deleteUserSessions).not.toHaveBeenCalled();
-    expect(requestPasswordReset).not.toHaveBeenCalled();
   });
 
   it("looks the new address up as a login, a coach row and a client row", async () => {
@@ -164,7 +132,6 @@ describe("moveLoginEmail: the owner moves a login to a new address (rule 19, D39
   /** Nothing about any login changed: no write through Better Auth, no reset asked. */
   const expectNothingChanged = () => {
     expect(adapter.updateUser).not.toHaveBeenCalled();
-    expect(database.deleteMany).not.toHaveBeenCalled();
     expect(adapter.deleteUserSessions).not.toHaveBeenCalled();
     expect(requestPasswordReset).not.toHaveBeenCalled();
   };
@@ -189,7 +156,6 @@ describe("moveLoginEmail: the owner moves a login to a new address (rule 19, D39
     const unique = new Error('duplicate key value violates unique constraint "coaches_email_key"');
     adapter.updateUser.mockRejectedValue(unique);
     await expect(move()).rejects.toBe(unique);
-    expect(database.deleteMany).not.toHaveBeenCalled();
     expect(adapter.deleteUserSessions).not.toHaveBeenCalled();
     expect(requestPasswordReset).not.toHaveBeenCalled();
   });

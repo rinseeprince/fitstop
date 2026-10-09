@@ -13,15 +13,18 @@
  * invited (its link in hand) and one only pending; and a coach row with no
  * login.
  *   1  a client's change of email by its two links: the login and the client
- *      row both on the new address, the client signs in with it and stays
- *      signed in on the session that asked, and the coach's GET
+ *      row both on the new address, the Google account linked to the login
+ *      unlinked and its password row kept, the client signs in with it and
+ *      stays signed in on the session that asked, and the coach's GET
  *      /api/clients/<id> and the client's GET /api/client/me answer it
- *   2  a coach's change by its two links: coaches.email follows; and the copy
- *      is the database's, so a login changed through the pool, where no code
- *      of the app runs, moves its coach row too
+ *   2  a coach's change by its two links: coaches.email follows and the
+ *      Google link goes; and both are the database's (migrations 210 and
+ *      213), so a login changed through the pool, where no code of the app
+ *      runs, moves its coach row and loses its Google link too
  *   3  one write: the coach's login changed through the pool to the address
  *      the coach row with no login holds: the coach row's UNIQUE key fails the
- *      statement, and the login and its coach row both keep their address
+ *      statement, and the login and its coach row both keep their address,
+ *      and the login its Google link
  *   4  a change to an address a client row or a coach row holds: 200, the
  *      answer an address with a login gets, no email, nothing changed
  *   5  the coach's PATCH /api/clients/<id>: another address for the client
@@ -36,6 +39,9 @@
  *      on the new address, the Google account unlinked and the password row
  *      kept, its sessions 0, "Reset your password" in the mailbox for the new
  *      address (the command's Resend pointed at it), and the reset works
+ *   8  one Google account links to one login: a second login's row for a
+ *      linked Google account is refused on the key migration 213 adds, and
+ *      the link stays the first login's
  * Cleanup removes every throwaway login, coach row and client row, and every
  * session minted. No token, link, cookie or password is printed.
  */
@@ -75,9 +81,10 @@ const APPROVE_SUBJECT = "Approve your email change";
 const CONFIRM_SUBJECT = "Confirm your new email";
 const RESET_SUBJECT = "Reset your password";
 const LOCKED_EMAIL = "This client changes their own email.";
-/** Postgres's unique_violation, and the key the coach row's copy meets. */
+/** Postgres's unique_violation, the key the coach row's copy meets, and the one a second link of a Google account meets. */
 const UNIQUE_VIOLATION = "23505";
 const COACH_EMAIL_KEY = "coaches_email_key";
+const GOOGLE_LINK_KEY = "account_provider_id_account_id_key";
 
 let failures = 0;
 /** One check. Its detail is the evidence printed on failure: never a token, a link, a cookie or a password. */
@@ -179,6 +186,21 @@ async function providersOf(userId: string): Promise<string[]> {
     [userId]
   );
   return rows.map((row) => row.providerId);
+}
+
+/**
+ * A Google account linked to a login, the row Better Auth's linking writes:
+ * it signs the login in by the Google account, whatever the Google account's
+ * own address, until the login's address changes. Returns the Google
+ * account's id.
+ */
+async function linkGoogle(userId: string, label: string): Promise<string> {
+  const accountId = `email-follows-${STAMP}-google-${label}`;
+  await authPool.query(
+    `INSERT INTO better_auth.account ("userId", "accountId", "providerId", "createdAt", "updatedAt") VALUES ($1, $2, 'google', now(), now())`,
+    [userId, accountId]
+  );
+  return accountId;
 }
 
 /** A client row's address and login. */
@@ -312,7 +334,9 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
   const coachSession = await signInOverHttp(base, COACH, coachPassword, "coach");
   const clientSession = await signInOverHttp(base, CLIENT, clientPassword, "client");
 
-  console.info("1. A client changes their email by its two links: the login and the client row move together");
+  console.info("1. A client changes their email by its two links: the login and the client row move together, and its Google link goes");
+  await linkGoogle(client.userId, "client");
+  check("before the change a Google account is linked to the client's login beside its password", (await providersOf(client.userId)).join() === "credential,google");
   const clientChanged = await changeEmailByLinks(base, box, clientSession, CLIENT, CLIENT_NEW, CLIENT_SETTINGS_PAGE);
   const clientLogin = await login(client.userId);
   const clientRowNow = await clientRow(clientId);
@@ -321,6 +345,8 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
     clientChanged && clientLogin.email === CLIENT_NEW && clientLogin.verified === true && clientRowNow?.email === CLIENT_NEW,
     { clientLogin, clientRowNow }
   );
+  const clientProviders = await providersOf(client.userId);
+  check("the change unlinks the Google account and keeps the password row", clientProviders.join() === "credential", clientProviders);
   check("the client signs in with the new address and the same password", (await signInStatus(base, CLIENT_NEW, clientPassword)) === 200);
   check("the old address signs in no more", (await signInStatus(base, CLIENT, clientPassword)) === 401);
   const me = await request(base, "GET", "/api/client/me", { session: clientSession });
@@ -336,7 +362,9 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
     evidence(coachView)
   );
 
-  console.info("2. A coach changes their email by its two links: the coach row follows, and the copy is the database's");
+  console.info("2. A coach changes their email by its two links: the coach row follows and the Google link goes, both the database's");
+  await linkGoogle(coach.userId, "coach");
+  check("before the change a Google account is linked to the coach's login beside its password", (await providersOf(coach.userId)).join() === "credential,google");
   const coachChanged = await changeEmailByLinks(base, box, coachSession, COACH, COACH_NEW, COACH_SETTINGS_PAGE);
   const coachLogin = await login(coach.userId);
   check(
@@ -344,19 +372,23 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
     coachChanged && coachLogin.email === COACH_NEW && coachLogin.verified === true && (await coachEmail(coachId)) === COACH_NEW,
     coachLogin
   );
+  const coachProviders = await providersOf(coach.userId);
+  check("the change unlinks the Google account and keeps the password row", coachProviders.join() === "credential", coachProviders);
   const coachMe = await request(base, "GET", "/api/auth/me", { session: coachSession });
   check(
     "/api/auth/me answers the coach row on the new address",
     (coachMe.json as { data?: { coach?: { email?: string } } } | null)?.data?.coach?.email === COACH_NEW,
     evidence(coachMe)
   );
+  await linkGoogle(coach.userId, "coach-pool");
   await authPool.query(`UPDATE better_auth."user" SET email = $1 WHERE id = $2`, [COACH_POOL, coach.userId]);
   check(
-    "a login changed through the pool, where no code of the app runs, moves its coach row in the same statement",
-    (await login(coach.userId)).email === COACH_POOL && (await coachEmail(coachId)) === COACH_POOL
+    "a login changed through the pool, where no code of the app runs, moves its coach row and unlinks its Google account in the same statement",
+    (await login(coach.userId)).email === COACH_POOL && (await coachEmail(coachId)) === COACH_POOL && (await providersOf(coach.userId)).join() === "credential"
   );
 
-  console.info("3. One write: a copy that can't be written undoes the login's change with it");
+  console.info("3. One write: a copy that can't be written undoes the login's change with it, its Google link kept");
+  await linkGoogle(coach.userId, "coach-kept");
   let refusal: { code?: string; constraint?: string } | null = null;
   try {
     await authPool.query(`UPDATE better_auth."user" SET email = $1 WHERE id = $2`, [LONE_COACH, coach.userId]);
@@ -369,8 +401,11 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
     refusal ? { code: refusal.code, constraint: refusal.constraint } : "the statement went through"
   );
   check(
-    "the login and its coach row both keep their address, and the other coach row its own",
-    (await login(coach.userId)).email === COACH_POOL && (await coachEmail(coachId)) === COACH_POOL && (await coachEmail(lone.id)) === LONE_COACH
+    "the login and its coach row both keep their address, the other coach row its own, and the login its Google link",
+    (await login(coach.userId)).email === COACH_POOL &&
+      (await coachEmail(coachId)) === COACH_POOL &&
+      (await coachEmail(lone.id)) === LONE_COACH &&
+      (await providersOf(coach.userId)).join() === "credential,google"
   );
 
   console.info("4. A change to an address a client row or a coach row holds gets the no-email answer");
@@ -455,19 +490,14 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
   );
 
   check("before the move the login holds several live sessions", before.sessions >= 2, before);
-  // A Google account linked to the login, the row Better Auth's linking writes:
-  // it signs the login in by the Google account whatever the login's address.
-  await authPool.query(
-    `INSERT INTO better_auth.account ("userId", "accountId", "providerId", "createdAt", "updatedAt") VALUES ($1, $2, 'google', now(), now())`,
-    [client.userId, `email-follows-${STAMP}-google`]
-  );
+  await linkGoogle(client.userId, "moved");
   check("before the move a Google account is linked to the login beside its password", (await providersOf(client.userId)).join() === "credential,google");
   const moved = await runMoveEmail(base, box, ["--project", DEV_REF, "--email", CLIENT_NEW, "--to", MOVED]);
   check(
-    "the move: it exits 0, saying it moved the login, unlinked its Google account and how many sessions it ended",
+    "the move: it exits 0, saying it moved the login, unlinked its Google accounts and how many sessions it ended",
     moved.code === 0 &&
       moved.stdout.includes(`Moved the login of ${CLIENT_NEW} to ${MOVED}`) &&
-      moved.stdout.includes("Unlinked 1 Google account(s)") &&
+      moved.stdout.includes("Any Google account linked to it is unlinked") &&
       moved.stdout.includes(`Ended ${before.sessions} session(s)`) &&
       moved.stdout.includes(`npm run auth:last-link -- --email ${MOVED}`),
     { code: moved.code, stdout: moved.stdout.slice(-400), stderr: moved.stderr.slice(-300) }
@@ -499,6 +529,32 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
   check("the reset works: 200", reset?.status === 200, reset ? evidence(reset) : "no token");
   check("the client signs in with the new address and the new password", (await signInStatus(base, MOVED, resetPassword)) === 200);
   check("and not with the old password", (await signInStatus(base, MOVED, clientPassword)) === 401);
+
+  console.info("8. One Google account links to one login");
+  const clientGoogle = await linkGoogle(client.userId, "one-login");
+  let duplicate: { code?: string; constraint?: string } | null = null;
+  try {
+    await authPool.query(
+      `INSERT INTO better_auth.account ("userId", "accountId", "providerId", "createdAt", "updatedAt") VALUES ($1, $2, 'google', now(), now())`,
+      [coach.userId, clientGoogle]
+    );
+  } catch (error) {
+    duplicate = error as { code?: string; constraint?: string };
+  }
+  check(
+    `a second login's row for the client's linked Google account is refused on ${GOOGLE_LINK_KEY}`,
+    duplicate?.code === UNIQUE_VIOLATION && duplicate.constraint === GOOGLE_LINK_KEY,
+    duplicate ? { code: duplicate.code, constraint: duplicate.constraint } : "the row went in"
+  );
+  const { rows: googleOwners } = await authPool.query<{ userId: string }>(
+    `SELECT "userId" FROM better_auth.account WHERE "providerId" = 'google' AND "accountId" = $1`,
+    [clientGoogle]
+  );
+  check(
+    "and the Google account stays linked to the client's login alone",
+    googleOwners.length === 1 && googleOwners[0].userId === client.userId,
+    googleOwners.length
+  );
 }
 
 async function cleanup(): Promise<void> {

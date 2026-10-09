@@ -391,8 +391,8 @@ export const auth = betterAuth({
     // A coach and a client change the email they sign in with (D18): "Approve
     // your email change" goes to the current address first, unless the new
     // address is someone else's (sendApprovalUnlessHeld). The one UPDATE that
-    // changes the address changes its coach and client rows with it
-    // (migration 210's trigger).
+    // changes the address changes its coach and client rows with it and
+    // unlinks its Google accounts (the trigger, migrations 210 and 213).
     changeEmail: {
       enabled: true,
       sendChangeEmailConfirmation: sendApprovalUnlessHeld,
@@ -424,15 +424,21 @@ export const auth = betterAuth({
       overrideUserInfoOnSignIn: false,
     },
   },
-  // A Google sign-in finds its login by the Google account first (one linked
-  // before signs in whatever the login's address is now), then by address.
-  // By address, Better Auth links it only when Google says it has verified
-  // that the address is the account's and the login's is verified (D4). No
-  // trusted provider: a trusted Google is linked even when Google hasn't
-  // verified the address, so someone who made a Google account on another
-  // person's address would sign in as them. Linking never changes a login's
-  // address.
+  // A Google sign-in finds its login by the Google account first, then by
+  // address. By address, Better Auth links it only when Google says it has
+  // verified that the address is the account's and the login's is verified
+  // (D4). No trusted provider: a trusted Google is linked even when Google
+  // hasn't verified the address, so someone who made a Google account on
+  // another person's address would sign in as them. Linking never changes a
+  // login's address, and a link lasts until the address changes: the UPDATE
+  // that changes it deletes the login's Google links (migration 213).
   account: { accountLinking: { enabled: true } },
+  // Linking and unlinking a Google account by hand answer 404: no screen
+  // offers them, and Google is for sign-in only (D23). link-social keeps the
+  // address it was started on until Google sends the browser back, and that
+  // return checks no session, so a link begun before the owner's
+  // auth:move-email could be finished after it, on the moved login.
+  disabledPaths: ["/link-social", "/unlink-account"],
   // Better Auth's defaults, written down: a session lasts seven days from its
   // last renewal, and a use a day or more after that renews it. No cookie
   // cache, so a revoked session ends on its next request (D15).

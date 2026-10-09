@@ -1245,6 +1245,32 @@ describe("Continue with Google (rule 8, D3, D23): sign-in only, to the login tha
     expect(options.account?.accountLinking).toEqual({ enabled: true })
   })
 
+  it("turns off linking and unlinking a Google account by hand: Google is for sign-in only", () => {
+    expect(options.disabledPaths).toEqual(["/link-social", "/unlink-account"])
+  })
+
+  it("in Better Auth's pipeline: a signed-in login's request to link or unlink a Google account answers 404, and its accounts stay as they were", async () => {
+    const { instance, db } = await liveAuth()
+    const id = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    const cookie = sessionCookie((await signInWithGoogle(instance, { sub: "google-1", email: "coach@example.com", email_verified: true })).back)!
+    const accounts = structuredClone(db.account)
+    for (const [path, body] of [
+      ["/link-social", { provider: "google", callbackURL: "/" }],
+      ["/unlink-account", { providerId: "google" }],
+    ] as const) {
+      const answer = await instance.handler(
+        new Request(`http://localhost:3000/api/auth${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: "http://localhost:3000", cookie },
+          body: JSON.stringify(body),
+        })
+      )
+      expect(answer.status, path).toBe(404)
+    }
+    expect(await signedInAs(instance, cookie)).toBe(id)
+    expect(db.account).toEqual(accounts)
+  })
+
   it("in Better Auth's pipeline: the button's request answers Google's sign-in page, with the app's callback, the chooser and a PKCE challenge", async () => {
     const { instance, db } = await liveAuth()
     const asked = await askGoogle(instance)
@@ -1326,16 +1352,34 @@ describe("Continue with Google (rule 8, D3, D23): sign-in only, to the login tha
     }
   )
 
-  it("in Better Auth's pipeline: a linked Google account signs its login in by the account, after the login's address moved too, and never rewrites the address", async () => {
+  it("in Better Auth's pipeline: a linked Google account signs its login in by the account, after the Google account's own address changed too, and never rewrites the login's", async () => {
     const { instance, db } = await liveAuth()
     const id = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
     await signInWithGoogle(instance, { sub: "google-1", email: "coach@example.com", email_verified: true })
-    // As a change of email, or the owner's auth:move-email before it removes the link, leaves it.
-    db.user[0].email = "moved@example.com"
-    const { back } = await signInWithGoogle(instance, { sub: "google-1", email: "coach@example.com", email_verified: true })
+    // Google's side renamed the account (a Workspace address changed, say): it is still the account linked.
+    const { back } = await signInWithGoogle(instance, { sub: "google-1", email: "renamed@example.com", email_verified: true })
     expect(back.headers.get("location")).toBe("/")
     expect(await signedInAs(instance, sessionCookie(back)!)).toBe(id)
-    expect(db.user[0]).toMatchObject({ id, email: "moved@example.com" })
+    expect(db.user[0]).toMatchObject({ id, email: "coach@example.com" })
+  })
+
+  it("in Better Auth's pipeline: once the login's address changes and its Google link goes with it, the old address's Google account finds no login and the new address's links", async () => {
+    const { instance, db } = await liveAuth()
+    const id = seedLogin(db, "coach@example.com", bcrypt.hashSync(PASSWORD, 4))
+    await signInWithGoogle(instance, { sub: "google-1", email: "coach@example.com", email_verified: true })
+    // The UPDATE that changes the address deletes the login's Google links (migration 213's trigger, which
+    // scripts/email-follows-proof.ts shows on DEV); here the rows change as that one statement leaves them.
+    db.user[0].email = "new@example.com"
+    db.account.splice(0, db.account.length, ...db.account.filter((row) => row.userId !== id || row.providerId === "credential"))
+    const old = await signInWithGoogle(instance, { sub: "google-1", email: "coach@example.com", email_verified: true })
+    expect(old.back.headers.get("location")).toBe(`/login?error=${LOGIN_ERROR_GOOGLE_NO_ACCOUNT}`)
+    const renewed = await signInWithGoogle(instance, { sub: "google-2", email: "new@example.com", email_verified: true })
+    expect(renewed.back.headers.get("location")).toBe("/")
+    expect(await signedInAs(instance, sessionCookie(renewed.back)!)).toBe(id)
+    expect(db.account).toEqual([
+      expect.objectContaining({ providerId: "credential", userId: id }),
+      expect.objectContaining({ providerId: "google", accountId: "google-2", userId: id }),
+    ])
   })
 
   it("in Better Auth's pipeline: a login with no password that Google signed in is answered CREDENTIAL_ACCOUNT_NOT_FOUND by change password and delete account", async () => {

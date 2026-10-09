@@ -9,7 +9,8 @@ import type { UserRole } from "@/types/auth";
 
 /**
  * A login's address (docs/BETTER-AUTH-PLAN.md 2.10): coaches.email and
- * clients.email copy it, and migration 210's trigger rewrites both in the one
+ * clients.email copy it, and the trigger login_email_follows rewrites both,
+ * and unlinks the login's Google accounts (migrations 210 and 213), in the one
  * UPDATE of better_auth."user" that changes it, whoever changes it. Here: the
  * check lib/auth.ts makes of a change of email's new address, and the owner's
  * move of a login to a new address (scripts/move-email.ts), which changes it
@@ -52,25 +53,20 @@ export async function isAddressHeldElsewhere(address: string, userId: string): P
 type AddressHolder = "a login" | "a coach row" | "a client row";
 
 export type MoveLoginEmailResult =
-  | { moved: true; userId: string; linkedAccountsRemoved: number; sessionsEnded: number }
+  | { moved: true; userId: string; sessionsEnded: number }
   | { moved: false; refusal: "no_login" }
   | { moved: false; refusal: "in_use"; heldBy: AddressHolder };
 
-/** What finishes a move once its address has changed: Better Auth ends every session of a login whose password it resets. */
-const resetFinishesIt = (to: string) => `A password reset from "Forgot your password?" at ${to} ends every session of it.`;
-
 /** A move whose address changed, with its rows, and whose next step failed: the message says what finishes it. */
 export class MovedLoginUnfinishedError extends Error {
-  constructor(to: string, what: string, cause: unknown, finish = resetFinishesIt(to)) {
-    super(`The login moved to ${to} with its coach and client rows, but ${what}: ${cause instanceof Error ? cause.message : String(cause)}. ${finish}`, {
-      cause,
-    });
+  constructor(to: string, what: string, cause: unknown) {
+    super(
+      `The login moved to ${to} with its coach and client rows, but ${what}: ${cause instanceof Error ? cause.message : String(cause)}. A password reset from "Forgot your password?" at ${to} ends every session of it.`,
+      { cause }
+    );
     this.name = "MovedLoginUnfinishedError";
   }
 }
-
-/** Better Auth's provider id for a login's password row; every other account row is a provider's, Google's. */
-const PASSWORD_PROVIDER = "credential";
 
 /**
  * The owner's auth:move-email (rule 19, D39): the login on `email` moves to
@@ -79,24 +75,20 @@ const PASSWORD_PROVIDER = "credential";
  * changed: an address with no login, and a new one that any login, coach row
  * or client row holds. Then, through Better Auth's adapter: the login's
  * address changes, verified, in one UPDATE that moves its coach and client
- * rows with it (migration 210); every account of the login but its password
- * goes, in one DELETE; every session of the login ends; and "Reset your
- * password" is asked for at the new address, which Better Auth sends in the
- * background (a script awaits backgroundWorkSettled, lib/auth.ts).
+ * rows with it and unlinks every Google account linked to it (migrations 210
+ * and 213), so the lost or taken inbox's Google account no longer signs it
+ * in; every session of the login ends; and "Reset your password" is asked for
+ * at the new address, which Better Auth sends in the background (a script
+ * awaits backgroundWorkSettled, lib/auth.ts).
  *
- * A Google account linked to the login signs it in by the Google account,
- * whatever the login's address, so the lost or taken inbox, and its Google
- * account, would keep the login through Continue with Google. The links go
- * after the move, when no Google account can link again by the old address,
- * and before the sessions end, so no session one made meanwhile lives on.
- *
- * The four are not one transaction (CONVENTIONS §2 item 13). A move that
+ * The three are not one transaction (CONVENTIONS §2 item 13). A move that
  * fails changes nothing. A failure after it throws saying the address has
- * moved and what finishes the job: for the sessions or the reset, a password
- * reset from "Forgot your password?" at the new address.
+ * moved, and a password reset from "Forgot your password?" at the new
+ * address finishes the job: Better Auth ends every session of a login whose
+ * password it resets.
  */
 export async function moveLoginEmail({ email, to }: { email: string; to: string }): Promise<MoveLoginEmailResult> {
-  const { adapter, internalAdapter } = await auth.$context;
+  const { internalAdapter } = await auth.$context;
   const [login, holder, { coaches, clients }] = await Promise.all([
     internalAdapter.findUserByEmail(email),
     internalAdapter.findUserByEmail(to),
@@ -108,24 +100,6 @@ export async function moveLoginEmail({ email, to }: { email: string; to: string 
 
   const userId = login.user.id;
   await internalAdapter.updateUser(userId, { email: to, emailVerified: true });
-
-  let linkedAccountsRemoved: number;
-  try {
-    linkedAccountsRemoved = await adapter.deleteMany({
-      model: "account",
-      where: [
-        { field: "userId", value: userId },
-        { field: "providerId", operator: "ne", value: PASSWORD_PROVIDER },
-      ],
-    });
-  } catch (error) {
-    throw new MovedLoginUnfinishedError(
-      to,
-      "the Google accounts linked to it could not be unlinked",
-      error,
-      `Any Google account linked to it still signs it in until its rows in better_auth.account other than its password are deleted; then a password reset from "Forgot your password?" at ${to} ends every session of it.`
-    );
-  }
 
   let sessionsEnded: number;
   try {
@@ -139,7 +113,7 @@ export async function moveLoginEmail({ email, to }: { email: string; to: string 
   } catch (error) {
     throw new MovedLoginUnfinishedError(to, `"Reset your password" could not be asked for`, error);
   }
-  return { moved: true, userId, linkedAccountsRemoved, sessionsEnded };
+  return { moved: true, userId, sessionsEnded };
 }
 
 /**

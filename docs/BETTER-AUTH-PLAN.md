@@ -9,8 +9,8 @@ email, sign out everywhere (5); every screen and email says the product's name, 
 their email too, every copy of an address follows it in one write, and the owner moves the login of someone who
 lost their inbox (5.5); delete account (6); Continue with Google (7);
 the server ready for the client app (8). **Commit 9** writes the docs. This plan adds
-migrations 208, 209, 210, 211 and 212: DEV and PROD hold 208 and 209 (PROD since 2026-10-08), and PROD takes 210, 211
-and 212 by §8.2. **Billing is not here:** Better Auth's
+migrations 208, 209, 210, 211, 212 and 213: DEV and PROD hold 208 and 209 (PROD since 2026-10-08), and PROD takes 210
+to 213 by §8.2. **Billing is not here:** Better Auth's
 Stripe plugin later adds one column and one table and touches nothing this plan builds (D27). Every file and line
 named here was grepped on 2026-10-07 at `d5f23299`; every Better Auth fact is from its docs and source at
 **1.7.7** (§2.9), the version commit 1 pins.
@@ -123,7 +123,8 @@ nothing should break"):
 17. A coach or a client who changes their email (rule 6) has the new address everywhere from the moment the second
     link is opened: they sign in with it, their Settings shows it, the coach sees a client's new address on their
     profile and in every list, and the app's emails to them go to it. Nothing else about them changes, and they
-    stay signed in. The address and every copy of it change together or not at all. A new address that any account,
+    stay signed in, except that the Google account of the old address no longer signs them in (rule 8; migration
+    213). The address and every copy of it change together or not at all. A new address that any account,
     coach or client on the platform already uses gets the same answer and no email, as Better Auth already answers
     an address with a login. A link that can no longer be used lands back on Settings with "This link has expired.
     Request a new one."
@@ -173,12 +174,12 @@ not at all (rule 17, D37) and the migrations' row counts are proved by scripts a
 
 ## 2. Target shape
 
-### 2.1 Data model: migrations 208, 209, 210, 211 and 212
+### 2.1 Data model: migrations 208, 209, 210, 211, 212 and 213
 
 **Better Auth's tables live in their own schema, `better_auth`, under Better Auth's own names and column names
 (D5).** PostgREST serves `public` alone, so nothing on the Data API can reach them with any key; only Better
-Auth's own connection (the `postgres` user through Supabase's pooler, D28), the address trigger of migration 210
-and migration 211's `delete_coach_records` (a deleted coach's clients' logins) touch them. The ids are `uuid` with the database's default, so
+Auth's own connection (the `postgres` user through Supabase's pooler, D28), the address trigger of migrations 210
+and 213 and migration 211's `delete_coach_records` (a deleted coach's clients' logins) touch them. The ids are `uuid` with the database's default, so
 today's user ids carry over (D6).
 Columns are Better Auth's camelCase (its docs, CLI and plugins assume them; the app never reads these tables
 through PostgREST, so CONVENTIONS' snake_case examples don't apply, §4). `"user"` is a reserved word and is quoted
@@ -424,6 +425,18 @@ column (`check_in_forms.coach_id` passes on a partial index the cascade can't us
 table once). The time still grows with the account, so a coach several times the seed coach's size can still pass
 8 s (TECHNICAL-DEBT, "Delete account has a size limit"; owner 2026-10-09: noted for later).
 
+213 (`supabase/migrations/213_google_links.sql`, after commit 7, owner 2026-10-09) sets two rules for Google links.
+Better Auth finds a Google sign-in's login by the Google account first (§2.9 #10), so a link made on the old address
+kept signing the login in after its address changed. The trigger's function becomes `better_auth.follow_login_email()`:
+it copies the address as 210's did and deletes every account row of the login but its password (`providerId`
+`credential`) in the same statement, whichever path changed the address; a change that fails keeps the links too. Then
+a UNIQUE key on `better_auth.account ("providerId", "accountId")`: Better Auth reads at most two rows by that pair and
+throws on two, so a Google account linked twice (two first sign-ins at the same instant) could never sign in again.
+Under the key the second link fails, that one sign-in lands on `/login?error=unable_to_link_account`, and the next
+finds the link; the key's index also serves that lookup, which read the whole table. Its closing check, in 210's
+shape, holds the trigger to the new function, the old one gone, the key unique and valid, and the schema's
+privileges the owner's alone.
+
 **Alternatives considered** (CONVENTIONS §8: the data model is a decision):
 - **Where the tables live:** their own schema (chosen) or `public` with Better Auth's names. In `public` they'd sit on
   the Data API behind RLS and the lockdown's revoked grants, appear in `types/database.ts`, and the service-role key
@@ -446,6 +459,10 @@ table once). The time still grows with the account, so a coach several times the
   invited client), and the app reads `public` through `supabaseAdmin`, which never reaches `better_auth`. An RPC
   the app calls: Better Auth makes the write itself, inside its verify-email endpoint, so nothing of the app's
   runs in that transaction.
+- **A login's Google links when its address changes (213):** deleted by the same trigger (chosen), in the one
+  UPDATE every path makes, so Settings' change of email, the owner's command, the admin plugin and SQL are all
+  covered and a change that fails keeps them. `moveLoginEmail`'s own DELETE (commit 7, which 213 replaces) covered
+  the command alone, and a Better Auth hook after the update would run once the change had committed.
 
 ### 2.2 The server
 
@@ -709,7 +726,9 @@ and the login's is verified; an unknown address is refused with `signup_disabled
 `/login?error=signup_disabled`; a Google address Google hasn't verified, or a login whose `emailVerified` were
 false (none is: D4), is refused with `account_not_linked`. Google's console needs the redirect URI
 `<app>/api/auth/callback/google` (and localhost's for DEV) — §9.1. The same button serves coaches and clients
-(D3): after sign-in Better Auth lands on `/`, and the proxy sends the role home.
+(D3): after sign-in Better Auth lands on `/`, and the proxy sends the role home. A link lasts until the login's
+address changes, which deletes it in the same statement, and one Google account links to one login (migration 213,
+§2.1). Linking and unlinking by hand (`/link-social`, `/unlink-account`) are off (`disabledPaths`, 404).
 
 ### 2.8 Ready for the client app (commit 8), nothing of the app built
 
@@ -779,7 +798,11 @@ false (none is: D4), is refused with `account_not_linked`. Google's console need
     provider is trusted, which is all `trustedProviders` changes; `/sign-in/social` is POST only, answering 200
     `{ url, redirect: true }` with a `Location` header, which Better Auth's browser client follows; the callback
     reads the ID token Google's token endpoint answers without checking its signature, so a test can stand in for
-    Google there.)
+    Google there.) (After commit 7, for migration 213, in `db/internal-adapter.mjs` and `oauth2/link-account.mjs`:
+    `findAccountOwnerByKey` reads `account` by `providerId` and `accountId`, at most two rows, and throws "Multiple
+    accounts match" on two, which the callback answers `internal_server_error`; a link whose write throws answers
+    `unable_to_link_account`; change email's verify-email changes the address with `updateUserByEmail` and touches
+    no account row.)
 11. Supabase migration guide: ids are kept by inserting with the same `id`; `encrypted_password` is copied into
     `account.password` with `providerId: 'credential'` and `accountId: user.id`; `email_confirmed_at` →
     `emailVerified`; the move invalidates every session. https://www.better-auth.com/docs/guides/supabase-migration-guide.
@@ -804,7 +827,7 @@ The address a login signs in with is copied twice in `public`: `coaches.email` (
 menus aside (they read the session). From 5.5 the copies follow the login in one write, for both roles:
 - **The write.** Migration 210's trigger (§2.1) rewrites the login's coach row and client row in the statement that
   changes its address, whoever changes it: Better Auth's verify-email (the second link of a change, rule 17) or the
-  owner's command (rule 19). Commit 5's `mirrorLoginEmail` (`lib/auth.ts`) and `mirrorEmailToCoachRow`
+  owner's command (rule 19). From migration 213 the same statement deletes the login's Google links. Commit 5's `mirrorLoginEmail` (`lib/auth.ts`) and `mirrorEmailToCoachRow`
   (`services/account-service.ts`), and the `user.update.after` hook that ran them, are deleted. A copy that fails
   fails the login's change with it: Better Auth then answers the link with its 500 (to Sentry through `onAPIError`:
   a throw from below the endpoint never becomes an answer the after hook reads) and nothing has changed, so the link
@@ -840,10 +863,10 @@ menus aside (they read the session). From 5.5 the copies follow the login in one
   calling `moveLoginEmail({ email, to })` in `services/account-service.ts`: it refuses an address with no login
   and a new one that any login, coach row or client row holds, then changes the login's address, verified, through
   Better Auth's own adapter (`(await auth.$context).internalAdapter.updateUser`, so Better Auth stays the writer of
-  its tables and the trigger copies the rows), ends every session of the login (`deleteUserSessions`), and asks for
-  "Reset your password" at the new address (`requestPasswordReset`, landing on `/reset-password`), awaiting
-  `backgroundWorkSettled()` before it exits. It prints the move, the session count it ended and, on DEV, the
-  `auth:last-link` line.
+  its tables and the trigger copies the rows and, from 213, unlinks its Google accounts), ends every session of the
+  login (`deleteUserSessions`), and asks for "Reset your password" at the new address (`requestPasswordReset`,
+  landing on `/reset-password`), awaiting `backgroundWorkSettled()` before it exits. It prints the move, its Google
+  accounts unlinked, the session count it ended and, on DEV, the `auth:last-link` line.
 
 ### 2.11 The product's name (commit 5.1)
 
@@ -909,7 +932,7 @@ can be vetoed before its commit starts.
 | D28 | `DATABASE_URL` is Supabase's transaction pooler string for the `postgres` user; one pool of four per bundle (the proxy's and the routes' are separate bundles). | Serverless-safe; `postgres` owns the schema, so RLS never bites Better Auth; a direct connection is IPv6-only on Supabase. |
 | D29 | Env: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (= `NEXT_PUBLIC_APP_URL`), `DATABASE_URL`, `AUTH_ADMIN_USER_IDS`, `EMAIL_FROM`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`; `NEXT_PUBLIC_SUPABASE_ANON_KEY` has no reader after commit 3 and leaves `.env.local`. | Documented per CONVENTIONS 852 (no `.env.example`): at the read site and in §19's list. |
 | D30 | The emails use one sender (`EMAIL_FROM`, falling back to `onboarding@resend.dev`), one look, and the product's name, Atletafit, written once (`PRODUCT_NAME`, `lib/constants.ts`) and read by every screen, email and tab title (commit 5.1). Commits 1–5 shipped the old name, "CoachHub". | Owner, 2026-10-09: "It's not called coachub." One constant, so the name can't drift between an email's sender and its sign-off. |
-| D31 | Migrations: 208 (schema + copy, additive), 209 (the switch), 210 (a login's address and its copies in one write, commit 5.5), 211 (delete functions, commit 6), 212 (an index on every foreign key a deletion's cascades walk, commit 6, owner 2026-10-09: a 20-client seed coach's delete took 14.9 s against the Data API's 8 s, 2.8 s with them). The coach chat plan's "migration 208" takes the next free number when it is built (§9.3). | CONVENTIONS: next number, never skip; this plan ships first; 5.5 is built before 6, so it takes 210. |
+| D31 | Migrations: 208 (schema + copy, additive), 209 (the switch), 210 (a login's address and its copies in one write, commit 5.5), 211 (delete functions, commit 6), 212 (an index on every foreign key a deletion's cascades walk, commit 6, owner 2026-10-09: a 20-client seed coach's delete took 14.9 s against the Data API's 8 s, 2.8 s with them), 213 (a login's Google links go when its address changes, and one Google account links to one login, after commit 7, owner 2026-10-09). The coach chat plan's "migration 208" takes the next free number when it is built (§9.3). | CONVENTIONS: next number, never skip; this plan ships first; 5.5 is built before 6, so it takes 210. |
 | D32 | Undo (§8.3): revert the switch commit, then a new migration re-points the FKs to `auth.users` as `NOT VALID` and restores the trigger from 107; logins made after the switch are re-invited; passwords changed after it revert to the old ones. | Supabase's rows are never touched by the switch, so the old door reopens. |
 | D33 | Supabase Auth is retired, not deleted, until the undo window closes: providers off, sign-ups off; the owner deletes `auth.users` after (§9.1). | The undo needs the rows. |
 | D34 | `proof-session.ts` mints a session by inserting a `better_auth.session` row through the pool and sending its token as a bearer token; cookie-path proofs sign in over HTTP with a throwaway's password. | The old magic-link mint is Supabase's; a bare token is accepted by the bearer plugin (its default); no secret-signing in scripts. |
@@ -928,7 +951,7 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | Subsystem | Today | After | Commit |
 |---|---|---|---|
 | `package.json` | `@supabase/ssr`, no auth library | `better-auth@1.7.7`, `pg`, `kysely`, `bcryptjs`, later `@better-auth/expo`; `@supabase/ssr` gone (3) | 1, 3, 8 |
-| `supabase/migrations/` | 207 | 208 (schema + copy), 209 (switch), 210 (a login's address in one write), 211 (delete functions), 212 (the delete's foreign-key indexes) | 1, 2, 5.5, 6 |
+| `supabase/migrations/` | 207 | 208 (schema + copy), 209 (switch), 210 (a login's address in one write), 211 (delete functions), 212 (the delete's foreign-key indexes), 213 (Google links: gone with an address, one login each) | 1, 2, 5.5, 6, 7 |
 | `lib/auth.ts`, `lib/auth-client.ts`, `app/api/auth/[...all]/route.ts` | none | new | 1, 2 |
 | `middleware.ts` + `middleware.test.ts` | Edge; Supabase `getUser()`; 307 for `/api/**` | `proxy.ts` + `proxy.test.ts`; Node; `auth.api.getSession`; 401 JSON for `/api/**`; `/api/auth/` and `/set-password` public | 1 (the `/api/auth/` skip only), 2 |
 | `lib/auth-helpers.ts` + test | `createServerSupabaseClient().auth.getUser()` | `auth.api.getSession({ headers })`; bearer accepted | 2 |
@@ -1044,7 +1067,10 @@ so.
     `npm run auth:move-email` for the throwaway client → the login and the client row on the new address, its
     sessions 0, "Reset your password" in the mailbox for the new address (the command's Resend pointed at it),
     the reset works; refused with nothing changed: an address with no login, a `--to` that any login, coach row or
-    client row holds, and PROD's ref against DEV's env.
+    client row holds, and PROD's ref against DEV's env. From migration 213 (after commit 7): a Google account linked
+    to the login before each change by links, through the pool and by the command → gone after it, the password row
+    kept; before the change that fails → still linked; a second login's row for a linked Google account → refused
+    on `account_provider_id_account_id_key`.
   - 6: `scripts/delete-account-proof.ts`: a throwaway coach with two throwaway clients, one holding a check-in
     with a photo object and a content item assigned (`assigned_by` the coach); as a client: delete-user with the
     password → the token appears; the callback → the client row and every row under it gone, the photo object
@@ -1766,21 +1792,39 @@ Google unlink among them); browser smoke §7.5 owed, once `GOOGLE_CLIENT_ID` and
   - `moveLoginEmail` removes every account of the login but its password, in one DELETE through Better Auth's
     adapter, after the move, when no Google account can link again by the old address, and before the sessions
     end, so no session made meanwhile lives on; the command prints how many it unlinked. Proof 5.5 links a Google
-    account to the moved client first and shows it gone, the password row kept.
+    account to the moved client first and shows it gone, the password row kept. (Replaced after commit 7 by
+    migration 213's trigger, which unlinks inside the move's own UPDATE, below.)
   - The button is back where it was before commit 2, above the form with its "Or continue with" divider and
     Lucide's `Chrome` mark; while it is in flight the whole form is busy, and a page the browser restores from its
     back-forward cache (Back from Google's page) is idle again.
-- Found by commit 7, left for the owner (its handover):
-  - A Google account linked to a login keeps signing it in after the login's address changes through Change
-    email (rules 6 and 17): Better Auth finds it by the Google account first. Only `auth:move-email` unlinks. A
-    coach who linked a work Google account and then moved their login to a personal address can still be signed
-    in by whoever controls the work account. The fix the review proposes: migration 210's trigger also deletes
-    the login's accounts other than its password in the statement that changes its address, which covers every
-    path that changes one (and would replace `moveLoginEmail`'s own step). Rule 8 reads as if that were so.
-  - `better_auth.account` has no index or UNIQUE key on `("providerId", "accountId")`: every Google sign-in's
-    account lookup scans the table (one row per login and per link: 47 on DEV), and two first sign-ins of one
+- Found by commit 7 and left for the owner in its handover; built after it on the owner's go (2026-10-09, "yes can
+  you do this?", "yes do this too") as migration 213 (§2.1):
+  - A Google account linked to a login kept signing it in after the login's address changed through Change
+    email (rules 6 and 17): Better Auth finds it by the Google account first, and only `auth:move-email`
+    unlinked. A coach who linked a work Google account and then moved their login to a personal address could
+    still be signed in by whoever controls the work account. Now the trigger's function (renamed
+    `follow_login_email`, since it no longer only copies) deletes the login's accounts other than its password
+    in the statement that changes its address, on every path, and `moveLoginEmail`'s own DELETE is gone (the
+    command still says its Google accounts are unlinked). Rule 17 says so.
+  - `better_auth.account` had no index or UNIQUE key on `("providerId", "accountId")`: every Google sign-in's
+    account lookup scanned the table (one row per login and per link: 47 on DEV), and two first sign-ins of one
     Google account at the same instant could both link it, after which Better Auth refuses that account's every
-    sign-in ("Multiple accounts match"). A migration's work.
+    sign-in ("Multiple accounts match"). Now a UNIQUE key: the second link fails and that one sign-in says
+    "Couldn't sign in with Google. Try again." (`unable_to_link_account`, to Sentry), the next one works.
+  - Found by its review: Better Auth's `/link-social` keeps the address it was started on until Google sends the
+    browser back, and that return checks no session, so someone holding the old inbox's Google account, signed in
+    before `auth:move-email`, could finish a link begun before the move on the moved login, and `/unlink-account`
+    let a signed-in person reopen the first-link race below at will. Both are off (`disabledPaths` in
+    `lib/auth.ts`, 404): no screen offers either, and Google is for sign-in only (D23).
+  - Left as it is (the review's nit): a first Google sign-in by address that read the login before a change of its
+    address committed can write its link after the trigger's DELETE, a window of milliseconds, once per Google
+    account.
+  - Shown on DEV: the migration run first inside a transaction rolled back, seven checks (an address change
+    unlinks and keeps the password; another login's link stays; the copy still follows; an UPDATE that keeps the
+    address keeps the link; a change that fails keeps it; a second row for a linked Google account and a second
+    password row are refused), each rule broken once (seven breaks, each caught by a check or by the closing
+    check); then pushed, and proof 5.5 passes with 53 checks. `services/google-links.test.ts` holds the file to its
+    shape, as 210's and 211's tests hold theirs.
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5, §6's "How every commit runs" and this commit's entry, then lib/auth.ts,
@@ -2077,7 +2121,7 @@ session prints.
 ### 8.2 PROD
 
 PROD is `etezzztgafcotyahgijk`. It took 185–209 on 2026-10-08 with no app deployed against it, holding no logins
-(208 copied none) and no coaching data: it serves the marketing site's waitlist alone. It owes 210, 211 and 212; the app's PROD
+(208 copied none) and no coaching data: it serves the marketing site's waitlist alone. It owes 210 to 213; the app's PROD
 deployment and its env will live wherever the owner runs it (no file in the repo describes it). The session that
 runs this counts PROD's `auth.users` first: with no app on PROD none should appear, and a login found there is
 copied by rerunning 209's section 1 (idempotent) before the deploy.
@@ -2090,11 +2134,11 @@ copied by rerunning 209's section 1 (idempotent) before the deploy.
    chain, set `advanced.ipAddress` (the header, or the trusted proxies) in `lib/auth.ts` first, or every caller
    shares one count per path and three sign-ins in ten seconds lock everyone out.
 2. `npx supabase link --project-ref etezzztgafcotyahgijk < /dev/null`; `npx supabase migration list --linked`
-   (expect 210, 211 and 212 pending, nothing else); count `auth.users`, `profiles`, `coaches`, `clients` with
+   (expect 210, 211, 212 and 213 pending, nothing else); count `auth.users`, `profiles`, `coaches`, `clients` with
    `db query --linked` and write the numbers in the handover.
 3. `npx supabase db push --dry-run`, read it, then the owner runs `npx supabase db push` (Claude Code's auto mode
    refuses a push to PROD): 210 adds the address trigger, 211 the delete functions, 212 the indexes on the foreign
-   keys their cascades walk (each migration's closing check runs in the push).
+   keys their cascades walk, 213 the Google links' two rules (each migration's closing check runs in the push).
 4. Deploy `main` with the env of step 1.
 5. If PROD held logins, each person signs in again (D8). If it held none, `npm run coach:create -- --project
    etezzztgafcotyahgijk …` for the owner's own coach, from the repo while it is linked to PROD (step 2), with PROD's
@@ -2110,7 +2154,8 @@ copied by rerunning 209's section 1 (idempotent) before the deploy.
 ### 8.3 Undo
 
 - **A commit after 2** is undone by `git revert` of that commit alone; 211's two functions may stay (nothing calls
-  them without commit 6), and so may 210's trigger without 5.5's code (all it does is copy an address).
+  them without commit 6), and so may 210's trigger without 5.5's code (all it does is copy an address and, from
+  213, delete Google links, which only commit 7 makes).
 - **The switch itself:** `git revert` commit 2 (and every later one that landed), redeploy, and push a new
   migration (the next free number) with the SQL below. Sign-ins return to Supabase Auth with the passwords it
   holds: a password changed after the switch reverts to the old one; a login made after the switch does not exist
