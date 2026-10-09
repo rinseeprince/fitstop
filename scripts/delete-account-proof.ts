@@ -21,11 +21,14 @@
  *   2  a forced object-removal failure: the link is refused with the
  *      sentence, every row, object and login intact, and the link spent
  *   3  client A's link: their client row and every row pointing at it gone,
- *      their photo gone, B's photo kept, their login gone, the deleted notice;
- *      B and the coach intact
+ *      their audit rows gone (the coach's about them, and their own), their
+ *      photo gone, B's photo kept, their login gone, the deleted notice; B,
+ *      the coach, their audit rows, a row about nobody here and one done by
+ *      another coach's client intact
  *   4  the coach's link, in the coach's words: every row pointing at the coach
- *      or at B in every table gone, both buckets hold none of the keys, B's
- *      login and the coach's gone
+ *      or at B in every table gone, the coach's and B's audit rows gone and
+ *      the two others kept, both buckets hold none of the keys, B's login and
+ *      the coach's gone
  * Cleanup removes whatever a failed check left. No token, link, cookie or
  * password is printed.
  */
@@ -86,7 +89,14 @@ const made = {
   answers: [] as string[],
   questionId: null as string | null,
   contentId: null as string | null,
+  /** Audit rows by what they record; "unrelated" names nobody of this run's and must outlive both deletions. */
+  audit: {} as Record<AuditRow, string>,
 };
+
+type AuditRow = "aByCoach" | "aByThemselves" | "aActorOnly" | "bByCoach" | "bActorOnly" | "coachOwn" | "unrelated" | "otherClientActor";
+const RUN_AUDIT_ROWS: AuditRow[] = ["aByCoach", "aByThemselves", "aActorOnly", "bByCoach", "bActorOnly", "coachOwn", "unrelated", "otherClientActor"];
+/** The rows neither deletion may touch: one about nobody here, one done by another coach's client. */
+const SURVIVORS: AuditRow[] = ["unrelated", "otherClientActor"];
 
 let devServer: ProofServer | null = null;
 let mailbox: ProofMailbox | null = null;
@@ -214,6 +224,24 @@ async function rowsById(table: "clients" | "coaches" | "check_ins" | "check_in_a
   return count ?? 0;
 }
 
+/** Audit rows of this run still held, by id. */
+async function auditRowsHeld(rows: AuditRow[]): Promise<number> {
+  const { count, error } = await supabaseAdmin.from("audit_logs").select("id", { count: "exact", head: true }).in("id", rows.map((row) => made.audit[row]));
+  if (error) throw new Error(`audit_logs read: ${error.message}`);
+  return count ?? 0;
+}
+
+/** One audit row, as recordAuditEvent writes it. */
+async function insertAudit(row: AuditRow, actorRole: "trainer" | "client", actorId: string, clientId: string | null): Promise<void> {
+  const { data, error } = await supabaseAdmin
+    .from("audit_logs")
+    .insert({ actor_id: actorId, actor_role: actorRole, action: "delete_proof.audit", client_id: clientId })
+    .select("id")
+    .single();
+  if (error || !data) throw new Error(`audit insert: ${error?.message}`);
+  made.audit[row] = data.id;
+}
+
 /**
  * Whether a bucket still holds an object: its row in storage.objects, which
  * the Storage API's removal deletes before it answers. A download is no
@@ -315,6 +343,20 @@ async function makeThrowaways(passwords: Record<"coach" | "client", string>): Pr
   // A file no content item names, as an upload whose item was then refused leaves one.
   const contentOrphan = await uploadContentFile(file, coach.coachId, crypto.randomUUID());
   made.objects.push({ bucket: CONTENT_BUCKET, key: contentOrphan });
+
+  // The audit trail: the coach's actions about A, about B and about no client; A's and B's own, about
+  // themselves and about no client (only the actor matches); a row about nobody here; and a row done by a
+  // real client of another coach, which a deletion matching client actors too widely would take.
+  await insertAudit("aByCoach", "trainer", coach.coachId, made.clientA);
+  await insertAudit("aByThemselves", "client", made.clientA, made.clientA);
+  await insertAudit("aActorOnly", "client", made.clientA, null);
+  await insertAudit("bByCoach", "trainer", coach.coachId, made.clientB);
+  await insertAudit("bActorOnly", "client", made.clientB, null);
+  await insertAudit("coachOwn", "trainer", coach.coachId, null);
+  await insertAudit("unrelated", "trainer", crypto.randomUUID(), crypto.randomUUID());
+  const { data: other, error: otherError } = await supabaseAdmin.from("clients").select("id").neq("coach_id", coach.coachId).limit(1).single();
+  if (otherError || !other) throw new Error(`another coach's client: ${otherError?.message}`);
+  await insertAudit("otherClientActor", "client", other.id, null);
   return { coachUser: coach.userId, aUser: a.userId, bUser: b.userId };
 }
 
@@ -379,6 +421,7 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
     isAPIError(refused) ? { status: refused.statusCode, body: refused.body } : String(refused)
   );
   check("every row pointing at client A is still there", (await pointingAt("clients", clientA)).total === aBefore.total);
+  check("and every audit row of the run", (await auditRowsHeld(RUN_AUDIT_ROWS)) === RUN_AUDIT_ROWS.length);
   check("their login, its session and its profile are there, and the session still opens the app", (await loginRows(aUser)) >= 3 && (await request(base, "GET", "/api/auth/me", { session: a })).status === 200);
   check("their photo, and B's, are still in the bucket", (await holds(aPhoto.bucket, aPhoto.key)) && (await holds(bPhoto.bucket, bPhoto.key)));
   check("the link is spent: asking again from Settings makes a new one", (await linkStored(firstLink.token, aUser)).stored === false);
@@ -393,6 +436,8 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
   check("their check-in and its answer are gone", (await rowsById("check_ins", [made.checkIns[0]])) === 0 && (await rowsById("check_in_answers", [made.answers[0]])) === 0);
   check("their photo is gone from the bucket, and the upload no check-in named", !(await holds(aPhoto.bucket, aPhoto.key)) && !(await holds(aOrphan.bucket, aOrphan.key)));
   check("B's photo, whose key their check-in carried, is kept: only a key in their own folder is removed", await holds(bPhoto.bucket, bPhoto.key));
+  check("the audit rows about them or by them are gone, the coach's and their own", (await auditRowsHeld(["aByCoach", "aByThemselves", "aActorOnly"])) === 0);
+  check("B's and the coach's audit rows, and the two no deletion may touch, are kept", (await auditRowsHeld(["bByCoach", "bActorOnly", "coachOwn", ...SURVIVORS])) === 3 + SURVIVORS.length);
   check("their login is gone, with its sessions, its password and its profile", (await loginRows(aUser)) === 0);
   check("they can no longer sign in: 401", (await signIn(base, CLIENT_A_ADDRESS, passwords.client)) === 401);
   check("the session that opened the link opens nothing", (await request(base, "GET", "/api/auth/me", { session: a })).status === 401);
@@ -429,6 +474,7 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
   let noneLeft = true;
   for (const object of made.objects) noneLeft = noneLeft && !(await holds(object.bucket, object.key));
   check("both buckets hold none of the keys: B's photo, the content file, and the file no item named", noneLeft && !(await holds(contentOrphan.bucket, contentOrphan.key)));
+  check("the coach's audit rows and B's are gone; the two no deletion may touch are kept", (await auditRowsHeld(["bByCoach", "bActorOnly", "coachOwn"])) === 0 && (await auditRowsHeld(SURVIVORS)) === SURVIVORS.length);
   check("client B's login is gone, with its sessions, its password and its profile", (await loginRows(bUser)) === 0);
   check("the coach's login is gone, with its sessions, its password and its profile", (await loginRows(coachUser)) === 0);
   check("neither can sign in: 401 and 401", (await signIn(base, COACH_ADDRESS, passwords.coach)) === 401 && (await signIn(base, CLIENT_B_ADDRESS, passwords.client)) === 401);
@@ -438,6 +484,11 @@ async function cleanup(): Promise<void> {
   console.info("Cleanup");
   try {
     console.info(`  minted sessions ended: ${await endMintedSessions()}`);
+    const auditIds = Object.values(made.audit);
+    if (auditIds.length > 0) {
+      const { error } = await supabaseAdmin.from("audit_logs").delete().in("id", auditIds);
+      if (error) throw new Error(`audit rows: ${error.message}`);
+    }
     // The client rows first, then the coach's: deleting a coach row whose client holds an assignment fails on its NO ACTION key.
     const clientIds = [made.clientA, made.clientB].filter((id): id is string => id !== null);
     if (clientIds.length > 0) {
@@ -459,7 +510,8 @@ async function cleanup(): Promise<void> {
     );
     let objectsLeft = 0;
     for (const object of made.objects) if (await holds(object.bucket, object.key)) objectsLeft += 1;
-    check("cleanup: no throwaway login, coach row, client row or object is left", rows[0]?.n === 0 && objectsLeft === 0, { rows: rows[0]?.n, objectsLeft });
+    const auditLeft = Object.keys(made.audit).length > 0 ? await auditRowsHeld(Object.keys(made.audit) as AuditRow[]) : 0;
+    check("cleanup: no throwaway login, coach row, client row, audit row or object is left", rows[0]?.n === 0 && objectsLeft === 0 && auditLeft === 0, { rows: rows[0]?.n, objectsLeft, auditLeft });
   } catch (error) {
     failures += 1;
     console.error(`  ✗ cleanup failed: ${error instanceof Error ? error.message : String(error)}`);

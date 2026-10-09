@@ -18,8 +18,8 @@ const SQL = MIGRATION.replace(/--[^\n]*/g, "");
 const squash = (sql: string) => sql.replace(/\s+/g, " ").trim();
 
 /** A function's body, between its dollar quotes, as its statements. */
-function statementsOf(name: string): string[] {
-  const body = new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\(p_user_id uuid\\)[\\s\\S]*?AS \\$\\$([\\s\\S]*?)\\$\\$;`).exec(SQL)?.[1] ?? "";
+function statementsOf(name: string, sql = SQL): string[] {
+  const body = new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\(p_user_id uuid\\)[\\s\\S]*?AS \\$\\$([\\s\\S]*?)\\$\\$;`).exec(sql)?.[1] ?? "";
   return squash(body)
     .split(";")
     .map((statement) => statement.trim())
@@ -145,5 +145,79 @@ describe("migration 212: an index on every key a deleted account's cascades walk
     ]) {
       expect(check).toContain(clause);
     }
+  });
+});
+
+/**
+ * Migration 214, read as written: the two functions of migration 211, each
+ * deleting the account's audit rows first (audit_logs keys on plain uuids, so
+ * nothing cascades to it), the rest unchanged.
+ */
+const AUDIT = readFileSync(join(process.cwd(), "supabase/migrations/214_delete_account_audit_rows.sql"), "utf8");
+const AUDIT_SQL = AUDIT.replace(/--[^\n]*/g, "");
+
+describe("migration 214: a deleted account's audit rows go with its records", () => {
+  it("is pure ASCII", () => {
+    expect(/[^\p{ASCII}]/u.test(AUDIT)).toBe(false);
+  });
+
+  it("a client's: the audit rows about their client rows or done by them, then migration 211's statements", () => {
+    const [declare, first, ...rest] = statementsOf("delete_client_records");
+    expect(statementsOf("delete_client_records", AUDIT_SQL)).toEqual([
+      declare,
+      "BEGIN DELETE FROM public.audit_logs a USING public.clients cl WHERE cl.user_id = p_user_id AND (a.client_id = cl.id OR (a.actor_role = 'client' AND a.actor_id = cl.id))",
+      first.replace(/^BEGIN /, ""),
+      ...rest,
+    ]);
+  });
+
+  it("a coach's: the audit rows about or by their clients and by the coach, then migration 211's statements", () => {
+    const [, first, ...rest] = statementsOf("delete_coach_records");
+    expect(statementsOf("delete_coach_records", AUDIT_SQL)).toEqual([
+      "DECLARE n integer",
+      "client_ids uuid[]",
+      "coach_ids uuid[]",
+      "BEGIN client_ids := ARRAY(SELECT cl.id FROM public.clients cl JOIN public.coaches c ON c.id = cl.coach_id WHERE c.user_id = p_user_id)",
+      "coach_ids := ARRAY(SELECT c.id FROM public.coaches c WHERE c.user_id = p_user_id)",
+      "DELETE FROM public.audit_logs a WHERE a.client_id = ANY (client_ids) OR (a.actor_role = 'client' AND a.actor_id = ANY (client_ids)) OR (a.actor_role = 'trainer' AND a.actor_id = ANY (coach_ids))",
+      first.replace(/^BEGIN /, ""),
+      ...rest,
+    ]);
+  });
+
+  it.each([
+    ["delete_client_records", "public"],
+    ["delete_coach_records", "public, better_auth"],
+  ])("%s keeps migration 211's signature, owner rights and pinned search_path", (name, searchPath) => {
+    expect(squash(AUDIT_SQL)).toContain(
+      `CREATE OR REPLACE FUNCTION public.${name}(p_user_id uuid) RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = ${searchPath} AS $$`
+    );
+  });
+
+  it("stays executable by service_role alone", () => {
+    const sql = squash(AUDIT_SQL);
+    expect(sql).toContain(
+      "REVOKE ALL ON FUNCTION public.delete_client_records(uuid), public.delete_coach_records(uuid) FROM PUBLIC, anon, authenticated;"
+    );
+    expect(sql.match(/\bGRANT\b[^;]*;/gi)).toEqual([
+      "GRANT EXECUTE ON FUNCTION public.delete_client_records(uuid), public.delete_coach_records(uuid) TO service_role;",
+    ]);
+  });
+
+  it("closes by checking both functions' rights, as migration 211 does, and that each deletes audit rows", () => {
+    const check = AUDIT_SQL.slice(AUDIT_SQL.lastIndexOf("DO $$"));
+    for (const clause of [
+      "'public.delete_client_records(uuid)'::regprocedure",
+      "'public.delete_coach_records(uuid)'::regprocedure",
+      "p.prosecdef",
+      "p.proowner = 'postgres'::regrole",
+      "setting LIKE 'search_path=%'",
+      "a.grantee <> 'service_role'::regrole::oid",
+      "has_function_privilege('service_role', fn, 'EXECUTE')",
+      "position('DELETE FROM public.audit_logs' IN p.prosrc) > 0",
+    ]) {
+      expect(check).toContain(clause);
+    }
+    expect(check.match(/RAISE EXCEPTION/g)).toHaveLength(4);
   });
 });

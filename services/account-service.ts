@@ -166,11 +166,13 @@ async function coachIdOf(userId: string): Promise<string | null> {
  * Better Auth's beforeDelete (docs/BETTER-AUTH-PLAN.md 2.6, D20, D21): what
  * the app holds about a login goes before Better Auth deletes the login, which
  * takes its sessions, its password and its profile.
- * - A client: every object in their photo folder, then their client rows and
- *   everything under them (delete_client_records, migration 211).
+ * - A client: every object in their photo folder, then the audit rows about
+ *   or by them, their client rows and everything under them
+ *   (delete_client_records, migrations 211 and 214).
  * - A coach: every object in each of their clients' photo folders and in
  *   their own content library folder (`<coachId>/…`, each file under its
- *   item's folder), then their clients' logins, their clients and everything
+ *   item's folder), then the audit rows about or by their clients and by the
+ *   coach, their clients' logins, their clients and everything
  *   under them, and the coach row with the coach's library
  *   (delete_coach_records). Only the account's own folders are listed, so no
  *   other account's object is ever named.
