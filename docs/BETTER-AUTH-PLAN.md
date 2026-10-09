@@ -1,7 +1,7 @@
 # Better Auth — every login moves off Supabase Auth, and the account screens that were never built
 
-**Status: eleven commits SHIPPED (1 to 9, 5.1 and 5.5; the last, 9, on 2026-10-10); 10 and 11 added 2026-10-10, not
-built; the PROD switch (§8.2), after them, is the owner's.** Thirteen commits (§6: 1 to 11, 5.1 and 5.5), each with a
+**Status: twelve commits SHIPPED (1 to 10, 5.1 and 5.5; the last, 10, on 2026-10-10); 11, added 2026-10-10 with 10,
+not built; the PROD switch (§8.2), after it, is the owner's.** Thirteen commits (§6: 1 to 11, 5.1 and 5.5), each with a
 pasteable prompt, each gated.
 **The logins move in commits 1–3.** Better Auth stands up beside Supabase Auth with today's logins and their
 password hashes copied in (1); every sign-in, the invite, forgot password and reset switch over, and the user
@@ -2308,7 +2308,8 @@ browser smoke; the PROD switch (§8.2) is mine to schedule.
 
 ### Commit 10 — `fix(invitations): the Invite box always lets a coach send and says what is true; a failed email changes nothing`
 
-**STATUS: PLANNED 2026-10-10, not built.**
+**STATUS: SHIPPED `882e005e` (2026-10-10).** Migration 215 on DEV (PROD takes it in its switch, §8.2); proof 10
+(`scripts/invitation-proof.ts`) passes on DEV, 38 checks with the cleanup's; the browser smoke §7.6 is the owner's.
 
 Found by the owner after commit 9 (2026-10-10): an invitation email that failed left the client's invitation on
 "Pending", for which the Invite box shows neither Send nor Resend, so a coach told to "send manually from their
