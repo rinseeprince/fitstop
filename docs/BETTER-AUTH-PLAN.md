@@ -1748,9 +1748,10 @@ arrives or the auth:last-link command. The browser smoke is mine.
 
 ### Commit 7 — `feat(auth): Continue with Google, for sign-in only`
 
-**STATUS: SHIPPED `0a54cc5e` (2026-10-09).** No migration; proof 5.5 passes on DEV (47 checks, the moved login's
-Google unlink among them); browser smoke §7.5 owed, once `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are in
-`.env.local` (§9.1: the app refuses to start without them).
+**STATUS: SHIPPED `0a54cc5e` (2026-10-09); its follow-up, migration 213, SHIPPED `6544f59c` (2026-10-09).** 213 on
+DEV (PROD owes 210 to 213); proof 5.5 passes on DEV (53 checks, every path's Google unlink among them); browser smoke
+§7.5 owed. The Google keys are in `.env.local` (2026-10-09), the consent screen in Testing with the smoke's three
+Google accounts as its test users.
 
 - `socialProviders.google` and `account.accountLinking` in `lib/auth.ts` (§2.7); the button back on
   `app/login/page.tsx` wired to `signIn.social`; the two notices on `components/auth/login-notice.tsx` (rule 8).
@@ -2201,7 +2202,8 @@ domain>>"` in `.env.local` (DEV's verified `atletafit.com`: `EMAIL_FROM="Atletaf
 address, and the smokes use `npm run auth:last-link` for the rest.
 
 **Before commit 7: Google.** Google Cloud Console → APIs & Services → OAuth consent screen (External; the app's
-name and your support email; publish it, or add yourself as a test user) → Credentials → Create credentials →
+name and your support email; publish it, or add as test users every Google account that will sign in, §7.5's
+included: while it is in Testing, Google stops any other account on its own page) → Credentials → Create credentials →
 OAuth client ID → Web application → Authorized JavaScript origins `http://localhost:3000`; Authorized redirect
 URIs `http://localhost:3000/api/auth/callback/google` → `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` into
 `.env.local`.
