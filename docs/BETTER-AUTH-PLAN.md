@@ -1882,7 +1882,9 @@ mine.
 
 ### Commit 8 — `feat(auth): the server is ready for the client app: bearer tokens on every client route, the Expo plugin, the app's scheme`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `a8aaf698` (2026-10-09).** No migration; proof 8 (`scripts/bearer-proof.ts`) passes on DEV (31
+checks with the cleanup's); no browser smoke for this commit. The Expo plugin's Google proxy is off until the app's
+Continue with Google is built (below).
 
 - `@better-auth/expo@1.7.7`; `expo()` in `plugins` and `atletafit://`, `atletafit://*` in `trustedOrigins` (D25,
   §2.8); `lib/csrf-protection.ts` passes bearer requests (§2.2) with its test.
