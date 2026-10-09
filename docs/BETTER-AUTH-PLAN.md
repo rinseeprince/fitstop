@@ -1722,7 +1722,9 @@ arrives or the auth:last-link command. The browser smoke is mine.
 
 ### Commit 7 — `feat(auth): Continue with Google, for sign-in only`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `0a54cc5e` (2026-10-09).** No migration; proof 5.5 passes on DEV (47 checks, the moved login's
+Google unlink among them); browser smoke §7.5 owed, once `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are in
+`.env.local` (§9.1: the app refuses to start without them).
 
 - `socialProviders.google` and `account.accountLinking` in `lib/auth.ts` (§2.7); the button back on
   `app/login/page.tsx` wired to `signIn.social`; the two notices on `components/auth/login-notice.tsx` (rule 8).
