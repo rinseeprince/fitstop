@@ -26,7 +26,7 @@ vi.mock("@/services/email-service", () => ({
 }));
 
 vi.mock("@/services/invitation-service", () => ({
-  sendInvitation: vi.fn(),
+  sendInvitationIfNeeded: vi.fn(),
 }));
 
 vi.mock("@/services/audit-log-service", () => ({
@@ -48,7 +48,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { sendActivationEmail } from "@/services/email-service";
-import { sendInvitation } from "@/services/invitation-service";
+import { sendInvitationIfNeeded } from "@/services/invitation-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { recordClientStart } from "@/services/client-start-service";
 
@@ -74,7 +74,6 @@ type Statement = {
 
 let statements: Statement[] = [];
 let updateError: { message: string } | null = null;
-let clientLogin: string | null = null;
 
 // Records every statement: the service role reads past every rule in the
 // database, so a statement's filters are its whole scope. An update is awaited
@@ -100,9 +99,6 @@ function serviceRole(table: string) {
     single: () => {
       if (String(statement.arg).includes("coach:coach_id")) {
         return Promise.resolve({ data: { coach: { name: "Priya Natarajan" } }, error: null });
-      }
-      if (statement.arg === "user_id") {
-        return Promise.resolve({ data: { user_id: clientLogin }, error: null });
       }
       return Promise.resolve({ data: null, error: { message: `unexpected read of ${String(statement.arg)}` } });
     },
@@ -134,14 +130,13 @@ describe("POST /api/clients/[id]/activate", () => {
     vi.clearAllMocks();
     statements = [];
     updateError = null;
-    clientLogin = null;
     vi.mocked(coachApiRateLimit).mockResolvedValue(null);
     vi.mocked(requireCSRFProtection).mockResolvedValue(null);
     vi.mocked(getAuthenticatedCoachId).mockResolvedValue(COACH_ID);
     vi.mocked(getClientById).mockResolvedValue(owned as never);
     vi.mocked(supabaseAdmin.from).mockImplementation(serviceRole as never);
     vi.mocked(sendActivationEmail).mockResolvedValue({ success: true });
-    vi.mocked(sendInvitation).mockResolvedValue({ success: true } as never);
+    vi.mocked(sendInvitationIfNeeded).mockResolvedValue("sent");
     vi.mocked(recordClientStart).mockResolvedValue(undefined);
   });
 
@@ -203,6 +198,7 @@ describe("POST /api/clients/[id]/activate", () => {
       expect(recordClientStart).not.toHaveBeenCalled();
       expect(recordAuditEvent).not.toHaveBeenCalled();
       expect(sendActivationEmail).not.toHaveBeenCalled();
+      expect(sendInvitationIfNeeded).not.toHaveBeenCalled();
     });
 
     it("a client with no weight reading is 409", async () => {
@@ -226,7 +222,7 @@ describe("POST /api/clients/[id]/activate", () => {
     const res = await activate(BODY).response;
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ success: true, data: { activated: true } });
+    expect(await res.json()).toEqual({ success: true, data: { activated: true, invitation: "sent" } });
     const update = statements.find((s) => s.verb === "update");
     expect(update).toEqual({
       table: "clients",
@@ -248,28 +244,47 @@ describe("POST /api/clients/[id]/activate", () => {
     );
   });
 
-  it("reads the coach's name and the client's login through the service role, scoped the same way, and invites a client with no login", async () => {
+  it("reads the coach's name for the activation email through the service role, scoped the same way", async () => {
     await activate(BODY).response;
 
-    await vi.waitFor(() => {
-      expect(sendActivationEmail).toHaveBeenCalledWith("maya@example.com", "Maya Okafor", "Priya Natarajan");
-      expect(sendInvitation).toHaveBeenCalledWith(CLIENT_ID);
-    });
-    const reads = statements.filter((s) => s.verb === "select");
-    expect(reads).toEqual([
+    await vi.waitFor(() =>
+      expect(sendActivationEmail).toHaveBeenCalledWith("maya@example.com", "Maya Okafor", "Priya Natarajan")
+    );
+    expect(statements.filter((s) => s.verb === "select")).toEqual([
       { table: "clients", verb: "select", arg: "coach:coach_id (name)", filters: [["id", CLIENT_ID], ["coach_id", COACH_ID]] },
-      { table: "clients", verb: "select", arg: "user_id", filters: [["id", CLIENT_ID], ["coach_id", COACH_ID]] },
     ]);
   });
 
-  it("sends no invite to a client who already has a login", async () => {
-    clientLogin = "user-73";
+  // D42: the invitation is the service's to decide (sendInvitationIfNeeded:
+  // none for a client with an account or a link that still works), handed the
+  // client the ownership check loaded, and awaited, so the answer says what
+  // it did and the dialog can warn when it didn't send.
+  it.each(["sent", "failed", "not_needed"] as const)(
+    "awaits the client's invitation once the activation is written, and answers what it did (%s)",
+    async (outcome) => {
+      vi.mocked(getClientById).mockResolvedValue({ ...owned, userId: undefined } as never);
+      vi.mocked(sendInvitationIfNeeded).mockResolvedValue(outcome);
 
-    await activate(BODY).response;
+      const res = await activate(BODY).response;
 
-    await vi.waitFor(() => expect(sendActivationEmail).toHaveBeenCalled());
-    await vi.waitFor(() => expect(statements.filter((s) => s.verb === "select")).toHaveLength(2));
-    expect(sendInvitation).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true, data: { activated: true, invitation: outcome } });
+      expect(sendInvitationIfNeeded).toHaveBeenCalledTimes(1);
+      expect(sendInvitationIfNeeded).toHaveBeenCalledWith({ id: CLIENT_ID, email: "maya@example.com", userId: undefined });
+      expect(vi.mocked(recordClientStart).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(sendInvitationIfNeeded).mock.invocationCallOrder[0]
+      );
+    }
+  );
+
+  it("hands the service the client's login and address, so a client with an account is sent nothing and a link goes to their address now", async () => {
+    vi.mocked(getClientById).mockResolvedValue({ ...owned, userId: "user-73" } as never);
+    vi.mocked(sendInvitationIfNeeded).mockResolvedValue("not_needed");
+
+    const res = await activate(BODY).response;
+
+    expect(await res.json()).toEqual({ success: true, data: { activated: true, invitation: "not_needed" } });
+    expect(sendInvitationIfNeeded).toHaveBeenCalledWith({ id: CLIENT_ID, email: "maya@example.com", userId: "user-73" });
   });
 
   it("a failed update is a 500, and nothing after it runs", async () => {
@@ -283,6 +298,7 @@ describe("POST /api/clients/[id]/activate", () => {
     expect(recordClientStart).not.toHaveBeenCalled();
     expect(recordAuditEvent).not.toHaveBeenCalled();
     expect(sendActivationEmail).not.toHaveBeenCalled();
+    expect(sendInvitationIfNeeded).not.toHaveBeenCalled();
     expect(statements.filter((s) => s.verb === "select")).toEqual([]);
     expect(spy).toHaveBeenCalledWith("Supabase update error:", "connection reset");
     spy.mockRestore();

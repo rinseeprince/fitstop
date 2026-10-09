@@ -20,8 +20,9 @@
  * at the end:
  *   1  the coach activates a pending client of theirs with no login → 200:
  *      active from the start date sent, with the first check-in and the
- *      message, audited as client.activate — and invited, because the read of
- *      the client's login (fire-and-forget, after the answer) found none
+ *      message, audited as client.activate — and its invitation awaited, the
+ *      answer saying whether it went (D42; it holds no link yet), its row
+ *      written only when it did
  *   2  the coach activates another coach's pending client → 403 Forbidden, the
  *      row as it was, nothing audited, nobody invited
  *   3  a signed-in client on the coach's attention feed → before: 404 "Coach
@@ -222,9 +223,14 @@ async function access(mode: "before" | "after"): Promise<void> {
       firstCheckInDue: DUE,
       welcomeMessage: "Activation proof welcome",
     });
+    // The invitation's email goes wherever this server's Resend sends it: to
+    // the fixture address it is either taken (sent) or refused (failed).
+    const invitation = (activated.json as { data?: { invitation?: string } } | null)?.data?.invitation;
     check(
-      "→ 200 { activated: true }",
-      activated.status === 200 && activated.text === JSON.stringify({ success: true, data: { activated: true } }),
+      "→ 200 { activated: true, invitation: sent | failed }",
+      activated.status === 200 &&
+        (invitation === "sent" || invitation === "failed") &&
+        activated.text === JSON.stringify({ success: true, data: { activated: true, invitation } }),
       { status: activated.status, text: activated.text.slice(0, 200) }
     );
     const ownRow = await activationRow(own);
@@ -238,10 +244,12 @@ async function access(mode: "before" | "after"): Promise<void> {
     );
     const audited = await eventually(() => countFor("audit_logs", own));
     check("…audited as client.activate", audited === 1, audited);
-    const invited = await eventually(() => countFor("client_invitations", own));
-    check("…and invited: the read of its login, after the answer, found none", invited === 1, invited);
-    // The invite's email attempt ends in a status write; let it land before cleanup.
-    await settle(1500);
+    const invited = await countFor("client_invitations", own);
+    check(
+      "…and invited as the answer says: its row there only when the email went",
+      invited === (invitation === "sent" ? 1 : 0),
+      { invitation, invited }
+    );
 
     console.info("2. The coach activates another coach's pending client");
     const foreign = await throwawayClient(OTHER_COACH_ID, `activation-proof-foreign-${stamp}@fixture.local`, "Activation proof foreign");

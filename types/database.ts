@@ -1010,7 +1010,6 @@ export type Database = {
           expires_at: string | null
           id: string
           invited_at: string | null
-          status: string
           token: string | null
           updated_at: string
         }
@@ -1022,7 +1021,6 @@ export type Database = {
           expires_at?: string | null
           id?: string
           invited_at?: string | null
-          status?: string
           token?: string | null
           updated_at?: string
         }
@@ -1034,7 +1032,6 @@ export type Database = {
           expires_at?: string | null
           id?: string
           invited_at?: string | null
-          status?: string
           token?: string | null
           updated_at?: string
         }

@@ -113,13 +113,13 @@ export async function acceptClientInvitation({ token, password }: { token: strin
 
     const { headers } = await auth.api.signInEmail({ body: { email, password }, returnHeaders: true });
 
-    // Last, and only while still pending: of two accepts racing on one
-    // token, one marks it.
+    // Last, and only while still unused (an invitation is its dates,
+    // migration 215): of two accepts racing on one token, one marks it.
     const { data: marked, error: markError } = await supabaseAdmin
       .from("client_invitations")
-      .update({ status: "accepted", accepted_at: new Date().toISOString() })
+      .update({ accepted_at: new Date().toISOString() })
       .eq("id", invitation.id)
-      .neq("status", "accepted")
+      .is("accepted_at", null)
       .select("id");
     if (markError) throw new Error(`Failed to mark the invitation accepted: ${markError.message}`);
     if (!marked?.length) {

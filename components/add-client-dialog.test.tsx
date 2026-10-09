@@ -12,9 +12,10 @@ vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: preference.current, isLoading: false, error: undefined }),
 }));
 
-vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+const { toast } = vi.hoisted(() => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
 }));
+vi.mock("sonner", () => ({ toast }));
 
 class ResizeObserverMock {
   observe() {}
@@ -48,6 +49,7 @@ async function openDialog() {
 
 describe("AddClientDialog", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     preference.current = "metric";
     cleanup();
   });
@@ -103,6 +105,45 @@ describe("AddClientDialog", () => {
     await waitFor(() =>
       expect(screen.queryByText("Add new client")).not.toBeInTheDocument()
     );
+  });
+
+  // Rule 23: a questionnaire add whose invitation didn't send still added the
+  // client; the warning says where to send it from.
+  it("warns when the questionnaire's invitation didn't send, and still closes on the added client", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ client: { id: "new-1" }, inviteSent: false }),
+    } as Response);
+    const user = await openDialog();
+
+    await user.click(screen.getByText("Send intake questionnaire"));
+    await user.type(screen.getByLabelText(/name/i), "Samuel James");
+    await user.type(screen.getByLabelText(/email/i), "sam@example.com");
+    await user.click(screen.getByRole("button", { name: /add & send questionnaire/i }));
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith("Client added", {
+        description: "The invitation email didn't send. Send it from Invite on their page.",
+      })
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByText("Add new client")).not.toBeInTheDocument());
+  });
+
+  it("says the questionnaire went when its invitation did", async () => {
+    mockCreateOk();
+    const user = await openDialog();
+
+    await user.click(screen.getByText("Send intake questionnaire"));
+    await user.type(screen.getByLabelText(/name/i), "Samuel James");
+    await user.type(screen.getByLabelText(/email/i), "sam@example.com");
+    await user.click(screen.getByRole("button", { name: /add & send questionnaire/i }));
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Client added", { description: "Intake questionnaire sent to sam@example.com." })
+    );
+    expect(toast.warning).not.toHaveBeenCalled();
   });
 
   it("tells the caller a client was added", async () => {

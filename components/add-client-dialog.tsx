@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { createClientSchema, type CreateClientInput } from "@/lib/validations/client";
 import { cn } from "@/lib/utils";
+import { INVITATION_DIDNT_SEND } from "@/lib/constants";
 import {
   FOCUS_RING,
   THUMB_CLASS,
@@ -111,9 +112,7 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
       }
 
       if (setupMode === "intake" && !result.inviteSent) {
-        toast.error("Client added", {
-          description: `${data.name} added but invite email failed — send manually from their profile.`,
-        });
+        toast.warning("Client added", { description: INVITATION_DIDNT_SEND });
       } else {
         toast.success("Client added", {
           description:

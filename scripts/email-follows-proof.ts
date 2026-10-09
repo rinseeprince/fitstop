@@ -317,9 +317,9 @@ async function prove(base: string, box: ProofMailbox): Promise<void> {
     client_id: invitedId,
     email: INVITED,
     token: inviteToken,
-    status: "sent",
     invited_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    accepted_at: null,
   });
   if (inviteError) throw new Error(`invitation insert: ${inviteError.message}`);
   const pendingId = await pendingClient(coachId, "Email follows proof pending client", PENDING);

@@ -110,8 +110,8 @@ describe("acceptClientInvitation", () => {
       {
         table: "client_invitations",
         verb: "update",
-        row: { status: "accepted", accepted_at: expect.any(String) },
-        filters: [["eq", "id", INVITATION.id], ["neq", "status", "accepted"], ["select", "id"]],
+        row: { accepted_at: expect.any(String) },
+        filters: [["eq", "id", INVITATION.id], ["is", "accepted_at", null], ["select", "id"]],
       },
     ]);
     expect(api.signInEmail.mock.invocationCallOrder[0]).toBeLessThan(
@@ -176,6 +176,14 @@ describe("acceptClientInvitation", () => {
     expect(await accept()).toEqual({ accepted: false, refusal: "used" });
     expect(query).toHaveBeenCalledWith(DELETE_BY_ID, [USER.id]);
     expect(api.signInEmail).not.toHaveBeenCalled();
+  });
+
+  it("marks the invitation used by its accepted_at alone (migration 215), and only while it is empty", async () => {
+    await accept();
+    const mark = writes.find((write) => write.table === "client_invitations");
+    expect(Object.keys(mark?.row as object)).toEqual(["accepted_at"]);
+    expect(new Date((mark?.row as { accepted_at: string }).accepted_at).getTime()).toBeGreaterThan(0);
+    expect(mark?.filters).toContainEqual(["is", "accepted_at", null]);
   });
 
   it("of two accepts racing on one token, the one that finds it marked deletes its login and reads used", async () => {

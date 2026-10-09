@@ -1,6 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
+import { Loader2, UserPlus } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -11,17 +13,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
-import { toast } from "sonner"
+import { TextSkeleton } from "@/components/text-skeleton"
+import { FOCUS_RING, THUMB_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
 import {
-  Loader2,
-  Mail,
-  CheckCircle,
-  Clock,
-  AlertCircle,
-  UserPlus,
-} from "lucide-react"
-import type { ClientInvitation, InvitationStatus } from "@/types/auth"
+  clientInvitationKey,
+  useClearClientInvitation,
+  useClientInvitation,
+} from "@/hooks/use-client-invitation"
+import { AUTH_ERROR_SENTENCES } from "@/lib/auth-error-messages"
+import { formatDateOnlyShort } from "@/lib/date-helpers"
+import { cn } from "@/lib/utils"
+import type { InvitationRead } from "@/types/auth"
 
 interface InviteClientDialogProps {
   client: {
@@ -29,208 +31,143 @@ interface InviteClientDialogProps {
     name: string
     email: string
   }
-  trigger?: React.ReactNode
+  trigger: React.ReactNode
 }
 
-type InvitationState = {
-  invitation: ClientInvitation | null
-  hasAccount: boolean
+const SENTENCE_CLASS = "text-sm text-[#5a7d82]"
+// TextSkeleton's own fill is the dark bands'; the dialog is white.
+const PENDING_FILL = "bg-[rgba(13,148,136,0.08)]"
+const PRIMARY_CLASS = cn("bg-[#0d9488] text-white hover:bg-[#0b7f75]", FOCUS_RING)
+const TOO_MANY_REQUESTS = 429
+/**
+ * The statuses the box's route refuses a send with (404, 409, 500, 502), each
+ * carrying the route's own plain sentence. Any other answer (the proxy's 401
+ * for a session that ended, the CSRF check's 403) is not the route's, and its
+ * words are not for a coach.
+ */
+const SEND_REFUSALS = new Set([404, 409, 500, 502])
+
+/**
+ * What the box says (rule 21), worked out from the read: an account first,
+ * then whether an invitation went, when, and whether its link still works.
+ */
+export function invitationSentence(name: string, { hasAccount, invitation }: InvitationRead): string {
+  if (hasAccount) return `${name} has an account.`
+  if (!invitation) return "Not invited yet."
+  const { sentOn, expiresOn, linkWorks } = invitation
+  const link = linkWorks
+    ? expiresOn
+      ? `The link works until ${formatDateOnlyShort(expiresOn)}.`
+      : "The link works."
+    : expiresOn
+      ? `The link expired on ${formatDateOnlyShort(expiresOn)}.`
+      : "The link no longer works."
+  return sentOn ? `Sent ${formatDateOnlyShort(sentOn)}. ${link}` : link
 }
 
-const STATUS_CONFIG: Record<
-  InvitationStatus | "none",
-  { label: string; variant: "default" | "secondary" | "outline"; icon: React.ElementType }
-> = {
-  none: { label: "Not invited", variant: "outline", icon: AlertCircle },
-  pending: { label: "Pending", variant: "secondary", icon: Clock },
-  sent: { label: "Invitation sent", variant: "secondary", icon: Mail },
-  accepted: { label: "Accepted", variant: "default", icon: CheckCircle },
-  expired: { label: "Expired", variant: "outline", icon: AlertCircle },
+/** Why a send didn't go, in plain words: the route's own sentence, never the email service's or another layer's. */
+function notSentReason(status: number, error: string | undefined): string {
+  if (status === TOO_MANY_REQUESTS) return AUTH_ERROR_SENTENCES.tooManyAttempts
+  return SEND_REFUSALS.has(status) && error ? error : AUTH_ERROR_SENTENCES.generic
 }
 
-export function InviteClientDialog({
-  client,
-  trigger,
-}: InviteClientDialogProps) {
+/**
+ * The Invite box on a client's page (rules 20 to 22): the client's invitation
+ * read as the box opens, and a send while the client has no account. The read
+ * is cleared as the box opens, so it never shows an earlier open's answer
+ * (CONVENTIONS §7); pending, its sentence is pending text and no send button shows.
+ * A send closes the box in the same tick its answer lands; one that didn't go
+ * leaves the box open as it was, and its sentence and button with it.
+ */
+export function InviteClientDialog({ client, trigger }: InviteClientDialogProps) {
   const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
+  // The read is held from the first open on, never dropped by a close: Radix
+  // re-renders the closing card from live state, so a read that stopped with
+  // the close would fade the card out on pending text (CONVENTIONS §7 → "No
+  // frame disagrees", rule 5). Each open clears it.
+  const [reading, setReading] = useState(false)
+  // The send in flight, owned here so a success's fading card keeps its busy
+  // button (add-client-dialog's shape); a failure and the next open clear it.
   const [sending, setSending] = useState(false)
-  const [state, setState] = useState<InvitationState>({
-    invitation: null,
-    hasAccount: false,
-  })
+  const clearInvitation = useClearClientInvitation()
+  const { invitation, failed, retrying, retry } = useClientInvitation(client.id, reading)
 
-  // Fetch invitation status when dialog opens
-  useEffect(() => {
-    if (open) {
-      fetchInvitationStatus()
-    }
-  }, [open])
-
-  const fetchInvitationStatus = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch(`/api/invitations/status/${client.id}`)
-      const data = await response.json()
-
-      if (data.success) {
-        setState({
-          invitation: data.data.invitation,
-          hasAccount: data.data.hasAccount,
-        })
-      }
-    } catch (error) {
-      console.error("Error fetching invitation status:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleSendInvitation = async () => {
-    setSending(true)
-    try {
-      const response = await fetch("/api/invitations/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId: client.id }),
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        toast.success(`Invitation sent to ${client.email}`)
-        setState((prev) => ({
-          ...prev,
-          invitation: data.data,
-        }))
-      } else {
-        toast.error(data.error || "Failed to send invitation")
-      }
-    } catch (error) {
-      console.error("Error sending invitation:", error)
-      toast.error("Failed to send invitation")
-    } finally {
+  const handleOpenChange = (next: boolean) => {
+    // A send settles before the box closes: its answer decides whether it does.
+    if (!next && sending) return
+    if (next) {
+      void clearInvitation(client.id)
+      setReading(true)
       setSending(false)
     }
+    setOpen(next)
   }
 
-  const status = state.hasAccount
-    ? "accepted"
-    : state.invitation?.status || "none"
-  const statusConfig = STATUS_CONFIG[status]
-  const StatusIcon = statusConfig.icon
-
-  const canSendInvitation =
-    !state.hasAccount && (!state.invitation || status === "expired")
-  const canResendInvitation =
-    !state.hasAccount && state.invitation?.status === "sent"
+  const send = async () => {
+    setSending(true)
+    try {
+      const response = await fetch(clientInvitationKey(client.id), { method: "POST" })
+      const body = (await response.json()) as { success?: boolean; error?: string }
+      if (response.ok && body.success) {
+        toast.success("Invitation sent", { description: `Sent to ${client.email}.` })
+        setOpen(false)
+        return
+      }
+      setSending(false)
+      toast.error("Invitation not sent", { description: notSentReason(response.status, body.error) })
+    } catch (error) {
+      console.error("Error sending the invitation:", error)
+      setSending(false)
+      toast.error("Invitation not sent", { description: AUTH_ERROR_SENTENCES.generic })
+    }
+  }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || (
-          <Button variant="outline" size="sm">
-            <UserPlus className="mr-2 h-4 w-4" />
-            Invite
-          </Button>
-        )}
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
 
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Invite {client.name}</DialogTitle>
-          <DialogDescription>
-            Send an invitation email so {client.name} can access their client
-            portal.
-          </DialogDescription>
+          <div className="flex items-center gap-3">
+            <div className={cn(THUMB_CLASS, "h-9 w-9")}>
+              <UserPlus className="h-4 w-4" strokeWidth={1.5} />
+            </div>
+            <DialogTitle>Invite {client.name}</DialogTitle>
+          </div>
+          <DialogDescription className="pt-2">{client.email}</DialogDescription>
         </DialogHeader>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Client info */}
-            <div className="rounded-lg border p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">{client.name}</p>
-                  <p className="text-sm text-muted-foreground">{client.email}</p>
-                </div>
-                <Badge variant={statusConfig.variant}>
-                  <StatusIcon className="mr-1 h-3 w-3" />
-                  {statusConfig.label}
-                </Badge>
-              </div>
-            </div>
-
-            {/* Status-specific messaging */}
-            {state.hasAccount && (
-              <div className="flex items-start gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-700">
-                <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <p>
-                  {client.name} has already set up their account and can access
-                  the client portal.
-                </p>
-              </div>
-            )}
-
-            {state.invitation?.status === "sent" && !state.hasAccount && (
-              <div className="flex items-start gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
-                <Mail className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <div>
-                  <p>
-                    An invitation was sent on{" "}
-                    {new Date(state.invitation.invitedAt!).toLocaleDateString()}.
-                  </p>
-                  <p className="mt-1 text-primary">
-                    You can resend the invitation if needed.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {status === "expired" && (
-              <div className="flex items-start gap-2 rounded-lg bg-warning/10 p-3 text-sm text-warning">
-                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <p>
-                  The previous invitation has expired. Send a new invitation for{" "}
-                  {client.name} to set up their account.
-                </p>
-              </div>
-            )}
-
-            {status === "none" && (
-              <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-                <UserPlus className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <p>
-                  {client.name} hasn&apos;t been invited yet. Send an invitation
-                  so they can access their training plans and progress.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            Close
-          </Button>
-
-          {(canSendInvitation || canResendInvitation) && (
-            <Button onClick={handleSendInvitation} disabled={sending}>
-              {sending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending...
-                </>
+        <div className="py-1">
+          {failed ? (
+            <p className={SENTENCE_CLASS}>Couldn&apos;t load the invitation.</p>
+          ) : (
+            <p className={SENTENCE_CLASS}>
+              {invitation ? (
+                invitationSentence(client.name, invitation)
               ) : (
-                <>
-                  <Mail className="mr-2 h-4 w-4" />
-                  {canResendInvitation ? "Resend Invitation" : "Send Invitation"}
-                </>
+                <TextSkeleton className={cn("w-60", PENDING_FILL)} />
               )}
+            </p>
+          )}
+        </div>
+
+        {/* Cancel in every state, so at sm and up, where the footer's buttons
+            sit in one row, it keeps its height and the card doesn't move when
+            the read lands. */}
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={sending}>
+            Cancel
+          </Button>
+          {failed && (
+            <Button className={PRIMARY_CLASS} onClick={retry} disabled={retrying}>
+              {retrying && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Try again
+            </Button>
+          )}
+          {invitation && !invitation.hasAccount && (
+            <Button className={PRIMARY_CLASS} onClick={() => void send()} disabled={sending}>
+              {sending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              {invitation.invitation ? "Resend invitation" : "Send invitation"}
             </Button>
           )}
         </DialogFooter>

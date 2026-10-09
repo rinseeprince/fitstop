@@ -161,7 +161,7 @@ async function makeInvitedClient(made: Made, coachId: string, who: string): Prom
   const expires = new Date(Date.now() + 7 * 86_400_000).toISOString();
   const { error: inviteError } = await supabaseAdmin
     .from("client_invitations")
-    .insert({ client_id: client.id, token, email, status: "sent", invited_at: new Date().toISOString(), expires_at: expires });
+    .insert({ client_id: client.id, token, email, invited_at: new Date().toISOString(), expires_at: expires, accepted_at: null });
   if (inviteError) throw new Error(`invitation insert: ${inviteError.message}`);
   return { clientId: client.id, token, email };
 }
@@ -271,8 +271,8 @@ async function prove(base: string, made: Made): Promise<void> {
   const invitedSession: ProofSession = { label: "invited client", headers: { Cookie: acceptCookie ?? "" } };
   const invitedMe = await request(base, "GET", "/api/client/me", { session: invitedSession });
   check("the cookie opens /api/client/me as the invited client, never the user the body named", invitedMe.status === 200 && (invitedMe.json as { data?: { id?: string } } | null)?.data?.id === invited.clientId, evidence(invitedMe));
-  const [login] = await sql<{ id: string; verified: boolean; role: string | null; linked: boolean; status: string }>(
-    `SELECT u.id, u."emailVerified" AS verified, p.role, (c.user_id = u.id) AS linked, i.status
+  const [login] = await sql<{ id: string; verified: boolean; role: string | null; linked: boolean; used: boolean }>(
+    `SELECT u.id, u."emailVerified" AS verified, p.role, (c.user_id = u.id) AS linked, (i.accepted_at IS NOT NULL) AS used
        FROM better_auth."user" u
        LEFT JOIN public.profiles p ON p.user_id = u.id
        JOIN public.clients c ON c.id = $2
@@ -280,7 +280,7 @@ async function prove(base: string, made: Made): Promise<void> {
       WHERE u.email = $1`,
     [invited.email, invited.clientId]
   );
-  check("the login is on the invited address, verified, a client, linked, and the invitation accepted", login?.verified === true && login.role === "client" && login.linked === true && login.status === "accepted", login);
+  check("the login is on the invited address, verified, a client, linked, and the invitation accepted", login?.verified === true && login.role === "client" && login.linked === true && login.used === true, login);
   const again = await request(base, "POST", "/api/invitations/accept", { body: { token: invited.token, password: passwordFor(invited.email, 1) } });
   check("a second accept of the token → 400, already used", again.status === 400 && (again.json as { error?: string } | null)?.error === "This invitation has already been used", evidence(again));
   const usedLookup = await request(base, "GET", `/api/invitations/${invited.token}`);

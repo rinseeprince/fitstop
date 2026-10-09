@@ -7,7 +7,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { activateClientSchema } from "@/lib/validations/client-intake";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { sendActivationEmail } from "@/services/email-service";
-import { sendInvitation } from "@/services/invitation-service";
+import { sendInvitationIfNeeded } from "@/services/invitation-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { recordClientStart } from "@/services/client-start-service";
 import { getClientTodayString } from "@/services/today-service";
@@ -133,12 +133,15 @@ export async function POST(
     // Send activation email (fire-and-forget)
     fireAndForgetActivationEmail(clientId, coachId, client.email, client.name);
 
-    // For manual-path clients without an account, auto-send invite (fire-and-forget)
-    fireAndForgetInviteIfNeeded(clientId, coachId);
+    // Their invitation, only when they have no account and no link that still
+    // works (D42): one invited before activation gets no second email, whose
+    // link would end the first. Awaited, so the coach is told when it didn't
+    // send; the client is active either way.
+    const invitation = await sendInvitationIfNeeded({ id: clientId, email: client.email, userId: client.userId });
 
     return NextResponse.json({
       success: true,
-      data: { activated: true },
+      data: { activated: true, invitation },
     });
   } catch (error) {
     console.error("Error activating client:", error instanceof Error ? error.message : "Unknown error");
@@ -167,26 +170,5 @@ function fireAndForgetActivationEmail(
     await sendActivationEmail(clientEmail, clientName, coachName);
   })().catch((err: unknown) => {
     console.error("Failed to send activation email:", err instanceof Error ? err.message : "Unknown error");
-  });
-}
-
-function fireAndForgetInviteIfNeeded(clientId: string, coachId: string) {
-  (async () => {
-    // Check if client already has an auth account
-    const { data } = await supabaseAdmin
-      .from("clients")
-      .select("user_id")
-      .eq("id", clientId)
-      .eq("coach_id", coachId)
-      .single();
-
-    if (data && !data.user_id) {
-      const result = await sendInvitation(clientId);
-      if (!result.success) {
-        console.warn("Auto-invite failed at activation — coach can resend from profile:", result.error);
-      }
-    }
-  })().catch((err: unknown) => {
-    console.error("Failed to auto-send invite at activation:", err instanceof Error ? err.message : "Unknown error");
   });
 }

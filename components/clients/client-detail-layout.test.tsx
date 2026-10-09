@@ -91,6 +91,16 @@ describe("ClientDetailLayout", () => {
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
 
+  // Rule 20: the person-plus icon opens the Invite box, and says so when hovered.
+  it("names the header's person-plus icon Invite", () => {
+    renderLayout();
+
+    const invite = screen.getByRole("button", { name: "Invite" });
+    expect(invite).toHaveAttribute("aria-label", "Invite");
+    expect(invite).toHaveAttribute("title", "Invite");
+    expect(invite).toHaveAttribute("type", "button");
+  });
+
   it("hands the column to the tab once the record resolves", () => {
     renderLayout({ isLoading: false });
 

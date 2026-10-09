@@ -70,7 +70,12 @@ export function ClientDetailLayout({
               <InviteClientDialog
                 client={client}
                 trigger={
-                  <button className="relative text-[#93b0b4] hover:text-[#5a7d82] transition-colors p-1">
+                  <button
+                    type="button"
+                    aria-label="Invite"
+                    title="Invite"
+                    className="relative text-[#93b0b4] hover:text-[#5a7d82] transition-colors p-1"
+                  >
                     <UserPlus className="h-[15px] w-[15px]" />
                   </button>
                 }

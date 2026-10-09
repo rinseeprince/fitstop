@@ -327,6 +327,10 @@ export const ACCOUNT_DELETION_TAKES = {
   client: "This deletes your account and everything recorded about you, including your photos. Your coach keeps none of it. It can't be undone.",
 } as const;
 export type DeletedAccount = keyof typeof ACCOUNT_DELETION_TAKES;
+// What a coach reads when adding a client with the questionnaire, or
+// activating one, sent no invitation (rule 23): the client stands, and the
+// Invite box on their page sends it.
+export const INVITATION_DIDNT_SEND = "The invitation email didn't send. Send it from Invite on their page.";
 // Where Log out lands (contexts/auth-context.tsx), loaded as a fresh page, and
 // the marker that has the login page say "Logged out successfully".
 export const LOGGED_OUT_PARAM = "logged-out";

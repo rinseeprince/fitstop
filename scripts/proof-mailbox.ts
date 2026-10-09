@@ -5,7 +5,9 @@
  * the only place they exist. The proof's next dev is started with Resend
  * pointed here (startProofServer's `emailTo`), so every email the server sends
  * lands in this process and none leaves the machine. It answers as Resend's
- * API does: POST /emails, 200 with the email's id.
+ * API does: POST /emails, 200 with the email's id. An address the proof has it
+ * refuse is answered as Resend refuses one it won't deliver to (its sandbox's
+ * 403), so a proof can watch the app take a failed send (commit 10).
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
@@ -17,10 +19,19 @@ export type ProofMailbox = {
   url: string;
   /** Every email received, in order. */
   emails: MailboxEmail[];
+  /** Every email refused, in order: none of them is in `emails`. */
+  refused: MailboxEmail[];
+  /** Refuses every email to these addresses from now on, until `accept` takes them again. */
+  refuse(...addresses: string[]): void;
+  accept(...addresses: string[]): void;
   /** The first email to `to` with `subject`, waiting for it to arrive; null when none comes in time. */
   waitForEmail(to: string, subject: string, timeoutMs?: number): Promise<MailboxEmail | null>;
   stop(): Promise<void>;
 };
+
+/** Resend's answer to an address its sandbox won't deliver to: the error the app must never show a coach. */
+export const REFUSAL_MESSAGE =
+  "You can only send testing emails to your own email address. To send emails to other recipients, please verify a domain at resend.com/domains.";
 
 /** Better Auth sends after its answer has gone: an email may land a moment after the request that caused it. */
 const ARRIVAL_TIMEOUT_MS = 20_000;
@@ -43,6 +54,8 @@ function answer(response: ServerResponse, status: number, body: unknown): void {
 /** Starts the mailbox on a free port of 127.0.0.1. */
 export async function startProofMailbox(): Promise<ProofMailbox> {
   const emails: MailboxEmail[] = [];
+  const refused: MailboxEmail[] = [];
+  const refusing = new Set<string>();
 
   const server = createServer((request, response) => {
     if (request.method !== "POST" || request.url !== "/emails") {
@@ -52,12 +65,18 @@ export async function startProofMailbox(): Promise<ProofMailbox> {
     readBody(request)
       .then((raw) => {
         const sent = JSON.parse(raw) as { to?: string | string[]; subject?: string; text?: string; html?: string };
-        emails.push({
+        const email = {
           to: (Array.isArray(sent.to) ? sent.to : [sent.to ?? ""]).map((address) => address.toLowerCase()),
           subject: sent.subject ?? "",
           text: sent.text ?? "",
           html: sent.html ?? "",
-        });
+        };
+        if (email.to.some((address) => refusing.has(address))) {
+          refused.push(email);
+          answer(response, 403, { statusCode: 403, name: "validation_error", message: REFUSAL_MESSAGE });
+          return;
+        }
+        emails.push(email);
         answer(response, 200, { id: `proof-email-${emails.length}` });
       })
       .catch((error: unknown) => {
@@ -77,6 +96,9 @@ export async function startProofMailbox(): Promise<ProofMailbox> {
   return {
     url: `http://127.0.0.1:${address.port}`,
     emails,
+    refused,
+    refuse: (...addresses) => addresses.forEach((address) => refusing.add(address.toLowerCase())),
+    accept: (...addresses) => addresses.forEach((address) => refusing.delete(address.toLowerCase())),
     async waitForEmail(to, subject, timeoutMs = ARRIVAL_TIMEOUT_MS) {
       const started = Date.now();
       while (Date.now() - started < timeoutMs) {

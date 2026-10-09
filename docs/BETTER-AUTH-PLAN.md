@@ -14,8 +14,8 @@ the server ready for the client app (8). **Commit 9** writes the docs. **Commits
 found after commit 9 (2026-10-10), both before PROD switches (§8.2): the Invite box always lets a coach send while the
 client has no account, says what is true, and a failed email changes nothing (10); the sign-in pages and every email
 look like atletafit.com, the marketing site a coach arrives from (11). This plan adds migrations 208 to 213, which DEV
-and PROD hold (PROD took 208 and 209 on 2026-10-08 and 210 to 213 on 2026-10-09, §8.2), and commit 10's, the next free
-number when it is built (§2.1). **Billing is not here:** Better Auth's
+and PROD hold (PROD took 208 and 209 on 2026-10-08 and 210 to 213 on 2026-10-09, §8.2), and 215 (commit 10, §2.1),
+which DEV holds and PROD takes in its switch (§8.2). **Billing is not here:** Better Auth's
 Stripe plugin later adds one column and one table and touches nothing this plan builds (D27). Every file and line
 named here was grepped on 2026-10-07 at `d5f23299` (commits 10 and 11: 2026-10-10 at `56c8c7b7`); every Better Auth
 fact is from its docs and source at **1.7.7** (§2.9), the version commit 1 pins.
@@ -220,7 +220,7 @@ not by the smokes (§7).
 
 ## 2. Target shape
 
-### 2.1 Data model: migrations 208, 209, 210, 211, 212 and 213, and commit 10's (215)
+### 2.1 Data model: migrations 208, 209, 210, 211, 212, 213 and 215
 
 **Better Auth's tables live in their own schema, `better_auth`, under Better Auth's own names and column names
 (D5).** PostgREST serves `public` alone, so nothing on the Data API can reach them with any key; only Better
@@ -483,17 +483,19 @@ finds the link; the key's index also serves that lookup, which read the whole ta
 shape, holds the trigger to the new function, the old one gone, the key unique and valid, and the schema's
 privileges the owner's alone.
 
-The invitation migration (commit 10, owner 2026-10-10) takes the next free number when it is built. On 2026-10-10
-that is 215: 214 is `214_delete_account_audit_rows.sql`, and `docs/COACH-CHAT-PLAN.md` names 215 and 216 for its own
-two, unbuilt, so whichever plan is built second takes the numbers after the other's (CONVENTIONS §8: never skip,
-never reuse). It is written below as 215. It drops `client_invitations.status`, and with it the column's CHECK, its
-default and `idx_client_invitations_status`. The column said the wrong thing twice: `pending` was written only when
-an email failed, and `expired` never, expiry being `expires_at`, read when the link is opened. From 215 an invitation
-row exists only once its email has gone (§2.12, D40): `invited_at` says when, `expires_at` until when its link works,
-`accepted_at` that it was used, and whether the client has an account is `clients.user_id`. Before the drop it refuses
-an `accepted` row with no `accepted_at`, whose link the drop would make live again. DEV on 2026-10-10 held 30
-`accepted` rows, every one with `accepted_at`, and 6 `pending` rows, failed sends all past `expires_at`, which read
-as expired links after the drop and are left as they are; PROD holds no invitation.
+The invitation migration (commit 10, owner 2026-10-10) is 215, the next free number when it was built (2026-10-10):
+214 is `214_delete_account_audit_rows.sql`, and `docs/COACH-CHAT-PLAN.md`'s two, unbuilt then, take the numbers after
+it (CONVENTIONS §8: never skip, never reuse). 215 shipped in commit 10 as
+`supabase/migrations/215_invitation_dates_decide.sql`, the record from here: the sketch below with its refusal reading
+`status` only while the column is there (re-runnable), and a closing check that also counts the invitations whose
+link works, the used and the expired (DEV after the push: 0, 30 and 6). It drops `client_invitations.status`, and
+with it the column's CHECK, its default and `idx_client_invitations_status`. The column said the wrong thing twice:
+`pending` was written only when an email failed, and `expired` never, expiry being `expires_at`, read when the link is
+opened. From 215 an invitation row exists only once its email has gone (§2.12, D40): `invited_at` says when,
+`expires_at` until when its link works, `accepted_at` that it was used, and whether the client has an account is
+`clients.user_id`. Before the drop it refuses an `accepted` row with no `accepted_at`, whose link the drop would make
+live again. DEV on 2026-10-10 held 30 `accepted` rows, every one with `accepted_at`, and 6 `pending` rows, failed sends
+all past `expires_at`, which read as expired links after the drop and are left as they are; PROD holds no invitation.
 
 ```sql
 -- 215_invitation_dates_decide.sql: an invitation's state is its dates (docs/BETTER-AUTH-PLAN.md 2.12). Pure ASCII.
@@ -1026,7 +1028,8 @@ From commit 10:
   no button. The dates are sans, through `formatDateOnlyShort`. The read is an SWR hook exporting its key and a clear
   (CONVENTIONS §7: "Not invited yet." is a claim, so the read is cleared, never merely revalidated), cleared as the
   box opens; pending, the sentence is `TextSkeleton` text and no button shows; failed, it reads "Couldn't load the
-  invitation." with Try again. A send closes the box in the same tick its answer lands, with
+  invitation." with Try again. (As built, from commit 10's review: a ghost Cancel stays in the footer in every state,
+  the design system's Dialog footer, so the card keeps its height when the read lands; "no button" is no send button.) A send closes the box in the same tick its answer lands, with
   `toast.success("Invitation sent", { description: "Sent to <address>." })`; a refusal leaves it open and unchanged,
   with `toast.error("Invitation not sent", { description })`, the description "The email couldn't be sent. Try
   again." or the route's own plain sentence (no address, already has an account, too many tries). The trigger, the
@@ -1036,7 +1039,10 @@ From commit 10:
   `components/add-client-dialog.tsx` says `toast.warning("Client added", { description: "The invitation email didn't
   send. Send it from Invite on their page." })` in place of the red toast with a dash in it.
 - **Activation (rule 23, D42).** `fireAndForgetInviteIfNeeded` goes: the route awaits a send when the client has no
-  login and no working link (`invitationLinkWorks`), and answers `invitation: "sent" | "failed" | "not_needed"`.
+  login and no working link (`invitationLinkWorks`), and answers `invitation: "sent" | "failed" | "not_needed"`. (As
+  built, from commit 10's review: a working link counts only when it went to the client's address now. A coach who
+  corrected a pending client's address after inviting them would otherwise activate them with no link at the new
+  address, the old link still live in the other inbox; the send ends it.)
   `components/coach/client-activation-dialog.tsx` words a failure as `toast.warning("<name> is now active", {
   description: "The invitation email didn't send. Send it from Invite on their page." })`, and clears the box's read
   on success. The activation email stays as it is.
@@ -1161,7 +1167,7 @@ can be vetoed before its commit starts.
 | D28 | `DATABASE_URL` is Supabase's transaction pooler string for the `postgres` user; one pool of four per bundle (the proxy's and the routes' are separate bundles). | Serverless-safe; `postgres` owns the schema, so RLS never bites Better Auth; a direct connection is IPv6-only on Supabase. |
 | D29 | Env: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (= `NEXT_PUBLIC_APP_URL`), `DATABASE_URL`, `AUTH_ADMIN_USER_IDS`, `EMAIL_FROM`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`; `NEXT_PUBLIC_SUPABASE_ANON_KEY` has no reader after commit 3 and leaves `.env.local`. | Documented per CONVENTIONS 852 (no `.env.example`): at the read site and in §19's list. |
 | D30 | The emails use one sender (`EMAIL_FROM`, falling back to `onboarding@resend.dev`), one look, and the product's name, Atletafit, written once (`PRODUCT_NAME`, `lib/constants.ts`) and read by every screen, email and tab title (commit 5.1). Commits 1–5 shipped the old name, "CoachHub". | Owner, 2026-10-09: "It's not called coachub." One constant, so the name can't drift between an email's sender and its sign-off. |
-| D31 | Migrations: 208 (schema + copy, additive), 209 (the switch), 210 (a login's address and its copies in one write, commit 5.5), 211 (delete functions, commit 6), 212 (an index on every foreign key a deletion's cascades walk, commit 6, owner 2026-10-09: a 20-client seed coach's delete took 14.9 s against the Data API's 8 s, 2.8 s with them), 213 (a login's Google links go when its address changes, and one Google account links to one login, after commit 7, owner 2026-10-09), and commit 10's, an invitation's state as its dates, the next free number when it is built (215 on 2026-10-10, after 214, the deletion's audit rows; `docs/COACH-CHAT-PLAN.md` names 215 and 216 for its own, and the plan built second takes the numbers after the other's, §2.1). | CONVENTIONS: next number, never skip; this plan ships first; 5.5 is built before 6, so it takes 210. |
+| D31 | Migrations: 208 (schema + copy, additive), 209 (the switch), 210 (a login's address and its copies in one write, commit 5.5), 211 (delete functions, commit 6), 212 (an index on every foreign key a deletion's cascades walk, commit 6, owner 2026-10-09: a 20-client seed coach's delete took 14.9 s against the Data API's 8 s, 2.8 s with them), 213 (a login's Google links go when its address changes, and one Google account links to one login, after commit 7, owner 2026-10-09), and 215 (an invitation's state as its dates, commit 10, the next free number when it was built on 2026-10-10, after 214, the deletion's audit rows; `docs/COACH-CHAT-PLAN.md`'s two take the numbers after it, §2.1). | CONVENTIONS: next number, never skip; this plan ships first; 5.5 is built before 6, so it takes 210. |
 | D32 | Undo (§8.3): revert the switch commit, then a new migration re-points the FKs to `auth.users` as `NOT VALID` and restores the trigger from 107; logins made after the switch are re-invited; passwords changed after it revert to the old ones. | Supabase's rows are never touched by the switch, so the old door reopens. |
 | D33 | Supabase Auth is retired, not deleted, until the undo window closes: providers off, sign-ups off; the owner deletes `auth.users` after (§9.1). | The undo needs the rows. |
 | D34 | `proof-session.ts` mints a session by inserting a `better_auth.session` row through the pool and sending its token as a bearer token; cookie-path proofs sign in over HTTP with a throwaway's password. | The old magic-link mint is Supabase's; a bare token is accepted by the bearer plugin (its default); no secret-signing in scripts. |
@@ -1186,7 +1192,7 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | Subsystem | Today | After | Commit |
 |---|---|---|---|
 | `package.json` | `@supabase/ssr`, no auth library | `better-auth@1.7.7`, `pg`, `kysely`, `bcryptjs`, later `@better-auth/expo`; `@supabase/ssr` gone (3) | 1, 3, 8 |
-| `supabase/migrations/` | 207 | 208 (schema + copy), 209 (switch), 210 (a login's address in one write), 211 (delete functions), 212 (the delete's foreign-key indexes), 213 (Google links: gone with an address, one login each), commit 10's (an invitation's state is its dates; 215 on 2026-10-10) | 1, 2, 5.5, 6, 7, 10 |
+| `supabase/migrations/` | 207 | 208 (schema + copy), 209 (switch), 210 (a login's address in one write), 211 (delete functions), 212 (the delete's foreign-key indexes), 213 (Google links: gone with an address, one login each), 215 (an invitation's state is its dates) | 1, 2, 5.5, 6, 7, 10 |
 | `lib/auth.ts`, `lib/auth-client.ts`, `app/api/auth/[...all]/route.ts` | none | new | 1, 2 |
 | `middleware.ts` + `middleware.test.ts` | Edge; Supabase `getUser()`; 307 for `/api/**` | `proxy.ts` + `proxy.test.ts`; Node; `auth.api.getSession`; 401 JSON for `/api/**`; `/api/auth/` and `/set-password` public | 1 (the `/api/auth/` skip only), 2 |
 | `lib/auth-helpers.ts` + test | `createServerSupabaseClient().auth.getUser()` | `auth.api.getSession({ headers })`; bearer accepted | 2 |
@@ -1330,7 +1336,8 @@ so.
     the earlier link refused, the new one opens; a row expired through the pool → `linkWorks: false`, and a send
     works; another coach's client → 404 from both routes; activation of a client with a working link → no email,
     the link unchanged; with none → one email; with the mailbox refusing → the client active and `invitation:
-    "failed"`; the questionnaire add refused → `inviteSent: false`, no row; an acceptance → `accepted_at` set, the
+    "failed"`; of a client whose address the coach corrected after inviting them → one email, at the corrected
+    address, and the earlier link refused (as built); the questionnaire add refused → `inviteSent: false`, no row; an acceptance → `accepted_at` set, the
     read `hasAccount: true`, the link refused as used; ten reads of the box in a row → none refused.
 - **Tests** (vitest; Better Auth's `auth.api` and the pool mocked the way `supabaseAdmin` is mocked elsewhere):
   the proxy's decisions (the two skip lists, 401 JSON under `/api/`, 307 for pages, role redirects, fail-closed,

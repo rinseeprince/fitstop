@@ -82,7 +82,6 @@ Zod schemas live in `lib/validations/` with domain-specific files:
 - `lib/validations/daily-log.ts`
 - `lib/validations/daily-activity.ts`
 - `lib/validations/external-activity.ts`
-- `lib/validations/invitation.ts`
 - `lib/validations/auth.ts`
 
 **Expected pattern:** Every API route that accepts a request body must validate with `.safeParse()` before passing data to the service layer.

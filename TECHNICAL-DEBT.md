@@ -321,7 +321,7 @@ Items deliberately deferred or remaining after the 2026-06-10 security remediati
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 4 | `ClientRow` type defined locally | `app/api/invitations/send/route.ts:9-15` | Same issue as #2 - inline type instead of shared from `/types`. | Open |
+| 4 | ~~`ClientRow` type defined locally~~ | ~~`app/api/invitations/send/route.ts:9-15`~~ | Same issue as #2 - inline type instead of shared from `/types`. | **Resolved 2026-10-10** — the route was deleted (Better Auth plan, commit 10); the Invite box sends through `POST /api/clients/[id]/invitation`, which reads the client through `getClientById`. |
 | 12 | Duplicated auth page layout/background | `app/login/page.tsx`, `app/forgot-password/page.tsx`, `components/auth/password-link-page.tsx` (`/reset-password` and `/set-password`), `app/invite/[token]/page.tsx` | All 4 duplicate the same animated orb background, card wrapper, and Framer Motion pattern. Extract to a shared `AuthLayout` component. | Open |
 
 ---

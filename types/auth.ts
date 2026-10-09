@@ -19,42 +19,26 @@ type ProfileRow = {
   updated_at: string
 }
 
-// Invitation status
-export type InvitationStatus = "pending" | "sent" | "accepted" | "expired"
-
-// Client invitation record
-export type ClientInvitation = {
-  id: string
-  clientId: string
-  status: InvitationStatus
-  token: string | null
-  email: string
-  invitedAt: string | null
-  acceptedAt: string | null
-  expiresAt: string | null
-  createdAt: string
-  updatedAt: string
+/**
+ * What the coach's Invite box reads of a client's invitation (GET and POST
+ * /api/clients/[id]/invitation, D43): whether the client has an account, and
+ * the invitation's dates as the coach's calendar days. Never the link's token:
+ * whoever holds it can set up the client's account.
+ */
+export type InvitationRead = {
+  hasAccount: boolean
+  invitation: {
+    /** The coach's calendar day the email went (YYYY-MM-DD). */
+    sentOn: string | null
+    /** The coach's calendar day the link stops working (YYYY-MM-DD); none on a row written before links expired. */
+    expiresOn: string | null
+    /** Never used, and its expiry ahead (invitationLinkWorks, services/invitation-service.ts). */
+    linkWorks: boolean
+  } | null
 }
 
-// Database row type for client_invitations
-export type ClientInvitationRow = {
-  id: string
-  client_id: string
-  status: InvitationStatus
-  token: string | null
-  email: string
-  invited_at: string | null
-  accepted_at: string | null
-  expires_at: string | null
-  created_at: string
-  updated_at: string
-}
-
-export type SendInvitationResponse = {
-  success: boolean
-  invitation?: ClientInvitation
-  error?: string
-}
+/** What activating a client did about their invitation (D42), as POST /api/clients/[id]/activate answers it. */
+export type InvitationOutcome = "sent" | "failed" | "not_needed"
 
 export type AcceptInvitationResponse = {
   success: boolean
@@ -81,22 +65,6 @@ export function toProfile(row: ProfileRow): Profile {
     id: row.id,
     userId: row.user_id,
     role: row.role,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
-}
-
-// Helper to convert DB row to ClientInvitation
-export function toClientInvitation(row: ClientInvitationRow): ClientInvitation {
-  return {
-    id: row.id,
-    clientId: row.client_id,
-    status: row.status,
-    token: row.token,
-    email: row.email,
-    invitedAt: row.invited_at,
-    acceptedAt: row.accepted_at,
-    expiresAt: row.expires_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

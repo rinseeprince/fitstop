@@ -22,10 +22,13 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens"
 import { toast } from "sonner"
 import { useClearClientHabitWeeks } from "@/hooks/use-client-habits"
+import { useClearClientInvitation } from "@/hooks/use-client-invitation"
 import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
 import { addDaysToDateString, getTodayDateString } from "@/lib/date-helpers"
+import { INVITATION_DIDNT_SEND } from "@/lib/constants"
 import { getFirstName } from "@/lib/client-name"
 import { cn } from "@/lib/utils"
+import type { InvitationOutcome } from "@/types/auth"
 
 interface ClientActivationDialogProps {
   client: {
@@ -84,6 +87,7 @@ export function ClientActivationDialog({
   // for the coach who actually started them last Monday.
   const [startDate, setStartDate] = useState<string>(getTodayDateString)
   const clearHabitWeeks = useClearClientHabitWeeks()
+  const clearInvitation = useClearClientInvitation()
 
   useEffect(() => {
     if (open) {
@@ -113,14 +117,23 @@ export function ClientActivationDialog({
           startDate: startDate || undefined,
         }),
       })
-      const data = await response.json()
+      const data: { success?: boolean; error?: string; data?: { invitation?: InvitationOutcome } } =
+        await response.json()
 
       if (data.success) {
         // The first check-in date is the weekday the Habits tab's week starts on.
         void clearHabitWeeks(client.id)
-        toast.success(`${client.name} is now active`, {
-          description: "They have been emailed and can see their plans.",
-        })
+        // Activation may have sent their invitation (D42): the Invite box's read changed.
+        void clearInvitation(client.id)
+        if (data.data?.invitation === "failed") {
+          toast.warning(`${client.name} is now active`, {
+            description: INVITATION_DIDNT_SEND,
+          })
+        } else {
+          toast.success(`${client.name} is now active`, {
+            description: "They have been emailed and can see their plans.",
+          })
+        }
         onActivated?.()
         setOpen(false)
       } else {

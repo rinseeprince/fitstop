@@ -48,7 +48,10 @@ vi.mock('./client-intake-service', () => ({
 }))
 
 vi.mock('./invitation-service', () => ({
-  sendInvitation: vi.fn().mockResolvedValue({ success: true }),
+  sendInvitation: vi.fn().mockResolvedValue({
+    sent: true,
+    invitation: { hasAccount: false, invitation: { sentOn: '2026-09-02', expiresOn: '2026-09-09', linkWorks: true } },
+  }),
 }))
 
 import { supabaseAdmin } from './supabase-admin'
@@ -57,6 +60,8 @@ import { appendMeasurements, ReadingRemovalUnavailableError } from './measuremen
 import { recordClientStart } from './client-start-service'
 import { getCoachTodayString, getClientTodayString } from './today-service'
 import { addGoal } from './client-goal-writes-service'
+import { sendInvitation } from './invitation-service'
+import { createIntake } from './client-intake-service'
 import type { MeasurementReading } from '@/lib/measurements/day-values'
 import {
   ClientEmailLockedError,
@@ -368,6 +373,32 @@ describe('Client Service', () => {
       })
 
       expect(appendMeasurements).not.toHaveBeenCalled()
+    })
+
+    // Rule 23: the questionnaire add sends the invitation, and one that
+    // doesn't send leaves the client added and says so.
+    it.each([
+      ['went', { sent: true as const, invitation: { hasAccount: false, invitation: null } }, true],
+      ["didn't send", { sent: false as const, reason: 'email_failed' as const }, false],
+    ])('a questionnaire add sends the invitation and answers whether it %s; the client stands either way', async (_label, sent, inviteSent) => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(createMockQuery({ data: createMockClientRow(), error: null }) as never)
+      vi.mocked(sendInvitation).mockResolvedValueOnce(sent)
+
+      const client = await createClient('coach-456', { name: 'Test Client', email: 'test@example.com', setupMode: 'intake' })
+
+      expect(createIntake).toHaveBeenCalledWith('client-123')
+      expect(sendInvitation).toHaveBeenCalledWith('client-123')
+      expect(client.id).toBe('client-123')
+      expect(client.inviteSent).toBe(inviteSent)
+    })
+
+    it('a manual add sends no invitation', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(createMockQuery({ data: createMockClientRow(), error: null }) as never)
+
+      const client = await createClient('coach-456', { name: 'Test Client', email: 'test@example.com', currentWeight: 82 })
+
+      expect(sendInvitation).not.toHaveBeenCalled()
+      expect(client.inviteSent).toBeUndefined()
     })
 
     it("sets the first goal the form set from the new client's today — its type, name, targets, deadline and words", async () => {

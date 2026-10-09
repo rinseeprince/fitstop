@@ -1267,7 +1267,7 @@ The browser `AuthProvider` (`contexts/auth-context.tsx`) reads who is signed in 
 ### Making a login (`services/login-service.ts`)
 
 The only writers of `profiles` and of the login side of `coaches` and `clients` (their `email` follows the login's address after it: see "Account changes"), and the only paths that make a login, both through the admin plugin's create-user:
-- `acceptClientInvitation({ token, password })`, behind `POST /api/invitations/accept` (`authRateLimit`, CSRF, zod `{ token, password }`; any other key is stripped, so no body names whose login it is): the token's pending invitation (`findLiveInvitation`, `services/invitation-service.ts`), create-user on the invited address with the chosen password (verified: the invite reached it), the client profile, the client's link with the login's address, the invited one as Better Auth stored it (only a client with no login yet), the sign-in, then the invitation marked accepted (only while still pending). The answer forwards the session cookie. An address that already has a login is refused with "This email already has an account. Sign in instead." `GET /api/invitations/[token]` answers `{ coachName, emailMasked, expiresAt }` (`lib/mask-email.ts`): whoever holds a link learns neither the address nor the client's name
+- `acceptClientInvitation({ token, password })`, behind `POST /api/invitations/accept` (`authRateLimit`, CSRF, zod `{ token, password }`; any other key is stripped, so no body names whose login it is): the token's pending invitation (`findLiveInvitation`, `services/invitation-service.ts`), create-user on the invited address with the chosen password (verified: the invite reached it), the client profile, the client's link with the login's address, the invited one as Better Auth stored it (only a client with no login yet), the sign-in, then the invitation's `accepted_at` set (only while it is still empty). The answer forwards the session cookie. An address that already has a login is refused with "This email already has an account. Sign in instead." `GET /api/invitations/[token]` answers `{ coachName, emailMasked, expiresAt }` (`lib/mask-email.ts`): whoever holds a link learns neither the address nor the client's name
 - `createCoachLogin({ email, name })`, behind the owner's `npm run coach:create -- --project <ref> --email … --name "…"` (`scripts/create-coach.ts`): create-user with no password, verified; the trainer profile and the coach row; then Better Auth's emailed password link, landing on `/set-password`. The command runs only when `--project`, the linked project (`supabase/.temp/project-ref`), `DATABASE_URL`'s pooler user and `NEXT_PUBLIC_SUPABASE_URL` name one project (`scripts/project-ref.ts`), and on any project but DEV only when `BETTER_AUTH_URL`, which the emailed link opens, is an https address; both refusals come before anything that reaches a database loads. It refuses an address that already has a login with nothing written, and waits for the email's background send before it exits. On DEV alone, `npm run auth:last-link -- --email …` (`scripts/auth-last-link.ts`) prints an address's newest live emailed link from the rows Better Auth keeps in `better_auth.verification`: the password link (`reset-password:<token>`, printed landing on `/set-password` for a login with no password yet, else `/reset-password`) and the delete-account one (`delete-account-<token>`, landing on `/login?deleted=1`). Change email's links carry a token Better Auth signs and never stores, so it prints neither
 - A login and its rows are two writes in two places. When a write after the login fails, the login is deleted through Better Auth's pool, which takes everything written for it by migration 209's keys (the profile and the sessions cascade, `clients.user_id` is set null); a create-user that threw after writing the login (it writes the login and its password as two statements) is undone the same way, for a password-less login on the address made since the call began
 
@@ -1344,11 +1344,12 @@ Client-led onboarding. The coach sends an invite, the client completes a structu
 ### Data flow
 
 ```
-Coach adds client (name + email)
-  -> client_invitations row created with token
-  -> Invitation email sent via Resend
-  -> client_intake row created (status: pending)
+Coach adds client (name + email) with "Send intake questionnaire"
   -> clients.onboarding_status = 'pending_intake'
+  -> client_intake row created (status: pending)
+  -> Invitation email sent via Resend, then its client_invitations row
+     written (see "Invitations"); an email that fails writes nothing, and
+     the coach is warned to send it from the Invite box
 
 Client clicks invite link
   -> /invite/[token] -> chooses a password; POST /api/invitations/accept
@@ -1382,6 +1383,8 @@ Coach activates client
   -> recordClientStart: start_date, and nothing else (see "The client's
      origin" — the baseline is derived, never stored)
   -> Activation email sent
+  -> Invitation sent, and awaited, only when the client has no account and
+     no link that still works at their address (see "Invitations")
   -> walkthrough_completed_at remains NULL until first login
 
 Client first login post-activation
@@ -1392,6 +1395,16 @@ Client first login post-activation
 ```
 
 > Note: the walkthrough component was reworked for the day-centric portal (Session 6.1) but is **not currently mounted** in the web shell (`components/client/walkthrough/guided-walkthrough.tsx` has no caller) — re-mounting is a separate concern (likely the RN client), so the "renders on first login" step above is prospective.
+
+### Invitations (`client_invitations`, migration 215)
+
+- **A row is an invitation whose email went.** One per client (UNIQUE `client_id`): its link's token, the address, `invited_at`, `expires_at` (seven days on) and `accepted_at`. There is no status: a link works while it was never used and its expiry is ahead or unset (`invitationLinkWorks`, `services/invitation-service.ts`), the one predicate the Invite box, activation and the invite page judge a link by, and whether the client has an account is `clients.user_id`.
+- **A send** (`sendInvitation`) refuses a client with an account or no address, emails a new link, and only then writes the row, in one upsert on `client_id` that replaces the earlier link and empties `accepted_at`. An email that fails writes nothing, so the link the client already holds still opens: Resend's own error goes to Sentry, and the coach reads a plain sentence. A row that can't be written once its email went leaves a link that opens nothing, and the coach is told the invitation wasn't sent. Three paths send:
+  - **the Invite box**, `POST /api/clients/[id]/invitation` (`coachApiRateLimit`, CSRF, the coach's own client, audited as `invitation.send`): "Invitation sent" closes the box, and a send that didn't go leaves it open with "Invitation not sent" and the reason;
+  - **the questionnaire add** (`createClient`): when it doesn't send, the add's answer carries `inviteSent: false`, and the coach reads the warning "Client added" with "The invitation email didn't send. Send it from Invite on their page." (`INVITATION_DIDNT_SEND`, `lib/constants.ts`);
+  - **activation** (`sendInvitationIfNeeded`): only to a client with no account and no link that still works at their address, so a client invited before activation gets no second email. A link sent before the coach corrected a pending client's address went to another inbox: the client is sent one at theirs, whose row ends the other. Awaited, so the answer's `invitation` says `sent`, `failed` or `not_needed`, and `failed` makes the activation's toast a warning with the same sentence.
+- **The Invite box** (`components/clients/invite-client-dialog.tsx`) opens from the person-plus icon at the top right of a client's page, named "Invite". It reads `GET /api/clients/[id]/invitation` (`coachApiRateLimit`), which answers `{ hasAccount, invitation: { sentOn, expiresOn, linkWorks } | null }`, the two dates the coach's calendar days (`coaches.timezone`), and never the link's token: whoever holds it can set up the client's account. The read (`useClientInvitation`, `hooks/use-client-invitation.ts`) is cleared as the box opens and when an activation succeeds. The box says "Not invited yet.", "Sent 8 Oct. The link works until 15 Oct.", "Sent 1 Oct. The link expired on 8 Oct." or "<Name> has an account.", and offers Send invitation, or Resend invitation once one has gone, while the client has no account. Its footer keeps Cancel in every state; until the read lands its sentence is pending text and no send button shows, and a read that fails says "Couldn't load the invitation." with Try again.
+- **The invite link's own two routes** stay public under `/api/invitations/` on `authRateLimit`: the token's lookup and its acceptance (see "Making a login"), whose last write sets `accepted_at` while it is still empty.
 
 ### `client_intake` table
 

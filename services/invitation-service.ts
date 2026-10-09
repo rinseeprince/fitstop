@@ -1,19 +1,35 @@
 import { supabaseAdmin } from "@/services/supabase-admin"
 import { sendInvitationEmail, generateInviteToken } from "@/services/email-service"
-import type {
-  ClientInvitationRow,
-  InvitationDetails,
-  SendInvitationResponse,
-} from "@/types/auth"
-import { toClientInvitation } from "@/types/auth"
+import type { InvitationDetails, InvitationOutcome, InvitationRead } from "@/types/auth"
 import { maskEmail } from "@/lib/mask-email"
+import { captureApiError } from "@/lib/error-handler"
+import { getTodayDateStringInTimezone } from "@/lib/date-helpers"
 
 const INVITATION_EXPIRY_DAYS = 7
+const DAY_MS = 24 * 60 * 60 * 1000
 
-// Type cast for tables not yet in generated types
 const invitationsTable = "client_invitations"
-const clientsTable = "clients"
-const _coachesTable = "coaches"
+
+/**
+ * An invitation is its dates (migration 215, D40): a row exists only once its
+ * email has gone, invited_at says when, expires_at until when its link works,
+ * accepted_at that it was used. Whether the client has an account is
+ * clients.user_id.
+ */
+type InvitationDates = { invited_at: string | null; expires_at: string | null; accepted_at: string | null }
+
+/**
+ * Whether an invitation's link still opens: never used, and its expiry ahead
+ * or unset (a row written before invitations carried an expiry has none). The
+ * one predicate the coach's Invite box, activation and the invite page judge a
+ * link by.
+ */
+export function invitationLinkWorks(
+  row: Pick<InvitationDates, "expires_at" | "accepted_at">,
+  now: Date = new Date()
+): boolean {
+  return row.accepted_at === null && (row.expires_at === null || new Date(row.expires_at) > now)
+}
 
 /** A pending invitation a token opens: what accepting it needs. Server-side only. */
 export type LiveInvitation = {
@@ -37,7 +53,7 @@ type InvitationRefusal = keyof typeof INVITATION_REFUSALS
 
 /**
  * The pending invitation a token opens, or why it opens none: no invitation
- * holds the token, it has expired, or it was accepted. Throws when the read
+ * holds the token, it was used, or it has expired. Throws when the read
  * fails, which is not a refusal.
  */
 export async function findLiveInvitation(
@@ -45,14 +61,13 @@ export async function findLiveInvitation(
 ): Promise<{ invitation: LiveInvitation } | { refusal: InvitationRefusal }> {
   const { data, error } = await supabaseAdmin
     .from(invitationsTable)
-    .select("id, client_id, email, status, expires_at, client:client_id ( name, coach:coach_id ( name ) )")
+    .select("id, client_id, email, accepted_at, expires_at, client:client_id ( name, coach:coach_id ( name ) )")
     .eq("token", token)
     .maybeSingle()
 
   if (error) throw new Error(`Failed to read the invitation: ${error.message}`)
   if (!data?.client?.coach) return { refusal: "invalid" }
-  if (data.expires_at && new Date(data.expires_at) < new Date()) return { refusal: "expired" }
-  if (data.status === "accepted") return { refusal: "used" }
+  if (!invitationLinkWorks(data)) return { refusal: data.accepted_at ? "used" : "expired" }
 
   return {
     invitation: {
@@ -89,147 +104,158 @@ export async function getInvitationByToken(
   }
 }
 
-/**
- * Send invitation via email with secure token (server-side only)
- */
-export async function sendInvitation(
-  clientId: string
-): Promise<SendInvitationResponse> {
-  try {
-    // First, get client and coach info
-    const { data: clientData, error: clientError } = await supabaseAdmin
-      .from(clientsTable)
-      .select(`
-        *,
-        coach:coach_id (
-          id,
-          name,
-          email
-        )
-      `)
-      .eq("id", clientId)
-      .single()
-
-    if (clientError || !clientData) {
-      return {
-        success: false,
-        error: "Client not found"
-      }
-    }
-
-    const client = clientData as {
-      id: string
-      name: string
-      email: string
-      coach: {
-        id: string
-        name: string
-        email: string
-      }
-    }
-
-    // Check if invitation already exists
-    const { data: existingInvitation } = await supabaseAdmin
-      .from(invitationsTable)
-      .select("*")
-      .eq("client_id", clientId)
-      .single()
-
-    // Check if already accepted
-    if (existingInvitation?.status === "accepted") {
-      return {
-        success: false,
-        error: "Client has already accepted the invitation"
-      }
-    }
-
-    // Generate secure token and set expiry
-    const token = generateInviteToken()
-    const expiresAt = new Date()
-    expiresAt.setDate(expiresAt.getDate() + INVITATION_EXPIRY_DAYS)
-
-    const invitationData = {
-      client_id: clientId,
-      token,
-      email: client.email,
-      status: "sent",
-      invited_at: new Date().toISOString(),
-      expires_at: expiresAt.toISOString(),
-    }
-
-    // Create or update invitation record
-    if (existingInvitation) {
-      // Update existing invitation with new token
-      const { data: _updatedInvitation, error: updateError } = await supabaseAdmin
-        .from(invitationsTable)
-        .update(invitationData)
-        .eq("client_id", clientId)
-        .select()
-        .single()
-
-      if (updateError) {
-        console.error("Error updating invitation:", updateError)
-        return {
-          success: false,
-          error: "Failed to update invitation"
-        }
-      }
-    } else {
-      // Create new invitation
-      const { data: _newInvitation, error: createError } = await supabaseAdmin
-        .from(invitationsTable)
-        .insert(invitationData)
-        .select()
-        .single()
-
-      if (createError) {
-        console.error("Error creating invitation:", createError)
-        return {
-          success: false,
-          error: "Failed to create invitation"
-        }
-      }
-    }
-
-    // Send email via Resend
-    const emailResult = await sendInvitationEmail(
-      client.email,
-      client.name,
-      client.coach.name,
-      token
-    )
-
-    if (!emailResult.success) {
-      console.error("Failed to send invitation email:", emailResult.error)
-      
-      // Revert invitation status if email failed
-      await supabaseAdmin
-        .from(invitationsTable)
-        .update({ status: "pending" })
-        .eq("client_id", clientId)
-
-      return {
-        success: false,
-        error: emailResult.error || "Failed to send invitation email"
-      }
-    }
-
-    // Fetch the final invitation record
-    const { data: finalInvitation } = await supabaseAdmin
-      .from(invitationsTable)
-      .select("*")
-      .eq("client_id", clientId)
-      .single()
-
-    return {
-      success: true,
-      invitation: finalInvitation ? toClientInvitation(finalInvitation as ClientInvitationRow) : undefined
-    }
-  } catch (error) {
-    console.error("Error in sendInvitation:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Failed to send invitation"
-    }
+/** The invitation as the coach's Invite box reads it: its dates as the coach's calendar days, never its token (D43). */
+function toInvitationRead(
+  row: InvitationDates | null,
+  hasAccount: boolean,
+  timeZone: string | null,
+  now: Date
+): InvitationRead {
+  const day = (stamp: string | null) =>
+    stamp ? getTodayDateStringInTimezone(timeZone ?? "UTC", new Date(stamp)) : null
+  return {
+    hasAccount,
+    invitation: row
+      ? { sentOn: day(row.invited_at), expiresOn: day(row.expires_at), linkWorks: invitationLinkWorks(row, now) }
+      : null,
   }
+}
+
+/**
+ * A client's invitation, for the coach's Invite box: whether the client has
+ * an account (the caller's verified client row says), and the invitation's
+ * dates on the coach's calendar. Throws when a read fails.
+ */
+export async function readInvitation(
+  client: { id: string; coachId: string; hasAccount: boolean },
+  now: Date = new Date()
+): Promise<InvitationRead> {
+  const [invitation, coach] = await Promise.all([
+    supabaseAdmin
+      .from(invitationsTable)
+      .select("invited_at, expires_at, accepted_at")
+      .eq("client_id", client.id)
+      .maybeSingle(),
+    supabaseAdmin.from("coaches").select("timezone").eq("id", client.coachId).maybeSingle(),
+  ])
+  if (invitation.error) throw new Error(`Failed to read the invitation: ${invitation.error.message}`)
+  if (coach.error) throw new Error(`Failed to read the coach's timezone: ${coach.error.message}`)
+  return toInvitationRead(invitation.data, client.hasAccount, coach.data?.timezone ?? null, now)
+}
+
+/**
+ * Why a send wrote nothing, each with the plain sentence the coach reads
+ * (rule 22): never the email service's own words, which go to Sentry.
+ */
+export const INVITATION_NOT_SENT = {
+  not_found: "Client not found",
+  has_account: "This client already has an account.",
+  no_email: "This client has no email address.",
+  email_failed: "The email couldn't be sent. Try again.",
+  failed: "Something went wrong. Try again.",
+} as const
+
+export type InvitationNotSent = keyof typeof INVITATION_NOT_SENT
+
+type SendInvitationResult =
+  | { sent: true; invitation: InvitationRead }
+  | { sent: false; reason: InvitationNotSent }
+
+/**
+ * Sends a client their invitation (D41): a new link, good for seven days,
+ * emailed first, and the client's row written only once the email has gone,
+ * in one upsert on its UNIQUE client_id (migration 022): the token, the
+ * address, invited_at now, expires_at, accepted_at empty. A failed email
+ * writes nothing, so the link the client already holds still opens. A row
+ * written after a resend replaces the earlier link, which stops opening.
+ *
+ * A write that fails after the email went leaves an email whose link opens
+ * nothing (CONVENTIONS §2, item 13): the coach reads "Invitation not sent" and
+ * the next send works. The new link opens only once its row is written, in a
+ * moment no email arrives inside. Should the client accept their earlier link
+ * while a resend's email is in flight, the resend's row makes the new link an
+ * unused one on a client with an account, and it opens to "This email already
+ * has an account. Sign in instead.": the account is clients.user_id, which
+ * the Invite box and activation read first.
+ *
+ * Never throws: a client is added, or activated, whatever its invitation does.
+ */
+export async function sendInvitation(clientId: string, now: Date = new Date()): Promise<SendInvitationResult> {
+  try {
+    const { data: client, error: clientError } = await supabaseAdmin
+      .from("clients")
+      .select("name, email, user_id, coach:coach_id ( name, timezone )")
+      .eq("id", clientId)
+      .maybeSingle()
+    if (clientError) throw new Error(`Failed to read the client: ${clientError.message}`)
+    if (!client?.coach) return { sent: false, reason: "not_found" }
+    if (client.user_id) return { sent: false, reason: "has_account" }
+    if (!client.email) return { sent: false, reason: "no_email" }
+
+    const token = generateInviteToken()
+    const invitedAt = now.toISOString()
+    const expiresAt = new Date(now.getTime() + INVITATION_EXPIRY_DAYS * DAY_MS).toISOString()
+
+    const email = await sendInvitationEmail(client.email, client.name, client.coach.name, token)
+    if (!email.success) {
+      captureApiError(new Error(email.error ?? "The invitation email was not sent"), {
+        source: "invitation-service: the invitation email",
+        clientId,
+      })
+      return { sent: false, reason: "email_failed" }
+    }
+
+    const row = { invited_at: invitedAt, expires_at: expiresAt, accepted_at: null }
+    const { error: writeError } = await supabaseAdmin
+      .from(invitationsTable)
+      .upsert({ client_id: clientId, token, email: client.email, ...row }, { onConflict: "client_id" })
+    if (writeError) {
+      captureApiError(new Error(`Failed to write the invitation: ${writeError.message}`), {
+        source: "invitation-service: an invitation emailed and not written",
+        clientId,
+      })
+      return { sent: false, reason: "failed" }
+    }
+
+    return { sent: true, invitation: toInvitationRead(row, false, client.coach.timezone, now) }
+  } catch (error) {
+    captureApiError(error, { source: "invitation-service: sendInvitation", clientId })
+    return { sent: false, reason: "failed" }
+  }
+}
+
+/** Two addresses are one inbox whatever their case, as a login's address is stored lower-cased. */
+function sameAddress(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase()
+}
+
+/**
+ * Activation's invitation (D42): sent, and awaited, only to a client with no
+ * account and no link that still works at their address, so a client invited
+ * before activation gets no second email whose link would end the first. A
+ * link sent before the coach corrected a pending client's address reaches
+ * another inbox: the client is sent one at theirs, and its row ends the
+ * other. A client who accepts while it runs needs none. Never throws: the
+ * client is active either way.
+ */
+export async function sendInvitationIfNeeded(client: { id: string; email: string; userId?: string }): Promise<InvitationOutcome> {
+  if (client.userId) return "not_needed"
+
+  try {
+    const { data: row, error } = await supabaseAdmin
+      .from(invitationsTable)
+      .select("email, expires_at, accepted_at")
+      .eq("client_id", client.id)
+      .maybeSingle()
+    if (error) throw new Error(`Failed to read the invitation: ${error.message}`)
+    if (row && sameAddress(row.email, client.email) && invitationLinkWorks(row)) return "not_needed"
+  } catch (error) {
+    // Unread, a working link can't be ruled out, and a send would end it.
+    captureApiError(error, { source: "invitation-service: sendInvitationIfNeeded", clientId: client.id })
+    return "failed"
+  }
+
+  const result = await sendInvitation(client.id)
+  if (result.sent) return "sent"
+  return result.reason === "has_account" ? "not_needed" : "failed"
 }

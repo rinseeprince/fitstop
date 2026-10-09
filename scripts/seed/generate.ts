@@ -334,19 +334,22 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
 
     // The invitation the persona's login is made from: seed-scale accepts it
     // through scripts/auth-fixtures.ts once the client row is in, as a client
-    // accepts their invite, so it is written pending and with no expiry. The
-    // draw its old expiry took is still taken, so this stream's later draws
-    // (the client's habits), and with them the dataset, stay as they were.
+    // accepts their invite, so it is written unused, as a send writes it, and
+    // with no expiry: its dates are the dataset's, anchored to a fixed day
+    // rather than today, and an expiry worked out from them could already be
+    // past, which the acceptance refuses. The draw its old expiry took is
+    // still taken, so this stream's later draws (the client's habits), and
+    // with them the dataset, stay as they were.
     if (isPersona) {
       void timestampAt(addDays(startIso, 14), 12, idRng);
       invitations.push({
         id: seedUuid("invitation", coachIdx, c),
         client_id: clientId,
         email: seedEmail("client", clientIdx),
-        status: "sent",
         token: seedInviteToken(coachIdx, c),
         invited_at: createdAt,
         expires_at: null,
+        accepted_at: null,
         created_at: createdAt,
         updated_at: createdAt,
       });

@@ -163,7 +163,7 @@ async function makeClient(email: string, login: Extract<ThrowawayLoginInput, { r
   return { userId: accepted.userId, email, coachId: null, clientId: accepted.clientId };
 }
 
-/** A pending invitation of the client, as the coach's invite writes one; returns the token its link carries. */
+/** An unused invitation of the client, its row as a send writes it once the email has gone; returns the token its link carries. */
 async function inviteClient(clientId: string, email: string): Promise<string> {
   const { generateInviteToken } = await import("@/services/email-service");
   const token = generateInviteToken();
@@ -171,9 +171,9 @@ async function inviteClient(clientId: string, email: string): Promise<string> {
     client_id: clientId,
     email,
     token,
-    status: "sent",
     invited_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + INVITE_VALID_MS).toISOString(),
+    accepted_at: null,
   });
   if (error) throw new Error(`invitation insert: ${error.message}`);
   return token;

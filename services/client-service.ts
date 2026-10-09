@@ -204,9 +204,11 @@ export const createClient = async (
   if (isIntakeMode) {
     await createIntake(client.id);
 
-    // Auto-send invite email (non-blocking — client is already created)
+    // The invitation the questionnaire needs. One that doesn't send leaves the
+    // client added and writes nothing (D41): the coach is told, and sends it
+    // from the Invite box on the client's page.
     const inviteResult = await sendInvitation(client.id);
-    return { ...client, goalId, inviteSent: inviteResult.success };
+    return { ...client, goalId, inviteSent: inviteResult.sent };
   }
 
   return { ...client, goalId };
