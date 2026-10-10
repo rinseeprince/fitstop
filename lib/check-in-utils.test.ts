@@ -39,10 +39,6 @@ describe('Check-in Utilities', () => {
       expect(getStatusLabel('pending')).toBe('Pending')
     })
 
-    it('returns "AI Processed" for ai_processed', () => {
-      expect(getStatusLabel('ai_processed')).toBe('AI Processed')
-    })
-
     it('returns "Reviewed" for reviewed', () => {
       expect(getStatusLabel('reviewed')).toBe('Reviewed')
     })

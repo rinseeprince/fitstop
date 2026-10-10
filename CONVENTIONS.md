@@ -808,7 +808,6 @@
   - **`gpt-4o`**: The check-in AI review (`services/ai-service.ts`) - higher quality reasoning for nuanced client feedback
   - The check-in review is the **only** OpenAI feature in the product. Everything else AI-facing is the Anthropic assistant below.
   - Every OpenAI call must specify an explicit timeout on the call (not the client): `CHECK_IN_REVIEW_TIMEOUT_MS` (120s, `lib/constants.ts`, sized with `CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS` so the longest allowed output finishes inside it) for check-in reviews, with the Regenerate route's `maxDuration` above it so the platform cannot cut the call off before the timeout reports.
-  - Env: `OPENAI_API_KEY`.
 
   ### Anthropic (the program assistant — `services/assistant/`)
   - Default **`claude-opus-4-8`**, overridable per deployment. The workload is structured tool selection against a prescriptive prompt, NOT open-ended reasoning, so cheaper tiers are viable and have been measured at quality parity — treat the model as a cost knob, not an architectural decision.
@@ -914,7 +913,7 @@
 
   ## 19. Configuration
   - .env files: .env.local
-  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` with the optional `AUTH_ADMIN_USER_IDS`, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (Continue with Google; all six at their read site in `lib/auth.ts`), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY` with the optional `EMAIL_FROM` (the sender, at its read site in `services/email-service.ts`), `NEXT_PUBLIC_APP_URL`, `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`, and the optional `PERF_COUNT`, the dev-only database-call counter (§14 "Request budgets"). If you create `.env.example`, backfill it from those.
+  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` with the optional `AUTH_ADMIN_USER_IDS`, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (Continue with Google; all six at their read site in `lib/auth.ts`), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY` with the optional `EMAIL_FROM` (the sender, at its read site in `services/email-service.ts`), `NEXT_PUBLIC_APP_URL`, `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`, and the optional `PERF_COUNT`, the dev-only database-call counter (§14 "Request budgets"). If you create `.env.example`, backfill it from those.
   - Secrets: Never in code, use vault/secrets manager for prod
   ## 20. Units
 

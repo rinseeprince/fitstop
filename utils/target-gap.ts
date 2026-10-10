@@ -4,8 +4,7 @@ import type { PrescribedRow } from "./set-spec-rows";
 import type { TargetRange } from "./target-range";
 
 // Where a logged value sits against the coach's target — the one judgement the
-// coach's logged-workout table colours by and the check-in AI's lines name, so
-// the two cannot disagree about a set. The owner's rules (2026-09-18): a value
+// coach's logged-workout table colours by. The owner's rules (2026-09-18): a value
 // outside its target — below as well as above — is marked; an RPE two or more
 // above the top of its target keeps its red; a % load is never marked, because
 // a percentage can't be compared with the kilograms lifted; a tempo that

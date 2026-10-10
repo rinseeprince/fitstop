@@ -40,10 +40,7 @@ export const getCheckInComparison = async (
   return buildCheckInComparison(currentCheckIn, client);
 };
 
-/**
- * The same comparison for a check-in and its client already in hand — the AI
- * review's input builder holds both and reads nothing twice.
- */
+/** The same comparison for a check-in and its client already in hand. */
 export const buildCheckInComparison = async (
   currentCheckIn: CheckIn,
   client: Client

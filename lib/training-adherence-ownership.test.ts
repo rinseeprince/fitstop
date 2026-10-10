@@ -11,8 +11,8 @@ import { join, relative } from "node:path";
  * What survives as a scan is the LIVE-versus-FROZEN split. A coach surface
  * reads the period's workouts as they are; `check_ins.workouts_completed` is
  * what they were when the client sent the check-in, and it never moves after.
- * Rendering the frozen figure beside a live one put "3/5" on the KPI ribbon
- * above an AI summary saying "completed only 2 out of 5", for the same week.
+ * Rendering the frozen figure beside a live one puts two answers to the same
+ * week on one screen.
  * The column stays the CLIENT's — their own surfaces read it back legitimately,
  * and they are not scanned.
  *
@@ -35,10 +35,6 @@ const ROOT = join(__dirname, "..");
 const SCAN: string[] = [
   "components/check-in",
   "components/clients",
-  "utils/ai-prompt-builder.ts",
-  "utils/ai-prompt-day.ts",
-  "utils/ai-prompt-week.ts",
-  "services/check-in-review-input-service.ts",
   "services/comparison-service.ts",
   "services/check-in-details-service.ts",
   "services/check-in-context-service.ts",

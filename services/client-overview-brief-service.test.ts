@@ -122,8 +122,8 @@ describe("getOverviewBrief", () => {
     const inFilters = checkInsChains.flatMap(
       (chain) => (chain.in as ReturnType<typeof vi.fn>).mock.calls
     );
-    // `pending` included: a check-in whose AI pass failed still waits on the coach.
-    expect(inFilters).toContainEqual(["status", ["pending", "ai_processed"]]);
+    // A check-in waits on the coach until a reply is sent.
+    expect(inFilters).toContainEqual(["status", ["pending"]]);
   });
 
   it("does not read the retired since-last-visit delta tables", async () => {

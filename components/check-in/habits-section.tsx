@@ -87,8 +87,7 @@ function HabitDayMark({ mark, value, target }: CellProps) {
  * copy — each habit's words as they stood, a cell per day, the week's figure
  * with a number habit's average under it, and the client's notes under the
  * table — for each habit the week planned or the client recorded something
- * for on a day it ran (`habitIsListed`), the habits the AI is told about.
- * Renders nothing, its rail included, when the week said nothing about any
+ * for on a day it ran (`habitIsListed`). Renders nothing, its rail included, when the week said nothing about any
  * habit.
  */
 export const HabitsSection = ({ habitWeek }: HabitsSectionProps) => {

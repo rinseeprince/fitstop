@@ -4,9 +4,8 @@ import type { CheckInStatus } from "@/types/check-in";
 
 // Label reuses getStatusLabel (single source of truth); the variant maps to the
 // Badge color API (getStatusColor returns raw Tailwind classes, not variants).
-const STATUS_VARIANT: Record<CheckInStatus, "warning" | "info" | "success"> = {
+const STATUS_VARIANT: Record<CheckInStatus, "warning" | "success"> = {
   pending: "warning",
-  ai_processed: "info",
   reviewed: "success",
 };
 

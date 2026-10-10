@@ -110,8 +110,8 @@ export const KPIRibbon = ({
   const hasPreviousCheckIn = comparisonData?.comparison?.previous != null;
 
   // The comparison line's rule (vs last check-in, else vs start on a first
-  // check-in) lives in lib/check-in/review-figures.ts, shared with the AI
-  // review's prompt so the strip and the model word one change the same way.
+  // check-in) lives in lib/check-in/review-figures.ts, the review page's
+  // figure rules spelled once.
   // Days ON TARGET over the days a target was PRESCRIBED — the kernel's own
   // denominator, one definition shared with the Overview rail and the card
   // below. A skipped targeted day is a miss; a day with no target is in no
@@ -124,12 +124,11 @@ export const KPIRibbon = ({
   const nutritionAccent: Accent = hasNutrition ? accentForRate(nutritionPct) : "neutral";
 
   // Training comes from `summariseTraining` (`lib/training-adherence.ts`) —
-  // completed (full + PARTIAL) over planned. One derivation feeds this cell, the
-  // training section and the AI prompt; the stored
-  // `check_ins.workouts_completed` is deliberately not read here. It is the RN
-  // wire's column, frozen when the client sent the check-in, and rendering a
-  // frozen figure beside a live one is what put "3/5" on this strip above an AI
-  // summary saying "completed only 2 out of 5".
+  // completed (full + PARTIAL) over planned. One derivation feeds this cell and
+  // the training section; the stored `check_ins.workouts_completed` is
+  // deliberately not read here. It is the RN wire's column, frozen when the
+  // client sent the check-in, and a frozen figure beside a live one puts two
+  // answers to the same week on one page.
   //
   // No fallback to that column when nothing was prescribed: a bare count with no
   // denominator, computed a different way, is not the same statistic.

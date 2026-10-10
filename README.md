@@ -24,7 +24,7 @@ A modern fitness coaching platform that helps trainers manage clients, create pe
 | Database | Supabase (PostgreSQL) |
 | Authentication | Better Auth |
 | Email Service | Resend |
-| AI Integration | OpenAI API |
+| AI Integration | Anthropic API |
 | State Management | SWR, React Hook Form |
 | Validation | Zod |
 | Icons | Lucide React |
@@ -93,9 +93,6 @@ BETTER_AUTH_URL=http://localhost:3000      # the same origin as NEXT_PUBLIC_APP_
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 # AUTH_ADMIN_USER_IDS=your_user_id         # optional: the admin plugin's admins
-
-# OpenAI Configuration (check-in AI summaries)
-OPENAI_API_KEY=your_openai_api_key
 
 # Anthropic Configuration (the program-builder draft assistant)
 ANTHROPIC_API_KEY=your_anthropic_api_key

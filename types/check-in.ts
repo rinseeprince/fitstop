@@ -9,7 +9,7 @@ import type { ClientHabitWeek } from "@/types/habits";
 import type { CheckInGateStatus } from "@/lib/check-in-schedule";
 
 // Check-in status types
-export type CheckInStatus = "pending" | "ai_processed" | "reviewed";
+export type CheckInStatus = "pending" | "reviewed";
 
 // Check-in tracking types
 export type CheckInFrequency = "weekly" | "biweekly" | "monthly" | "custom" | "none";
@@ -96,14 +96,12 @@ export type CheckInTrainingEventDetail = {
    * How the workout went, off its LOG — `null` when the client has not logged
    * it. Always present so the row IS a `TrainingWorkoutRead`
    * (`lib/training-display-state.ts`): every reader of it — the wizard's rows,
-   * the review's pills, the AI prompt's lines and the one summariser — takes
-   * the quality from here and never from `status`.
+   * the review's pills and the one summariser — takes the quality from here
+   * and never from `status`.
    */
   completionQuality: LoggedQuality | null;
   trainingSessionId: string | null;
-  // The linked session_log id (null when the event was never logged). Used by
-  // the AI prompt to join per-exercise top-set lines (keyed by session_log_id)
-  // back to each event (Session 6.3).
+  // The linked session_log id (null when the event was never logged).
   sessionLogId: string | null;
   performedSessionName?: string | null;
 };
@@ -187,98 +185,6 @@ export type EnhancedTrainingMetrics = TrainingMetrics & {
   nutritionAdherence?: NutritionAdherence;
 };
 
-// AI-generated insights
-export type AIInsight = {
-  type: "strength" | "concern" | "trend";
-  text: string;
-};
-
-// AI-generated recommendations
-export type AIRecommendation = {
-  priority: "high" | "medium" | "low";
-  text: string;
-};
-
-// Enhanced AI insight sections
-type AINutritionInsight = {
-  weeklyAdherence: string;
-  caloriePattern: string;
-  keyObservation: string;
-};
-
-type AINotesIntelligence = {
-  themes: string[];
-  concerns: string[];
-  positives: string[];
-  rawNotes: { date: string; note: string }[];
-};
-
-type AITrainingInsight = {
-  completionSummary: string;
-  keyObservation: string;
-  progressNote: string;
-};
-
-type AIWellnessInsight = {
-  pattern: string;
-  averages: string;
-  concern?: string;
-};
-
-type AICoachAction = {
-  action: string;
-  urgency: "now" | "next_check_in" | "monitor";
-  context: string;
-};
-
-// Enhanced AI data stored in ai_insights JSONB (v2 format)
-export type EnhancedAIData = {
-  _version: 2;
-  insights: AIInsight[];
-  nutritionInsight?: AINutritionInsight;
-  notesIntelligence?: AINotesIntelligence;
-  trainingInsight?: AITrainingInsight;
-  wellnessInsight?: AIWellnessInsight;
-  coachActions?: AICoachAction[];
-  clientHighlights?: string[];
-};
-
-// --- Check-in review (v3 AI output) ---
-
-export type WatchItemType = "win" | "risk" | "trend" | "flag";
-
-export type CheckInWatchItem = {
-  type: WatchItemType;
-  text: string;
-};
-
-export type CoachActionPriority = "high" | "medium" | "low";
-
-export type CheckInCoachAction = {
-  priority: CoachActionPriority;
-  text: string;
-};
-
-// The four-block coach review produced by the AI pass. Plain text, no markdown:
-// summary (what happened), watchItems + themes (what to watch), coachActions
-// (what to do) and clientMessage (what to say).
-export type CheckInReview = {
-  summary: string;
-  watchItems: CheckInWatchItem[];
-  themes: string[];
-  coachActions: CheckInCoachAction[];
-  clientMessage: string;
-};
-
-// v3 enhanced data stored in the ai_insights JSONB column. summary and
-// clientMessage live in their own columns (ai_summary, ai_response_draft).
-export type EnhancedAIDataV3 = {
-  _version: 3;
-  watchItems: CheckInWatchItem[];
-  themes: string[];
-  coachActions: CheckInCoachAction[];
-};
-
 // Complete check-in record (database row)
 export type CheckIn = {
   id: string;
@@ -321,13 +227,6 @@ export type CheckIn = {
    *  carried a target. Absent on a row with no snapshot. */
   nutritionTargetedDays?: number;
   nutritionNotes?: string;
-
-  // AI fields
-  aiSummary?: string;
-  aiInsights?: AIInsight[] | EnhancedAIData | EnhancedAIDataV3;
-  aiRecommendations?: AIRecommendation[];
-  aiResponseDraft?: string;
-  aiProcessedAt?: string;
 
   // Coach response
   coachResponse?: string;
@@ -685,12 +584,6 @@ export type SubmitCheckInResponse = {
   errorMessage?: string;
 };
 
-export type GenerateAISummaryResponse = {
-  success: boolean;
-  summary?: CheckInReview;
-  errorMessage?: string;
-};
-
 export type ReviewCheckInResponse = {
   success: boolean;
   errorMessage?: string;
@@ -929,13 +822,13 @@ export type GetCheckInComparisonResponse = {
   goalProgress: GoalProgress;
 };
 
-// Check-in with all related details for AI processing
+// A check-in with its related details, as the single check-in reads return it
 export type CheckInWithDetails = CheckIn & {
   exerciseHighlights?: CheckInExerciseHighlight[];
   /**
    * Answers to the coach's custom questions, joined to their prompts. On
    * `CheckInWithDetails` rather than `CheckIn` deliberately: the client's
-   * history LIST renders a date, a status and an AI preview, and embedding a
+   * history LIST renders a date, a status and the figures sent, and embedding a
    * dictionary inside a row list is what CONVENTIONS §8 "Sparse fieldsets"
    * forbids. Because it is not on `CheckIn`, `CLIENT_FACING_CHECKIN_KEYS`
    * cannot leak it by default — the allowlist stays fail-closed.

@@ -58,7 +58,6 @@ export async function GET(request: NextRequest) {
       mood: checkIn.mood,
       energy: checkIn.energy,
       createdAt: checkIn.created_at,
-      aiProcessedAt: checkIn.ai_processed_at,
       coachReviewedAt: checkIn.coach_reviewed_at,
     }));
 

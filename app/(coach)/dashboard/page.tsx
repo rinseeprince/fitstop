@@ -38,11 +38,8 @@ export default function DashboardPage() {
 
   // The card counts CLIENTS with a check-in waiting, through the one hook the
   // nav badge uses, so the number and the page it opens can never disagree.
-  // It used to count `ai_processed` rows inside /recent's newest 10 — which
-  // under-reported a busy week, missed `pending` rows entirely, and pointed at
-  // a queue page that no longer exists. Costs no request: /api/check-ins/
-  // unreviewed is already mounted by the coach layout's
-  // CheckInNotificationListener (app/(coach)/layout.tsx).
+  // Costs no request: /api/check-ins/unreviewed is already mounted by the
+  // coach layout's CheckInNotificationListener (app/(coach)/layout.tsx).
   const unreviewedClients = useUnreviewedCheckInClientCount()
 
   const pageHeader = (
@@ -153,11 +150,7 @@ export default function DashboardPage() {
                         </div>
                         <div
                           className={`h-2 w-2 rounded-full ${
-                            checkIn.status === "reviewed"
-                              ? "bg-[#0d9488]"
-                              : checkIn.status === "ai_processed"
-                                ? "bg-[#0d9488]"
-                                : "bg-[#d97706]"
+                            checkIn.status === "reviewed" ? "bg-[#0d9488]" : "bg-[#d97706]"
                           }`}
                         />
                       </div>

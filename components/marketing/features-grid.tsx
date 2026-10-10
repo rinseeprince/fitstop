@@ -7,7 +7,6 @@ import {
   Apple,
   TrendingUp,
   Bell,
-  Sparkles,
   BarChart3,
 } from "lucide-react"
 import { motion } from "framer-motion"
@@ -28,14 +27,6 @@ const FEATURES = [
       "Send automated check-in forms to clients. Collect photos, metrics, and feedback systematically.",
     color: "text-green-600",
     bg: "bg-green-500/10",
-  },
-  {
-    icon: Sparkles,
-    title: "AI-Powered Analysis",
-    description:
-      "Get instant AI summaries of check-ins. Identify trends and receive personalized coaching suggestions.",
-    color: "text-violet-600",
-    bg: "bg-violet-500/10",
   },
   {
     icon: Dumbbell,

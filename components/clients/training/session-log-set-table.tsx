@@ -38,7 +38,7 @@ import type { UnitSystem } from "@/utils/unit-conversions";
 // outside its target reads amber, below as well as above; an RPE two or more
 // above keeps its red; a % load is never marked, because a percentage can't be
 // compared with the kilograms lifted; a tempo that differs reads amber
-// (utils/target-gap.ts, the judgement the check-in AI's lines name too). A
+// (utils/target-gap.ts). A
 // warm-up is shown and never scored, so its values are muted and never marked.
 //
 // When the columns don't fit, the table scrolls sideways inside its card while

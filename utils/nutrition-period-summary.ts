@@ -8,7 +8,7 @@
  *
  * Every surface reads this and computes nothing of its own: the Overview
  * rail, the check-in ribbon and its nutrition card, the client's check-in
- * wizard, the columns and snapshot a submit stores, and the AI prompt. A
+ * wizard, and the columns and snapshot a submit stores. A
  * submitted check-in's summary is this function over its frozen rows, so the
  * rows are the only thing that needs freezing.
  *

@@ -35,8 +35,8 @@ type ClientNotesSectionProps = {
  *
  * The BORDERED, animated card shell is deliberate and temporary — it matches
  * the four sibling section cards beside it. All five are owed the borderless
- * treatment the AI review card took (D7.3); doing one of five here would have
- * made the column look broken rather than consistent.
+ * treatment (D7.3); doing one of five here would have made the column look
+ * broken rather than consistent.
  */
 export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
   const answers = checkIn.customAnswers ?? [];

@@ -10,7 +10,10 @@ connector, behind a "Connect Claude" page in the app (8) and an MCP endpoint (9)
 This plan adds migrations 215 (the chat, commit 1) and 216 (the connector's tables, commit 8), the next free
 numbers on 2026-10-10 (a session that finds one taken takes the next free); each joins the owner's PROD push.
 Every file and function named here was grepped on 2026-10-07 at `d5f23299`; the connector's sign-in (§2.8) was
-read against Better Auth 1.7.7 on 2026-10-10.
+read against Better Auth 1.7.7 on 2026-10-10. Since then `docs/SUNSET-PLAN.md` S1 deleted, with the check-in AI
+review, two functions §2.2 reads: `getCoachUnitPreference` (`lib/viewer-preferences.ts`) and
+`getExerciseSummariesForPeriod` (`services/check-in-context-service.ts`, with `utils/logged-exercise-line.ts`).
+The commit that first needs one restores it, with its tests, from `432eba15`, S1's parent.
 
 **The owner's model, in their words (2026-10-02 to 10-07):** "the text box to basically allow the coach to ask
 anything to do with their clients"; "show me every client who isn't improving on their bench press"; "Just

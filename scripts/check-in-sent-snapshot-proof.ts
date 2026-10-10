@@ -13,12 +13,12 @@
  *   1  the copy saved in the INSERT equals the review's own computation run
  *      straight after the Send (`buildSentSnapshotAsShown`) — one kernel;
  *   2  the coach's review — the detail and the comparison, read as the coach
- *      over HTTP — and the AI review's prompt are recorded;
+ *      over HTTP — is recorded;
  *   3  the coach then corrects the check-in's weigh-in on the Journey, sets a
  *      new goal from today, saves a nutrition plan from today with the
  *      training surplus off, stops the habit from today and renames it,
  *      rewords the question and moves the start date;
- *   4  the review, the comparison and the prompt read exactly as before — the
+ *   4  the review and the comparison read exactly as before — the
  *      one live answer, "is the judged goal still current", now says no;
  *   5  the database refuses a change to the saved copy and still takes the
  *      coach's reply.
@@ -34,8 +34,6 @@ import { addGoal } from "@/services/client-goal-writes-service";
 import { addHabits, renameHabit, stopHabit } from "@/services/client-habit-writes-service";
 import { submitCheckIn } from "@/services/check-in-service";
 import { buildSentSnapshotAsShown } from "@/services/check-in-sent-snapshot-fill";
-import { getCheckInReviewInput } from "@/services/check-in-review-input-service";
-import { buildCheckInReviewPrompt } from "@/utils/ai-prompt-builder";
 import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { addDaysToDateString, getTodayDateStringInTimezone } from "@/lib/date-helpers";
 import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
@@ -75,12 +73,10 @@ function same(a: unknown, b: unknown): boolean {
 async function readReview(coach: ProofSession, checkInId: string) {
   const detail = await send(coach, "GET", `/api/check-in/${checkInId}`);
   const comparison = await send(coach, "GET", `/api/check-in/${checkInId}/comparison`);
-  const input = await getCheckInReviewInput(checkInId);
   return {
     status: [detail.status, comparison.status],
     detail: detail.json as { checkIn: Record<string, unknown>; periodAdherence: unknown },
     comparison: comparison.json as { goalProgress: Record<string, unknown>; comparison: unknown },
-    prompt: input ? buildCheckInReviewPrompt(input) : null,
   };
 }
 
@@ -283,7 +279,6 @@ async function main(): Promise<void> {
     check("the goal section is unchanged", same(goalBefore, goalAfter), { goalBefore, goalAfter });
     check("the comparison's readings, deadline and drift note are unchanged", same(before.comparison.comparison, after.comparison.comparison));
     check("the one live answer moved: the judged goal is no longer the current one", currentBefore === true && currentAfter === false, { currentBefore, currentAfter });
-    check("the AI review's prompt is unchanged", before.prompt !== null && before.prompt === after.prompt);
 
     console.info("5. The database keeps the copy");
     const { error: frozen } = await supabaseAdmin.from("check_ins").update({ sent_snapshot: { version: 1 } } as never).eq("id", checkInId);

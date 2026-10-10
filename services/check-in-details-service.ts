@@ -5,10 +5,8 @@ import type {
   CheckInCustomAnswerInput,
   CheckInExerciseHighlight,
   CheckInTrainingEventDetail,
-  CheckInWithDetails,
 } from "@/types/check-in";
 import type { CheckInExerciseHighlightRow } from "@/lib/database-helpers";
-import { getCheckInById } from "./check-in-service";
 import { getTrainingEventDetailsForPeriod } from "./check-in-context-service";
 import { calculateCheckInPeriod } from "@/lib/date-helpers";
 import { checkInWeekday } from "@/lib/check-in-week";
@@ -237,22 +235,3 @@ export const mapExerciseHighlight = (
   // Canonical kilograms since migration 141 — a constant, not a column.
   reps: row.reps ?? undefined,
 });
-
-// Get check-in with all related details
-export const getCheckInWithDetails = async (
-  checkInId: string
-): Promise<CheckInWithDetails | null> => {
-  const checkIn = await getCheckInById(checkInId);
-  if (!checkIn) return null;
-
-  const [highlightRows, customAnswers] = await Promise.all([
-    getCheckInExerciseHighlights(checkInId),
-    getCheckInAnswers(checkIn),
-  ]);
-
-  return {
-    ...checkIn,
-    exerciseHighlights: highlightRows.map(mapExerciseHighlight),
-    customAnswers,
-  };
-};

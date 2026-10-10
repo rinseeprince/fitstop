@@ -11,9 +11,9 @@ import { join, relative } from "node:path";
  *
  * In the shape of `lib/training-adherence-ownership.test.ts`: every source file
  * under SCAN is read, comments stripped, for a read of the entries table
- * outside the habit services, and — under the screens, the routes and the AI's
- * prompt writers — for a habit's direction compared by hand, a met figure
- * computed as done up to planned, or met or planned days counted by hand.
+ * outside the habit services, and — under the screens and the routes — for a
+ * habit's direction compared by hand, a met figure computed as done up to
+ * planned, or met or planned days counted by hand.
  */
 const ROOT = join(__dirname, "..", "..");
 const SCAN = ["app", "components", "hooks", "lib", "services", "utils"];
@@ -21,8 +21,8 @@ const SCAN = ["app", "components", "hooks", "lib", "services", "utils"];
 /** The files that may read `client_habit_logs`: the habit services. */
 const READERS = /^services\/client-habit(s|-[a-z-]+)-service\.ts$/;
 
-/** Where no habit arithmetic may be spelled: the screens, the routes and the AI's prompt writers. */
-const SURFACES = /^(components|app)\/|^utils\/ai-prompt-/;
+/** Where no habit arithmetic may be spelled: the screens and the routes. */
+const SURFACES = /^(components|app)\//;
 
 // The table named anywhere in code: read by `.from(...)` or embedded in
 // another table's select, a read is a read.
@@ -74,7 +74,7 @@ describe("the habit kernel owns every habit figure", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("spells no met or planned arithmetic on a screen, a route or an AI prompt writer", () => {
+  it("spells no met or planned arithmetic on a screen or a route", () => {
     const offenders = files
       .filter((file) => SURFACES.test(file.path))
       .filter((file) => DIRECTION_COMPARED.test(file.src) || MET_ARITHMETIC.test(file.src) || DAYS_COUNTED.test(file.src))

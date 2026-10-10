@@ -23,25 +23,20 @@ export const CRITICALLY_OVERDUE_DAYS = 4;
 // silently never filled. Read by resolveCheckInDue (lib/check-in-schedule.ts).
 export const CHECK_IN_GRACE_DAYS = 7;
 
-// Every check_ins.status value, in lifecycle order (pending → ai_processed →
-// reviewed). The coach per-client list validates its ?status= filter against
-// this rather than restating the lifecycle as a literal of its own.
+// Every check_ins.status value, in lifecycle order (pending → reviewed). The
+// coach per-client list validates its ?status= filter against this rather
+// than restating the lifecycle as a literal of its own.
 export const CHECK_IN_STATUSES = [
   "pending",
-  "ai_processed",
   "reviewed",
 ] as const satisfies readonly CheckInStatus[];
 
-// "Unreviewed" for every coach queue: the Overview's awaiting-review row,
-// /api/check-ins/unreviewed (the bell and the toast listener) and the
-// promotion guard in updateCheckInAISummary. It INCLUDES `pending` (owner
-// decision D2.2, 2026-08-29): a submitted check-in whose AI pass failed must
-// still reach a coach — the review surface offers Regenerate for a pending
-// row — and three predicates used to spell this differently, so the queues
-// disagreed about who was waiting.
+// "Unreviewed" for every coach queue: the Overview's awaiting-review row and
+// /api/check-ins/unreviewed (the bell and the toast listener). A check-in is
+// unreviewed until the coach sends a reply; one constant, so the queues cannot
+// disagree about who is waiting.
 export const UNREVIEWED_CHECK_IN_STATUSES = [
   "pending",
-  "ai_processed",
 ] as const satisfies readonly CheckInStatus[];
 
 // How far a custom-macro save's stated calories may sit from its macros'
@@ -275,18 +270,6 @@ export const DEFAULT_WORK_ACTIVITY_LEVEL: ActivityLevel = "sedentary";
 // Mifflin-St Jeor needs an age. This was a silent `?? 30` inside the BMR
 // helper; named so it is auditable and so a UI nudge has something to cite.
 export const DEFAULT_BMR_AGE_YEARS = 30;
-// The check-in AI review (services/ai-service.ts, CONVENTIONS §11). One review
-// is one gpt-4o call: the room it has to write, and how long the call may run
-// before it is abandoned. The brief asks for a full written report preceded by
-// the model's working, and gpt-4o writes roughly seventy tokens a second, so
-// the ceiling and the timeout are sized together: the longest output the
-// ceiling allows still finishes inside the timeout.
-export const CHECK_IN_REVIEW_MAX_OUTPUT_TOKENS = 6000;
-export const CHECK_IN_REVIEW_TIMEOUT_MS = 120_000;
-// The most of any typed string the review prompt passes through the sanitiser:
-// above every check-in form limit (`submitCheckInSchema`'s 5,000-character
-// reflection is the longest), so a client's own words reach the model whole.
-export const AI_PROMPT_TEXT_LIMIT = 5000;
 
 // The login page: where a Google sign-in that fails or is refused lands, as
 // the button's errorCallbackURL and Better Auth's errorURL, with ?error=.

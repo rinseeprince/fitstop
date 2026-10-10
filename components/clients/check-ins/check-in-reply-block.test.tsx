@@ -17,13 +17,7 @@ const fetchMock = vi.fn();
 function renderBlock(props: Partial<React.ComponentProps<typeof CheckInReplyBlock>> = {}) {
   const onSent = props.onSent ?? vi.fn();
   const utils = render(
-    <CheckInReplyBlock
-      checkInId="ci-1"
-      clientName="Jane"
-      draft="Great week — let's talk about sleep."
-      {...props}
-      onSent={onSent}
-    />,
+    <CheckInReplyBlock checkInId="ci-1" clientName="Jane" {...props} onSent={onSent} />,
   );
   return { onSent, ...utils };
 }
@@ -38,10 +32,30 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("the box", () => {
+  it("starts empty: the coach writes the reply", () => {
+    renderBlock();
+
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.getByRole("button", { name: /^send$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /copy/i })).toBeDisabled();
+  });
+
+  it("offers Copy and Send once there is something written", async () => {
+    renderBlock();
+
+    await userEvent.type(screen.getByRole("textbox"), "Solid week.");
+
+    expect(screen.getByRole("button", { name: /copy/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^send$/i })).toBeEnabled();
+  });
+});
+
 describe("sending", () => {
-  it("sends what is in the box and reports the review done", async () => {
+  it("sends what the coach wrote and reports the review done", async () => {
     const { onSent } = renderBlock();
 
+    await userEvent.type(screen.getByRole("textbox"), "Great week, let's talk about sleep.");
     await userEvent.click(screen.getByRole("button", { name: /^send$/i }));
 
     await waitFor(() => expect(onSent).toHaveBeenCalledOnce());
@@ -50,31 +64,18 @@ describe("sending", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
-      coachResponse: "Great week — let's talk about sleep.",
+      coachResponse: "Great week, let's talk about sleep.",
     });
     expect(toastSuccess).toHaveBeenCalledWith("Message sent to Jane");
   });
 
-  it("sends the coach's edit, not the draft it started from", async () => {
-    renderBlock();
-    const box = screen.getByRole("textbox");
+  it("refuses a blank message without calling the API", async () => {
+    const { onSent } = renderBlock();
 
-    await userEvent.clear(box);
-    await userEvent.type(box, "Rewritten by hand.");
-    await userEvent.click(screen.getByRole("button", { name: /^send$/i }));
-
-    await waitFor(() =>
-      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
-        coachResponse: "Rewritten by hand.",
-      }),
-    );
-  });
-
-  it("refuses an empty message without calling the API", () => {
-    const { onSent } = renderBlock({ draft: "   " });
+    await userEvent.type(screen.getByRole("textbox"), "   ");
 
     // Disabled is the first guard; the handler's own check is the second, and
-    // both matter because the box can be emptied after mount.
+    // both matter because the box can be emptied after it was written in.
     expect(screen.getByRole("button", { name: /^send$/i })).toBeDisabled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(onSent).not.toHaveBeenCalled();
@@ -84,30 +85,11 @@ describe("sending", () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500 });
     const { onSent } = renderBlock();
 
+    await userEvent.type(screen.getByRole("textbox"), "Solid week.");
     await userEvent.click(screen.getByRole("button", { name: /^send$/i }));
 
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("Failed to send message"));
     expect(onSent).not.toHaveBeenCalled();
-  });
-});
-
-describe("the draft", () => {
-  it("follows a regenerated draft instead of showing the old one", () => {
-    // `useState` seeds from the prop once, so a regenerate rewrote the draft
-    // upstream while this block kept showing — and would have sent — the
-    // previous message.
-    const { rerender } = renderBlock();
-    expect(screen.getByRole("textbox")).toHaveValue("Great week — let's talk about sleep.");
-
-    rerender(
-      <CheckInReplyBlock
-        checkInId="ci-1"
-        clientName="Jane"
-        draft="Rewritten after regenerate."
-      />,
-    );
-
-    expect(screen.getByRole("textbox")).toHaveValue("Rewritten after regenerate.");
   });
 });
 
@@ -124,14 +106,16 @@ describe("a reply that has already been sent", () => {
     expect(screen.getByText("Solid week, keep the sleep up.")).toBeInTheDocument();
   });
 
-  it("stays open for a follow-up", () => {
+  it("stays open for a follow-up", async () => {
     // A coach can legitimately write again; the sent state reports, it does not
     // lock. The button names which kind of message this is.
     renderBlock(sent);
 
-    const send = screen.getByRole("button", { name: /send follow-up/i });
-    expect(send).toBeEnabled();
-    expect(screen.getByRole("textbox")).toBeEnabled();
+    const box = screen.getByRole("textbox");
+    expect(box).toBeEnabled();
+    expect(box).toHaveValue("");
+    await userEvent.type(box, "One more thing.");
+    expect(screen.getByRole("button", { name: /send follow-up/i })).toBeEnabled();
   });
 
   it("says only Send when nothing has been sent yet", () => {
@@ -145,13 +129,14 @@ describe("a reply that has already been sent", () => {
 
 describe("copy", () => {
   it("copies what is in the box", async () => {
+    renderBlock();
+    await userEvent.type(screen.getByRole("textbox"), "Great week, let's talk about sleep.");
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
-    renderBlock();
 
     await userEvent.click(screen.getByRole("button", { name: /copy/i }));
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Great week — let's talk about sleep."));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Great week, let's talk about sleep."));
     expect(toastSuccess).toHaveBeenCalledWith("Message copied");
   });
 });

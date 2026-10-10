@@ -6,7 +6,6 @@ vi.mock('@/lib/rate-limit', () => ({
   clientPerClientRateLimit: vi.fn(),
   apiRateLimit: vi.fn(),
   checkInRateLimit: vi.fn(),
-  aiRateLimit: vi.fn(),
   authRateLimit: vi.fn(),
 }))
 
@@ -24,7 +23,6 @@ import {
   clientPerClientRateLimit,
   apiRateLimit,
   checkInRateLimit,
-  aiRateLimit,
   authRateLimit,
 } from '@/lib/rate-limit'
 import { requireCSRFProtection } from '@/lib/csrf-protection'
@@ -41,7 +39,6 @@ describe('requireClientAuth', () => {
     vi.mocked(clientApiRateLimit).mockResolvedValue(null)
     vi.mocked(apiRateLimit).mockResolvedValue(null)
     vi.mocked(checkInRateLimit).mockResolvedValue(null)
-    vi.mocked(aiRateLimit).mockResolvedValue(null)
     vi.mocked(authRateLimit).mockResolvedValue(null)
     vi.mocked(clientPerClientRateLimit).mockResolvedValue(null)
     vi.mocked(requireCSRFProtection).mockResolvedValue(null)
@@ -144,14 +141,6 @@ describe('requireClientAuth', () => {
       const body = await result.response.json()
       expect(body).toEqual({ success: false, error: 'Unauthorized' })
     }
-  })
-
-  it('uses the aiRateLimit tier when overridden', async () => {
-    await requireClientAuth(makeRequest(), { rateLimit: 'ai', userId: 'user-1' })
-
-    expect(aiRateLimit).toHaveBeenCalledTimes(1)
-    expect(aiRateLimit).toHaveBeenCalledWith(expect.anything(), 'user-1')
-    expect(clientApiRateLimit).not.toHaveBeenCalled()
   })
 
   it('uses the checkInRateLimit tier when overridden', async () => {

@@ -71,7 +71,7 @@ describe("GET /api/check-ins/unreviewed", () => {
     expect(checkIns.select).not.toHaveBeenCalled();
   });
 
-  it("lists pending AND ai_processed check-ins, scoped to the coach's clients (D2.2)", async () => {
+  it("lists pending check-ins, scoped to the coach's clients", async () => {
     const row = {
       id: "ci-1",
       client_id: "c1",
@@ -90,7 +90,7 @@ describe("GET /api/check-ins/unreviewed", () => {
     // Deactivated clients never reach the queue: the bell links straight to the
     // check-in, and their page 404s.
     expect(clients.eq).toHaveBeenCalledWith("active", true);
-    expect(checkIns.in).toHaveBeenCalledWith("status", ["pending", "ai_processed"]);
+    expect(checkIns.in).toHaveBeenCalledWith("status", ["pending"]);
     expect(checkIns.in).toHaveBeenCalledWith("client_id", ["c1", "c2"]);
     expect(body.total).toBe(1);
     expect(body.checkIns[0]).toMatchObject({

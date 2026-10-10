@@ -164,12 +164,6 @@ export const submitCheckInSchema = z.object({
 // both blank got a 400 with no reason shown. An empty form IS a valid check-in:
 // the week's substance is derived server-side either way.
 
-// AI summary request validation
-// Regenerate takes no options: the review card posts an empty body, and the
-// old positive / detailed / concise steering went with the rulebook (owner
-// decision 2026-09-18). Kept as a schema so the route's chain still validates.
-export const aiSummaryRequestSchema = z.object({});
-
 export const reviewCheckInSchema = z.object({
   coachResponse: z.string().min(1, "Coach response is required").max(10000),
 });

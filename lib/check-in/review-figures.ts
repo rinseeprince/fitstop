@@ -2,7 +2,7 @@ import { format } from "date-fns";
 import { formatDeltaValue, type DeltaInfo } from "@/components/check-in/delta-format";
 import { shouldShowRegenerationBanner } from "@/utils/nutrition-helpers";
 import { dateStringToDayNumber } from "@/lib/date-helpers";
-import { GOAL_TYPE_SETTINGS, type GoalType } from "@/lib/goals/goal-types";
+import { GOAL_TYPE_SETTINGS } from "@/lib/goals/goal-types";
 import { weekAverage } from "@/lib/habits/habit-week";
 import { figureFraction, habitAmount, weekFigurePercent } from "@/lib/habits/habit-words";
 import type { GoalPosition, GoalProgress, GoalProgressRows } from "@/types/check-in";
@@ -10,9 +10,8 @@ import type { HabitDayFacts, HabitMeasure, HabitWeekFigures } from "@/types/habi
 
 /**
  * The review page's figure rules, spelled once. The KPI ribbon and the goal
- * strip draw them; the AI prompt describes them in the same words, so the
- * model is never handed a verdict the page would word differently. Pure:
- * every unit-bearing number arrives already formatted in the viewer's unit.
+ * strip draw them, so the page never words one verdict two ways. Pure: every
+ * unit-bearing number arrives already formatted in the viewer's unit.
  */
 
 export type GoalRowTone = "good" | "attention" | "neutral";
@@ -168,20 +167,6 @@ export function describeGoalRail(
   return `${start} – ${dayMonth(deadline.date)} · ${daysFromDeadline(deadline)}`;
 }
 
-/**
- * The AI review's deadline line: the deadline, under the name the goal's type
- * gives it (an event prep goal's is its event day), and the days to it — or
- * since it, once it has passed.
- */
-export function describeGoalDeadline(
-  deadline: GoalProgressRows["deadline"],
-  type: GoalType | null
-): string | undefined {
-  if (!deadline) return undefined;
-  const label = type ? GOAL_TYPE_SETTINGS[type].deadlineLabel : "Deadline";
-  return `${label.toLowerCase()} ${dayMonth(deadline.date)} · ${daysFromDeadline(deadline)}`;
-}
-
 /** A goal with no target, counted down to its deadline: the strip's one row for it. */
 type DeadlineCountdown = {
   /** What the goal's type calls its deadline: "Event day", else "Deadline". */
@@ -287,8 +272,8 @@ export function resolveGoalFooter(input: {
  * planned, "11/13", the habit week's own count (see ARCHITECTURE → "Habits") —
  * and its whole percentage. Null when nothing was planned: a week that asked
  * for nothing has no fraction, never 0/0. The strip's Habits cell, the Habits
- * section, the AI's week line and the client's sent check-in all write it
- * through here, in the fraction the Habits tab writes too (`figureFraction`).
+ * section and the client's sent check-in all write it through here, in the
+ * fraction the Habits tab writes too (`figureFraction`).
  */
 export function habitFigure<F extends Pick<HabitWeekFigures, "met" | "planned">>(
   figures: F

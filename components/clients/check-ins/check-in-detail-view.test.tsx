@@ -4,28 +4,30 @@ import userEvent from "@testing-library/user-event";
 import { CheckInDetailView } from "./check-in-detail-view";
 import type { Client } from "@/types/check-in";
 
-const { mockDetailData, habitsSectionProps, ribbonProps } = vi.hoisted(() => ({
+const { mockDetailData, habitsSectionProps, ribbonProps, replyMounted } = vi.hoisted(() => ({
   mockDetailData: vi.fn(),
   habitsSectionProps: vi.fn(),
   ribbonProps: vi.fn(),
+  replyMounted: vi.fn(),
 }));
 vi.mock("@/hooks/use-check-in-detail-data", () => ({
   useCheckInDetailData: mockDetailData,
 }));
-vi.mock("@/components/check-in/check-in-review-section", () => ({
-  CheckInReviewSection: ({ onRefresh }: { onRefresh: () => void }) => (
-    <div data-testid="rail">
-      <button onClick={onRefresh}>regenerate</button>
-    </div>
-  ),
-}));
-vi.mock("./check-in-reply-block", () => ({
-  CheckInReplyBlock: ({ onSent }: { onSent: () => void }) => (
-    <div data-testid="reply">
-      <button onClick={onSent}>send</button>
-    </div>
-  ),
-}));
+vi.mock("./check-in-reply-block", async () => {
+  const { useEffect } = await import("react");
+  return {
+    CheckInReplyBlock: ({ onSent }: { onSent: () => void }) => {
+      useEffect(() => {
+        replyMounted();
+      }, []);
+      return (
+        <div data-testid="reply">
+          <button onClick={onSent}>send</button>
+        </div>
+      );
+    },
+  };
+});
 vi.mock("@/components/check-in/kpi-ribbon", () => ({
   KPIRibbon: (props: unknown) => {
     ribbonProps(props);
@@ -56,7 +58,7 @@ const loaded = {
     checkIn: {
       id: "ci-9",
       clientId: "client-1",
-      status: "ai_processed",
+      status: "pending",
       createdAt: "2026-08-28T10:00:00Z",
       updatedAt: "2026-08-28T10:00:00Z",
     },
@@ -92,7 +94,6 @@ const loaded = {
   contextStartDate: new Date("2026-08-22T00:00:00"),
   contextEndDate: new Date("2026-08-28T00:00:00"),
   fullWeekTarget: null,
-  refreshDetail: vi.fn(),
 };
 
 function renderView(
@@ -116,7 +117,7 @@ function renderView(
 describe("CheckInDetailView", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("spins while the detail loads, with no rail", () => {
+  it("spins while the detail loads, with no sections", () => {
     mockDetailData.mockReturnValue({ ...loaded, data: null, isLoading: true, contextStartDate: null, contextEndDate: null });
     const { container } = render(
       <CheckInDetailView
@@ -128,14 +129,15 @@ describe("CheckInDetailView", () => {
       />
     );
     expect(container.querySelector(".animate-spin")).not.toBeNull();
-    expect(screen.queryByTestId("rail")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ribbon")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("reply")).not.toBeInTheDocument();
   });
 
-  it("refuses a check-in that belongs to another client — no rail, no context", () => {
+  it("refuses a check-in that belongs to another client — no reply, no context", () => {
     mockDetailData.mockReturnValue({ ...loaded, isForeign: true, contextStartDate: null, contextEndDate: null });
     renderView();
     expect(screen.getByText(/belongs to another client/i)).toBeInTheDocument();
-    expect(screen.queryByTestId("rail")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("reply")).not.toBeInTheDocument();
     expect(screen.queryByTestId("ribbon")).not.toBeInTheDocument();
   });
 
@@ -149,7 +151,6 @@ describe("CheckInDetailView", () => {
     mockDetailData.mockReturnValue(loaded);
     renderView();
     expect(screen.getByTestId("ribbon")).toBeInTheDocument();
-    expect(screen.getByTestId("rail")).toBeInTheDocument();
     // The reply is the page's destination and its own section.
     expect(screen.getByTestId("reply")).toBeInTheDocument();
     // Goal progress renders without a click — the whole point of the page.
@@ -203,7 +204,7 @@ describe("CheckInDetailView", () => {
     expect(screen.getByText(/Failed to load goal progress data/i)).toBeInTheDocument();
     // ...and everything the DETAIL read feeds still renders.
     expect(screen.getByTestId("ribbon")).toBeInTheDocument();
-    expect(screen.getByTestId("rail")).toBeInTheDocument();
+    expect(screen.getByTestId("reply")).toBeInTheDocument();
     expect(screen.queryByText(/Failed to load check-in data/i)).not.toBeInTheDocument();
   });
 
@@ -232,15 +233,31 @@ describe("CheckInDetailView", () => {
   });
 
 
-  it("a sent reply reports done; a regenerate refreshes the detail in place", async () => {
-    const user = userEvent.setup();
-    const refreshDetail = vi.fn();
-    mockDetailData.mockReturnValue({ ...loaded, refreshDetail });
-    const { onDone } = renderView();
+  it("opening another check-in in place starts its reply afresh", () => {
+    // A cached detail renders at once, so the page stays mounted between the
+    // two: the reply block must not, or what was typed for one check-in would
+    // be sent to the other.
+    mockDetailData.mockReturnValue(loaded);
+    const { rerender } = render(
+      <CheckInDetailView checkInId="ci-9" client={client} onBack={vi.fn()} onDone={vi.fn()} onTabChange={vi.fn()} />,
+    );
+    expect(replyMounted).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("button", { name: "regenerate" }));
-    expect(refreshDetail).toHaveBeenCalledTimes(1);
-    expect(onDone).not.toHaveBeenCalled();
+    mockDetailData.mockReturnValue({
+      ...loaded,
+      data: { ...loaded.data, checkIn: { ...loaded.data.checkIn, id: "ci-10" } },
+    });
+    rerender(
+      <CheckInDetailView checkInId="ci-10" client={client} onBack={vi.fn()} onDone={vi.fn()} onTabChange={vi.fn()} />,
+    );
+    expect(screen.getByTestId("reply")).toBeInTheDocument();
+    expect(replyMounted).toHaveBeenCalledTimes(2);
+  });
+
+  it("a sent reply reports done", async () => {
+    const user = userEvent.setup();
+    mockDetailData.mockReturnValue(loaded);
+    const { onDone } = renderView();
 
     await user.click(screen.getByRole("button", { name: "send" }));
     expect(onDone).toHaveBeenCalledTimes(1);

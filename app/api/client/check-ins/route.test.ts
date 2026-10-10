@@ -20,17 +20,12 @@ vi.mock('@/services/supabase-admin', () => ({ supabaseAdmin: { from: vi.fn() } }
 vi.mock('@/services/client-service', () => ({ getClientById: vi.fn() }));
 vi.mock('@/services/check-in-form-service', () => ({ getClientCheckInForm: vi.fn() }));
 vi.mock('@/services/storage-service', () => ({ uploadProgressPhotoFromBase64: vi.fn() }));
-vi.mock('@/services/client-check-in-service', () => ({
-  // Resolved, not bare: the route fires it and chains .catch() on the result.
-  triggerAISummaryGeneration: vi.fn().mockResolvedValue(undefined),
-}));
 vi.mock('@/services/check-in-adherence-service', () => ({ updateClientAdherenceStats: vi.fn() }));
 
 import { GET, POST } from './route';
 import { requireClientAuth } from '@/lib/require-client-auth';
 import { getClientCheckIns, submitCheckIn } from '@/services/check-in-service';
 import { getClientById } from '@/services/client-service';
-import { triggerAISummaryGeneration } from '@/services/client-check-in-service';
 import { getClientCheckInForm } from '@/services/check-in-form-service';
 import { DEFAULT_CHECK_IN_FORM_FIELDS } from '@/lib/check-in/form-fields';
 import { uploadProgressPhotoFromBase64 } from '@/services/storage-service';
@@ -149,7 +144,6 @@ describe('POST /api/client/check-ins — the write path gates too', () => {
     vi.setSystemTime(new Date('2026-06-12T12:00:00Z'));
     vi.mocked(requireClientAuth).mockResolvedValue({ ok: true, clientId: 'client-123' } as never);
     vi.mocked(submitCheckIn).mockResolvedValue('new-check-in-id' as never);
-    vi.mocked(triggerAISummaryGeneration).mockResolvedValue(undefined as never);
     // Default: the client has no form row, so every field is asked and the
     // strip is a no-op — which is what every client gets until a coach edits
     // one (C6a ships the server half; the editor lands in C6b).

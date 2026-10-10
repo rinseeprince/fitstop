@@ -113,10 +113,8 @@ export const CheckInGoalStrip = ({
     return `${round1(v)} ${unit}`;
   };
 
-  // The rows and the footer are worded once, in
-  // lib/check-in/review-figures.ts, which the AI review's prompt reads too —
-  // so the strip and the model never judge one goal two ways. The rail and
-  // the countdown are worded there too, for the page alone.
+  // The rows, the footer, the rail and the countdown are worded once, in
+  // lib/check-in/review-figures.ts.
   const rows = buildGoalRows(goalProgress, kg);
   const countdown = buildDeadlineCountdown(goalProgress);
   const railMeta = describeGoalRail(goal, deadline);

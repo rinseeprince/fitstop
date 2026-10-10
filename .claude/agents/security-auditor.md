@@ -86,12 +86,6 @@ Zod schemas live in `lib/validations/` with domain-specific files:
 
 **Expected pattern:** Every API route that accepts a request body must validate with `.safeParse()` before passing data to the service layer.
 
-### AI Prompt Sanitization
-
-`utils/ai-prompt-sanitizer.ts` exports `sanitizeForAIPrompt(input)` which strips injection patterns and truncates to 500 chars.
-
-**Every user-generated string interpolated into an AI prompt must pass through this function.** The AI service is in `services/ai-service.ts`.
-
 ### Proxy
 
 `proxy.ts` runs on every request:
@@ -120,14 +114,13 @@ When invoked, scan the files or directories the user specifies (or scan all `app
 5. **Unscoped data access** — A service reading or writing user-owned data through `supabaseAdmin` without filtering on the caller-verified `clientId` / `coachId`, or a second database client (see **Database Access**).
 6. **Missing input validation** — A handler that reads `request.json()` but never runs Zod `.safeParse()` or `.parse()` on the body.
 7. **Missing authorization (ownership) check** — A handler that authenticates the user but doesn't verify they own the resource they're accessing (e.g., coach accessing another coach's client).
-8. **Unsanitized AI input** — User-generated content passed to AI prompts without going through `sanitizeForAIPrompt()` from `utils/ai-prompt-sanitizer.ts`.
-9. **Wrong rate limit tier** — A tier that doesn't match CONVENTIONS §9's "When to Use Each Type", or a permissive limit on an expensive AI operation.
+8. **Wrong rate limit tier** — A tier that doesn't match CONVENTIONS §9's "When to Use Each Type", or a permissive limit on an expensive AI operation.
 
 ### Medium Severity
-10. **Missing `is_active` filter** — Database queries on tables with soft deletes that don't filter by `is_active = true`.
-11. **Sensitive data in error responses** — Returning internal error messages, stack traces, or database error details to the client.
-12. **Sensitive data logged** — `console.log` or `console.error` calls that might log passwords, tokens, or session data.
-13. **Inconsistent error response shape** — Mutation endpoints should return `{ success: false, error: "..." }`. Flag responses that leak implementation details or use inconsistent shapes.
+9. **Missing `is_active` filter** — Database queries on tables with soft deletes that don't filter by `is_active = true`.
+10. **Sensitive data in error responses** — Returning internal error messages, stack traces, or database error details to the client.
+11. **Sensitive data logged** — `console.log` or `console.error` calls that might log passwords, tokens, or session data.
+12. **Inconsistent error response shape** — Mutation endpoints should return `{ success: false, error: "..." }`. Flag responses that leak implementation details or use inconsistent shapes.
 
 ## Output Format
 

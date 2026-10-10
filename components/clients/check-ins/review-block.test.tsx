@@ -2,8 +2,6 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import {
   ReviewBlock,
-  ReviewList,
-  ReviewListRow,
   ReviewProse,
 } from "./review-block";
 
@@ -54,25 +52,5 @@ describe("ReviewProse", () => {
 
     expect(container.textContent).toBe("Hit a PR on squats\nAlso slept better");
     expect(container.firstElementChild).toHaveClass("whitespace-pre-wrap");
-  });
-});
-
-describe("ReviewList", () => {
-  it("gives every row a marker slot and its text", () => {
-    render(
-      <ReviewList>
-        <ReviewListRow marker={<span data-testid="marker-a">•</span>}>
-          Squat volume up
-        </ReviewListRow>
-        <ReviewListRow marker={<span data-testid="marker-b">•</span>}>
-          Sleep down
-        </ReviewListRow>
-      </ReviewList>,
-    );
-
-    expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    expect(screen.getByTestId("marker-a")).toBeInTheDocument();
-    expect(screen.getByTestId("marker-b")).toBeInTheDocument();
-    expect(screen.getByText("Squat volume up")).toBeInTheDocument();
   });
 });

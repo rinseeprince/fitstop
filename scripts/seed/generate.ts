@@ -45,7 +45,7 @@ import {
   ARCHETYPES, COACH_TIERS, SATURATED_ARCHETYPE, drawArchetype, pickBreaks, pickTenure, logsOnDay,
   addDays, dayOfWeekName, mondayOf, timestampAt,
   wellnessHour, nutritionHour, sessionHour, checkInHour,
-  coachNote, checkInResponse, aiReviewText, aiInsightsV3, aiRecommendations,
+  coachNote, checkInResponse,
   DIET_TYPES,
   SPLIT_TYPES, SESSION_NAMES, HABIT_NAMES, TIMEZONES, EXERCISE_POOL,
   type Archetype, type CoachTier,
@@ -923,7 +923,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
         checkIns.push({
           id: checkInId,
           client_id: clientId,
-          status: logRng.weighted([["reviewed", 6], ["ai_processed", 2], ["pending", 2]] as const),
+          status: logRng.weighted([["reviewed", 6], ["pending", 4]] as const),
           mood: logRng.int(2, 5), // CHECK 1..5 — every sibling scale is 1..10
           energy: logRng.int(3, 9),
           sleep: logRng.int(3, 9),
@@ -933,13 +933,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
           prs: logRng.bool(0.4) ? checkInResponse(logRng) : null,
           challenges: checkInResponse(logRng),
           nutrition_notes: logRng.bool(0.5) ? checkInResponse(logRng) : null,
-          // ai_summary is text; ai_insights and ai_recommendations are JSONB.
-          // A prose string in a jsonb column inserts cleanly as a string scalar
-          // and then hands lib/mappers.ts a string where every reader expects
-          // EnhancedAIDataV3 / a CheckInCoachAction[].
-          ai_summary: aiReviewText(logRng),
-          ai_insights: aiInsightsV3(logRng),
-          ai_recommendations: aiRecommendations(logRng),
           coach_response: logRng.bool(0.55) ? coachNote(logRng) : null,
           workouts_completed: logRng.int(0, TRAIN_DAYS_PER_WEEK),
           nutrition_days_on_target: logRng.int(0, 7), // CHECK 0..7

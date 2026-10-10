@@ -93,15 +93,15 @@ describe("the dashboard's unreviewed check-ins card", () => {
     expect(reviewCard()).toHaveTextContent("2")
   })
 
-  it("does not take its number from /api/check-ins/recent any more", () => {
-    // The old count was `ai_processed` rows inside /recent's newest 10. Five
-    // of them here, and an empty queue: the card must read 0.
+  it("does not take its number from /api/check-ins/recent", () => {
+    // The card counts the unreviewed queue, never /recent's newest 10. Three
+    // pending rows there and an empty queue: the card must read 0.
     wire({
       queue: [],
       recent: [
-        { id: "r1", clientId: "c1", status: "ai_processed", createdAt: "2026-08-29T10:00:00Z" },
-        { id: "r2", clientId: "c2", status: "ai_processed", createdAt: "2026-08-28T10:00:00Z" },
-        { id: "r3", clientId: "c3", status: "ai_processed", createdAt: "2026-08-27T10:00:00Z" },
+        { id: "r1", clientId: "c1", status: "pending", createdAt: "2026-08-29T10:00:00Z" },
+        { id: "r2", clientId: "c2", status: "pending", createdAt: "2026-08-28T10:00:00Z" },
+        { id: "r3", clientId: "c3", status: "pending", createdAt: "2026-08-27T10:00:00Z" },
       ],
     })
     render(<DashboardPage />)

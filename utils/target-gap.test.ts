@@ -11,7 +11,7 @@ import {
   tempoDiffers,
 } from "./target-gap";
 
-// The one judgement the coach's table colours by and the check-in AI names:
+// The one judgement the coach's table colours by:
 // where a logged value sits against its target, at the precision both are shown.
 
 function row(spec: Partial<SetSpec>): PrescribedRow {

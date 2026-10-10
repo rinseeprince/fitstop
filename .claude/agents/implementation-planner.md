@@ -108,7 +108,6 @@ Before creating new helpers, check these first:
 - `lib/check-in-utils.ts` — check-in related helpers
 - `lib/database-helpers.ts` — database query helpers
 - `utils/nutrition-helpers.ts` — nutrition calculations
-- `utils/ai-prompt-sanitizer.ts` — sanitization for AI inputs
 - `lib/mappers.ts` — database row to domain object mappers (if present)
 
 ### Type Organization

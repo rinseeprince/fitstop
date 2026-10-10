@@ -6,7 +6,6 @@ import { CheckCircle } from "lucide-react"
 import { motion } from "framer-motion"
 
 const BENEFITS = [
-  "AI-powered check-in analysis",
   "Custom training & nutrition plans",
   "Client progress tracking",
   "Automated reminders",
@@ -48,7 +47,7 @@ export function HeroSection() {
           >
             The all-in-one platform for fitness professionals. Track client
             progress, create personalized plans, and scale your coaching
-            business with AI-powered insights.
+            business.
           </motion.p>
 
           <motion.div

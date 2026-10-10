@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  aiRateLimit,
   apiRateLimit,
   authRateLimit,
   checkInRateLimit,
@@ -10,11 +9,10 @@ import {
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 
-type RateLimitTier = "client" | "api" | "checkIn" | "ai" | "auth";
+type RateLimitTier = "client" | "api" | "checkIn" | "auth";
 
 interface Options {
   rateLimit?: RateLimitTier;
-  userId?: string;
 }
 
 type AuthOk = { ok: true; clientId: string };
@@ -29,7 +27,7 @@ type ClientAuthResult = AuthOk | AuthFail;
  * for step 4 of §8 — verifying ownership of any resource identified by URL
  * params or request body. Auth proves identity, not permission.
  *
- * Defaults to clientApiRateLimit. Override via `{ rateLimit: "ai" | ... }`.
+ * Defaults to clientApiRateLimit. Override via `{ rateLimit: "api" | ... }`.
  *
  * The tight per-client tier (clientPerClientRateLimit) ALWAYS composes on top
  * of any `options.rateLimit` override — the override only swaps the pre-auth
@@ -64,8 +62,6 @@ async function runRateLimit(
       return apiRateLimit(request);
     case "checkIn":
       return checkInRateLimit(request);
-    case "ai":
-      return aiRateLimit(request, options.userId);
     case "auth":
       return authRateLimit(request);
     case "client":

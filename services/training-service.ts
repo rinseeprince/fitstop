@@ -43,8 +43,8 @@ const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSessi
   // rows/week). Because the order was `order_index` alone, the cut was not a
   // tail but a horizontal slice across ALL sessions: every session past the
   // threshold showed its first few exercises and then stopped. This read feeds
-  // getActiveTrainingPlan, which reaches the client dashboard, the coach
-  // nutrition page and the check-in AI prompt.
+  // getActiveTrainingPlan, which reaches the client dashboard and the coach
+  // nutrition page.
   const exerciseRows = await fetchAllByChunkedIds<TrainingExerciseWithGroupRow, string>(
     sessionIds,
     (chunk, from, to) =>

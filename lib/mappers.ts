@@ -1,5 +1,5 @@
 import { countTargetedDays } from "@/lib/check-in/period-snapshot";
-import type { ActivityLevel, CheckIn, Client, Coach, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
+import type { ActivityLevel, CheckIn, CheckInStatus, Client, Coach, ReminderPreferences } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
 import type { GoalOnDay } from "@/types/client-goals";
 import type { SurplusSettings } from "@/lib/nutrition/surplus-settings";
@@ -31,7 +31,7 @@ export function mapCheckInRow(row: CheckInRow): CheckIn {
   return {
     id: row.id,
     clientId: row.client_id,
-    status: row.status as "pending" | "ai_processed" | "reviewed",
+    status: row.status as CheckInStatus,
     mood: row.mood ?? undefined,
     energy: row.energy ?? undefined,
     sleep: row.sleep ?? undefined,
@@ -56,11 +56,6 @@ export function mapCheckInRow(row: CheckInRow): CheckIn {
     // The days that count was taken over — the frozen rows with a target.
     nutritionTargetedDays: countTargetedDays(row.period_snapshot) ?? undefined,
     nutritionNotes: row.nutrition_notes ?? undefined,
-    aiSummary: row.ai_summary ?? undefined,
-    aiInsights: (row.ai_insights ?? undefined) as AIInsight[] | EnhancedAIData | undefined,
-    aiRecommendations: (row.ai_recommendations ?? undefined) as AIRecommendation[] | undefined,
-    aiResponseDraft: row.ai_response_draft ?? undefined,
-    aiProcessedAt: row.ai_processed_at ?? undefined,
     coachResponse: row.coach_response ?? undefined,
     coachReviewedAt: row.coach_reviewed_at ?? undefined,
     responseSentAt: row.response_sent_at ?? undefined,
@@ -244,11 +239,8 @@ export function toClientFacingIntake(intake: ClientIntake): Partial<ClientIntake
   return pickAllowed(intake, CLIENT_INTAKE_KEYS);
 }
 
-// Client-facing allowlist for a CheckIn. The AI fields (aiSummary, aiInsights,
-// aiRecommendations, aiResponseDraft, aiProcessedAt) are coach-only analysis —
-// the AI prompt targets the coach and surfaces disordered-eating/injury risk,
-// and aiResponseDraft is the coach's UNSENT drafted reply. coachResponse stays
-// (it is the coach's reply TO the client). Allowlist, not denylist, so a future
+// Client-facing allowlist for a CheckIn. coachResponse is on it (it is the
+// coach's reply TO the client). Allowlist, not denylist, so a future
 // coach-only column is excluded by default rather than shipped.
 const CLIENT_FACING_CHECKIN_KEYS = [
   "id", "clientId", "clientName", "clientAvatarUrl", "status",

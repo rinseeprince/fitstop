@@ -51,7 +51,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' blob: data: https://*.supabase.co",
               "font-src 'self'",
-              "connect-src 'self' https://*.supabase.co https://api.openai.com https://*.sentry.io https://*.ingest.de.sentry.io",
+              "connect-src 'self' https://*.supabase.co https://*.sentry.io https://*.ingest.de.sentry.io",
               "frame-ancestors 'none'",
               // Restrict <base> hijacking and form posting to same-origin.
               "base-uri 'self'",

@@ -267,7 +267,7 @@ describe("HabitsSection — the week as it was prescribed and as it happened", (
 
   it("shows a habit done on a day the week did not plan: Nothing planned for its week, and its note under the table", () => {
     // The client's step lists every habit that ran, so a note left on it
-    // reaches the coach here, as it reaches the AI.
+    // reaches the coach here.
     const walk = longWalk({ done: true, value: null, note: "Hotel gym" });
     const { container } = render(<HabitsSection habitWeek={{ habits: [water, walk], totals: water.figures }} />);
 

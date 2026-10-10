@@ -62,8 +62,8 @@ export async function GET(
 
     // getCheckInExerciseHighlights returns RAW snake_case rows (it is a
     // `select("*")` with no mapper), so this route must map them exactly as
-    // getCheckInWithDetails does — the client page reads the camelCase domain
-    // shape. The annotation is deliberate: it is the only thing anchoring this
+    // the coach's detail route does — the client page reads the camelCase
+    // domain shape. The annotation is deliberate: it is the only thing anchoring this
     // field to a real type, because app/client/check-in/[id]/page.tsx types the
     // fetch response as `any` and tsc therefore checks the page against its own
     // declaration rather than against what this route actually sends.
@@ -103,8 +103,6 @@ export async function GET(
         // Null on a row with no snapshot: a count with no denominator.
         nutritionTargetedDays: countTargetedDays(checkIn.period_snapshot),
         nutritionNotes: checkIn.nutrition_notes,
-        // AI fields (ai_summary/insights/recommendations/response_draft) are
-        // coach-only analysis — deliberately NOT returned to the client (M6).
         coachResponse: checkIn.coach_response,
         coachReviewedAt: checkIn.coach_reviewed_at,
         responseSentAt: checkIn.response_sent_at,

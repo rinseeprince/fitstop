@@ -406,11 +406,6 @@ export type Database = {
       check_ins: {
         Row: {
           adherence_percentage: number | null
-          ai_insights: Json | null
-          ai_processed_at: string | null
-          ai_recommendations: Json | null
-          ai_response_draft: string | null
-          ai_summary: string | null
           challenges: string | null
           client_id: string
           coach_response: string | null
@@ -440,11 +435,6 @@ export type Database = {
         }
         Insert: {
           adherence_percentage?: number | null
-          ai_insights?: Json | null
-          ai_processed_at?: string | null
-          ai_recommendations?: Json | null
-          ai_response_draft?: string | null
-          ai_summary?: string | null
           challenges?: string | null
           client_id: string
           coach_response?: string | null
@@ -474,11 +464,6 @@ export type Database = {
         }
         Update: {
           adherence_percentage?: number | null
-          ai_insights?: Json | null
-          ai_processed_at?: string | null
-          ai_recommendations?: Json | null
-          ai_response_draft?: string | null
-          ai_summary?: string | null
           challenges?: string | null
           client_id?: string
           coach_response?: string | null

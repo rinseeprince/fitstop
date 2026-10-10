@@ -837,9 +837,7 @@ type CheckIn = {
   photoSide?: string // URL
   photoBack?: string // URL
   
-  // AI Summary
-  aiSummary?: string
-  status: "pending" | "ai_processed" | "reviewed"
+  status: "pending" | "reviewed"
 }
 ```
 

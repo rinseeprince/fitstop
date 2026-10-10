@@ -8,8 +8,6 @@
  *   2  a copy saved at version 1 or 2 draws the review's Habits section with
  *      the habits, figures and day marks it drew before version 3, worked out
  *      here the old way from the copy's own `perHabit`
- *   3  and gives the AI the same habits: the week's lines, as the real writer
- *      writes them, with each habit's figure, and each day's habits met or not
  *
  * Read-only: it writes nothing, so it leaves nothing to clean up.
  */
@@ -18,14 +16,8 @@ import "./env-bootstrap";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { readSentSnapshot } from "@/lib/check-in/sent-snapshot";
 import { habitSectionNotes, habitSectionRows, type HabitRailMark } from "@/lib/check-in/habit-section-rows";
-import { habitsOnDay, habitWeekLines } from "@/utils/ai-prompt-habits";
-import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
-import { AI_PROMPT_TEXT_LIMIT } from "@/lib/constants";
 
 const PAGE = 500;
-
-/** A habit's name as the AI is given it. */
-const text = (value: string) => sanitizeForAIPrompt(value, AI_PROMPT_TEXT_LIMIT);
 
 /** A version 1 or 2 copy's habits, as it saved them. */
 type SavedHabits = {
@@ -73,7 +65,7 @@ async function main(): Promise<void> {
         continue;
       }
       const habitWeek = read?.period?.habitWeek ?? null;
-      // What the review and the AI draw from it must work for every version.
+      // What the review draws from it must work for every version.
       const rows = habitSectionRows(habitWeek).map((habit) => ({
         id: habit.id,
         name: habit.name,
@@ -84,37 +76,12 @@ async function main(): Promise<void> {
 
       if ((version === "1" || version === "2") && saved.period?.habits) {
         compared += 1;
-        const { dates, habits } = saved.period;
+        const { habits } = saved.period;
         if (JSON.stringify(rows) !== JSON.stringify(rowsTheOldWay(habits))) {
           drawnDifferently.push({ id: row.id, what: "the Habits section" });
         }
         // Version 2 saved ticks alone: no note can come out of it.
         if (notes.length > 0) drawnDifferently.push({ id: row.id, what: "the Habits section's notes" });
-        // The AI's week lines, written by the real writer, carry each habit's
-        // figure as the copy froze it: a tick habit every day it existed.
-        const eligible = habits.perHabit.filter((habit) => habit.eligibleDays > 0);
-        const met = eligible.reduce((sum, habit) => sum + habit.completedDays, 0);
-        const planned = eligible.reduce((sum, habit) => sum + habit.eligibleDays, 0);
-        const weekBefore =
-          eligible.length === 0
-            ? []
-            : [
-                `Habits: ${met}/${planned} habit days done`,
-                ...eligible.map((habit) => `  ${text(habit.name)} (Every day): ${habit.completedDays}/${habit.eligibleDays} days done`),
-              ];
-        if (JSON.stringify(habitWeekLines(habitWeek)) !== JSON.stringify(weekBefore)) {
-          drawnDifferently.push({ id: row.id, what: "the AI's week lines" });
-        }
-        dates.forEach((date, index) => {
-          const before = habits.perHabit.flatMap((habit) => {
-            const ticked = habit.rail[index];
-            return ticked == null ? [] : [{ name: habit.name, ticked }];
-          });
-          const now = habitsOnDay(habitWeek, date).map((habit) => ({ name: habit.name, ticked: habit.met }));
-          if (JSON.stringify(now) !== JSON.stringify(before)) {
-            drawnDifferently.push({ id: row.id, what: `the AI's line for ${date}` });
-          }
-        });
       }
     }
     if (!data || data.length < PAGE) break;
@@ -126,7 +93,7 @@ async function main(): Promise<void> {
   console.info(`  ${unreadable.length === 0 ? "✓" : "✗"} every copy reads: ${total - unreadable.length} of ${total}`);
   for (const failure of unreadable.slice(0, 10)) console.error(`      ${failure.id}: ${failure.error}`);
   console.info(
-    `  ${drawnDifferently.length === 0 ? "✓" : "✗"} every version 1 or 2 copy with a week draws its habits and AI lines as before: ${compared} compared`
+    `  ${drawnDifferently.length === 0 ? "✓" : "✗"} every version 1 or 2 copy with a week draws its habits as before: ${compared} compared`
   );
   for (const difference of drawnDifferently.slice(0, 10)) console.error(`      ${difference.id}: ${difference.what}`);
 

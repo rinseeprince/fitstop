@@ -70,7 +70,7 @@ async function readClientPreference(clientId: string): Promise<UnitSystem | null
  *   failed.
  *
  * Coach-first: the coach surface is the primary app and Phase 3's server-side
- * consumers (AI prompt strings, calculator warnings) are coach-facing, so it is
+ * consumers (calculator warnings) are coach-facing, so it is
  * the branch worth resolving in one hop. A client caller pays an extra
  * session read + an uncached coaches miss first; acceptable at one request per app
  * load, and the order is a one-line change if that stops being true.
@@ -94,8 +94,7 @@ export async function resolveViewerUnitPreference(
  * the viewer cannot be resolved OR when the read fails.
  *
  * DELIBERATELY different from `resolveViewerUnitPreference` above. Use this
- * ONLY for server-rendered human-readable text — the AI prompt strings in
- * `utils/ai-prompt-builder.ts` and the calculator warnings in
+ * ONLY for server-rendered human-readable text — the calculator warnings in
  * `services/nutrition-service.ts` — where there is no UI state to degrade into
  * and the string has to say something. Anything that can surface an error to
  * the caller (every API route) must use the throwing variant instead, or it
@@ -108,31 +107,6 @@ export async function getViewerUnitPreference(
     return (await resolveViewerUnitPreference(request)) ?? DEFAULT_UNIT_SYSTEM;
   } catch (error) {
     captureApiError(error, { helper: "getViewerUnitPreference" });
-    return DEFAULT_UNIT_SYSTEM;
-  }
-}
-
-/**
- * A specific coach's unit system, for server-rendered text that a COACH reads
- * but that is not necessarily generated on a coach-authenticated request.
- *
- * The AI check-in summary is the case this exists for. It has two call paths:
- * the coach's own regenerate route, and a fire-and-forget trigger on the
- * CLIENT's submit route. `getViewerUnitPreference(request)` is wrong on the
- * second — it would resolve the client, and the coach would then read a summary
- * in whichever unit happened to generate it. The reader is the coach either way,
- * so resolve the reader.
- *
- * Falls back to metric rather than throwing: this only ever decorates prose.
- */
-export async function getCoachUnitPreference(
-  coachId: string | null | undefined
-): Promise<UnitSystem> {
-  if (!coachId) return DEFAULT_UNIT_SYSTEM;
-  try {
-    return (await readCoachPreference(coachId)) ?? DEFAULT_UNIT_SYSTEM;
-  } catch (error) {
-    captureApiError(error, { helper: "getCoachUnitPreference" });
     return DEFAULT_UNIT_SYSTEM;
   }
 }

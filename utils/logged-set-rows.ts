@@ -108,8 +108,7 @@ export function buildLoggedSetRows(
  * snapshot from before the column list existed still shows what it holds
  * (owner, 2026-09-18: "columns follow the data"). Rest is not a box: its column
  * is there when a set recorded the rest taken, which only the React Native
- * app's timer does. The coach's table and the check-in AI's lines both walk
- * these, so the two describe the same measures.
+ * app's timer does. The coach's table walks these.
  */
 export function loggedColumns(
   fields: ReadonlySet<PrescribedField>,

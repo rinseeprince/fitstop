@@ -193,7 +193,7 @@ describe("ClientCheckInPage", () => {
           {
             id: "ci-1",
             clientId: "c1",
-            status: "ai_processed",
+            status: "pending",
             createdAt: "2026-05-01T12:00:00Z",
             weight: 175,
           },
@@ -233,7 +233,7 @@ describe("ClientCheckInPage", () => {
           {
             id: "ci-1",
             clientId: "c1",
-            status: "ai_processed",
+            status: "pending",
             createdAt: "2026-05-01T12:00:00Z",
             weight: 175,
           },

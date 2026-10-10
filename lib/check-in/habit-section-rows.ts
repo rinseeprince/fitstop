@@ -7,8 +7,7 @@ import type { SentHabitWeek } from "@/lib/check-in/sent-snapshot";
  * The coach review's Habits section, row by row, from a sent check-in's habit
  * week (docs/HABITS-REBUILD-PLAN.md §2.5, commit 6) — pure, so a test and the
  * proof over every saved copy (`scripts/check-in-copies-read-proof.ts`) read
- * exactly what the section draws, and the AI's habit lines read the same
- * habits. Each row is a habit that week said something about (`habitIsListed`):
+ * exactly what the section draws. Each row is a habit that week said something about (`habitIsListed`):
  * its name and its words as they stood — its days, then its target — one cell
  * per day as it happened, a number habit's number in it, the week's figure
  * (met of planned) and a number habit's average. Under the table, the notes

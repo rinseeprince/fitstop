@@ -21,10 +21,10 @@ import {
 
 // How a measure READS — a target range or a logged value with its word, in the
 // viewer's units — on every surface that describes a prescription or a log:
-// the client's summary line and boxes, the coach's logged-workout table, the
-// check-in AI's lines. One grammar so "5 km", "3:45–3:50 /km", "RPE 7–8" and
-// "250 W" are spelled the same everywhere. Ranges take an en dash; the entry
-// grammar (what a box takes) is utils/unit-conversions.ts, not this.
+// the client's summary line and boxes and the coach's logged-workout table. One
+// grammar so "5 km", "3:45–3:50 /km", "RPE 7–8" and "250 W" are spelled the
+// same everywhere. Ranges take an en dash; the entry grammar (what a box
+// takes) is utils/unit-conversions.ts, not this.
 
 /** The unit-bearing measures format each end and share the unit once. */
 function joinEnds(

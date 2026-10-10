@@ -6,9 +6,7 @@ vi.mock("./nutrition-days-service", () => ({ getNutritionTargetsForDateRange: vi
 
 import { fetchNutritionLogsForPeriod } from "./schedule-data-service";
 import { getNutritionTargetsForDateRange } from "./nutrition-days-service";
-import { getCheckInNutritionPeriod, getNutritionPeriod } from "./nutrition-period-service";
-import type { NutritionDay } from "@/types/schedule";
-import { parseSentSnapshot, type SentSnapshot } from "@/lib/check-in/sent-snapshot";
+import { getNutritionPeriod } from "./nutrition-period-service";
 
 const target = (date: string, calories: number): NutritionDayTarget => ({
   date,
@@ -71,65 +69,5 @@ describe("getNutritionPeriod — the live period through the kernel", () => {
 
     expect(getNutritionTargetsForDateRange).toHaveBeenCalledTimes(1);
     expect(period.summary).toMatchObject({ loggedDays: 0, targetedDays: 1, onTarget: 0, daysOnTargetPct: 0 });
-  });
-});
-
-describe("getCheckInNutritionPeriod — a sent check-in reads the rows its copy froze", () => {
-  const frozen: NutritionDay[] = [
-    {
-      date: "2026-05-08", dayOfWeek: "friday", status: "hit",
-      targetCalories: 2000, targetProteinG: 150, targetCarbsG: 200, targetFatG: 60,
-      actualCalories: 2000, actualProteinG: 150, actualCarbsG: 200, actualFatG: 60,
-    },
-    {
-      date: "2026-05-09", dayOfWeek: "saturday", status: "no_target",
-      targetCalories: null, targetProteinG: null, targetCarbsG: null, targetFatG: null,
-      actualCalories: 1800, actualProteinG: null, actualCarbsG: null, actualFatG: null,
-    },
-  ];
-
-  /** The check-in's saved copy, with or without a week. */
-  function sentCopy(period: SentSnapshot["period"]): SentSnapshot {
-    return parseSentSnapshot({
-      version: 3,
-      day: "2026-05-09",
-      readings: { weight: 80.4, bodyFat: null, waist: null, hips: null, chest: null, arms: null, thighs: null },
-      standing: { weight: 80.4, bodyFat: null },
-      goal: null,
-      goalProgress: {},
-      nutritionPlan: null,
-      period,
-      questions: [],
-    });
-  }
-
-  const week: SentSnapshot["period"] = {
-    dates: ["2026-05-08", "2026-05-09"],
-    loggedDates: ["2026-05-08", "2026-05-09"],
-    nutrition: frozen,
-    habitWeek: { habits: [], totals: { planned: 0, done: 0, met: 0 } },
-  };
-
-  it("hands back the copy's rows and the kernel over them, and reads nothing live", () => {
-    const { days, summary } = getCheckInNutritionPeriod({ id: "ci-np-1", sentSnapshot: sentCopy(week) });
-
-    expect(fetchNutritionLogsForPeriod).not.toHaveBeenCalled();
-    expect(getNutritionTargetsForDateRange).not.toHaveBeenCalled();
-    expect(days).toEqual(frozen);
-    expect(summary).toMatchObject({ loggedDays: 2, targetedDays: 1, onTarget: 1, loggedNoTargetDays: 1, daysOnTargetPct: 100 });
-  });
-
-  it("gives a check-in whose week could not be resolved no food rows — its copy saved none — and still reads nothing live", () => {
-    const { days, summary } = getCheckInNutritionPeriod({ id: "ci-np-2", sentSnapshot: sentCopy(null) });
-
-    expect(fetchNutritionLogsForPeriod).not.toHaveBeenCalled();
-    expect(getNutritionTargetsForDateRange).not.toHaveBeenCalled();
-    expect(days).toEqual([]);
-    expect(summary.periodDays).toBe(0);
-  });
-
-  it("throws for a check-in with no saved copy rather than reading today's targets", () => {
-    expect(() => getCheckInNutritionPeriod({ id: "ci-np-3", sentSnapshot: null })).toThrow(/no saved copy/);
-    expect(fetchNutritionLogsForPeriod).not.toHaveBeenCalled();
   });
 });

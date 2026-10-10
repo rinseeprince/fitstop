@@ -3,7 +3,6 @@ import type {
   CheckIn,
   CheckInFormData,
   CheckInStatus,
-  CheckInReview,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
 import type { MeasurementValues } from "@/lib/measurements/keys";
@@ -18,7 +17,6 @@ import {
 import { appendMeasurements } from "./measurements-service";
 import { buildSentSnapshotAtSend } from "./check-in-sent-snapshot-service";
 import { checkInWeekday } from "@/lib/check-in-week";
-import { UNREVIEWED_CHECK_IN_STATUSES } from "@/lib/constants";
 import { getFrequencyInDays, resolveCheckInDue } from "@/lib/check-in-schedule";
 import type { CheckInCursor } from "@/lib/cursor";
 import {
@@ -69,10 +67,8 @@ function measurementValuesFromForm(formData: CheckInFormData): MeasurementValues
 // DERIVED server-side from the client's logs for the check-in's period — never read
 // from the form body — in ONE computation: the nutrition columns and the
 // frozen nutrition rows come from the same kernel run, so they cannot
-// disagree. The columns stay populated so the AI's previous-check-in trend
-// (utils/ai-prompt-builder.ts) keeps working. The form no longer sends the
-// training or nutrition figures, nor mood…stress; any such fields on formData
-// are ignored.
+// disagree. The form no longer sends the training or nutrition figures, nor
+// mood…stress; any such fields on formData are ignored.
 export const submitCheckIn = async (
   clientId: string,
   formData: CheckInFormData
@@ -102,7 +98,7 @@ export const submitCheckIn = async (
   // Derive the stored columns AND the frozen snapshot for the period. Pin 1:
   // the nutrition figures and the nutrition rows are one kernel run
   // (`getNutritionPeriod`), so the stored count, the frozen rows the review
-  // and the AI read back, and the client's card cannot disagree. Pin 2: the
+  // reads back, and the client's card cannot disagree. Pin 2: the
   // five wellness averages come from the days the day reader assembles
   // (`getDailyLogs`), whose scores are the wellness rows' own.
   let workoutsCompleted: number | undefined;
@@ -252,8 +248,8 @@ export const submitCheckIn = async (
   // The check-in's readings — weight, body fat and the five girths, canonical
   // kg/cm — as rows in the measurement log stamped with its id
   // (docs/MEASUREMENT-LOG-PLAN.md §2 rule 5), dated the client's own day and
-  // measured now. The report, the band, the client's detail and the AI prompt
-  // all read them back through that stamp.
+  // measured now. The report, the band and the client's detail all read them
+  // back through that stamp.
   //
   // A SECOND statement after the INSERT, so it carries the same seam as the
   // answers below (CONVENTIONS §2 item 13): if it throws, the check-in stands
@@ -442,61 +438,6 @@ export const getClientCheckIns = async (
     total: count || 0,
     nextCursor,
   };
-};
-
-// Update check-in with the AI review (v3 format). summary and clientMessage are
-// stored in their own columns; watchItems/themes/coachActions go in ai_insights.
-//
-// Status: a `pending` row is promoted to `ai_processed`; a `reviewed` row keeps
-// its status (owner decision D0.2, 2026-08-29). Regenerate used to set
-// `ai_processed` unconditionally, which dropped a reviewed check-in back into
-// every unreviewed queue. The promotion is ONE conditional UPDATE rather than a
-// read-then-write: a Regenerate racing a Send would read `ai_processed` and
-// write it over the `reviewed` that landed in between, and the conditional
-// UPDATE cannot.
-export const updateCheckInAISummary = async (
-  checkInId: string,
-  review: CheckInReview
-): Promise<void> => {
-  const enhancedInsights = {
-    _version: 3 as const,
-    watchItems: review.watchItems,
-    themes: review.themes,
-    coachActions: review.coachActions,
-  };
-
-  const aiColumns = {
-    ai_summary: review.summary,
-    ai_insights: enhancedInsights,
-    // coachActions share the { priority, text } shape with the legacy
-    // ai_recommendations column, so any pre-v3 reader still resolves.
-    ai_recommendations: review.coachActions,
-    ai_response_draft: review.clientMessage,
-    ai_processed_at: new Date().toISOString(),
-  };
-
-  const { data: promoted, error } = await supabaseAdmin
-    .from("check_ins")
-    .update({ ...aiColumns, status: "ai_processed" })
-    .eq("id", checkInId)
-    .in("status", UNREVIEWED_CHECK_IN_STATUSES)
-    .select("id");
-
-  if (error) {
-    throw new Error(`Failed to update AI summary: ${error.message}`);
-  }
-  if (promoted && promoted.length > 0) return;
-
-  // Already reviewed: refresh the review, leave the status where the coach
-  // put it. (A missing id matches zero rows here too, as it always did.)
-  const { error: reviewedError } = await supabaseAdmin
-    .from("check_ins")
-    .update(aiColumns)
-    .eq("id", checkInId);
-
-  if (reviewedError) {
-    throw new Error(`Failed to update AI summary: ${reviewedError.message}`);
-  }
 };
 
 // Update check-in with coach response

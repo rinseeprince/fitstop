@@ -92,7 +92,7 @@ export function useClearCheckInComparisons() {
 }
 
 function useCheckInDetail(checkInId: string | null) {
-  const { data, error, isLoading, mutate } = useSWR<CheckInWithClient>(
+  const { data, error, isLoading } = useSWR<CheckInWithClient>(
     checkInId ? checkInDetailKey(checkInId) : null,
     swrFetcher,
     {
@@ -100,7 +100,7 @@ function useCheckInDetail(checkInId: string | null) {
       onError: (err) => console.error("Failed to fetch check-in:", err),
     }
   );
-  return { data: data ?? null, isLoading, isError: !!error, mutate };
+  return { data: data ?? null, isLoading, isError: !!error };
 }
 
 function useCheckInComparison(checkInId: string | null) {
@@ -174,13 +174,6 @@ export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDa
   // froze, on `periodAdherence`.
   const { logs: dailyLogs, isLoading: logsLoading } = useWellnessData(clientId, { range });
 
-  const { mutate: mutateDetail } = detail;
-  // After Regenerate the rail asks for the fresh review; the bound mutate
-  // revalidates exactly this detail in place.
-  const refreshDetail = useCallback(() => {
-    void mutateDetail();
-  }, [mutateDetail]);
-
   return {
     data: detail.data,
     isLoading: detail.isLoading,
@@ -194,6 +187,5 @@ export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDa
     dailyContextLoading: period !== null && logsLoading,
     contextStartDate: period?.start ?? null,
     contextEndDate: period?.end ?? null,
-    refreshDetail,
   };
 }

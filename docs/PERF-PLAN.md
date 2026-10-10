@@ -194,7 +194,7 @@ client nutrition-plan route's week. After P5a the check-in context is ≤ 12 cal
   metadata; the seven calendar write routes that load the whole program to read `plan.clientId` use the assertion.
   `?include=sessions` keeps the whole program for the one consumer that renders it (`/client/program/training`).
 - **Lists return list columns.** The coach's and the client's check-in lists: id, client_id, status, created_at,
-  period_start, period_end, ai_summary, coach_response, response_sent_at, and the client name embed; no snapshots.
+  period_start, period_end, coach_response, response_sent_at, and the client name embed; no snapshots.
   Unreviewed: id, client_id, status, created_at, client name. Saved-plan and saved-session libraries: the row plus
   `coach_saved_sessions(count)` / `coach_saved_exercises(count)`; the builder reads a template or a session by id
   when one is opened or dropped. Roster: `check_ins` embed ordered desc, limit 1 (`referencedTable`).
@@ -1442,49 +1442,6 @@ parity result, the counts before and after, and anything you decided that the
 plan did not say.
 ```
 
-### P8a — `perf(ai): check-in reviews are written after the response; Regenerate is a job the page polls` · Tier B
-
-**STATUS: PLANNED 2026-10-10.**
-
-- Migration: `check_ins.ai_requested_at timestamptz` (D19).
-- `POST /api/check-in/[id]/ai-summary`: sets `ai_requested_at`, schedules the generation in `after()`, answers 202
-  `{ requestedAt }`; the generation's reads come through the week reader (P5a) and the exercise summaries;
-  `components/check-in/check-in-review-section.tsx` polls the detail every 2 s while `aiRequestedAt > aiProcessedAt`,
-  shows "Writing the review…", and renders the returned review when it lands (no extra detail refetch beyond the poll).
-- The post-submit job (P2a's `after()`) shares the same generation function. A generation failure leaves
-  `ai_processed_at` null and logs the error; the poll stops after 150 s and shows "The review didn't finish. Try again."
-- Docs: ARCHITECTURE "Check-in System" (the AI job's shape).
-
-```text
-Read CONVENTIONS.md (whole) and from docs/PERF-PLAN.md its head, §2.9, §2.10 #7,
-D19, D20, §5 (Tier B), §6 "How every commit runs" and this entry. From
-docs/ARCHITECTURE.md read "Check-in System". Read app/api/check-in/[id]/ai-summary/route.ts,
-services/check-in-review-input-service.ts, services/ai-service.ts,
-services/check-in-service.ts (updateCheckInAISummary, triggerAISummaryGeneration
-and the submit's after() from P2a), components/check-in/check-in-review-section.tsx,
-hooks/use-check-in-detail-data.ts, lib/mappers.ts (the check-in mapper),
-supabase/migrations/README.md. Check §2.10 #7 against node_modules/next before
-relying on it.
-
-Job: commit P8a of docs/PERF-PLAN.md §6 — `perf(ai): check-in reviews are
-written after the response; Regenerate is a job the page polls`. Build exactly
-what the entry lists, to §2.9 and D19.
-
-You have my go: don't show me a plan and don't wait for my review. Stop and ask
-me only if a decision this commit needs is blank, if building it would break a
-CONVENTIONS.md rule, or if a gate fails and its root fix lies outside this commit.
-
-Done when: the 202 path, the poll's stop conditions and the 150 s give-up have
-tests; perf-count before and after for the ai-summary route (the response's own
-calls, with the job's calls listed separately from the [db] lines after the
-response); and the Tier B gates pass (the list in P2e, with check:rls).
-Migration: --dry-run, then push to DEV once. lsof -i :3000 first.
-
-Then commit directly to main (this plan file included), replace this entry's
-STATUS with SHIPPED, the hash and the date, and hand over: what changed, the
-counts, and anything you decided that the plan did not say.
-```
-
 ### P8b — `perf(assistant): the builder assistant streams its turn and keeps the catalog in memory` · Tier B
 
 **STATUS: PLANNED 2026-10-10.**
@@ -1686,8 +1643,8 @@ Any client with a program.
 
 ## 8. DEV first, then PROD
 
-- Each migration lands on DEV in its own commit (§6 block, item 8). After P2a–P2f, P7a, P7b and P8a the DEV catalog
-  holds nine new functions and one column; `npm run check:rls` after each confirms service_role-only execution.
+- Each migration lands on DEV in its own commit (§6 block, item 8). After P2a–P2f, P7a and P7b the DEV catalog
+  holds nine new functions; `npm run check:rls` after each confirms service_role-only execution.
 - PROD takes them after the Better Auth switch (`docs/BETTER-AUTH-PLAN.md` §8.2), in migration-number order, in one
   sitting: `--dry-run --linked --project-ref etezzztgafcotyahgijk`, then the push (the owner runs it; it auto-confirms
   when not a TTY), then `check:rls` against PROD and `npm run check:perf:routes` against a PROD-pointed proof server
@@ -1695,7 +1652,7 @@ Any client with a program.
 - `vercel.json`'s region applies on the next deploy. Confirm with `curl -sI https://<deploy>/ | grep x-vercel-id` (the
   prefix is the region).
 - Undo: every function is additive; a commit's service change is reverted by `git revert` and the function left in
-  place does no harm. The `ai_requested_at` column is nullable and ignored by older code.
+  place does no harm.
 
 ---
 

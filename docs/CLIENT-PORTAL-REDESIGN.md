@@ -80,7 +80,7 @@ The old header-only layout (`app/client/layout.tsx`) is replaced with a layout t
 
 The Check-in tab is a hub, not a single-purpose submission form. Shows:
 - **Submission form** at top when a check-in is in window. *(Updated 2026-08-30: `clients.expected_check_in_day` was DROPPED by migrations 154+155 — the gate is now `getCheckInGate` over the one stored `clients.next_check_in_due`, and `calculateCheckInPeriod` / `resolveCheckInWindow` still resolve the reported week. See `ARCHITECTURE.md → Check-in System`.)* When not in window, a friendly "Next check-in opens on [date]" notice replaces the form. **The form's step list is no longer fixed** — it derives from the coach's per-client form (migration 157; `stepsForFields`), and a week the client had a habit in ends with a Habits step (`wizardSteps`, the context's `habitWeek`): the week's habits a column a day, each covered day taking its entry through the habit entry route, one write after another per habit, and Submit waiting for every entry and workout log still on its way. See `ARCHITECTURE.md → Check-in System → The Habits step`.
-- **Past check-ins list** below: chronological, newest first. Each row shows date, status badge (pending/ai_processed/reviewed), and a short AI-summary preview.
+- **Past check-ins list** below: chronological, newest first. Each row shows the date, the status (pending or reviewed) and the figures the client sent.
 - Tapping a past check-in opens a full detail view (`/client/check-in/[id]` already exists per `app/client/progress/check-in/[id]/page.tsx` — reuse it, just route to it from the new hub).
 
 If `/client/progress` today contains only check-in history (no other progress metrics), it gets retired in Session 5.1 cleanup; the hub replaces it. If it contains non-check-in content (e.g. weight trends), it remains reachable via a link from the check-in hub or Settings and is evaluated separately.
@@ -370,8 +370,8 @@ The roadmap end-and-replace flow and the active-phase goal-edit unlock this sect
 Today coaches review check-ins through `/check-ins/review/page.tsx` (global unreviewed queue). There is no per-client historical view — a coach wanting to see a specific client's check-in timeline has to dig through the global queue or hit the database. Add a **Check-ins** tab to `app/clients/[id]/page.tsx` positioned between **Daily Habits** and **Notes** in the tab order.
 
 The new tab shows:
-- A list of the client's check-ins (all statuses: pending, ai_processed, reviewed), newest first.
-- Each row: date, status badge, AI summary preview, coach response snippet if any.
+- A list of the client's check-ins (both statuses: pending, reviewed), newest first.
+- Each row: date, status badge, and "Replied <date>" once a reply has been sent.
 - Click a row to open full detail (same rendering pattern as the existing review page's detail modal, or a new read-only detail pane — decided during implementation).
 
 API `/api/clients/[id]/check-ins` already supports status filtering. This is primarily a UI surface.

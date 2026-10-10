@@ -143,12 +143,11 @@ describe("CheckInsTabContent", () => {
 
   it("renders each row as a link to the check-in's own URL", () => {
     setHook({
-      checkIns: [makeCheckIn({ id: "ci-9", aiSummary: "Great progress this week." })],
+      checkIns: [makeCheckIn({ id: "ci-9", responseSentAt: "2026-05-02T09:00:00Z" })],
       total: 1,
     });
     renderTab();
 
-    expect(screen.getByText(/Great progress this week/i)).toBeInTheDocument();
     expect(screen.getByRole("link")).toHaveAttribute(
       "href",
       "/clients/client-1?tab=check-ins&checkIn=ci-9"
@@ -156,16 +155,58 @@ describe("CheckInsTabContent", () => {
     expect(screen.queryByTestId("detail-view")).not.toBeInTheDocument();
   });
 
+  it("a row is its date, its status and when the reply went, with no preview of either side's words", () => {
+    setHook({
+      checkIns: [
+        makeCheckIn({
+          id: "ci-replied",
+          createdAt: "2026-05-01T10:00:00Z",
+          coachResponse: "Solid week, keep the sleep up.",
+          responseSentAt: "2026-05-02T09:00:00Z",
+          notes: "Felt strong on Tuesday.",
+        }),
+        makeCheckIn({
+          id: "ci-waiting",
+          status: "pending",
+          createdAt: "2026-05-08T10:00:00Z",
+          notes: "Rough week for sleep.",
+        }),
+      ],
+      total: 2,
+    });
+    renderTab();
+
+    const [replied, waiting] = screen.getAllByRole("link");
+    expect(replied).toHaveTextContent("May 1, 2026");
+    expect(replied).toHaveTextContent("Reviewed");
+    expect(replied).toHaveTextContent("Replied May 2");
+    expect(waiting).toHaveTextContent("May 8, 2026");
+    expect(waiting).toHaveTextContent("Pending");
+    expect(waiting).not.toHaveTextContent(/Replied/);
+    expect(screen.queryByText(/Solid week/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Felt strong|Rough week/)).not.toBeInTheDocument();
+  });
+
+  it("a reply sent today reads Replied today", () => {
+    setHook({
+      checkIns: [makeCheckIn({ id: "ci-9", responseSentAt: new Date().toISOString() })],
+      total: 1,
+    });
+    renderTab();
+
+    expect(screen.getByRole("link")).toHaveTextContent("Replied today");
+  });
+
   it("renders the detail in place of the list when ?checkIn= is present", () => {
     search.current = new URLSearchParams("tab=check-ins&checkIn=ci-9");
     setHook({
-      checkIns: [makeCheckIn({ id: "ci-9", aiSummary: "Great progress this week." })],
+      checkIns: [makeCheckIn({ id: "ci-9", responseSentAt: "2026-05-02T09:00:00Z" })],
       total: 1,
     });
     renderTab();
 
     expect(screen.getByTestId("detail-view")).toHaveTextContent("ci-9");
-    expect(screen.queryByText(/Great progress this week/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Replied/)).not.toBeInTheDocument();
     // The detail replaces the list wholesale — rail included.
     expect(
       screen.queryByRole("button", { name: "Customise check-in" })

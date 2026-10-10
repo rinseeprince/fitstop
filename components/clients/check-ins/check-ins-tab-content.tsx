@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { format } from "date-fns";
+import { format, isToday } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { CheckInDetailView } from "./check-in-detail-view";
@@ -17,12 +17,17 @@ import {
   useInvalidateClientCheckIns,
 } from "@/hooks/use-check-in-data";
 import { useCoachBack } from "@/hooks/use-coach-back";
-import { getAiPreview } from "@/lib/check-in-helpers";
 import { checkInReviewUrl, type ClientTab } from "@/lib/client-tabs";
 import { cn } from "@/lib/utils";
 import { pluralize } from "@/components/clients/overview/overview-format";
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import type { Client } from "@/types/check-in";
+
+/** A row's reply line: "Replied today", else the day it was sent, "Replied Oct 9". */
+const repliedOn = (sentAt: string): string => {
+  const sent = new Date(sentAt);
+  return `Replied ${isToday(sent) ? "today" : format(sent, "MMM d")}`;
+};
 
 type CheckInsTabContentProps = {
   client: Client;
@@ -87,8 +92,8 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
   // customises a client's form before their first check-in, so the entry point
   // has to survive the empty state.
   const body = isLoading ? (
-    // The list's real geometry, held while it loads: date line, preview line,
-    // meta slot — skeletons need no label, the shape is the message.
+    // The list's real geometry, held while it loads: date line, reply line,
+    // badge slot — skeletons need no label, the shape is the message.
     <div className="space-y-3">
       {Array.from({ length: 3 }).map((_, index) => (
         <div
@@ -97,7 +102,7 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
         >
           <div className="min-w-0 flex-1 space-y-2">
             <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-3 w-56 max-w-full" />
+            <Skeleton className="h-3 w-24" />
           </div>
           <Skeleton className="h-3 w-16 shrink-0" />
         </div>
@@ -117,7 +122,6 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
   ) : (
     <div className="space-y-3">
       {checkIns.map((checkIn) => {
-        const aiPreview = getAiPreview(checkIn.aiSummary);
         return (
           // A real link — an opened check-in is a place, so browser Back
           // returns to this list.
@@ -130,14 +134,9 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
               <p className={cn(MONO, "text-sm font-semibold text-[#0c1a1e]")}>
                 {format(new Date(checkIn.createdAt), "MMM d, yyyy")}
               </p>
-              {aiPreview && (
-                <p className="text-xs text-[#93b0b4] mt-0.5 line-clamp-1">
-                  {aiPreview}
-                </p>
-              )}
-              {checkIn.coachResponse && (
-                <p className="text-xs text-[#5a7d82] mt-0.5 line-clamp-1">
-                  Your reply: {checkIn.coachResponse}
+              {checkIn.responseSentAt && (
+                <p className="text-xs text-[#5a7d82] mt-0.5">
+                  {repliedOn(checkIn.responseSentAt)}
                 </p>
               )}
             </div>

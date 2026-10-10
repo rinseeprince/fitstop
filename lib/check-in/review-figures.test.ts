@@ -2,7 +2,6 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   buildDeadlineCountdown,
   buildGoalRows,
-  describeGoalDeadline,
   describeGoalRail,
   habitAverage,
   habitFigure,
@@ -175,26 +174,6 @@ describe("describeGoalRail — the goal's start to its deadline (commit 9c)", ()
   });
 });
 
-describe("describeGoalDeadline — the AI review's deadline line", () => {
-  it("names the deadline and the days to it, or since it once it has passed", () => {
-    expect(describeGoalDeadline({ date: "2026-11-30", daysRemaining: 74, isPastDeadline: false }, "lose_weight")).toBe("deadline 30 Nov · 74 days");
-    expect(describeGoalDeadline({ date: "2026-09-01", daysRemaining: -3, isPastDeadline: true }, "lose_weight")).toBe("deadline 1 Sep · 3 days ago");
-    expect(describeGoalDeadline(undefined, "lose_weight")).toBeUndefined();
-  });
-
-  it("calls the deadline what the goal's type calls it, before and after it", () => {
-    expect(describeGoalDeadline({ date: "2026-10-17", daysRemaining: 23, isPastDeadline: false }, "event_prep")).toBe("event day 17 Oct · 23 days");
-    // An event day gone by is not overdue.
-    expect(describeGoalDeadline({ date: "2026-09-19", daysRemaining: -5, isPastDeadline: true }, "event_prep")).toBe("event day 19 Sep · 5 days ago");
-    expect(describeGoalDeadline({ date: "2026-10-29", daysRemaining: 35, isPastDeadline: false }, null)).toBe("deadline 29 Oct · 35 days");
-  });
-
-  it("says one day, not one days", () => {
-    expect(describeGoalDeadline({ date: "2026-09-25", daysRemaining: 1, isPastDeadline: false }, "lose_weight")).toBe("deadline 25 Sep · 1 day");
-    expect(describeGoalDeadline({ date: "2026-09-22", daysRemaining: -1, isPastDeadline: true }, "lose_weight")).toBe("deadline 22 Sep · 1 day ago");
-  });
-});
-
 describe("buildDeadlineCountdown — a goal with no target counts down to its deadline (commit 9b)", () => {
   const countdown = (goal: JudgedGoal | null, deadline?: { date: string; daysRemaining: number }) =>
     buildDeadlineCountdown({
@@ -282,7 +261,6 @@ describe("the deadline's day, whatever the viewer's zone (commit 9b)", () => {
       deadline: { date: "2026-11-19", daysRemaining: 64, isPastDeadline: false },
     };
 
-    expect(describeGoalDeadline(ultra.deadline, "event_prep")).toBe("event day 19 Nov · 64 days");
     expect(describeGoalRail(ultra.goal, ultra.deadline)).toBe("9 Sep – 19 Nov · 64 days");
     expect(buildDeadlineCountdown(ultra)).toMatchObject({ start: "9 Sep", end: "19 Nov" });
   });
@@ -333,7 +311,7 @@ describe("resolveGoalFooter — one footer, goals outrank nutrition", () => {
   });
 });
 
-describe("habitFigure — a habit week's figure, one spelling for the strip, the section, the AI and the client", () => {
+describe("habitFigure — a habit week's figure, one spelling for the strip, the section and the client", () => {
   it("writes the days met over the days planned, with its whole percentage", () => {
     expect(habitFigure({ planned: 13, done: 11, met: 11 })).toEqual({ fraction: "11/13", percent: 85 });
   });

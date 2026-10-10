@@ -1,7 +1,7 @@
 /**
  * Types for day-by-day schedule generation and check-in period snapshots.
  * Used by generators (training-event-helpers, nutrition-period-summary),
- * the snapshot service, AI prompt builder, and history APIs.
+ * the snapshot service and history APIs.
  */
 
 import type { DayOfWeek } from "@/types/check-in";

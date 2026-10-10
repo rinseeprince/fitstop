@@ -277,7 +277,6 @@ export const PERF_ROUTES: readonly PerfRoute[] = [
   save("DELETE", "/api/client/training/events/[eventId]/log"),
   save("POST", "/api/client/training/events/layout"),
   save("POST", "/api/client/walkthrough-seen"),
-  save("POST", "/api/check-in/[id]/ai-summary"),
   save("POST", "/api/check-in/[id]/review"),
   save("POST", "/api/check-ins/forms"),
   save("PATCH", "/api/check-ins/questions/[questionId]"),

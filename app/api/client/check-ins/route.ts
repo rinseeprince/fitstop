@@ -5,7 +5,6 @@ import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { submitCheckIn, getClientCheckIns } from "@/services/check-in-service";
 import { getCheckInGate } from "@/lib/check-in-schedule";
 import { toCanonicalCheckInMetrics } from "@/utils/check-in-canonical-metrics";
-import { triggerAISummaryGeneration } from "@/services/client-check-in-service";
 import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
 import { submitCheckInSchema } from "@/lib/validations/check-in";
 import { applyCheckInForm } from "@/lib/check-in/form-fields";
@@ -310,12 +309,6 @@ export async function POST(request: NextRequest) {
     if (client) {
       await updateClientAdherenceStats(clientId);
     }
-
-    // Generate AI summary asynchronously (don't wait for it)
-    triggerAISummaryGeneration(checkInId)
-      .catch((error) => {
-        console.error("Failed to generate AI summary:", error instanceof Error ? error.message : "Unknown error");
-      });
 
     const response: SubmitCheckInResponse = {
       success: true,

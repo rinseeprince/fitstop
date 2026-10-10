@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { SectionLabel } from "@/components/programs/shared/section-label";
-import { CheckInReviewSection } from "@/components/check-in/check-in-review-section";
 import { KPIRibbon } from "@/components/check-in/kpi-ribbon";
 import { WellnessSection } from "@/components/check-in/wellness-section";
 import { WeekGrid } from "@/components/check-in/week-grid";
@@ -14,7 +13,6 @@ import { CheckInReplyBlock } from "./check-in-reply-block";
 import { CheckInGoalStrip } from "./check-in-goal-strip";
 import { useCheckInDetailData } from "@/hooks/use-check-in-detail-data";
 import { summariseTraining } from "@/lib/training-adherence";
-import { toCheckInReview } from "@/lib/check-in/to-review";
 import { expandDateRange, getDateString } from "@/lib/date-helpers";
 import { OPEN_GOALS_SHEET_PARAM, type ClientTab } from "@/lib/client-tabs";
 import type { Client } from "@/types/check-in";
@@ -56,7 +54,7 @@ const Notice = ({ children }: { children: ReactNode }) => (
  * One page, read top to bottom in the order the review runs: what happened
  * (the band), what the week looked like (training, nutrition, wellness,
  * habits, the client's own words), where they stand (goals), and what gets
- * sent back (the AI review and the reply).
+ * sent back (the reply).
  *
  * **Each section renders its OWN rail**, inside the component that decides
  * whether there is something to show. Three of them return null on an empty
@@ -83,7 +81,6 @@ export const CheckInDetailView = ({
     dailyContextLoading,
     contextStartDate,
     contextEndDate,
-    refreshDetail,
   } = useCheckInDetailData({ checkInId, clientId: client.id });
 
   // The one training derivation for this surface: completed (full + PARTIAL)
@@ -91,9 +88,6 @@ export const CheckInDetailView = ({
   // off its log. The ribbon and the pills beside it come out of this one run.
   const adherence = summariseTraining(trainingEventDetails);
   const clientName = data?.client?.name || client.name;
-  // Both the Review section and the Reply block read it; narrowing on it below
-  // is what lets them share one call.
-  const review = data ? toCheckInReview(data.checkIn) : null;
 
   const ready = Boolean(data && contextStartDate && contextEndDate);
 
@@ -127,7 +121,7 @@ export const CheckInDetailView = ({
         <Notice>This check-in belongs to another client.</Notice>
       ) : isLoading || dailyContextLoading || (data && !contextStartDate) ? (
         <Spinner />
-      ) : data && review && ready && contextStartDate && contextEndDate ? (
+      ) : data && ready && contextStartDate && contextEndDate ? (
         <>
           <KPIRibbon
             checkIn={data.checkIn}
@@ -193,16 +187,13 @@ export const CheckInDetailView = ({
             </div>
           )}
 
-          <CheckInReviewSection
-            checkInId={checkInId}
-            review={review}
-            onRefresh={refreshDetail}
-          />
-
+          {/* Keyed by the check-in: another check-in opened in place from the
+              cache keeps this page mounted, and a reply typed for one must
+              never be sent to the next. */}
           <CheckInReplyBlock
+            key={checkInId}
             checkInId={checkInId}
             clientName={clientName}
-            draft={review.clientMessage}
             sentMessage={data.checkIn.coachResponse}
             sentAt={data.checkIn.responseSentAt}
             onSent={onDone}

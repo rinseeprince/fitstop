@@ -92,7 +92,7 @@ describe("useCheckInDetailData", () => {
     checkIn: {
       id: "ci-1",
       clientId: "c1",
-      status: "ai_processed",
+      status: "pending",
       periodStart: "2026-08-22",
       periodEnd: "2026-08-28",
       createdAt: "2026-08-28T10:00:00Z",

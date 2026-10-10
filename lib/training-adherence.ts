@@ -48,7 +48,7 @@ export type TrainingAdherence = {
  * check-in read carries.
  *
  * It is the single definition behind every done-count in the product: the
- * coach review's KPI ribbon and AI prompt, the Training-tab hero, the
+ * coach review's KPI ribbon, the Training-tab hero, the
  * Overview's adherence card and plan card, the client's check-in wizard and
  * the stored `check_ins.workouts_completed` all read `completed`. Before it
  * there were three counts over the same rows, and one week read 4/5 on the

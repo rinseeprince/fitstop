@@ -141,7 +141,7 @@ export default function CheckInDetailPage() {
           </p>
         </div>
         <Badge variant="outline" className="ml-auto capitalize">
-          {checkIn.status.replace(/_/g, " ")}
+          {checkIn.status}
         </Badge>
       </div>
 

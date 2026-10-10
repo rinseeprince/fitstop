@@ -148,7 +148,7 @@ describe("buildLoggedSetRows", () => {
   });
 });
 
-// The columns the coach's table and the check-in AI's lines walk: the boxes the
+// The columns the coach's table walks: the boxes the
 // coach prescribed, and anything else the rows carry, so history hides nothing.
 describe("loggedColumns", () => {
   const run = resolvePrescribedFields(["set_type", "distance", "duration", "pace", "rest"]);

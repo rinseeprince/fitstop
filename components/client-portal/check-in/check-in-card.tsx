@@ -56,7 +56,7 @@ export function CheckInCard({ checkIn }: { checkIn: CheckIn }) {
           <div className="flex items-center gap-2">
             <p className="font-medium">{formattedDate}</p>
             <Badge variant="outline" className="capitalize">
-              {checkIn.status.replace(/_/g, " ")}
+              {checkIn.status}
             </Badge>
           </div>
 

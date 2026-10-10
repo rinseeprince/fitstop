@@ -63,7 +63,9 @@ card stays, fed by its own route. Nothing else.
   `components/check-in/check-in-review-section.tsx` (+test — the AI card and Regenerate; the reply block
   `components/clients/check-ins/check-in-reply-block.tsx` is separate and stays), `lib/check-in/to-review.ts` (+test —
   its only consumer is the detail view's `review.clientMessage`, the AI draft), `lib/check-in-helpers.ts` (its one
-  export is `getAiPreview`), `scripts/print-check-in-review-prompt.ts` and the `print:check-in-prompt` script.
+  export is `getAiPreview`), `lib/validations/check-in-review.ts` (+test — the AI output's parser) and
+  `lib/check-in/markdown.ts` (+test — its stripper; nothing else used it), `scripts/print-check-in-review-prompt.ts`
+  and the `print:check-in-prompt` script.
 - **Edited:** `services/check-in-service.ts` (`updateCheckInAISummary` and the status-promotion comment go; the
   submit's `triggerAISummaryGeneration` call goes — `app/api/client/check-ins/route.ts:315-318`),
   `lib/mappers.ts` (the four `ai*` fields), `types/check-in.ts` (`EnhancedAIData`, `EnhancedAIDataV3`, `AIInsight`,
@@ -78,8 +80,7 @@ card stays, fed by its own route. Nothing else.
   AI the same habits" and its two `utils/ai-prompt-*` imports go; steps 1–2 stay), `scripts/check-in-sent-snapshot-proof.ts`
   (the prompt recording in steps 2 and 4 goes; the frozen-copy proof stays), `package.json` (`openai` removed),
   `next.config.mjs` (`https://api.openai.com` out of `connect-src`), `README.md` and CONVENTIONS §15 (`OPENAI_API_KEY`).
-- **Kept:** `lib/check-in/markdown.ts` (`lib/validations/check-in-review.ts` uses it for the reply),
-  `check_in_exercise_highlights` and `components/check-in/exercise-highlights-section.tsx`, every other
+- **Kept:** `check_in_exercise_highlights` and `components/check-in/exercise-highlights-section.tsx`, every other
   `components/check-in/*` file (the wizard's steps and the review's sections), `ANTHROPIC_API_KEY` and
   `services/assistant/**`.
 
@@ -155,7 +156,8 @@ Every consumer outside the blocks' own folder stops depending on them, with the 
 ### 2.4 Facts this plan relies on (read 2026-10-10)
 
 1. The check-in status constraint on DEV is named `check_ins_status_check` and allows `pending`, `ai_processed`,
-   `reviewed` (live catalog, `pg_constraint`). PROD is checked before its push (§8).
+   `reviewed` (live catalog, `pg_constraint`). Migration 216 drops it by the column it constrains, so its name on PROD
+   does not matter (§8).
 2. `client_phases` is referenced by no foreign key in the migrations; two SQL functions read it (177:143, 179:269);
    `attention_dismissals` has no block alert type (blocks were context for messages, never a bound).
 3. `/api/client/journey` has one caller, `app/client/program/page.tsx:104`; its `GoalCard` reads `goal.name`, `type`,
@@ -388,7 +390,7 @@ makes stale (§9 names them).
 You have my go: don't show me a plan and don't wait for my review. Stop and ask
 me only if a claim you must write is not true of the code at HEAD.
 
-Done when: `grep -rn -i "ai review\|ai_processed\|ai summary\|regenerate\|client_phases\|journey block\|block field\|blockEnding"`
+Done when: `grep -rn -i "ai review\|ai_processed\|ai summary\|regenerate\|client_phases\|journey block\|block field\|blockEnding\|aiRateLimit\|ai_insights"`
 over the five documents returns nothing, every sentence you added names code
 that exists at HEAD (opened, not assumed), and the stale-memory list is in the
 handover. No gates run for a docs-only commit.
@@ -442,9 +444,12 @@ with a 4-week program from last Monday and a second 4-week program queued after 
 
 - S1's and S2b's migrations land on DEV in their commits. PROD takes them with the Better Auth switch
   (`docs/BETTER-AUTH-PLAN.md` §8.2) in migration-number order, before `docs/PERF-PLAN.md`'s functions; the owner runs
-  the push (`--dry-run --linked --project-ref etezzztgafcotyahgijk` first). Before PROD's push the status constraint's
-  name is checked there as it was on DEV (§2.4 #1); if it differs, the migration is edited to drop it by that name
-  before the push — a migration not yet applied anywhere else may be edited.
+  the push (`--dry-run --linked --project-ref etezzztgafcotyahgijk` first). Migration 216 drops the status CHECK by
+  the column it constrains, so its name on PROD needs no check. One read on PROD before the push:
+  `select proname from pg_proc where prosrc ~ 'ai_(summary|insights|recommendations|response_draft|processed)'`
+  returns nothing. A database function is not tracked as depending on a column, so `DROP COLUMN` under one that
+  reads it succeeds and the function breaks when called; a view or a policy that reads a column makes the drop
+  fail, which is safe. §9's export, if wanted, comes first.
 - Undo: `git revert` of S1/S2a/S2b restores the code, but the dropped columns and table are gone with their data;
   that is what §9's export is for.
 

@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
 vi.mock("@/lib/rate-limit", () => ({
-  aiRateLimit: vi.fn().mockResolvedValue(null),
   apiRateLimit: vi.fn().mockResolvedValue(null),
   authRateLimit: vi.fn().mockResolvedValue(null),
   checkInRateLimit: vi.fn().mockResolvedValue(null),

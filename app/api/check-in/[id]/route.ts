@@ -97,7 +97,7 @@ export async function GET(
       checkIn: {
         ...withoutSentSnapshot(checkIn),
         // Map to the camelCase domain type so the payload matches the declared
-        // CheckInWithDetails shape (and getCheckInWithDetails), not raw DB rows.
+        // CheckInWithDetails shape, not raw DB rows.
         exerciseHighlights: highlightRows.map(mapExerciseHighlight),
         customAnswers,
       },

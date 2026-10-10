@@ -41,8 +41,7 @@ export async function GET(request: NextRequest) {
 
     const clientIds = clients.map((c) => c.id);
 
-    // Every unreviewed check-in for these clients — `pending` included, so a
-    // check-in whose AI pass failed still reaches the bell (D2.2).
+    // Every unreviewed check-in for these clients: one waiting on a reply.
     const { data: checkInsData, error } = await supabaseAdmin
       .from("check_ins")
       .select(
