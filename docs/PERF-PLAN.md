@@ -1,6 +1,6 @@
 # Perf — every page makes the calls its screen needs, and every multi-table save is one transaction
 
-**STATUS: PLANNED 2026-10-10, nothing built.** 22 commits in §6 plus P10 (the load test), one week at the owner's
+**STATUS: P0 SHIPPED `76044513` (2026-10-10); the rest PLANNED 2026-10-10.** 22 commits in §6 plus P10 (the load test), one week at the owner's
 pace (§6 "The week"). Origin: the read-only performance review of 2026-10-10 (two reports in the owner's session: the
 three flows, then every page). This plan is its fix list, ordered by mechanism, not by page.
 
@@ -418,7 +418,11 @@ prompt disagree, this block wins.
 
 ### P0 — `perf(rules): CONVENTIONS carries the request rules and budgets; every request logs its database calls; check:perf ratchets` · Tier C
 
-**STATUS: PLANNED 2026-10-10.** **Commit zero of everything** — before `docs/SUNSET-PLAN.md` S1 and before any
+**STATUS: SHIPPED `76044513` (2026-10-10).** 86 reads measured on DEV, 52 within budget and 34 over, their counts in
+`scripts/perf-routes.ts`; `check:perf` A 52 · B 43 · C 2. Built as below with the owner's three changes of the day: a
+save is never requested (its count is its proof's); the sixth rule is "an area's reads are narrow and a save seeds its
+own key", and `check:perf` D is not built; `perf-count` signs in as the perf client's own coach (the owner's on DEV),
+the perf coach keeping no login. **Commit zero of everything** — before `docs/SUNSET-PLAN.md` S1 and before any
 other commit here (owner, 2026-10-10: "Put the new rules in first… otherwise 25 fast commits will drift back toward
 the old patterns, especially in the code written late in the week"). Every later session reads CONVENTIONS whole, so
 the rules below are in force for every line written after this commit, and the gate refuses a commit that adds a
