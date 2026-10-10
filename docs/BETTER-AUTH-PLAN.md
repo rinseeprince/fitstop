@@ -1,8 +1,7 @@
 # Better Auth — every login moves off Supabase Auth, and the account screens that were never built
 
-**Status: twelve commits SHIPPED (1 to 10, 5.1 and 5.5; the last, 10, on 2026-10-10); 10.5 (added after 10's smoke)
-and 11 not built; the PROD switch (§8.2), after them, is the owner's.** Fourteen commits (§6: 1 to 11, 5.1, 5.5 and
-10.5), each with a
+**Status: thirteen commits SHIPPED (1 to 10, 5.1, 5.5 and 10.5; the last, 10.5, on 2026-10-10); 11 not built; the
+PROD switch (§8.2), after it, is the owner's.** Fourteen commits (§6: 1 to 11, 5.1, 5.5 and 10.5), each with a
 pasteable prompt, each gated.
 **The logins move in commits 1–3.** Better Auth stands up beside Supabase Auth with today's logins and their
 password hashes copied in (1); every sign-in, the invite, forgot password and reset switch over, and the user
@@ -2431,7 +2430,11 @@ where it arrives. The browser smoke is mine.
 
 ### Commit 10.5 — `perf(auth): Better Auth's database reads take fewer round trips: its connection stays open, and a session read is one query`
 
-**STATUS: PLANNED 2026-10-10, not built.**
+**STATUS: SHIPPED `fa103f4a` (2026-10-10).** No migration; the join on. The probe (`scripts/auth-latency-probe.ts`)
+ran before and after from Bali against DEV: a session read 454 → 217 ms warm and 1,815 → 230 ms after an 11 s pause;
+the Invite box's read 2.1 → 1.7 s warm and 5.0 → 1.7 s after a pause. Every auth proof §5 names passes on DEV (sign-in
+34 checks, bearer 31, account 35, email-follows 53, create-coach 21, delete-account 47, invitation 35). No browser
+smoke.
 
 Asked for by the owner after commit 10's smoke (2026-10-10): the Invite box took 3–4 s to show its sentence, "and as
 a matter of fact, the entire platform feels very slow". Measured from Bali against DEV in the owner's running dev
