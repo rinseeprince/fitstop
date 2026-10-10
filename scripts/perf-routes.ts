@@ -79,6 +79,8 @@ export function overBudget(measured: Measured, budget: ReadBudget): string[] {
 const READ: ReadBudget = { calls: 6, serial: 3, bytes: 50_000 };
 /** The plan editor's read and the builder's template read return a whole program: the same calls, no size budget. */
 const WHOLE_PROGRAM: ReadBudget = { calls: 6, serial: 3, bytes: null };
+/** The client app's catalog sync returns the whole dictionary on a full sync (CONVENTIONS §8): the same calls, no size budget. */
+const WHOLE_CATALOG: ReadBudget = { calls: 6, serial: 3, bytes: null };
 /** ≤ 3 reads after auth and one RPC, or one statement. */
 const SAVE: SaveBudget = { reads: 3, writes: 1 };
 
@@ -186,7 +188,7 @@ export const PERF_ROUTES: readonly PerfRoute[] = [
   read("/api/client/daily-logs/[date]/wellness", "Wellness: today's log", { params: { date: "today" } }),
   read("/api/client/day-summary", "Home: today", { query: "?date={today}" }),
   read("/api/client/exercises", "Training: the exercise search", { query: "?search=squat" }),
-  read("/api/client/exercises/catalog", "The app: the catalog's full sync"),
+  read("/api/client/exercises/catalog", "The app: the catalog's full sync", { budget: WHOLE_CATALOG }),
   read("/api/client/habits/day", "Habits: today", { query: "?date={today}" }),
   read("/api/client/habits/progress", "Progress: habits", { query: "?weeks=8" }),
   read("/api/client/habits/week", "Check-in: the habits step", { query: "?start={weekStart}&end={weekEnd}" }),

@@ -97,7 +97,7 @@ export type ClientContext = {
 | A GET route, after auth | ≤ 6 database calls, ≤ 3 of them sequential |
 | A write route, after auth | ≤ 3 reads + 1 RPC (or 1 statement) |
 | A page's first paint, app routes only, chrome excluded | no more requests than before the change, each within its route budget (checked in review: no script opens a page) |
-| A route's JSON body | ≤ 50 kB, except the plan editor's read and the builder's template read |
+| A route's JSON body | ≤ 50 kB, except the plan editor's read, the builder's template read and the client app's catalog sync (`GET /api/client/exercises/catalog`, a dictionary synced whole, CONVENTIONS §8) |
 | Any read that can exceed one page | paged in the database (keyset, §8), never read whole and sliced |
 
 Budgets are numbers in `scripts/perf-routes.ts`, one row per route: path, role, fixture, budget, and the count
@@ -937,7 +937,9 @@ not say.
 - `GET /api/training/exercises?q=&limit=50`: server search (name and aliases, case-insensitive, coach's then global)
   through `resolve_exercise_names`'s sibling `search_exercises(p_coach_id, p_q, p_limit)` or an indexed `ilike`; the
   picker (`components/clients/training/program-builder/exercise-picker.tsx`, `hooks/use-exercise-search.ts`,
-  `hooks/use-exercise-catalog.ts`) debounces and queries; the whole-catalog download goes. `fetchCatalogRowsForResolve`'s
+  `hooks/use-exercise-catalog.ts`) debounces and queries; the whole-catalog download goes. Not this route: the client
+  app's catalog sync (`GET /api/client/exercises/catalog`) is a dictionary the app syncs by delta (CONVENTIONS §8)
+  and stays whole, the one read the paging rule returns whole. `fetchCatalogRowsForResolve`'s
   callers use `resolve_exercise_names` from P2c (whole-catalog reads on save and on every assistant turn end here;
   the assistant's in-memory cache is P8b).
 - `scripts/perf-routes.ts` rows for the three routes get their new counts.
