@@ -2471,7 +2471,8 @@ owner's "is it worth reverting back to Supabase?" was answered no (D46).
   1), which Next logged and Sentry never heard; the statement it breaks reports it. Keep-alive checks nothing while a
   process is paused, so on Vercel a connection the pooler or the network dropped while an instance was suspended is
   found by the first request after it resumes, which the second read covers for the session. Closing idle connections
-  before a suspension (`attachDatabasePool`, `@vercel/functions`) is a new package and the owner's call (§9.2).
+  before a suspension (`attachDatabasePool`, `@vercel/functions`): yes, added with the first Vercel deploy (owner,
+  2026-10-10; §9.2).
   Under `next dev`, an edit that makes it re-run `lib/auth.ts` (the file or one it imports) builds new pools and leaves
   the old ones' connections open until their idle limit, now five minutes: measured on 2026-10-10, one or two more
   pooler connections an edit, all closed when the server stops.
@@ -2890,5 +2891,6 @@ the app reads its data through them as before. `NEXT_PUBLIC_SUPABASE_ANON_KEY` l
 - How Better Auth's pool behaves on Vercel is inferred, not measured (commit 10.5): connections kept five minutes per
   instance and bundle add up at the pooler as instances do, and a suspended instance checks none of them, so the first
   request after it resumes can be handed one the pooler or the network dropped meanwhile (its session read is read
-  again on another). Watch the pooler's client connections after PROD switches; closing idle connections before a
-  suspension (`attachDatabasePool`, from `@vercel/functions`, a new package) is the owner's call.
+  again on another). Watch the pooler's client connections after PROD switches. Closing idle connections before a
+  suspension (`attachDatabasePool`, from `@vercel/functions`): yes, added with the first Vercel deploy, where alone it
+  acts (owner, 2026-10-10); the package goes in lockfile-only from a scratch copy, then `npm ci` (CONVENTIONS §2).
