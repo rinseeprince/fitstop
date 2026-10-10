@@ -1,6 +1,6 @@
 # Sunset — the AI check-in review and its draft reply go, and so do the Journey blocks
 
-**STATUS: PLANNED 2026-10-10, nothing built.** Four commits (§6), about a day at the owner's pace. Lands AFTER
+**STATUS: S1 SHIPPED `1ffaee98` (2026-10-10); S2a, S2b and S3 PLANNED 2026-10-10.** Four commits (§6), about a day at the owner's pace. Lands AFTER
 `docs/PERF-PLAN.md` P0 (the request rules in CONVENTIONS, the counter and the gate — so the code S2a writes is written
 against them) and BEFORE P1 (so no perf commit tunes code this plan deletes; P1 re-baselines the counter).
 
@@ -250,7 +250,7 @@ with SHIPPED, the hash and the date, and hand over in plain words.
 
 ### S1 — `chore(check-in): the AI review and its draft reply are gone; a check-in is pending or reviewed`
 
-**STATUS: PLANNED 2026-10-10.**
+**STATUS: SHIPPED `1ffaee98` 2026-10-10.**
 
 Everything §2.1 lists. The migration as §2.1 (SD1, SD8). The reply block starts empty. The list row as SD3. The
 `"ai"` rate-limit tier goes only if no route passes it (grep `rateLimit: "ai"`); if one does, stop and say which.
