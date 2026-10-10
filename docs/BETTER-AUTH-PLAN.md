@@ -912,9 +912,16 @@ address changes, which deletes it in the same statement, and one Google account 
     `internalAdapter.findSession`) asks the adapter for the session with `join: { user: true }`, and with
     `advanced.database.joins` off, its default, the adapter factory runs it as two queries, the session and then its
     user (`@better-auth/core` `db/adapter/factory.mjs`: the fallback at :343, the switch at :570 and :619); with it on,
-    the Kysely adapter (`@better-auth/kysely-adapter`, under `better-auth/node_modules`) runs one LEFT JOIN. The option
-    is marked experimental. node-postgres closes a pool's idle connection after `idleTimeoutMillis`, 10 s by default,
-    and takes `keepAlive`.
+    the Kysely adapter (`@better-auth/kysely-adapter`, under `better-auth/node_modules`) runs one LEFT JOIN.
+    node-postgres closes a pool's idle connection after `idleTimeoutMillis`, 10 s by default, and takes `keepAlive`.
+    (Commit 10.5, in the installed source: the option sits beside `generateId` in `@better-auth/core`'s
+    `types/init-options.d.mts`, off by default, with a note to read the adapter's documentation first, and nothing
+    marks it experimental, as this fact first said. It joins three more reads: a login with its accounts at sign-in and
+    forgot password (`findUserByEmail` with `includeAccounts`), a Google account with its login
+    (`findAccountOwnerByKey`, whose limit of two rows sits inside the join's own read, so a Google account linked twice
+    still throws) and the multi-session plugin's session list, which the app doesn't use. node-postgres's `keepAlive`
+    sends its first check after `keepAliveInitialDelayMillis` of silence; at its default, 0, the operating system's
+    own delay stands, two hours on macOS and Linux, so none would run inside a five-minute idle limit.)
 
 ### 2.10 A login's address, everywhere (commit 5.5)
 
@@ -1230,7 +1237,7 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | `app/api/clients/[id]/activate/route.ts`, `components/coach/client-activation-dialog.tsx` | an invitation in the background to every client with no login | awaited, only without a working link; the toast warns when it didn't send | 10 |
 | `components/clients/invite-client-dialog.tsx` (+ its read hook), `components/clients/client-detail-layout.tsx`, `components/add-client-dialog.tsx` | buttons by `status`; an unnamed icon; a red "Client added" with a dash, raw errors | rules 20 to 23, the design system's Dialog | 10 |
 | `scripts/auth-fixtures.ts`, `scripts/sign-in-proof.ts`, `scripts/email-follows-proof.ts`, `scripts/seed/generate.ts`, `scripts/proof-mailbox.ts`, `scripts/invitation-proof.ts` (new) | write `status: "sent"`; the mailbox takes every email | a sent row as a send writes it; the mailbox can refuse an address; proof 10 | 10 |
-| `lib/auth.ts` (the pool's idle limit and keep-alive, `advanced.database.joins`), `scripts/auth-latency-probe.ts` (new), `docs/ARCHITECTURE.md` ("Database clients") | idle connections closed after 10 s; two queries a session read | five minutes and keep-alive; one query, if the auth proofs pass; a probe that times the round trips | 10.5 |
+| `lib/auth.ts` (the pool's idle limit, keep-alive and exit on idle, `advanced.database.joins`) + test, `scripts/auth-latency-probe.ts` (new), `scripts/proof-server.ts` (`ServerLines`, moved from `scripts/perf-count.ts`), `docs/ARCHITECTURE.md` ("Database clients") | idle connections closed after 10 s; two queries a session read | five minutes, checked by keep-alive after each minute of silence, never holding a script open; one query; a probe that times the round trips | 10.5 |
 | `components/auth/sign-in-frame.tsx` and `brand-tokens.ts` (new), `app/login/page.tsx`, `app/forgot-password/page.tsx`, `components/auth/password-link-page.tsx`, `reset-password-form.tsx`, `login-notice.tsx`, `app/invite/[token]/page.tsx`, `lib/constants.ts` (`MARKETING_SITE_URL`) | the same OKLCH frame copied four times | one frame in atletafit.com's look | 11 |
 | `emails/*` (seven templates), `emails/email-layout.tsx` and `emails/brand.ts` (new) | one stock style block copied seven times | one layout in atletafit.com's look, the words unchanged | 11 |
 | `scripts/check-labels.ts`, `scripts/check-labels-whitelist.ts`, `docs/newdesignsystem.md`, `TECHNICAL-DEBT.md` | login and invite skipped as not migrated; no chapter for sign-in pages or emails; P2 #12 open | `brand-tokens.ts` a token module and the two entries gone; "Sign-in pages and emails"; P2 #12 closed | 11 |
@@ -2441,6 +2448,30 @@ owner's "is it worth reverting back to Supabase?" was answered no (D46).
   recorded in §2.9 #15, and the pool's settings ship alone.
 - Docs: ARCHITECTURE's "Database clients" (`authPool`'s idle limit and keep-alive, a session read's one query), current
   shape only.
+- As built (2026-10-10): keep-alive's first check comes after a minute of silence (`KEEP_ALIVE_AFTER_MS`): at pg's
+  default delay, 0, the operating system's two hours stand (§2.9 #15), and `keepAlive: true` alone would check nothing
+  inside the five minutes. `allowExitOnIdle: true`: with idle connections kept five minutes, a script that loads
+  `lib/auth.ts` and doesn't end the pool (`sign-in-proof.ts`, the seed's `generate.ts` and `teardown.ts`, others) would
+  wait out the five minutes after its work; the server's own listener keeps it up. A test reads each setting, each with
+  a mutation, and three run Better Auth on `lib/auth.ts`'s options over a pool that records its statements: a session
+  read, sign-in's login with its accounts and Google's account lookup are one statement each, two with the join off.
+  The probe counts its own process's statements by the pool's checkouts and the server's from its `[db]` lines
+  (`ServerLines`, moved from `scripts/perf-count.ts` to `scripts/proof-server.ts`). Proofs run back to back share the
+  invite routes' limit, five a quarter hour per caller (`authRateLimit`, a sliding window in Upstash): `sign-in-proof.ts`
+  alone makes five, so a proof that accepts an invite within the next quarter hour or so is refused 429, and is run
+  again once the window has passed.
+- As built, from the review: a connection kept five minutes can break while it sits in the pool, and pg-pool hands an
+  idle one out unchecked. `readSessionUserId` reads once more when Better Auth answers its own 500 (the pool drops the
+  broken connection as the read fails, so the second read takes another), so a request handed one isn't signed out;
+  each 500 still reaches Sentry. And every connection the pool opens gets a listener of its own: pg-pool listens only
+  while one sits idle, so a socket error on one Better Auth held in use was thrown with nobody listening (since commit
+  1), which Next logged and Sentry never heard; the statement it breaks reports it. Keep-alive checks nothing while a
+  process is paused, so on Vercel a connection the pooler or the network dropped while an instance was suspended is
+  found by the first request after it resumes, which the second read covers for the session. Closing idle connections
+  before a suspension (`attachDatabasePool`, `@vercel/functions`) is a new package and the owner's call (§9.2).
+  Under `next dev`, an edit that makes it re-run `lib/auth.ts` (the file or one it imports) builds new pools and leaves
+  the old ones' connections open until their idle limit, now five minutes: measured on 2026-10-10, one or two more
+  pooler connections an edit, all closed when the server stops.
 - Not in this commit: reading the session once per request (D46). No browser smoke: the probe's numbers and the proofs
   are the proof, and the owner then uses the app as before.
 
@@ -2853,3 +2884,8 @@ the app reads its data through them as before. `NEXT_PUBLIC_SUPABASE_ANON_KEY` l
   commit 4's proof is the check, and `adminUserIds` is the fallback (the owner's script signs in first).
 - Supabase's pooler with Kysely is a general Postgres fact, not a Better Auth doc line; commit 1's proof exercises
   it.
+- How Better Auth's pool behaves on Vercel is inferred, not measured (commit 10.5): connections kept five minutes per
+  instance and bundle add up at the pooler as instances do, and a suspended instance checks none of them, so the first
+  request after it resumes can be handed one the pooler or the network dropped meanwhile (its session read is read
+  again on another). Watch the pooler's client connections after PROD switches; closing idle connections before a
+  suspension (`attachDatabasePool`, from `@vercel/functions`, a new package) is the owner's call.

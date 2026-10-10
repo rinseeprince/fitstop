@@ -16,6 +16,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
+import { parseDbCallLine } from "@/lib/perf/db-calls";
 import { setProofBase } from "./proof-session";
 
 const ROOT = join(__dirname, "..");
@@ -24,9 +25,48 @@ export const NO_EMAIL = "http://127.0.0.1:9";
 const OWNERS_PORT = 3000;
 const READY_TIMEOUT_MS = 120_000;
 const STOP_TIMEOUT_MS = 15_000;
+/** The server is quiet once no [db] line has come for this long: three of its own 300 ms burst gaps, and the pipe's delay. */
+const QUIET_MS = 1_000;
+/** How long a request may keep the server printing before the run gives up. */
+const SETTLE_TIMEOUT_MS = 60_000;
+const POLL_MS = 50;
 
 /** The running server: its address, and everything it has printed (the evidence when a proof fails). */
 export type ProofServer = { base: string; output: string[] };
+
+/**
+ * The server's output as whole lines, read on as it prints: what a script
+ * reads its [db] lines from (scripts/perf-count.ts, scripts/auth-latency-probe.ts).
+ */
+export class ServerLines {
+  readonly lines: string[] = [];
+  private chunksRead = 0;
+  private partial = "";
+  constructor(private readonly output: string[]) {}
+
+  pull(): void {
+    while (this.chunksRead < this.output.length) {
+      const parts = (this.partial + this.output[this.chunksRead]).split("\n");
+      this.chunksRead += 1;
+      this.partial = parts.pop() ?? "";
+      this.lines.push(...parts);
+    }
+  }
+
+  /** Resolves once no [db] line has arrived for QUIET_MS. */
+  async settle(): Promise<void> {
+    const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+    let quietSince = Date.now();
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+      const before = this.lines.length;
+      this.pull();
+      if (this.lines.slice(before).some((line) => parseDbCallLine(line))) quietSince = Date.now();
+      if (Date.now() - quietSince >= QUIET_MS) return;
+    }
+    throw new Error(`The server was still printing database calls after ${SETTLE_TIMEOUT_MS / 1000} s`);
+  }
+}
 
 let running: { child: ChildProcess; server: ProofServer } | null = null;
 

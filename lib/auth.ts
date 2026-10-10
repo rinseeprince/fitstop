@@ -72,6 +72,26 @@ const googleClientSecret = requiredEnv("GOOGLE_CLIENT_SECRET")
 /** How long a request waits to reach the pooler before it fails, instead of the operating system's TCP timeout. */
 const CONNECTION_TIMEOUT_MS = 10_000
 
+/**
+ * How long a connection stays open with nothing to do (D46), where pg's own
+ * default is ten seconds. Opening one is a TLS handshake with the pooler,
+ * several round trips, which a request after a pause would otherwise pay
+ * again, in the proxy's pool and in the routes'.
+ */
+const IDLE_CONNECTION_MS = 5 * 60 * 1000
+
+/**
+ * How long a connection is silent before TCP checks the other end is still
+ * there, and again after each further silence: one still there keeps its
+ * place in a NAT, and one the pooler or a NAT dropped without a word is found
+ * once a check goes unanswered and closed, usually before a request is handed
+ * it (readSessionUserId reads again when one is). Under the idle limit, or no
+ * check runs while a connection waits: left to the operating system, the first
+ * comes after two hours. A process that is paused (a serverless instance
+ * between requests) checks nothing until it runs again.
+ */
+const KEEP_ALIVE_AFTER_MS = 60 * 1000
+
 // pg answers a bigint as a string. Better Auth's limiter adds its window to
 // "lastRequest" (milliseconds since the epoch, exact as a number) to say when
 // to retry, and on a string that sum is a concatenation.
@@ -80,17 +100,33 @@ authTypes.setTypeParser(types.builtins.INT8, (value: string) => Number(value))
 
 /**
  * Better Auth's own connection to the database: one pool of four per bundle
- * (D28), TLS verified against Supabase's root (lib/supabase-connection.ts).
+ * (D28), TLS verified against Supabase's root (lib/supabase-connection.ts),
+ * whose idle connections stay open five minutes under TCP keep-alive (D46).
  */
 export const authPool = new Pool({
   ...supabaseConnection(databaseUrl),
   max: 4,
   connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
+  idleTimeoutMillis: IDLE_CONNECTION_MS,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: KEEP_ALIVE_AFTER_MS,
+  // An idle connection never holds a process open: a script that loads this
+  // file exits when its work is done instead of waiting out the idle limit.
+  // In the server, the server itself stays up.
+  allowExitOnIdle: true,
   types: authTypes,
 })
 // A connection the pooler drops while idle is reported, not thrown: with no
 // listener, pg-pool's "error" event would take the process down.
 authPool.on("error", (error) => captureApiError(error, { source: "Better Auth's database pool" }))
+// pg-pool listens for a connection's errors only while it sits idle. One that
+// breaks in use, held by Better Auth's adapter, would throw its socket's error
+// with nobody listening. The statement it breaks fails with the same error,
+// which its caller reports (an endpoint of Better Auth's as a 500 its after
+// hook sends to Sentry), so here it is only logged.
+authPool.on("connect", (client) => {
+  client.on("error", (error) => console.debug("Better Auth's database connection broke in use; the statement it broke reports it.", error))
+})
 // PERF_COUNT=1 in the Next server prints every statement Better Auth sends
 // (CONVENTIONS §14 "Request budgets"); unset, it changes nothing.
 countPoolQueries(authPool)
@@ -515,8 +551,11 @@ export const auth = betterAuth({
   onAPIError: { onError: (error) => reportUnexpectedAuthError(error), errorURL: LOGIN_PAGE },
   // The database makes every new id (uuid, gen_random_uuid()), and a copied
   // login kept its Supabase one: every login's id has the type of the user_id
-  // columns that point at it.
-  advanced: { database: { generateId: "uuid" }, backgroundTasks: { handler: runAfterAnswer } },
+  // columns that point at it. A read Better Auth makes with the rows it needs
+  // beside it is one query, a join (D46): a session with its login, which
+  // every request reads, a login with its accounts at sign-in and forgot
+  // password, and a Google account with its login.
+  advanced: { database: { generateId: "uuid", joins: true }, backgroundTasks: { handler: runAfterAnswer } },
   // bearer(): every answer that sets the session cookie carries its value in
   // set-auth-token too, and Authorization: Bearer <that value> is that session
   // wherever a session is read. expo(): the plugin's client in the app names
@@ -540,18 +579,31 @@ export const auth = betterAuth({
  * while the browser kept a cookie set to lapse a week after sign-in, and
  * someone using the app every day would be signed out at the week's end.
  *
- * Throws when the session cannot be read (a database fault), and the caller
- * treats the request as signed out. Every such fault reaches Sentry once:
- * Better Auth's own 500 through the after hook, and here a throw from before
- * its endpoint ran (its schema check, when a fresh instance cannot reach the
- * database), which no hook sees.
+ * A read Better Auth answers with its own 500 (a database fault) is read once
+ * more: a connection can break while it sits in the pool, where one stays five
+ * minutes (D46), and the read handed it fails as the pool drops it, so the
+ * second read takes another. Throws when the session still cannot be read,
+ * and the caller treats the request as signed out. Every fault reaches Sentry
+ * once: each of Better Auth's own 500s through the after hook, and here a
+ * throw from before its endpoint ran (its schema check, when a fresh instance
+ * cannot reach the database), which no hook sees and which is not read again.
  */
 export async function readSessionUserId(headers: Headers): Promise<string | null> {
   try {
-    const session = await auth.api.getSession({ headers, query: { disableRefresh: true } })
-    return session?.user.id ?? null
+    try {
+      return await sessionUserIdOnce(headers)
+    } catch (failed) {
+      if (!isAPIError(failed) || failed.statusCode < 500) throw failed
+      return await sessionUserIdOnce(headers)
+    }
   } catch (error) {
     if (!isAPIError(error)) captureApiError(error, { source: "readSessionUserId" })
     throw error
   }
+}
+
+/** The user id of the session the headers name, read once, never renewing it. */
+async function sessionUserIdOnce(headers: Headers): Promise<string | null> {
+  const session = await auth.api.getSession({ headers, query: { disableRefresh: true } })
+  return session?.user.id ?? null
 }

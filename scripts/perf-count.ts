@@ -34,14 +34,9 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { getClientTodayString } from "@/services/today-service";
 import { PERF_CLIENT_EMAIL, PERF_CLIENT_ID, PERF_PLAN_ID } from "./perf-fixtures";
 import { BASELINES, formatSize, overBudget, PERF_ROUTES, type FixtureKey, type Measured, type ReadRoute } from "./perf-routes";
-import { startProofServer, stopProofServer, type ProofServer } from "./proof-server";
+import { ServerLines, startProofServer, stopProofServer, type ProofServer } from "./proof-server";
 import { assertOneProject, endMintedSessions, mintSession, type ProofSession } from "./proof-session";
 
-/** The server is quiet once no [db] line has come for this long: three of its own 300 ms burst gaps, and the pipe's delay. */
-const QUIET_MS = 1_000;
-/** How long a request may keep the server printing before the run gives up. */
-const SETTLE_TIMEOUT_MS = 60_000;
-const POLL_MS = 50;
 /** A rate-limited request waits this long when the answer names no Retry-After, and is retried this many times. */
 const RATE_LIMIT_WAIT_MS = 10_000;
 const RATE_LIMIT_RETRIES = 6;
@@ -147,37 +142,6 @@ async function readFixture(coachId: string): Promise<Fixture> {
     savedPlan,
     contentItem,
   };
-}
-
-/** The server's output as whole lines, read on as it prints. */
-class ServerLines {
-  readonly lines: string[] = [];
-  private chunksRead = 0;
-  private partial = "";
-  constructor(private readonly output: string[]) {}
-
-  pull(): void {
-    while (this.chunksRead < this.output.length) {
-      const parts = (this.partial + this.output[this.chunksRead]).split("\n");
-      this.chunksRead += 1;
-      this.partial = parts.pop() ?? "";
-      this.lines.push(...parts);
-    }
-  }
-
-  /** Resolves once no [db] line has arrived for QUIET_MS. */
-  async settle(): Promise<void> {
-    const deadline = Date.now() + SETTLE_TIMEOUT_MS;
-    let quietSince = Date.now();
-    while (Date.now() < deadline) {
-      await sleep(POLL_MS);
-      const before = this.lines.length;
-      this.pull();
-      if (this.lines.slice(before).some((line) => parseDbCallLine(line))) quietSince = Date.now();
-      if (Date.now() - quietSince >= QUIET_MS) return;
-    }
-    throw new Error(`The server was still printing database calls after ${SETTLE_TIMEOUT_MS / 1000} s`);
-  }
 }
 
 /** One request as the session, retried while it is rate limited; its status, body and time. */

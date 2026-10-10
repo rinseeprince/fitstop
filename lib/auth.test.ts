@@ -1,10 +1,12 @@
 // @vitest-environment node
 import { describe, it, expect, vi, afterAll, afterEach, beforeEach } from "vitest"
 import { createHash } from "node:crypto"
+import { EventEmitter } from "node:events"
 import bcrypt from "bcryptjs"
 import type { BetterAuthOptions } from "better-auth"
 import { hashPassword } from "better-auth/crypto"
 import { memoryAdapter } from "better-auth/adapters/memory"
+import { PostgresDialect, type PostgresPool, type PostgresPoolClient } from "kysely"
 
 /**
  * lib/auth.ts's rules and the options it hands Better Auth: the guard on
@@ -251,6 +253,19 @@ describe("its connection to the database", () => {
     })
   })
 
+  it("keeps an idle connection five minutes, not pg's ten seconds, so a request after a pause doesn't connect again (D46)", () => {
+    expect(authPool.options.idleTimeoutMillis).toBe(5 * 60 * 1000)
+  })
+
+  it("checks an idle connection with TCP keep-alive after a minute's silence, inside the idle limit: left to the system, the first check comes after two hours", () => {
+    expect(authPool.options).toMatchObject({ keepAlive: true, keepAliveInitialDelayMillis: 60 * 1000 })
+    expect(authPool.options.keepAliveInitialDelayMillis).toBeLessThan(authPool.options.idleTimeoutMillis ?? 0)
+  })
+
+  it("lets a script that loads it exit while its connections sit idle, instead of waiting out the idle limit", () => {
+    expect(authPool.options.allowExitOnIdle).toBe(true)
+  })
+
   it("reads a bigint as a number, so the limiter's time to retry is a sum, not a concatenation", () => {
     const parse = authPool.options.types?.getTypeParser(20, "text")
     expect(parse?.("1791398038821")).toBe(1791398038821)
@@ -262,6 +277,20 @@ describe("its connection to the database", () => {
     expect(authPool.listenerCount("error")).toBe(1)
     expect(() => authPool.emit("error", dropped, {} as never)).not.toThrow()
     expect(captureApiError).toHaveBeenCalledWith(dropped, { source: "Better Auth's database pool" })
+  })
+
+  it("hears a connection that breaks in use, which pg-pool doesn't listen to: its error is logged, never thrown", () => {
+    // A connection as the pool opens it; Better Auth's adapter then holds it while a statement runs.
+    const connection = new EventEmitter()
+    authPool.emit("connect", connection)
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {})
+    try {
+      const broken = new Error("read ECONNRESET")
+      expect(() => connection.emit("error", broken)).not.toThrow()
+      expect(debug).toHaveBeenCalledWith(expect.any(String), broken)
+    } finally {
+      debug.mockRestore()
+    }
   })
 
   it("holds every password to the shared lengths", () => {
@@ -413,7 +442,7 @@ describe("who a request is signed in as (readSessionUserId: the proxy, the seam,
     expect(sessionCookie(renewing)).toBeDefined()
   })
 
-  it("throws when the session cannot be read, Better Auth's 500 having reached Sentry once", async () => {
+  it("reads once more when the session cannot be read, and throws when it still cannot, each of Better Auth's 500s having reached Sentry once", async () => {
     vi.mocked(captureApiError).mockClear()
     const { db, cookie } = await signedIn()
     db.session = new Proxy([], {
@@ -422,7 +451,151 @@ describe("who a request is signed in as (readSessionUserId: the proxy, the seam,
       },
     }) as unknown as Row[]
     await expect(readSessionUserId(new Headers({ cookie }))).rejects.toMatchObject({ statusCode: 500 })
+    expect(captureApiError).toHaveBeenCalledTimes(2)
+  })
+
+  it("answers when a read fails once, on a connection that broke in the pool, and the second read works; the failure reached Sentry once", async () => {
+    vi.mocked(captureApiError).mockClear()
+    const { db, id, cookie } = await signedIn()
+    // The first read of the sessions fails, as one on a broken connection would; the pool drops it, and the next read works.
+    let broken = true
+    db.session = new Proxy(db.session, {
+      get(rows, key, receiver) {
+        if (broken) {
+          broken = false
+          throw new Error("Connection terminated unexpectedly")
+        }
+        return Reflect.get(rows, key, receiver)
+      },
+    })
+    expect(await readSessionUserId(new Headers({ cookie }))).toBe(id)
     expect(captureApiError).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(captureApiError).mock.calls[0]?.[1]).toEqual({ route: "/api/auth/get-session" })
+  })
+})
+
+/**
+ * Better Auth with lib/auth.ts's own options, its database the Kysely dialect
+ * and schema lib/auth.ts names, over a pool that records every statement and
+ * answers it from `answer` as DEV's tables would: the statements a read
+ * sends, read off the real adapter. Its schema check, a read of the catalog
+ * once per instance, is off here.
+ */
+async function recordingAuth(answer: (sql: string) => Row[]) {
+  const statements: string[] = []
+  const client = {
+    query: (sql: string) => {
+      statements.push(sql)
+      const rows = answer(sql)
+      return Promise.resolve({ command: "SELECT", rowCount: rows.length, rows })
+    },
+    release: () => {},
+  }
+  // The dialect sends this client text and its parameters alone: no cursor is configured.
+  const pool: PostgresPool = { connect: () => Promise.resolve(client as unknown as PostgresPoolClient), end: () => Promise.resolve(), options: {} }
+  const { betterAuth } = await vi.importActual<typeof import("better-auth")>("better-auth")
+  const instance = betterAuth({
+    ...auth.options,
+    database: { ...auth.options.database, dialect: new PostgresDialect({ pool }) },
+    advanced: { ...auth.options.advanced, database: { ...auth.options.advanced.database, validateSchema: false } },
+  })
+  return { instance, statements }
+}
+
+/** The columns a join selects from `model` (`as "_joined_<model>_<column>"`), filled from `row`. */
+function joinedColumns(sql: string, model: string, row: Row): Row {
+  return Object.fromEntries(
+    [...sql.matchAll(new RegExp(`as "_joined_${model}_(\\w+)"`, "g"))].map(([, column]) => [`_joined_${model}_${column}`, row[column] ?? null])
+  )
+}
+
+/** A table's own read in a statement, as the Kysely adapter writes it: the rows it filters, before any join. */
+const reads = (sql: string, table: string) => sql.includes(`from (select * from "better_auth"."${table}"`)
+
+const LOGIN: Row = {
+  id: "5ca1e000-0000-4000-8000-0000000000a1",
+  name: "Coach",
+  email: "coach@example.com",
+  emailVerified: true,
+  image: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  role: "user",
+  banned: false,
+  banReason: null,
+  banExpires: null,
+}
+
+/** A row of better_auth.account for LOGIN. */
+const accountRow = (id: string, providerId: string, accountId: string): Row => ({
+  id,
+  userId: LOGIN.id,
+  accountId,
+  providerId,
+  accessToken: null,
+  refreshToken: null,
+  idToken: null,
+  accessTokenExpiresAt: null,
+  refreshTokenExpiresAt: null,
+  scope: null,
+  password: providerId === "credential" ? "scrypt-hash" : null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+})
+
+describe("a read with the rows it needs beside it is one query (D46): Better Auth joins them", () => {
+  it("is Better Auth's join option", () => {
+    expect(options.advanced?.database?.joins).toBe(true)
+  })
+
+  it("over the Kysely adapter: a session read, as every request makes it, is one statement, the session and its login joined in lib/auth.ts's schema", async () => {
+    const session: Row = { id: "5ca1e000-0000-4000-8000-0000000000b1", userId: LOGIN.id, token: "proof-token", expiresAt: new Date(Date.now() + DAY_MS), ipAddress: null, userAgent: null, impersonatedBy: null, createdAt: new Date(), updatedAt: new Date() }
+    const { instance, statements } = await recordingAuth((sql) => {
+      if (reads(sql, "session")) return [{ ...session, ...joinedColumns(sql, "user", LOGIN) }]
+      // Without the join, Better Auth's second statement: the login by its id.
+      if (reads(sql, "user")) return [LOGIN]
+      return []
+    })
+    // A bare bearer token, as a minted session sends it: the bearer plugin signs it into the session cookie.
+    const read = await instance.api.getSession({ headers: new Headers({ authorization: "Bearer proof-token" }), query: { disableRefresh: true } })
+    expect(read?.user).toMatchObject({ id: LOGIN.id, email: "coach@example.com" })
+    expect(read?.session).toMatchObject({ id: session.id, userId: LOGIN.id })
+    expect(statements).toHaveLength(1)
+    expect(statements[0]).toContain('from (select * from "better_auth"."session" where "better_auth"."session"."token" = $1) as "primary"')
+    expect(statements[0]).toContain('left join "better_auth"."user" as "join_user" on "join_user"."id" = "primary"."userId"')
+  })
+
+  it("over the Kysely adapter: sign-in's and forgot password's read of a login with its accounts is one statement, every account kept", async () => {
+    const accounts = [accountRow("5ca1e000-0000-4000-8000-0000000000c1", "credential", LOGIN.id as string), accountRow("5ca1e000-0000-4000-8000-0000000000c2", "google", "google-1")]
+    const { instance, statements } = await recordingAuth((sql) => {
+      if (reads(sql, "user")) return sql.includes("join_account") ? accounts.map((account) => ({ ...LOGIN, ...joinedColumns(sql, "account", account) })) : [LOGIN]
+      if (reads(sql, "account")) return accounts
+      return []
+    })
+    const found = await (await instance.$context).internalAdapter.findUserByEmail("Coach@Example.com", { includeAccounts: true })
+    expect(found?.user).toMatchObject({ id: LOGIN.id })
+    expect(found?.accounts.map((account) => account.providerId).sort()).toEqual(["credential", "google"])
+    expect(statements).toHaveLength(1)
+    expect(statements[0]).toContain('left join "better_auth"."account" as "join_account" on "join_account"."userId" = "primary"."id"')
+  })
+
+  it("over the Kysely adapter: a Google sign-in's read of its account and login is one statement, and two rows for one Google account are still refused (migration 213)", async () => {
+    const google = accountRow("5ca1e000-0000-4000-8000-0000000000c2", "google", "google-1")
+    const twice = { rows: [google] }
+    const { instance, statements } = await recordingAuth((sql) => {
+      if (reads(sql, "account")) return twice.rows.map((account) => ({ ...account, ...joinedColumns(sql, "user", LOGIN) }))
+      if (reads(sql, "user")) return [LOGIN]
+      return []
+    })
+    const { internalAdapter } = await instance.$context
+    const owner = await internalAdapter.findAccountOwnerByKey({ providerId: "google", accountId: "google-1" })
+    expect(owner).toMatchObject({ kind: "owned", user: { id: LOGIN.id }, account: { id: google.id, providerId: "google" } })
+    expect(statements).toHaveLength(1)
+    expect(statements[0]).toContain('left join "better_auth"."user" as "join_user" on "join_user"."id" = "primary"."userId"')
+    // Better Auth reads at most two rows by the pair, inside the join's own read, and throws on two.
+    expect(statements[0]).toMatch(/from \(select \* from "better_auth"\."account" .*limit \$\d+\) as "primary"/)
+    twice.rows = [google, { ...google, id: "5ca1e000-0000-4000-8000-0000000000c3" }]
+    await expect(internalAdapter.findAccountOwnerByKey({ providerId: "google", accountId: "google-1" })).rejects.toThrow("Multiple accounts match")
   })
 })
 
@@ -584,18 +757,30 @@ describe("a session read that fails before Better Auth's endpoint runs", () => {
     delete (auth as { api?: unknown }).api
   })
 
-  it("reaches Sentry from readSessionUserId; Better Auth's own errors are its after hook's", async () => {
+  it("reaches Sentry from readSessionUserId, read once; Better Auth's own errors are its after hook's", async () => {
     vi.mocked(captureApiError).mockClear()
     const unreachable = new Error("connect ECONNREFUSED")
-    Object.assign(auth, { api: { getSession: vi.fn().mockRejectedValue(unreachable) } })
+    const getSession = vi.fn().mockRejectedValue(unreachable)
+    Object.assign(auth, { api: { getSession } })
     await expect(readSessionUserId(new Headers())).rejects.toBe(unreachable)
     expect(captureApiError).toHaveBeenCalledWith(unreachable, { source: "readSessionUserId" })
+    expect(getSession).toHaveBeenCalledTimes(1)
 
     vi.mocked(captureApiError).mockClear()
     const answered = new APIError("INTERNAL_SERVER_ERROR")
-    Object.assign(auth, { api: { getSession: vi.fn().mockRejectedValue(answered) } })
+    const readTwice = vi.fn().mockRejectedValue(answered)
+    Object.assign(auth, { api: { getSession: readTwice } })
     await expect(readSessionUserId(new Headers())).rejects.toBe(answered)
     expect(captureApiError).not.toHaveBeenCalled()
+    expect(readTwice).toHaveBeenCalledTimes(2)
+  })
+
+  it("does not read again on a refusal, which is an answer", async () => {
+    const refused = new APIError("UNAUTHORIZED")
+    const getSession = vi.fn().mockRejectedValue(refused)
+    Object.assign(auth, { api: { getSession } })
+    await expect(readSessionUserId(new Headers())).rejects.toBe(refused)
+    expect(getSession).toHaveBeenCalledTimes(1)
   })
 })
 
