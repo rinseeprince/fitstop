@@ -1,7 +1,8 @@
 # Better Auth — every login moves off Supabase Auth, and the account screens that were never built
 
-**Status: twelve commits SHIPPED (1 to 10, 5.1 and 5.5; the last, 10, on 2026-10-10); 11, added 2026-10-10 with 10,
-not built; the PROD switch (§8.2), after it, is the owner's.** Thirteen commits (§6: 1 to 11, 5.1 and 5.5), each with a
+**Status: twelve commits SHIPPED (1 to 10, 5.1 and 5.5; the last, 10, on 2026-10-10); 10.5 (added after 10's smoke)
+and 11 not built; the PROD switch (§8.2), after them, is the owner's.** Fourteen commits (§6: 1 to 11, 5.1, 5.5 and
+10.5), each with a
 pasteable prompt, each gated.
 **The logins move in commits 1–3.** Better Auth stands up beside Supabase Auth with today's logins and their
 password hashes copied in (1); every sign-in, the invite, forgot password and reset switch over, and the user
@@ -907,6 +908,13 @@ address changes, which deletes it in the same statement, and one Google account 
     runs Better Auth's own get-session with every hook. Change email's links are JWTs signed with the secret and
     never stored; verify-email's failures redirect to the landing with `?error=TOKEN_EXPIRED|INVALID_TOKEN|
     USER_NOT_FOUND|INVALID_USER`; its second link, opened with no session, makes one for the login.
+15. Found after commit 10 (2026-10-10), in the installed source: a session read (`getSession`, through
+    `internalAdapter.findSession`) asks the adapter for the session with `join: { user: true }`, and with
+    `advanced.database.joins` off, its default, the adapter factory runs it as two queries, the session and then its
+    user (`@better-auth/core` `db/adapter/factory.mjs`: the fallback at :343, the switch at :570 and :619); with it on,
+    the Kysely adapter (`@better-auth/kysely-adapter`, under `better-auth/node_modules`) runs one LEFT JOIN. The option
+    is marked experimental. node-postgres closes a pool's idle connection after `idleTimeoutMillis`, 10 s by default,
+    and takes `keepAlive`.
 
 ### 2.10 A login's address, everywhere (commit 5.5)
 
@@ -1182,6 +1190,7 @@ can be vetoed before its commit starts.
 | D43 | **The Invite box lives with the coach's client routes** (`GET`/`POST /api/clients/[id]/invitation`, `coachApiRateLimit`), and its answers never carry the link's token. The invite link's own two routes keep `/api/invitations/` and `authRateLimit`. | The box shared the public link's five a quarter hour: a sixth open in fifteen minutes was refused, and commit 10's own smoke opens it seven times. No screen uses the token, and whoever holds it can set up the client's account. |
 | D44 | **The sign-in pages and every email look like atletafit.com**, from one frame and one email layout, spelled in two files (`components/auth/brand-tokens.ts`, `emails/brand.ts`); everything behind sign-in keeps Teal Summit, and Continue with Google stays white with Google's "G". | Owner, 2026-10-10: "Sign in page should look similar to the marketing page, because it's domain will be app.atletafit.com and navigable from the marketing page. Emails should look like the marketing page too." The design doc had no recipe for either, so each page copied the old OKLCH look and each email a stock template. |
 | D45 | **Two commits**, 10 (the Invite box) and 11 (the look), both before PROD switches (§8.2). | Owner, 2026-10-10. One changes what happens and the other how things look, so each has its own smoke and a failure in one can't hide in the other; a coach first meets both on PROD. |
+| D46 | **Better Auth's database reads take fewer round trips (commit 10.5).** Its pool keeps an idle connection five minutes, with TCP keep-alive, instead of pg's ten seconds, and a session read joins the login in one query (`advanced.database.joins`, §2.9 #15), kept only if every auth proof passes with it. Reading the session once per request instead of twice (the proxy handing the route the user id it checked) is not in 10.5: it changes how a route learns who is signed in, an owner decision with its own review. | Owner, 2026-10-10, after commit 10's smoke: "the entire platform feels very slow". Measured from Bali against DEV in the owner's dev server: a round trip ~215 ms; a new connection ~1.6 s; a session read ~450 ms warm (two queries) and ~2.0 s after a 10 s pause; `/api/auth/me` 1.2–1.35 s; the Invite box's read 2.1–3.8 s. Supabase Auth's check was one HTTPS call; Better Auth's is two queries, twice a request, and each bundle's pool reconnected after every pause. Reverting to Supabase Auth was weighed and refused: two settings against eleven commits and seven migrations. In production, beside the database, a round trip is milliseconds. |
 
 ---
 
@@ -1221,6 +1230,7 @@ Grepped 2026-10-07 at `d5f23299`. A map, not a promise: each session greps again
 | `app/api/clients/[id]/activate/route.ts`, `components/coach/client-activation-dialog.tsx` | an invitation in the background to every client with no login | awaited, only without a working link; the toast warns when it didn't send | 10 |
 | `components/clients/invite-client-dialog.tsx` (+ its read hook), `components/clients/client-detail-layout.tsx`, `components/add-client-dialog.tsx` | buttons by `status`; an unnamed icon; a red "Client added" with a dash, raw errors | rules 20 to 23, the design system's Dialog | 10 |
 | `scripts/auth-fixtures.ts`, `scripts/sign-in-proof.ts`, `scripts/email-follows-proof.ts`, `scripts/seed/generate.ts`, `scripts/proof-mailbox.ts`, `scripts/invitation-proof.ts` (new) | write `status: "sent"`; the mailbox takes every email | a sent row as a send writes it; the mailbox can refuse an address; proof 10 | 10 |
+| `lib/auth.ts` (the pool's idle limit and keep-alive, `advanced.database.joins`), `scripts/auth-latency-probe.ts` (new), `docs/ARCHITECTURE.md` ("Database clients") | idle connections closed after 10 s; two queries a session read | five minutes and keep-alive; one query, if the auth proofs pass; a probe that times the round trips | 10.5 |
 | `components/auth/sign-in-frame.tsx` and `brand-tokens.ts` (new), `app/login/page.tsx`, `app/forgot-password/page.tsx`, `components/auth/password-link-page.tsx`, `reset-password-form.tsx`, `login-notice.tsx`, `app/invite/[token]/page.tsx`, `lib/constants.ts` (`MARKETING_SITE_URL`) | the same OKLCH frame copied four times | one frame in atletafit.com's look | 11 |
 | `emails/*` (seven templates), `emails/email-layout.tsx` and `emails/brand.ts` (new) | one stock style block copied seven times | one layout in atletafit.com's look, the words unchanged | 11 |
 | `scripts/check-labels.ts`, `scripts/check-labels-whitelist.ts`, `docs/newdesignsystem.md`, `TECHNICAL-DEBT.md` | login and invite skipped as not migrated; no chapter for sign-in pages or emails; P2 #12 open | `brand-tokens.ts` a token module and the two entries gone; "Sign-in pages and emails"; P2 #12 closed | 11 |
@@ -1260,8 +1270,8 @@ so.
 - **Gates after every commit:** `npx tsc --noEmit`, `npx eslint .` (and `grep -rn "console.log"` on changed
   files), `npx vitest run`, `npm run check:labels`, `grep -rn "as any"` and `grep -rn "TODO\|FIXME\|HACK\|DEBUG"`
   on changed files, `npx knip`, `npm run check:service-key`. Plus `npm run check:rls` for commits 1, 2, 5.5, 6 and 10
-  (migrations), and `npm run build` (which chains `check:prerender`) for commits 1, 2, 4, 5, 5.1, 5.5, 6, 7, 8, 10 and
-  11 (the proxy, a route handler, pages or Settings change). Commit 9's doc edits need none. **The security, load and
+  (migrations), and `npm run build` (which chains `check:prerender`) for commits 1, 2, 4, 5, 5.1, 5.5, 6, 7, 8, 10, 10.5
+  and 11 (the proxy, a route handler, `lib/auth.ts`, pages or Settings change). Commit 9's doc edits need none. **The security, load and
   performance review** (CONVENTIONS §2) is reported for every commit but 9; for 2 it covers every redirect and
   cookie the proxy and the accept route emit; for 5.5 every path that changes an address and every row the
   trigger writes; for 6 every row the two functions reach; for 10 every path that writes an invitation and what each
@@ -1339,6 +1349,12 @@ so.
     "failed"`; of a client whose address the coach corrected after inviting them → one email, at the corrected
     address, and the earlier link refused (as built); the questionnaire add refused → `inviteSent: false`, no row; an acceptance → `accepted_at` set, the
     read `hasAccount: true`, the link refused as used; ten reads of the box in a row → none refused.
+  - 10.5: `scripts/auth-latency-probe.ts` against its own next dev (never :3000), before the change and after it: a
+    query on an open connection, a session read warm and after an 11 s pause, a Supabase data read, an Upstash read,
+    and `/api/auth/me` and the Invite box's read, warm and after a pause; then a connection held idle three minutes
+    answers its next query with no reconnect. With the join on, every auth proof passes on DEV: `sign-in-proof.ts`,
+    `bearer-proof.ts`, `account-proof.ts`, `email-follows-proof.ts`, `create-coach-proof.ts`,
+    `delete-account-proof.ts` and `invitation-proof.ts`.
 - **Tests** (vitest; Better Auth's `auth.api` and the pool mocked the way `supabaseAdmin` is mocked elsewhere):
   the proxy's decisions (the two skip lists, 401 JSON under `/api/`, 307 for pages, role redirects, fail-closed,
   the folder ⟷ list binding); the seam (null session → null, bearer header reaches `getSession`, cache untouched);
@@ -1357,7 +1373,8 @@ so.
   link predicate (used, expired, working, an old row with no expiry), both routes' chain and answers (no token, 404
   for another coach's client), the box's four states, its pending and failed reads, its clear on open and its two
   toasts, the trigger's name, the activation rule and its toast, the questionnaire add's warning, and the
-  migration's file (its refusal, its drop, its closing check); for 11, the frame on every sign-in page and the invite
+  migration's file (its refusal, its drop, its closing check); for 10.5, the pool's idle limit and keep-alive and
+  Better Auth's join option, read from `lib/auth.ts`; for 11, the frame on every sign-in page and the invite
   page (the wordmark's link, the heading, the card), each page's words and behaviour as built (their tests unchanged
   but for the name's), Google's "G" unchanged, the layout around all seven emails (the wordmark, the teal button,
   the footer line, the viewport meta), and the scan that no file in `emails/` but `emails/brand.ts` spells a colour.
@@ -2403,6 +2420,64 @@ STATUS line in §6 with SHIPPED, the hash and the date, and hand over: what
 shipped; anything you decided that the plan did not say; the proof's output;
 and §7.6's smoke list with each seeded client's page and, for each email,
 where it arrives. The browser smoke is mine.
+```
+
+### Commit 10.5 — `perf(auth): Better Auth's database reads take fewer round trips: its connection stays open, and a session read is one query`
+
+**STATUS: PLANNED 2026-10-10, not built.**
+
+Asked for by the owner after commit 10's smoke (2026-10-10): the Invite box took 3–4 s to show its sentence, "and as
+a matter of fact, the entire platform feels very slow". Measured from Bali against DEV in the owner's running dev
+server (D46 has the numbers): a request makes about eight round trips of ~215 ms, one after another; Better Auth's
+session read is two of them and runs twice a request (the proxy, then the route's auth check); and each bundle's pool
+closes its connection after ten idle seconds, so the first request after a pause pays ~1.6 s to reconnect. The
+owner's "is it worth reverting back to Supabase?" was answered no (D46).
+- `lib/auth.ts`: the pool keeps an idle connection five minutes (`idleTimeoutMillis`, a named constant) with TCP
+  keep-alive (`keepAlive: true`); `advanced.database.joins: true` (§2.9 #15), so a session read is one query. A test
+  pins each, with a mutation.
+- `scripts/auth-latency-probe.ts` (§5, proof 10.5), run before the change and after it; both sets of numbers go in the
+  handover side by side.
+- Every auth proof §5 names for 10.5 re-run on DEV with the join on. If any fails, the join stays off, the failure is
+  recorded in §2.9 #15, and the pool's settings ship alone.
+- Docs: ARCHITECTURE's "Database clients" (`authPool`'s idle limit and keep-alive, a session read's one query), current
+  shape only.
+- Not in this commit: reading the session once per request (D46). No browser smoke: the probe's numbers and the proofs
+  are the proof, and the owner then uses the app as before.
+
+```text
+Read CONVENTIONS.md (whole) and from docs/BETTER-AUTH-PLAN.md its head, §1–§5,
+§6's "How every commit runs" and this commit's entry. From docs/ARCHITECTURE.md
+read "Auth Model" (to "The client app's sessions") and "Database clients". Also
+read lib/auth.ts, lib/supabase-connection.ts, lib/auth.test.ts, proxy.ts,
+lib/auth-helpers.ts, and scripts/proof-server.ts, scripts/proof-session.ts and
+scripts/auth-fixtures.ts.
+
+Job: Commit 10.5 of docs/BETTER-AUTH-PLAN.md §6 — `perf(auth): Better Auth's
+database reads take fewer round trips: its connection stays open, and a session
+read is one query`. Build exactly what that entry lists, to D46 and §2.9 #15.
+Check #15 against the installed source first (node_modules); if it is false,
+stop and say so.
+
+You have my go: don't show me a plan and don't wait for my review. Stop and ask
+me only if a §3 decision this commit needs is blank, if building it would break
+a CONVENTIONS.md rule that §4 does not mark for rewriting, or if a gate fails and
+its root fix lies outside this commit.
+
+Done when: scripts/auth-latency-probe.ts has run before the change and after it;
+every auth proof §5 names for 10.5 passes on DEV with the join on, or the join is
+off and the failure is recorded in §2.9 #15; each setting has a test and a
+mutation; one independent review of the diff has run and its blockers and
+should-fix items are fixed at the root; and every gate passes after its fixes:
+npx tsc --noEmit, npx eslint ., npx vitest run, npm run check:labels, npx knip,
+npm run check:service-key, npm run build. Report the security, load and
+performance review (CONVENTIONS §2). lsof -i :3000 first: the probe and the
+proofs start their own next dev on a free port, never :3000, and none runs while
+another next dev holds this folder.
+
+Then commit directly to main (this plan file included), replace this commit's
+STATUS line in §6 with SHIPPED, the hash and the date, and hand over in plain
+words: what changed, the numbers before and after side by side, and anything you
+decided that the plan did not say.
 ```
 
 ### Commit 11 — `feat(brand): the sign-in pages and every email look like atletafit.com`
