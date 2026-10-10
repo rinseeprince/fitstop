@@ -2309,7 +2309,7 @@ browser smoke; the PROD switch (§8.2) is mine to schedule.
 ### Commit 10 — `fix(invitations): the Invite box always lets a coach send and says what is true; a failed email changes nothing`
 
 **STATUS: SHIPPED `882e005e` (2026-10-10).** Migration 215 on DEV (PROD takes it in its switch, §8.2); proof 10
-(`scripts/invitation-proof.ts`) passes on DEV, 38 checks with the cleanup's; the browser smoke §7.6 is the owner's.
+(`scripts/invitation-proof.ts`) passes on DEV, 38 checks with the cleanup's; smoke §7.6 PASSED (owner, 2026-10-10).
 
 Found by the owner after commit 9 (2026-10-10): an invitation email that failed left the client's invitation on
 "Pending", for which the Invite box shows neither Send nor Resend, so a coach told to "send manually from their
