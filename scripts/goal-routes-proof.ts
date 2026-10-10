@@ -23,7 +23,7 @@
  *  10  today's goal is corrected in place, rewritten whole — audited
  *  11  a goal that started before today refuses an edit; a new target is a new goal from today, the one before ending yesterday
  *  12  another coach's client is 404; another client's goal through this URL is 404 and stays
- *  13  a write without the Origin the CSRF check reads is refused
+ *  13  a write naming another site is refused by the CSRF check
  *  14  the manual Add client sets the first goal from today, with the form's type, name, target, deadline and words — audited;
  *      a deadline before the new client's today is a 400 that leaves no client
  *  15  the goals table: every goal, planned first, with its deadline changes, the nutrition versions and the programs
@@ -276,12 +276,21 @@ async function main(): Promise<void> {
     );
 
     console.info("13. CSRF");
-    const noOrigin = await fetch(`${PROOF_BASE}${goals}`, {
+    // A browser names its site on every write, so the check refuses a write
+    // naming another one. A write naming none passes only with a bearer token,
+    // the client app's, which this proof's minted session is: that rule is
+    // scripts/bearer-proof.ts's.
+    const fromElsewhere = await fetch(`${PROOF_BASE}${goals}`, {
       method: "POST",
-      headers: { ...session.headers, "Content-Type": "application/json" },
+      headers: { ...session.headers, "Content-Type": "application/json", Origin: "https://elsewhere.example" },
       body: JSON.stringify({ type: "maintain" }),
     });
-    check("a write without the Origin is refused", noOrigin.status === 403, noOrigin.status);
+    const refusal = await fromElsewhere.text();
+    check(
+      "a write naming another site is refused by the CSRF check",
+      fromElsewhere.status === 403 && refusal === JSON.stringify({ success: false, error: "CSRF validation failed" }),
+      `${fromElsewhere.status} ${refusal.slice(0, 120)}`
+    );
 
     console.info("15. The goals table");
     const E = await makeClient("Goal routes proof E");
