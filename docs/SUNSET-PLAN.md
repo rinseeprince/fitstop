@@ -1,6 +1,6 @@
 # Sunset — the AI check-in review and its draft reply go, and so do the Journey blocks
 
-**STATUS: S1 SHIPPED `1ffaee98` (2026-10-10); S2a, S2b and S3 PLANNED 2026-10-10.** Four commits (§6), about a day at the owner's pace. Lands AFTER
+**STATUS: S1 SHIPPED `1ffaee98` (2026-10-10); S2a SHIPPED `22c17bd8` (2026-10-10); S2b and S3 PLANNED 2026-10-10.** Four commits (§6), about a day at the owner's pace. Lands AFTER
 `docs/PERF-PLAN.md` P0 (the request rules in CONVENTIONS, the counter and the gate — so the code S2a writes is written
 against them) and BEFORE P1 (so no perf commit tunes code this plan deletes; P1 re-baselines the counter).
 
@@ -302,7 +302,7 @@ smoke), and anything you decided that the plan did not say.
 
 ### S2a — `refactor(blocks): nothing reads a block — the caps, the clears, the messages, the two setup surfaces, the chart, the client's goal route`
 
-**STATUS: PLANNED 2026-10-10.** After S1.
+**STATUS: SHIPPED `22c17bd8` 2026-10-10.**
 
 Everything §2.2 lists, to SD4–SD7. The Blocks pane and its routes still exist and still work at the end of this
 commit; nothing outside their folders imports them.
