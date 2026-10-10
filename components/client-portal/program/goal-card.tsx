@@ -2,29 +2,33 @@
 
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight, type UnitSystem } from "@/utils/unit-conversions";
-import { formatBlockDate } from "@/lib/blocks/block-format";
+import { formatHistoryDate } from "@/lib/date-helpers";
 import { goalProgressChip } from "@/lib/goals/goal-chip";
 import { goalTypeBesideName } from "@/lib/goals/goal-types";
-import type { ClientJourney } from "@/types/client-journey";
+import type { ClientGoal } from "@/types/client-goal-wire";
 
 /** Converted to the viewer's unit and rounded to 1dp, so "to go" subtracts two shown numbers. */
 function shownWeight(kg: number | null | undefined, preference: UnitSystem): number | null {
   return kg == null ? null : Number(formatWeight(kg, preference).value.toFixed(1));
 }
 
+/** The client's newest readings (kg, %), from their profile. */
+type CurrentReadings = { weightKg: number | null; bodyFatPercentage: number | null };
+
 /**
  * The client's goal, at the top of the Program tab — every client with a goal
- * sees it, with a block or without one: its name, its type where the name does
- * not say it, each target with how far they are from it (the words the coach's
- * goal card uses, `goalProgressChip`), the deadline, and the goal's own words.
- * A planned goal is not on the wire before its day, so it shows from then.
+ * sees it: its name, its type where the name does not say it, each target with
+ * how far they are from it (the words the coach's goal card uses,
+ * `goalProgressChip`: from the reading on the goal's start day to the newest),
+ * the deadline, and the goal's own words. A planned goal is not on the wire
+ * before its day, so it shows from then.
  */
-export function GoalCard({ goal }: { goal: ClientJourney["goal"] }) {
+export function GoalCard({ goal, current }: { goal: ClientGoal; current: CurrentReadings }) {
   const { preference } = useUnits();
   if (!goal.name || !goal.type) return null;
 
   const unit = formatWeight(0, preference).unit;
-  const readings = goal.readings ?? null;
+  const start = goal.startReadings ?? null;
   const type = goalTypeBesideName(goal.type, goal.name);
 
   const targets: string[] = [];
@@ -33,8 +37,8 @@ export function GoalCard({ goal }: { goal: ClientJourney["goal"] }) {
     const chip = goalProgressChip({
       type: goal.type,
       metric: "weight",
-      start: shownWeight(readings?.startWeightKg, preference),
-      current: shownWeight(readings?.weightKg, preference),
+      start: shownWeight(start?.weightKg, preference),
+      current: shownWeight(current.weightKg, preference),
       target: weightTarget,
       unit,
     });
@@ -44,8 +48,8 @@ export function GoalCard({ goal }: { goal: ClientJourney["goal"] }) {
     const chip = goalProgressChip({
       type: goal.type,
       metric: "bodyFat",
-      start: readings?.startBodyFatPercentage,
-      current: readings?.bodyFatPercentage,
+      start: start?.bodyFatPercentage,
+      current: current.bodyFatPercentage,
       target: goal.bodyFatPercentage,
       unit: "%",
     });
@@ -68,7 +72,7 @@ export function GoalCard({ goal }: { goal: ClientJourney["goal"] }) {
       )}
       {goal.deadline && (
         <p className="mt-1 text-xs text-muted-foreground">
-          {goal.type === "event_prep" ? "Event day" : "By"} {formatBlockDate(goal.deadline)}
+          {goal.type === "event_prep" ? "Event day" : "By"} {formatHistoryDate(goal.deadline)}
         </p>
       )}
       {goal.description && (

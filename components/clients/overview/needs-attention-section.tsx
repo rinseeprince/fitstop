@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Dumbbell,
-  Flag,
   HeartPulse,
   ListChecks,
   Utensils,
@@ -30,15 +29,12 @@ import {
 import { relativeDayPhrase } from "./overview-format";
 import type { ClientTab } from "@/lib/client-tabs";
 import type { AlertSeverity, AttentionAlert } from "@/types/attention-feed";
-import type { BlockEnding, UnreviewedCheckIn } from "@/types/coach-brief";
+import type { UnreviewedCheckIn } from "@/types/coach-brief";
 
 type NeedsAttentionSectionProps = {
   clientName: string;
   unreviewedCheckIn: UnreviewedCheckIn;
   attentionAlerts: AttentionAlert[];
-  /** The current journey block entering its final 7 days — a coach-action
-   *  row, not an alert: no dismiss, it clears when the next block starts. */
-  blockEnding: BlockEnding;
   onTabChange: (tab: ClientTab, extraParams?: Record<string, string>) => void;
   /**
    * Dismisses one alert for this client, by its key (`alertDismissalKey`): its
@@ -72,10 +68,6 @@ const SEVERITY_THUMB: Record<AlertSeverity, string> = {
   low: THUMB_CLASS,
 };
 
-// Sentence prose, so the weekday stays sans like the words around it.
-const endsWeekday = (iso: string) =>
-  new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
-
 /**
  * One row: thumb, two lines, and the destination it leads to.
  *
@@ -101,7 +93,7 @@ function AttentionRow({
   subIsNumeric?: boolean;
   action: string;
   onOpen: () => void;
-  /** Absent on coach-action rows, which are not dismissible alerts. */
+  /** Absent on the check-in row, which is not a dismissible alert. */
   onDismiss?: () => void;
   dismissLabel?: string;
 }) {
@@ -151,7 +143,7 @@ function AttentionRow({
         </button>
       ) : (
         // Keeps the action labels in one column whether or not a row can be
-        // dismissed; without it the coach-action rows sit 32px further right.
+        // dismissed; without it the check-in row sits 32px further right.
         <span className="mr-1 h-7 w-7 shrink-0" aria-hidden />
       )}
     </div>
@@ -162,7 +154,6 @@ export function NeedsAttentionSection({
   clientName,
   unreviewedCheckIn,
   attentionAlerts,
-  blockEnding,
   onTabChange,
   onDismissAlert,
 }: NeedsAttentionSectionProps) {
@@ -171,15 +162,14 @@ export function NeedsAttentionSection({
   // Renderer-only: the dismissal store stays 1:1 and the suppressed alert
   // returns by itself the moment `no_engagement` clears.
   const sortedAlerts = sortAlertsBySeverity(visibleAlerts(attentionAlerts));
-  const pendingCount =
-    sortedAlerts.length + (unreviewedCheckIn ? 1 : 0) + (blockEnding ? 1 : 0);
+  const pendingCount = sortedAlerts.length + (unreviewedCheckIn ? 1 : 0);
   const submitted = unreviewedCheckIn ? relativeDayPhrase(unreviewedCheckIn.submittedAt) : null;
   const [expanded, setExpanded] = useState(false);
 
-  // The three sources become ONE ordered list so the cap can slice it. Order is
+  // The two sources become ONE ordered list so the cap can slice it. Order is
   // the one they were rendered in and is deliberate: the check-in is work a
-  // client is waiting on, the block boundary is a decision only the coach can
-  // make, and the alerts are patterns — severity-sorted among themselves.
+  // client is waiting on, and the alerts are patterns — severity-sorted among
+  // themselves.
   const rows: ReactNode[] = [];
 
   if (unreviewedCheckIn) {
@@ -193,29 +183,8 @@ export function NeedsAttentionSection({
         subIsNumeric={submitted?.isNumeric}
         action="Review"
         // Addresses the check-in itself — the Check-ins tab's single-owner
-        // `?checkIn=` param, the block-ending row's shape.
+        // `?checkIn=` param.
         onOpen={() => onTabChange("check-ins", { checkIn: unreviewedCheckIn.id })}
-      />
-    );
-  }
-
-  if (blockEnding) {
-    // A coach-action row, not an alert: not dismissible, never on the dashboard
-    // feed, and it clears when the next block starts. The `{ journey: "blocks" }`
-    // round trip is a client-page URL contract, not a decoration.
-    rows.push(
-      <AttentionRow
-        key="block-ending"
-        thumb={THUMB_CLASS}
-        icon={<Flag className="h-4 w-4" strokeWidth={1.5} />}
-        title={`${blockEnding.blockName} ends ${endsWeekday(blockEnding.endsOn)}.`}
-        sub={
-          blockEnding.nextBlockName
-            ? `${blockEnding.nextBlockName} is next.`
-            : "Nothing scheduled after it."
-        }
-        action="Journey"
-        onOpen={() => onTabChange("metrics", { journey: "blocks" })}
       />
     );
   }
@@ -265,8 +234,8 @@ export function NeedsAttentionSection({
             {hiddenCount > 0 && (
               // Expands IN PLACE. Unlike the feed beside it these rows each
               // lead somewhere, but there is no page that lists them — the
-              // alerts are derived per request and the two coach-action rows
-              // are not alerts at all.
+              // alerts are derived per request and the check-in row is not an
+              // alert at all.
               <CardOverflowToggle
                 count={hiddenCount}
                 expanded={expanded}

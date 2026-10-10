@@ -22,12 +22,7 @@ import {
   type TriggerResult
 } from "@/lib/attention-triggers"
 import { alertDismissalKey } from "@/lib/attention-alert-dismissal"
-import type {
-  BlockWindow,
-  ClientBlockWindow,
-  ClientPlanWindow,
-  PlanWindow,
-} from "@/lib/prescription-triggers"
+import type { ClientPlanWindow, PlanWindow } from "@/lib/prescription-triggers"
 import { sortAlertsBySeverity } from "@/lib/attention-alert-severity"
 import { checkInWeekday } from "@/lib/check-in-week"
 import {
@@ -97,8 +92,6 @@ type ClientData = {
   nutritionWindows: PlanWindow[]
   /** Every live program's window, capped at the next plan's start — its training twin. */
   trainingWindows: PlanWindow[]
-  /** The client's non-archived journey blocks — named in the prescription-ending messages, never a bound. */
-  blocks: BlockWindow[]
   plannedSessionCount: number
   /** Resolved through `checkInWeekday`, so never null — see lib/check-in-week.ts. */
   checkInDay: DayOfWeek
@@ -128,7 +121,6 @@ export function groupClientData(
   clientLogRows: ClientLogRow[] | null,
   nutritionWindows: ClientPlanWindow[] | null = null,
   trainingWindows: ClientPlanWindow[] | null = null,
-  blocks: ClientBlockWindow[] | null = null,
   dayTargets: ClientNutritionDayTarget[] | null = null,
 ): Map<string, ClientData> {
   const clientDataMap = new Map<string, ClientData>()
@@ -149,7 +141,6 @@ export function groupClientData(
       clientLogDates: [],
       nutritionWindows: [],
       trainingWindows: [],
-      blocks: [],
       plannedSessionCount: 0,
       checkInDay: checkInWeekday({ nextCheckInDue: client.next_check_in_due }),
       startDate: client.start_date ?? null,
@@ -223,9 +214,6 @@ export function groupClientData(
   }
   for (const window of trainingWindows ?? []) {
     clientDataMap.get(window.clientId)?.trainingWindows.push({ start: window.start, end: window.end })
-  }
-  for (const block of blocks ?? []) {
-    clientDataMap.get(block.clientId)?.blocks.push({ name: block.name, start: block.start, end: block.end })
   }
 
   return clientDataMap
@@ -330,8 +318,8 @@ export function evaluateAndSortTriggers(
             now: windowNow,
           })
         : null,
-      evaluatePrescriptionEnding({ track: "nutrition", windows: data.nutritionWindows, blocks: data.blocks, today: dateRange.end }),
-      evaluatePrescriptionEnding({ track: "training", windows: data.trainingWindows, blocks: data.blocks, today: dateRange.end }),
+      evaluatePrescriptionEnding({ track: "nutrition", windows: data.nutritionWindows, today: dateRange.end }),
+      evaluatePrescriptionEnding({ track: "training", windows: data.trainingWindows, today: dateRange.end }),
     ]
 
     // Convert trigger results to alerts

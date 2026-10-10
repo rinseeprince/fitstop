@@ -59,10 +59,6 @@ type ProgramDraftContextValue = ProgramBuilderState & {
   // Device-synced client timezone — anchors the apply dialog's start-date
   // floor to the CLIENT's local today (the server guard's anchor).
   clientTimezone: string | null;
-  // The Journey block the coach came from ("place one" on its card) — the
-  // apply dialog's Block field preselects it. Null in library mode and for a
-  // drawer opened by hand.
-  preselectedBlockId: string | null;
   onApplied?: () => void;
   plan: SavedPlan | null;
   isPlanLoading: boolean;
@@ -117,7 +113,6 @@ type ProgramDraftProviderProps = {
   clientId?: string;
   clientName?: string;
   clientTimezone?: string;
-  preselectedBlockId?: string;
   onApplied?: () => void;
   // Fired after a clean plan-editor save: the overlay refreshes what the save
   // touched and closes. The confirm spins until it resolves.
@@ -132,7 +127,6 @@ export function ProgramDraftProvider({
   clientId,
   clientName,
   clientTimezone,
-  preselectedBlockId,
   onApplied,
   onSaved,
   children,
@@ -258,7 +252,6 @@ export function ProgramDraftProvider({
     clientId: clientId ?? null,
     clientName: clientName ?? null,
     clientTimezone: clientTimezone ?? null,
-    preselectedBlockId: preselectedBlockId ?? null,
     onApplied,
     plan: plan ?? null,
     isPlanLoading: isPlaced ? placed.isLoading : isPlanLoading,

@@ -20,7 +20,6 @@ import {
   getLatestNutritionPlan,
   getNextFutureNutritionPlan,
 } from "@/services/nutrition-plan-service";
-import { BlocksUnreadableError } from "@/services/client-blocks-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 
@@ -99,8 +98,7 @@ export async function GET(
     const hasPlan = (covering != null || nextFuture != null) && seedPlan != null;
 
     // `nutrition_plans.name` is never written, so the Plans-tab hero titles
-    // itself with the program the client is on — the same "which block is this"
-    // question a Journey block name answers (client_phases, migration 145). Same predicate as
+    // itself with the program the client is on. Same predicate as
     // hasTrainingPlan: the running program, else the queued one.
     const trainingPlanName = activePlan?.name ?? nextPlan?.name ?? null;
 
@@ -215,12 +213,6 @@ export async function POST(
   } catch (error) {
     if (error instanceof NutritionPlanError) {
       return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
-    }
-    // The version's end is resolved before the save, so a blocks read that
-    // failed refuses it: targets stored without the block's end would run past
-    // it, into days the coach has not priced.
-    if (error instanceof BlocksUnreadableError) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 503 });
     }
     console.error("Error generating nutrition plan:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(

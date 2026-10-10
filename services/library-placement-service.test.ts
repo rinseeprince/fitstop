@@ -22,18 +22,10 @@ vi.mock("./training-event-service", () => ({
   cancelFutureEventsForPlans: vi.fn().mockResolvedValue(undefined),
 }));
 
-// The block covering the start date is now the placement window's length knob.
-// Defaulted to "no block" so every test written before that keeps the authored
-// length it asserts against.
-vi.mock("./client-blocks-service", () => ({
-  getBlockBoundForDate: vi.fn(),
-}));
-
 import { supabaseAdmin } from "./supabase-admin";
 import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
 import { getNextPlanStartCap, cancelFutureEventsForPlans } from "./training-event-service";
-import { getBlockBoundForDate } from "./client-blocks-service";
 import {
   placePlanOnCalendar,
   placeSessionOnCalendar,
@@ -41,7 +33,6 @@ import {
   PlacementSupersedeError,
 } from "./library-placement-service";
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
-import { BLOCKS_UNREADABLE } from "@/lib/constants";
 import type { InlinePlanBody } from "@/lib/validations/training";
 import { SAVED_SESSION_GROUPS_EMBED } from "@/lib/coach-mappers";
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
@@ -50,7 +41,6 @@ const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetSavedPlanById = vi.mocked(getSavedPlanById);
 const mockCreateAtomic = vi.mocked(createTrainingPlanAtomic);
 const mockGetNextPlanStartCap = vi.mocked(getNextPlanStartCap);
-const mockGetBlockBound = vi.mocked(getBlockBoundForDate);
 
 // Inline query mock helper
 function createMockQuery<T = unknown>(result: { data: T | null; error: { message: string } | null }) {
@@ -200,9 +190,6 @@ describe("library-placement-service", () => {
     vi.clearAllMocks();
     // Default: this is the last plan, so no next-plan cap shortens the window.
     mockGetNextPlanStartCap.mockResolvedValue(null);
-    // Default: no block covers the start date, so the window is the authored
-    // program's own length — the behaviour every test below was written against.
-    mockGetBlockBound.mockResolvedValue(null);
   });
 
   // =========================================================================
@@ -942,14 +929,14 @@ describe("library-placement-service", () => {
 });
 
 // ===========================================================================
-// The block is the placement's length knob (block-as-program, commit 1).
+// A placed program runs its authored length, capped at the day before the next
+// live program (SD4, docs/SUNSET-PLAN.md). Nothing stretches it.
 // ===========================================================================
 
-describe("library-placement-service: the block bounds the placement", () => {
+describe("library-placement-service: the next program bounds the placement", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetNextPlanStartCap.mockResolvedValue(null);
-    mockGetBlockBound.mockResolvedValue(null);
   });
 
   /** A 3-slot program: two workouts and a rest day. */
@@ -976,68 +963,32 @@ describe("library-placement-service: the block bounds the placement", () => {
     return { sessionInsertQuery, exerciseInsertQuery, eventUpsertQuery };
   }
 
-  it("refuses the placement when the client's blocks can't be read, before anything is written", async () => {
-    // The window is resolved first, so a failed blocks read stops the save
-    // rather than placing a program that runs straight through a block.
+  it("places a program shorter than the gap to the next one once, never repeated to fill it", async () => {
+    // The 3-slot program from 2026-09-07; the next program starts 2026-09-16.
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
-    mockGetBlockBound.mockRejectedValue(new Error(BLOCKS_UNREADABLE));
-    wire();
-
-    await expect(
-      placePlanOnCalendar({
-        savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
-      }),
-    ).rejects.toThrow(BLOCKS_UNREADABLE);
-
-    expect(mockCreateAtomic).not.toHaveBeenCalled();
-  });
-
-  it("repeats a short program to fill its block, cloning every cycle its own rows", async () => {
-    // 3-slot program in a 9-day block (2026-09-07 → 2026-09-15): three cycles.
-    mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
-    mockCreateAtomic.mockResolvedValue("new-plan-id");
-    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-15" });
+    mockGetNextPlanStartCap.mockResolvedValue("2026-09-15");
     const { sessionInsertQuery, eventUpsertQuery } = wire();
 
     const result = await placePlanOnCalendar({
       savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
     });
 
-    const slots = insertedSlots(sessionInsertQuery);
-    expect(slots).toHaveLength(9);
-    expect(slots.map((r) => r.name)).toEqual([
-      "Upper", "Lower", "Rest", "Upper", "Lower", "Rest", "Upper", "Lower", "Rest",
-    ]);
-    // CLONED, not shared: nine distinct rows, so cycle three can be progressed
-    // past cycle one. Sharing would make one edit rewrite every cycle.
-    expect(new Set(slots.map((r) => `${r.week_index}:${r.order_index}`)).size).toBe(9);
-    // Six workouts on the calendar; the three rest slots consume a day and emit
-    // nothing.
-    expect(result.eventsCreated).toBe(6);
-    expect(eventUpsertQuery.upsert.mock.calls[0][0]).toHaveLength(6);
+    expect(insertedSlots(sessionInsertQuery).map((r) => r.name)).toEqual(["Upper", "Lower", "Rest"]);
+    expect(mockCreateAtomic).toHaveBeenCalledWith(
+      expect.objectContaining({ windowEnd: "2026-09-09" }),
+    );
+    // Two workouts on the calendar; the rest slot consumes a day and emits nothing.
+    expect(result.eventsCreated).toBe(2);
+    expect(eventUpsertQuery.upsert.mock.calls[0][0]).toHaveLength(2);
   });
 
-  it("cuts a program longer than its block at the block's last day", async () => {
-    // The same 3-slot program in a 2-day block: the third slot is never placed.
+  it("cuts a program longer than the gap at the day before the next program", async () => {
+    // The same 3-slot program; the next program starts 2026-09-09, so the
+    // third slot is never placed.
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
-    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-08" });
-    const { sessionInsertQuery } = wire();
-
-    await placePlanOnCalendar({
-      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
-    });
-
-    expect(insertedSlots(sessionInsertQuery).map((r) => r.name)).toEqual(["Upper", "Lower"]);
-  });
-
-  it("stops a program placed in a gap the day before the next block", async () => {
-    // The same 3-slot program placed on 2026-09-07 with an empty block opening
-    // on 2026-09-09: two slots land, the third would have been the block's.
-    mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
-    mockCreateAtomic.mockResolvedValue("new-plan-id");
-    mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-09-09" });
+    mockGetNextPlanStartCap.mockResolvedValue("2026-09-08");
     const { sessionInsertQuery } = wire();
 
     await placePlanOnCalendar({
@@ -1050,7 +1001,7 @@ describe("library-placement-service: the block bounds the placement", () => {
     );
   });
 
-  it("places one pass when no block covers the start date", async () => {
+  it("places one pass when no program follows", async () => {
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
     const { sessionInsertQuery } = wire();
@@ -1060,15 +1011,24 @@ describe("library-placement-service: the block bounds the placement", () => {
     });
 
     expect(insertedSlots(sessionInsertQuery)).toHaveLength(3);
+    expect(mockCreateAtomic).toHaveBeenCalledWith(
+      expect.objectContaining({ windowEnd: "2026-09-09" }),
+    );
   });
 
   it("records the PLACED length on the plan row, not the authored one", async () => {
-    // A 3-day program filling a 9-day block is a 2-week placement; the Overview
-    // chip derives its "Ended" date from this column and would otherwise
-    // contradict the calendar.
-    mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
+    // A two-week program cut after five days by the next program is a one-week
+    // placement; the Overview chip derives its "Ended" date from this column
+    // and would otherwise contradict the calendar.
+    mockGetSavedPlanById.mockResolvedValue(
+      makeSavedPlan({
+        sessions: Array.from({ length: 14 }, (_, i) =>
+          makeSession({ id: `d-${i}`, weekIndex: Math.floor(i / 7), orderIndex: i % 7, groups: [] }),
+        ),
+      }),
+    );
     mockCreateAtomic.mockResolvedValue("new-plan-id");
-    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-15" });
+    mockGetNextPlanStartCap.mockResolvedValue("2026-09-11");
     wire();
 
     await placePlanOnCalendar({
@@ -1076,7 +1036,7 @@ describe("library-placement-service: the block bounds the placement", () => {
     });
 
     expect(mockCreateAtomic).toHaveBeenCalledWith(
-      expect.objectContaining({ programDurationWeeks: 2, windowEnd: "2026-09-15" }),
+      expect.objectContaining({ programDurationWeeks: 1, windowEnd: "2026-09-11" }),
     );
   });
 
@@ -1160,40 +1120,6 @@ describe("library-placement-service: the block bounds the placement", () => {
     expect(eventUpsertQuery.upsert.mock.calls[0][0]).toHaveLength(10);
   });
 
-  it("repeats a two-a-day to fill its block, every cycle keeping the day's order on fresh rows", async () => {
-    // A 2-day program (a two-a-day, then rest) in a 4-day block: two cycles.
-    mockGetSavedPlanById.mockResolvedValue(
-      makeSavedPlan({
-        sessions: [
-          makeSession({ id: "am", name: "AM", orderIndex: 0, dayOrder: 0, groups: [] }),
-          makeSession({ id: "pm", name: "PM", orderIndex: 0, dayOrder: 1, groups: [] }),
-          makeSession({ id: "rest", name: "Rest", orderIndex: 1, isRest: true, groups: [] }),
-        ],
-      }),
-    );
-    mockCreateAtomic.mockResolvedValue("new-plan-id");
-    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-10" });
-    const { sessionInsertQuery, eventUpsertQuery } = wire();
-
-    await placePlanOnCalendar({
-      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
-    });
-
-    const rows = insertedSlots(sessionInsertQuery);
-    expect(rows.map((r) => [r.name, r.week_index, r.day_order])).toEqual([
-      ["AM", 0, 0], ["PM", 0, 1], ["Rest", 0, 0],
-      ["AM", 1, 0], ["PM", 1, 1], ["Rest", 1, 0],
-    ]);
-    expect(new Set(rows.map((r) => r.id)).size).toBe(6);
-    const events = eventUpsertQuery.upsert.mock.calls[0][0] as Array<Record<string, unknown>>;
-    expect(events.map((e) => [e.session_name, e.date, e.day_order])).toEqual([
-      ["AM", "2026-09-07", 0],
-      ["PM", "2026-09-07", 1],
-      ["AM", "2026-09-09", 0],
-      ["PM", "2026-09-09", 1],
-    ]);
-  });
-
   it("reads rows sharing a place on a day in the order given, and places them unambiguously", async () => {
     // Two sessions stored at one place (from before a day's order existed):
     // the day holds both, in the order the read returned them, renumbered.
@@ -1244,7 +1170,6 @@ describe("library-placement-service: the placement supersedes the earlier progra
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetNextPlanStartCap.mockResolvedValue(null);
-    mockGetBlockBound.mockResolvedValue(null);
     mockGetSavedPlanById.mockResolvedValue(makeSavedPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
     vi.mocked(cancelFutureEventsForPlans).mockResolvedValue([]);

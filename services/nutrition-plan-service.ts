@@ -1,7 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { NutritionPlanNote } from "@/types/nutrition-plan-notes";
 import { coversDate } from "./training-plan-window";
-import { getBlockBoundForDate } from "./client-blocks-service";
 import { getFurthestLiveProgramEnd } from "./training-service";
 import { calculateDailyMacros, DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import { addDaysToDateString } from "@/lib/date-helpers";
@@ -398,39 +396,6 @@ export async function getNutritionPrescriptionsForRange(
   }));
 }
 
-/**
- * The save notes of the versions that START inside [startDate, endDate], oldest
- * first — the client Program tab's read for its current block. A note is a
- * column on its version (migration 172), so an archived version takes its note
- * with it and a version that began before the range keeps its note out of it.
- * The wire shape is the note's: `id` is the version's id, `effectiveOn` the
- * day it took effect.
- */
-export async function listNutritionPlanNotesInRange(
-  clientId: string,
-  startDate: string,
-  endDate: string
-): Promise<NutritionPlanNote[]> {
-  const { data, error } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("id, effective_from, coach_note")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .not("coach_note", "is", null)
-    .gte("effective_from", startDate)
-    .lte("effective_from", endDate)
-    .order("effective_from", { ascending: true });
-
-  if (error) {
-    throw new Error(`Failed to fetch nutrition plan notes: ${error.message}`);
-  }
-  return (data ?? []).flatMap((row) =>
-    row.coach_note
-      ? [{ id: row.id, effectiveOn: row.effective_from, body: row.coach_note }]
-      : []
-  );
-}
-
 /** One weekday row of a version's grid — the coach's numbers for that weekday. */
 type NutritionPlanGridRow = {
   planId: string;
@@ -654,46 +619,30 @@ export async function getNextNutritionVersionStartCap(
 
 /**
  * How far a version placed on `start` runs — the question
- * `resolvePlacementWindowEnd` answers for a training program, asked of the
- * same bounds so the two tracks end on the same day inside a block:
+ * `resolvePlacementWindowEnd` answers for a training program:
  *
- *   1. the last day of the block COVERING `start` — a block is the time-bound
- *      program the coach sells, so its end is the answer whenever the days
- *      being written sit in one. The block covering the start, never the
- *      furthest the client has: a later block the coach has not priced must
- *      not be pulled into this version, or its card would read "Not set" while
- *      its days held numbers;
- *   2. else the furthest live training program's last day on or after `start`;
- *   3. else `NUTRITION_PLACEMENT_FALLBACK_DAYS` from `start`, all a client with
- *      neither has;
+ *   1. the furthest live training program's last day on or after `start`, so
+ *      the targets run as long as the training does;
+ *   2. else `NUTRITION_PLACEMENT_FALLBACK_DAYS` from `start`, all a client
+ *      with no program has;
  *
- * the fallbacks (2 and 3) capped at the day before the NEXT block when the
- * start is in a gap — a cap, never a length, so targets saved in a gap stop at
- * the block rather than running into one the coach has not set up — and the
- * result capped, whichever it is, at the day before the next queued version —
- * the same cap every training placement takes, so a save before a queued
- * change runs until that change rather than replacing it.
+ * capped, whichever it is, at the day before the next queued version — the
+ * same cap every training placement takes, so a save before a queued change
+ * runs until that change rather than replacing it.
  *
  * Resolved ONCE, at save, and stored on the row (migration 166): the window is
  * the record, and every day inside it is computed from the row. Past it there
  * are deliberately no days — the client's meals still save, with no target to
- * judge them — until the coach draws the next bound.
+ * judge them — until the coach saves the next version.
  */
 export async function resolveNutritionPlacementEnd(
   clientId: string,
   start: string
 ): Promise<string> {
-  const bound = await getBlockBoundForDate(clientId, start);
-  let declared =
-    bound?.kind === "covering"
-      ? bound.endsOn
-      : ((await getFurthestLiveProgramEnd(clientId, start)) ??
-        addDaysToDateString(start, NUTRITION_PLACEMENT_FALLBACK_DAYS));
-  if (bound?.kind === "next") {
-    const dayBefore = addDaysToDateString(bound.startsOn, -1);
-    if (dayBefore < declared) declared = dayBefore;
-  }
-
-  const cap = await getNextNutritionVersionStartCap(clientId, start);
+  const [programEnd, cap] = await Promise.all([
+    getFurthestLiveProgramEnd(clientId, start),
+    getNextNutritionVersionStartCap(clientId, start),
+  ]);
+  const declared = programEnd ?? addDaysToDateString(start, NUTRITION_PLACEMENT_FALLBACK_DAYS);
   return cap && cap < declared ? cap : declared;
 }

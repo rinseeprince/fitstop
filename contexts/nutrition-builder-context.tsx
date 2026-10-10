@@ -12,11 +12,8 @@ type NutritionBuilderProviderProps = {
   children: ReactNode;
   client: Client;
   onUpdate?: () => void;
-  /** The Journey block the coach came from, preselected in the drawer's Block
-   *  field (see `useNutritionBuilder`). */
-  roundTripBlockId?: string | null;
   /** The day an arrival asked the drawer to start on (see `useNutritionBuilder`). */
-  roundTripStartsOn?: string | null;
+  tripStartsOn?: string | null;
   /** Whether the drawer is open (see `useNutritionBuilder`). */
   drawerOpen: boolean;
 };
@@ -25,15 +22,13 @@ export function NutritionBuilderProvider({
   children,
   client,
   onUpdate,
-  roundTripBlockId,
-  roundTripStartsOn,
+  tripStartsOn,
   drawerOpen,
 }: NutritionBuilderProviderProps) {
   const builder = useNutritionBuilder({
     client,
     onUpdate,
-    roundTripBlockId,
-    roundTripStartsOn,
+    tripStartsOn,
     drawerOpen,
   });
 

@@ -152,6 +152,18 @@ Every consumer outside the blocks' own folder stops depending on them, with the 
   them (grep `block:start` / `block:end`). Types regenerated. `npm run check:rls` after the push.
 - **CONVENTIONS' reference implementation moves.** §8's invalidation passage names `useSeedClientBlocks` as the
   seed-then-set reference; S3 points it at `use-client-goals.ts`'s seed instead.
+- **Left by S2a, because the Blocks pane still used them** — each goes with its last reader:
+  `hooks/use-journey-focus-block.ts` (+test; named in `components/clients/url-writer-class.test.ts` and
+  `components/clients/training/builder/surface-ownership.test.ts`); `journeyTripParams`, `journeyPlanTripParams`,
+  `JourneyTripSurface` and the `returnTo` / `returnBlock` constants in `lib/client-tabs.ts` (+ their tests; nothing
+  reads the return params since S2a); the optional block-window parameter of `clearNutritionPlansForClient` and
+  `clearTrainingPlansForClient` and its prose (the block delete passes it); `ClientBlockWindow` in
+  `lib/prescription-triggers.ts` (`getBlockWindowsForClients`' return type); the `BLOCK_*` and `BLOCKS_UNREADABLE`
+  constants and the `block.*` audit keys in `lib/constants.ts`; `blocks-subtab.tsx` in the plan-writer lists of
+  `hooks/use-client-goals.test.ts` and `hooks/use-nutrition-goal.test.ts`, and the blocks files in
+  `components/dialog-subject-ownership.test.ts`; the dated probe note naming `client_phases` in
+  `scripts/assert-rls.ts`. Already gone with S2a: `components/client-portal/program/journey-section.tsx` (+test),
+  whose types went with the journey route.
 
 ### 2.4 Facts this plan relies on (read 2026-10-10)
 

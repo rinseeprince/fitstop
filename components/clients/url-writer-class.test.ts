@@ -49,14 +49,14 @@ const WRITERS: Writer[] = [
   {
     file: "components/clients/training/builder/training-plan-builder.tsx",
     from: "const openTray =",
-    to: "const closeTrayEntry",
+    to: "const closeTray",
     method: "push",
   },
   // The plan editor, a full-screen place of its own: Edit plan pushes it
   {
     file: "components/clients/training/builder/training-plan-builder.tsx",
     from: "const openPlanEditor =",
-    to: "const exitPlanEditor",
+    to: "const rawSubtab",
     method: "push",
   },
   // Refinements
@@ -89,8 +89,8 @@ const WRITERS: Writer[] = [
   // A tray's or an editor's exit on a pasted address: the entry is replaced away
   {
     file: "components/clients/training/builder/training-plan-builder.tsx",
-    from: "const closeTrayEntry =",
-    to: "const closeTray =",
+    from: "const closeTray =",
+    to: "const openEditor",
     method: "replace",
   },
   {
@@ -101,15 +101,9 @@ const WRITERS: Writer[] = [
   },
   // One-shot strips
   {
-    file: "hooks/use-journey-round-trip.ts",
+    file: "hooks/use-nutrition-drawer-trip.ts",
     from: "useEffect(() => {",
     to: "const setOpen",
-    method: "replace",
-  },
-  {
-    file: "hooks/use-journey-round-trip.ts",
-    from: "export function useJourneyReturnBlock",
-    to: "const clearReturnBlock",
     method: "replace",
   },
   {
@@ -145,14 +139,13 @@ describe("every URL writer has the class its param needs", () => {
     });
   }
 
-  it("the client page's handler pushes a tab change, replaces a same-tab address and a flow's completion", () => {
+  it("the client page's handler pushes a tab change and replaces a same-tab address", () => {
     const body = segment(
       "app/(coach)/clients/[id]/page.tsx",
       "const handleTabChange",
       "const displayClient"
     );
     expect(body).toContain("if (tab === activeTab) router.replace(url, { scroll: false })");
-    expect(body).toContain("else if (options?.replace) router.replace(url)");
     expect(body).toContain("else router.push(url)");
   });
 });

@@ -4,21 +4,12 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
-import {
-  useClearBlockFacts,
-  useClientBlocks,
-} from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { useClearNutritionGoal, useNutritionGoalForDay } from "@/hooks/use-nutrition-goal";
 import { useUnits } from "@/contexts/units-context";
 import { describeNutritionWarning } from "@/lib/nutrition/nutrition-warnings";
-import {
-  buildBlockStartOptions,
-  selectBlockStartOption,
-  NO_BLOCK_OPTION,
-} from "@/lib/blocks/block-start-options";
 import type {
   Client,
   DietType,
@@ -35,15 +26,11 @@ import { generateNutritionPlan } from "@/services/nutrition-service";
 type UseNutritionBuilderProps = {
   client: Client;
   onUpdate?: () => void;
-  /** The Journey block the coach came from ("set targets" on its card), or
-   *  null. Captured on arrival by the host's `useJourneyRoundTrip` — the URL
-   *  is stripped of the trip in the same effect — and preselected in the Block
-   *  field below; never a binding. */
-  roundTripBlockId?: string | null;
   /** The day an arrival asked the drawer to start on ("Set nutrition from
-   *  19 Oct" on the Overview), or null. Captured on arrival with the trip and
-   *  cleared with it; the coach's own pick and a chosen block both win. */
-  roundTripStartsOn?: string | null;
+   *  19 Oct" on the Overview), or null. Captured on arrival by the host's
+   *  `useNutritionDrawerTrip` and dropped on the drawer's close; the coach's
+   *  own pick wins. */
+  tripStartsOn?: string | null;
   /** Whether the drawer is open. The day's goal is read only then — nothing
    *  outside the drawer shows it, so a visit to the tab never pays for it. */
   drawerOpen: boolean;
@@ -57,13 +44,11 @@ type NutritionSettings = {
 export function useNutritionBuilder({
   client,
   onUpdate,
-  roundTripBlockId = null,
-  roundTripStartsOn = null,
+  tripStartsOn = null,
   drawerOpen,
 }: UseNutritionBuilderProps) {
   const nutritionPlan = useNutritionPlan({ client });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
-  const clearBlockFacts = useClearBlockFacts();
   const clearGoalHistory = useClearClientGoalHistory();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
@@ -114,31 +99,11 @@ export function useNutritionBuilder({
   // eaten — a today they have already logged is re-recorded onto their log by
   // the save — so nothing on this track asks the deletion floor, which is
   // training's (a workout logged today moves a program's start, never the
-  // targets'). The blocks payload is read for its blocks alone. Null until the
-  // plan read has answered, like everything here; the server's own belt
-  // refuses a past start either way.
-  const { blocks } = useClientBlocks(client.id);
-  // The Block field over the date: the dash (no block) first, then the client's
-  // blocks whose end is on or after today. The coach's own pick wins; with
-  // none, the block they came from is preselected; else the dash. A chosen
-  // block FIXES the start on its first available day (today for a block
-  // already under way, never the day it began) and the form disables the date;
-  // with the dash the date is the coach's own, else the day an arrival asked
-  // for, else today. A derivation, never a second copy of the date, so the two
-  // cannot disagree. No options, and so nothing fixed, until the client's today
-  // is known.
-  const blockOptions = useMemo(
-    () => (clientToday ? buildBlockStartOptions(blocks, clientToday) : []),
-    [blocks, clientToday]
-  );
-  const [blockPick, setBlockPick] = useState<string | null>(null);
-  const selectedBlock =
-    blockOptions.length > 0
-      ? selectBlockStartOption(blockOptions, blockPick, roundTripBlockId)
-      : null;
-  const fixedStart =
-    selectedBlock && selectedBlock.value !== NO_BLOCK_OPTION ? selectedBlock.startsOn : null;
-  const effectiveFrom = fixedStart ?? effectiveFromPick ?? roundTripStartsOn ?? clientToday;
+  // targets'). The date is the coach's own, else the day an arrival asked for,
+  // else today: a derivation, never a second copy of the date, so the two
+  // cannot disagree. Null until the plan read has answered, like everything
+  // here; the server's own belt refuses a past start either way.
+  const effectiveFrom = effectiveFromPick ?? tripStartsOn ?? clientToday;
 
   // The goal in force on that day and the calculator's inputs for it
   // (docs/MEASUREMENT-LOG-PLAN.md commit 8d1): the drawer prices a plan for the
@@ -276,18 +241,9 @@ export function useNutritionBuilder({
     setSettingsChanged(true);
   }, []);
 
-  const handleBlockChange = useCallback((value: string) => {
-    setBlockPick(value);
-    // A block change discards a typed date: the dash then reads the client's
-    // today again, not a day picked for a different block.
-    setEffectiveFromPick(null);
-    setSettingsChanged(true);
-  }, []);
-
-  // "Set nutrition from 19 Oct": the dash and that day, in one update, so the
-  // date field and the numbers under it move together.
+  // "Set nutrition from 19 Oct": that day, in one update, so the date field and
+  // the numbers under it move together.
   const setStartsOn = useCallback((day: string) => {
-    setBlockPick(NO_BLOCK_OPTION);
     setEffectiveFromPick(day);
     setSettingsChanged(true);
   }, []);
@@ -369,22 +325,18 @@ export function useNutritionBuilder({
           }
           setSettingsChanged(false);
           setCoachNotes("");
-          // The next save defaults to today again (D27) — and to the dash,
-          // unless a round trip is still preselecting a block.
+          // The next save defaults to today again (D27).
           setEffectiveFromPick(null);
-          setBlockPick(null);
           onUpdate?.();
           nutritionPlan.refetchNutrition();
           // The calendar renders from its own SWR events cache — revalidate it
           // or the regenerated days only appear after a page refresh.
           void invalidateNutritionCalendar(client.id);
-          // And the Journey block cards and goals table, which are DERIVED
-          // from the plan versions this just wrote — the area that owes an
-          // invalidator is the one that READS what you wrote, not the one you
-          // wrote (CONVENTIONS §7). Cleared rather than revalidated: they
-          // render a definite "Not set", so a stale entry states something
-          // false.
-          void clearBlockFacts(client.id);
+          // And the goals table, which is DERIVED from the plan versions this
+          // just wrote — the area that owes an invalidator is the one that
+          // READS what you wrote, not the one you wrote (CONVENTIONS §7).
+          // Cleared rather than revalidated: it renders a definite answer, so
+          // a stale entry states something false.
           void clearGoalHistory(client.id);
           void clearClientOverview(client.id);
           void clearAttentionFeed();
@@ -417,7 +369,6 @@ export function useNutritionBuilder({
       onUpdate,
       nutritionPlan,
       invalidateNutritionCalendar,
-      clearBlockFacts,
       clearGoalHistory,
       clearClientOverview,
       clearAttentionFeed,
@@ -435,10 +386,9 @@ export function useNutritionBuilder({
     settingsChanged,
     handleSettingsChange,
 
-    // The day the plan takes effect: a chosen block's first available day —
-    // the client's today for a block under way, a future block's own start —
-    // else the coach's pick, else the client's today. Null until the resolved
-    // inputs have loaded.
+    // The day the plan takes effect: the coach's pick, else the day an arrival
+    // asked for, else the client's today. Null until the resolved inputs have
+    // loaded.
     effectiveFrom,
     clientToday,
     handleEffectiveFromChange,
@@ -450,13 +400,6 @@ export function useNutritionBuilder({
     isDayPending,
     isDayError,
     retryDay,
-
-    // The Block field: its options, the selected value, and whether a block is
-    // chosen — the form disables the date field while one is.
-    blockOptions,
-    blockValue: selectedBlock?.value ?? NO_BLOCK_OPTION,
-    blockSelected: fixedStart != null,
-    handleBlockChange,
 
     // Live preview + manual override. `autoTargets` is what auto mode shows and
     // what "Edit manually" seeds the balancer from; `manualBalance` (spread from

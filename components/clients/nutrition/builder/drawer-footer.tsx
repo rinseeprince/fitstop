@@ -4,12 +4,7 @@ import { useState } from "react";
 import { Sparkles, AlertCircle } from "lucide-react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
 
-type DrawerFooterProps = {
-  /** Fires only on a plan that actually SAVED (Session 7.4's return trip). */
-  onSaved?: () => void;
-};
-
-export function DrawerFooter({ onSaved }: DrawerFooterProps) {
+export function DrawerFooter() {
   const builder = useNutritionBuilderContext();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -55,14 +50,7 @@ export function DrawerFooter({ onSaved }: DrawerFooterProps) {
     // reaching this button (Starts on), so Generate saves directly — a FIRST
     // plan queued ahead of the client's start included, exactly as training
     // placement allows. The server accepts any future date and rejects past ones.
-    void builder.generatePlan(isManual).then((saved) => {
-      // The BOOLEAN is the success signal, never the drawer closing. A coach
-      // can close the drawer without saving, and since Session 6 a save can
-      // return false AFTER the plan committed (a failed note insert) — leaving
-      // them here with their note intact, which is correct. Bouncing on either
-      // would be a lie about what happened.
-      if (saved) onSaved?.();
-    });
+    void builder.generatePlan(isManual);
   };
 
   return (

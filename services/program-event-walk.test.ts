@@ -11,17 +11,11 @@ vi.mock("./training-event-service", () => ({
   getNextPlanStartCap: vi.fn(),
 }));
 
-vi.mock("./client-blocks-service", () => ({
-  getBlockBoundForDate: vi.fn(),
-}));
-
 import { supabaseAdmin } from "./supabase-admin";
 import { getNextPlanStartCap } from "./training-event-service";
-import { getBlockBoundForDate } from "./client-blocks-service";
 import {
   generateProgramEvents,
   placementEndDate,
-  expandProgramToWindow,
   resolvePlacementWindowEnd,
   resolveWindowCap,
   type ProgramSession,
@@ -29,7 +23,6 @@ import {
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetNextPlanStartCap = vi.mocked(getNextPlanStartCap);
-const mockGetBlockBound = vi.mocked(getBlockBoundForDate);
 
 // Inline query mock helper (same idiom as library-placement-service.test.ts)
 function createMockQuery<T = unknown>(result: { data: T | null; error: { message: string } | null }) {
@@ -262,7 +255,7 @@ describe("program-event-walk", () => {
   });
 
   describe("placementEndDate", () => {
-    it("is start + max(1, days) − 1, the length a placement asks for when no block stretches it", () => {
+    it("is start + max(1, days) − 1, the length a placement asks for", () => {
       expect(placementEndDate("2026-01-05", 0)).toBe("2026-01-05");
       expect(placementEndDate("2026-01-05", 1)).toBe("2026-01-05");
       expect(placementEndDate("2026-01-05", 28)).toBe("2026-02-01");
@@ -271,169 +264,52 @@ describe("program-event-walk", () => {
 });
 
 // ===========================================================================
-// The block is the placement window's length knob.
-//
-// A program shorter than its block repeats to fill it, a longer one is cut at
-// its end, and a placement on a day no block covers behaves exactly as it did
-// before blocks bounded anything.
+// A placed program runs its authored length, capped at the day before the next
+// live program (SD4, docs/SUNSET-PLAN.md). Nothing stretches it.
 // ===========================================================================
 
 describe("resolvePlacementWindowEnd", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetNextPlanStartCap.mockResolvedValue(null);
-    mockGetBlockBound.mockResolvedValue(null);
   });
 
-  it("stretches a short program's window to the block's last day", async () => {
-    // 28 authored days placed into a block running to 2026-11-26.
-    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-11-26" });
-
-    expect(
-      await resolvePlacementWindowEnd({
-        clientId: "client-1",
-        dayCount: 28,
-        startDate: "2026-09-07",
-      }),
-    ).toBe("2026-11-26");
-  });
-
-  it("cuts a long program's window at the block's last day", async () => {
-    // 112 authored days would reach 2026-12-27; the block stops on 2026-11-05.
-    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-11-05" });
-
-    expect(
-      await resolvePlacementWindowEnd({
-        clientId: "client-1",
-        dayCount: 112,
-        startDate: "2026-09-07",
-      }),
-    ).toBe("2026-11-05");
-  });
-
-  it("falls back to the authored length when no block covers the start", async () => {
-    // 35 days from 2026-09-07 runs to 2026-10-11 — today's behaviour, untouched.
-    expect(
-      await resolvePlacementWindowEnd({
-        clientId: "client-1",
-        dayCount: 35,
-        startDate: "2026-09-07",
-      }),
-    ).toBe("2026-10-11");
-    expect(mockGetBlockBound).toHaveBeenCalledWith("client-1", "2026-09-07");
-  });
-
-  it("stops a program placed in a gap the day before the next block", async () => {
-    // 35 authored days from 2026-09-07 would reach 2026-10-11; a block the coach
-    // has drawn opens on 2026-09-21. The program keeps its own length up to the
-    // day before it, so the block's card cannot claim a program it has none of.
-    mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-09-21" });
-
-    expect(
-      await resolvePlacementWindowEnd({
-        clientId: "client-1",
-        dayCount: 35,
-        startDate: "2026-09-07",
-      }),
-    ).toBe("2026-09-20");
-  });
-
-  it("never stretches a program to fill a gap — the next block is a cap, not a length", async () => {
-    // 21 authored days from 2026-09-07 end on 2026-09-27; the next block is far off.
-    mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-12-01" });
-
-    expect(
-      await resolvePlacementWindowEnd({
-        clientId: "client-1",
-        dayCount: 21,
-        startDate: "2026-09-07",
-      }),
-    ).toBe("2026-09-27");
-  });
-
-  it("a one-day gap yields a one-day plan — the coach put it there", async () => {
-    mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-09-08" });
-
-    expect(
-      await resolvePlacementWindowEnd({
-        clientId: "client-1",
-        dayCount: 21,
-        startDate: "2026-09-07",
-      }),
-    ).toBe("2026-09-07");
-  });
-
-  it("still never runs past the next coexisting program's start", async () => {
-    // The block says 2026-12-18, but another program opens on 2026-10-19.
-    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-12-18" });
+  it("runs a program shorter than the gap to the next program its own length, never stretched to the cap", async () => {
+    // 21 authored days from 2026-09-07 end on 2026-09-27; the next program
+    // starts 2026-10-19, so the gap runs to 2026-10-18. The days between stay
+    // empty.
     mockGetNextPlanStartCap.mockResolvedValue("2026-10-18");
 
     expect(
-      await resolvePlacementWindowEnd({
-        clientId: "client-1",
-        dayCount: 21,
-        startDate: "2026-09-07",
-      }),
-    ).toBe("2026-10-18");
-  });
-});
-
-describe("expandProgramToWindow", () => {
-  const authored = [
-    { weekIndex: 0, orderIndex: 0, name: "Push" },
-    { weekIndex: 0, orderIndex: 1, name: "Pull" },
-    { weekIndex: 0, orderIndex: 2, name: "Legs" },
-  ];
-
-  it("repeats the program until the window is covered", () => {
-    const out = expandProgramToWindow(authored, 9);
-
-    expect(out).toHaveLength(9);
-    expect(out.map((s) => s.name)).toEqual([
-      "Push", "Pull", "Legs", "Push", "Pull", "Legs", "Push", "Pull", "Legs",
-    ]);
+      await resolvePlacementWindowEnd({ clientId: "client-1", dayCount: 21, startDate: "2026-09-07" }),
+    ).toBe("2026-09-27");
   });
 
-  it("cuts a final partial cycle mid-program", () => {
-    // The block ends when it ends; the last cycle simply stops.
-    expect(expandProgramToWindow(authored, 7).map((s) => s.name)).toEqual([
-      "Push", "Pull", "Legs", "Push", "Pull", "Legs", "Push",
-    ]);
+  it("cuts a program longer than the gap at the day before the next program", async () => {
+    // 35 authored days from 2026-09-07 would reach 2026-10-11; the next
+    // program starts 2026-09-21.
+    mockGetNextPlanStartCap.mockResolvedValue("2026-09-20");
+
+    expect(
+      await resolvePlacementWindowEnd({ clientId: "client-1", dayCount: 35, startDate: "2026-09-07" }),
+    ).toBe("2026-09-20");
   });
 
-  it("truncates a program longer than its window", () => {
-    expect(expandProgramToWindow(authored, 2).map((s) => s.name)).toEqual(["Push", "Pull"]);
+  it("a program that fills the gap exactly ends the day before the next one", async () => {
+    // 14 authored days from 2026-09-07 end on 2026-09-20, the cap itself.
+    mockGetNextPlanStartCap.mockResolvedValue("2026-09-20");
+
+    expect(
+      await resolvePlacementWindowEnd({ clientId: "client-1", dayCount: 14, startDate: "2026-09-07" }),
+    ).toBe("2026-09-20");
   });
 
-  it("keeps (weekIndex, orderIndex) climbing across cycles", () => {
-    // That pair IS the date-walk's day position and the ordering every
-    // placed-plan reader uses, so cycle 2 day 1 has to sort after cycle 1 day 3.
-    const out = expandProgramToWindow(authored, 6);
-
-    expect(out.map((s) => s.weekIndex)).toEqual([0, 0, 0, 1, 1, 1]);
-    expect(out.map((s) => s.orderIndex)).toEqual([0, 1, 2, 0, 1, 2]);
-    const keys = out.map((s) => `${s.weekIndex}:${s.orderIndex}`);
-    expect(new Set(keys).size).toBe(out.length);
-  });
-
-  it("offsets later cycles by the authored program's own week span", () => {
-    // A two-week authored program: cycle 2 starts at week 2, not week 1.
-    const twoWeeks = [
-      { weekIndex: 0, orderIndex: 0, name: "A" },
-      { weekIndex: 1, orderIndex: 0, name: "B" },
-    ];
-
-    expect(expandProgramToWindow(twoWeeks, 4).map((s) => s.weekIndex)).toEqual([0, 1, 2, 3]);
-  });
-
-  it("leaves a single pass byte-identical to the authored program", () => {
-    // Placement before blocks bounded anything must be unchanged.
-    expect(expandProgramToWindow(authored, 3)).toEqual(authored);
-  });
-
-  it("returns nothing for an empty program or an empty window", () => {
-    expect(expandProgramToWindow([], 10)).toEqual([]);
-    expect(expandProgramToWindow(authored, 0)).toEqual([]);
+  it("runs its own length when no program follows", async () => {
+    // 35 days from 2026-09-07 runs to 2026-10-11.
+    expect(
+      await resolvePlacementWindowEnd({ clientId: "client-1", dayCount: 35, startDate: "2026-09-07" }),
+    ).toBe("2026-10-11");
+    expect(mockGetNextPlanStartCap).toHaveBeenCalledWith("client-1", "2026-09-07");
   });
 });
 
@@ -445,49 +321,18 @@ describe("resolveWindowCap", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetNextPlanStartCap.mockResolvedValue(null);
-    mockGetBlockBound.mockResolvedValue(null);
   });
 
-  it("a covering block is the cap, and the placement stretches to it", async () => {
-    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-11-26" });
-    expect(await resolveWindowCap("client-1", "2026-09-07")).toEqual({
-      stretchesToCap: true,
-      cap: { endsOn: "2026-11-26", source: "block" },
-    });
-  });
-
-  it("a block after the date caps at the day before it, without stretching", async () => {
-    mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-10-05" });
-    expect(await resolveWindowCap("client-1", "2026-09-07")).toEqual({
-      stretchesToCap: false,
-      cap: { endsOn: "2026-10-04", source: "next_block" },
-    });
-  });
-
-  it("the next program wins when it starts before the block ends", async () => {
-    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-11-26" });
+  it("the day before the next program is the cap", async () => {
     mockGetNextPlanStartCap.mockResolvedValue("2026-10-11");
     expect(await resolveWindowCap("client-1", "2026-09-07")).toEqual({
-      stretchesToCap: true,
-      cap: { endsOn: "2026-10-11", source: "next_plan" },
+      endsOn: "2026-10-11",
+      source: "next_plan",
     });
   });
 
-  it("a later next program does not shorten a block's cap", async () => {
-    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-11-26" });
-    mockGetNextPlanStartCap.mockResolvedValue("2026-12-31");
-    expect((await resolveWindowCap("client-1", "2026-09-07")).cap).toEqual({
-      endsOn: "2026-11-26",
-      source: "block",
-    });
-  });
-
-  it("nothing bounds a program with no block and no later program", async () => {
-    expect(await resolveWindowCap("client-1", "2026-09-07")).toEqual({
-      stretchesToCap: false,
-      cap: null,
-    });
-    expect(mockGetBlockBound).toHaveBeenCalledWith("client-1", "2026-09-07");
+  it("nothing bounds a program with no later program", async () => {
+    expect(await resolveWindowCap("client-1", "2026-09-07")).toBeNull();
     expect(mockGetNextPlanStartCap).toHaveBeenCalledWith("client-1", "2026-09-07");
   });
 });

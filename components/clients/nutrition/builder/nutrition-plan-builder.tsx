@@ -12,48 +12,26 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import { toast } from "sonner";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
-import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { useClearNutritionGoal } from "@/hooks/use-nutrition-goal";
-import {
-  journeyReturnParams,
-  paneParamSearch,
-  resolvePaneParam,
-  type ClientTab,
-} from "@/lib/client-tabs";
-import { useJourneyRoundTrip } from "@/hooks/use-journey-round-trip";
+import { paneParamSearch, resolvePaneParam } from "@/lib/client-tabs";
+import { useNutritionDrawerTrip } from "@/hooks/use-nutrition-drawer-trip";
 import type { Client } from "@/types/check-in";
 
 type NutritionPlanBuilderProps = {
   client: Client;
   onUpdate?: () => void;
-  /** The Journey round trip's way back (7.4). Cross-tab navigation must run
-   *  through the client page's handler — activeTab is state seeded from ?tab=
-   *  at mount only. */
-  onTabChange?: (tab: ClientTab, extraParams?: Record<string, string>) => void;
 };
 
-export function NutritionPlanBuilder({
-  client,
-  onUpdate,
-  onTabChange,
-}: NutritionPlanBuilderProps) {
-  // The plan drawer, plus the Journey round trip that can open it (7.4). The
-  // hook consumes ?edit=1 & the return target ON ARRIVAL and strips them, and
-  // drops the target on any close without a save — so an abandoned trip cannot
-  // bounce a later, unrelated save back to Journey. The block it names is also
-  // the one the drawer's Block field preselects, so it is handed to the
-  // provider below rather than re-read off a URL that no longer carries it —
-  // as is the day an arrival asked the drawer to start on (the Overview's
-  // "Set nutrition from 19 Oct").
-  const {
-    open: drawerOpen,
-    setOpen: setDrawerOpen,
-    returnBlockId,
-    startsOn: roundTripStartsOn,
-  } = useJourneyRoundTrip("edit");
+export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderProps) {
+  // The plan drawer, and the arrival that can open it (the Overview's "Set
+  // nutrition from 19 Oct" and "Regenerate"): the hook consumes ?edit=1 and
+  // the day ON ARRIVAL and strips them. The day is handed to the provider below
+  // rather than re-read off a URL that no longer carries it.
+  const { open: drawerOpen, setOpen: setDrawerOpen, startsOn: tripStartsOn } =
+    useNutritionDrawerTrip();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -76,8 +54,7 @@ export function NutritionPlanBuilder({
       <NutritionBuilderProvider
         client={client}
         onUpdate={onUpdate}
-        roundTripBlockId={returnBlockId}
-        roundTripStartsOn={roundTripStartsOn}
+        tripStartsOn={tripStartsOn}
         drawerOpen={drawerOpen}
       >
         {/* Top content bar */}
@@ -100,17 +77,7 @@ export function NutritionPlanBuilder({
           </div>
         )}
 
-        <NutritionSettingsDrawer
-          open={drawerOpen}
-          onOpenChange={setDrawerOpen}
-          onSaved={() => {
-            // returnBlockId is read from THIS render's closure, so the
-            // drawer's own auto-close (which clears it) cannot race the trip.
-            if (returnBlockId) {
-              onTabChange?.("metrics", journeyReturnParams(returnBlockId));
-            }
-          }}
-        />
+        <NutritionSettingsDrawer open={drawerOpen} onOpenChange={setDrawerOpen} />
       </NutritionBuilderProvider>
     </ErrorBoundary>
   );
@@ -147,7 +114,6 @@ function TopContentBar({
 function NutritionCalendarMount() {
   const builder = useNutritionBuilderContext();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
-  const clearBlockFacts = useClearBlockFacts();
   const clearGoalHistory = useClearClientGoalHistory();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
@@ -172,10 +138,8 @@ function NutritionCalendarMount() {
       toast.success("Nutrition plan deleted");
       setDeleteOpen(false);
       await invalidateNutritionCalendar(clientId);
-      // The Journey block cards and goals table read the plan VERSIONS, so they
-      // are wrong the moment this lands (CONVENTIONS §7 — the area that reads
-      // what you wrote).
-      void clearBlockFacts(clientId);
+      // The goals table reads the plan VERSIONS, so it is wrong the moment this
+      // lands (CONVENTIONS §7 — the area that reads what you wrote).
       void clearGoalHistory(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();

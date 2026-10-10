@@ -46,9 +46,6 @@ vi.mock("@/hooks/use-calendar-events", () => ({
 vi.mock("@/hooks/use-nutrition-calendar-events", () => ({
   useInvalidateNutritionCalendar: () => () => Promise.resolve(),
 }));
-vi.mock("@/components/clients/metrics/hooks/use-client-blocks", () => ({
-  useClearBlockFacts: () => () => Promise.resolve(),
-}));
 vi.mock("@/hooks/use-client-overview", () => ({
   useClearClientOverview: () => () => Promise.resolve(),
 }));

@@ -22,25 +22,6 @@ vi.mock("@/hooks/use-nutrition-calendar-events", () => ({
   useInvalidateNutritionCalendar: () => vi.fn().mockResolvedValue(undefined),
 }));
 
-// The blocks payload, which carries the client's blocks and the plan-start
-// floor (training's deletion floor: today, or tomorrow once the client has
-// logged a workout today — read by the apply dialog, NOT by this hook). Held
-// where the module mock can reach it; null = the payload has not landed.
-const blocksState = vi.hoisted(() => ({
-  planStartFloor: null as string | null,
-  blocks: [] as Array<{ id: string; name: string; startsOn: string; endsOn: string }>,
-}));
-vi.mock("@/components/clients/metrics/hooks/use-client-blocks", () => ({
-  useClientBlocks: () => ({
-    blocks: blocksState.blocks,
-    clientToday: null,
-    planStartFloor: blocksState.planStartFloor,
-    isLoading: false,
-    isError: false,
-  }),
-  useClearBlockFacts: () => vi.fn().mockResolvedValue(undefined),
-}));
-
 // The day read (docs/MEASUREMENT-LOG-PLAN.md commit 8d1): the goal and the
 // calculator's inputs for the drawer's Starts on day. Every day a render asks
 // for is recorded; `inputsFor` answers per day, so a test can put a planned
@@ -301,10 +282,8 @@ describe("useNutritionBuilder — the save's toast", () => {
 // 2026-09-11): today's targets are the coach's to replace, and a logged today
 // is re-recorded onto the client's log by the save. The deletion floor is
 // training's — a workout logged today moves a program's start, never the
-// targets' — so the blocks payload's floor is not read here at all.
+// targets' — so this hook reads no floor at all.
 describe("useNutritionBuilder — the start is the client's today, whatever they logged", () => {
-  const TOMORROW = "2026-07-03";
-
   beforeEach(() => {
     planState.nutritionData = {
       clientToday: CLIENT_TODAY,
@@ -313,176 +292,28 @@ describe("useNutritionBuilder — the start is the client's today, whatever they
       scheduledFor: null,
     };
     planState.refetchNutrition.mockReset();
-    blocksState.planStartFloor = null;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    blocksState.planStartFloor = null;
   });
 
-  it("defaults to the client's today even when the training floor says tomorrow", () => {
-    // A workout logged today: the apply dialog's picker moves to tomorrow;
-    // the targets' start does not.
-    blocksState.planStartFloor = TOMORROW;
+  it("defaults to the client's today", () => {
     const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
     expect(result.current.clientToday).toBe(CLIENT_TODAY);
   });
 
-  it("is null until the resolved inputs have loaded, whatever the payload says", () => {
+  it("is null until the resolved inputs have loaded", () => {
     planState.nutritionData = null;
-    blocksState.planStartFloor = TOMORROW;
     const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     expect(result.current.effectiveFrom).toBeNull();
   });
 
-  it("the coach's own pick still wins over the default", () => {
-    blocksState.planStartFloor = TOMORROW;
+  it("the coach's own pick wins over the default", () => {
     const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
     act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
     expect(result.current.effectiveFrom).toBe(THREE_WEEKS_OUT);
-  });
-});
-
-// The Block field (D): the dash — the empty state — then the client's blocks
-// whose end is on or after the client's today. The block the coach came from —
-// the Journey round trip's, captured on arrival by the host and handed in — is
-// preselected; a chosen block FIXES the start on its first available day and
-// the form greys the date; the dash hands the date back to the coach. Purely
-// UX: the save resolves its own window from the block covering the start, so
-// this only starts the version where the block the coach means begins.
-describe("useNutritionBuilder — the Block field", () => {
-  const TOMORROW = "2026-07-03";
-  // Under way at the client's today; the next one; one that ended before it.
-  const CUT = { id: "b-cut", name: "Cut", startsOn: "2026-06-20", endsOn: "2026-07-17" };
-  const BUILD = { id: "b-build", name: "Build", startsOn: "2026-07-18", endsOn: "2026-08-14" };
-  const OLD = { id: "b-old", name: "Base", startsOn: "2026-05-01", endsOn: "2026-05-31" };
-
-  beforeEach(() => {
-    planState.nutritionData = {
-      clientToday: CLIENT_TODAY,
-      hasPlan: false,
-      includeActivityBurn: true,
-      scheduledFor: null,
-    };
-    planState.refetchNutrition.mockReset();
-    blocksState.planStartFloor = null;
-    blocksState.blocks = [OLD, CUT, BUILD];
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    blocksState.planStartFloor = null;
-    blocksState.blocks = [];
-  });
-
-  it("leads with the dash, then the blocks whose end is on or after today, and defaults to the dash", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
-    expect(result.current.blockOptions.map((option) => option.value)).toEqual([
-      "none",
-      CUT.id,
-      BUILD.id,
-    ]);
-    expect(result.current.blockValue).toBe("none");
-    expect(result.current.blockSelected).toBe(false);
-    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
-  });
-
-  it("preselects the block the coach came from: a future block fixes the start on its own first day", () => {
-    const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: BUILD.id })
-    );
-    expect(result.current.blockValue).toBe(BUILD.id);
-    expect(result.current.blockSelected).toBe(true);
-    expect(result.current.effectiveFrom).toBe(BUILD.startsOn);
-  });
-
-  it("a block already under way fixes the start at the client's today, not the day it began — a logged workout notwithstanding", () => {
-    const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: CUT.id })
-    );
-    expect(result.current.blockSelected).toBe(true);
-    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
-
-    // A workout logged today moves a program's start to tomorrow (the apply
-    // dialog); targets in a running block still start today.
-    blocksState.planStartFloor = TOMORROW;
-    const trained = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: CUT.id })
-    );
-    expect(trained.result.current.effectiveFrom).toBe(CLIENT_TODAY);
-  });
-
-  it("a round trip from a block no longer listed falls to the dash", () => {
-    const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: OLD.id })
-    );
-    expect(result.current.blockValue).toBe("none");
-    expect(result.current.blockSelected).toBe(false);
-    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
-  });
-
-  it("picking a block fixes the start; picking the dash hands the date back at today", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
-
-    act(() => result.current.handleBlockChange(BUILD.id));
-    expect(result.current.blockValue).toBe(BUILD.id);
-    expect(result.current.blockSelected).toBe(true);
-    expect(result.current.effectiveFrom).toBe(BUILD.startsOn);
-
-    act(() => result.current.handleBlockChange("none"));
-    expect(result.current.blockValue).toBe("none");
-    expect(result.current.blockSelected).toBe(false);
-    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
-  });
-
-  it("the coach's own date applies with the dash only, and a block change discards it", () => {
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
-    act(() => result.current.handleEffectiveFromChange("2026-07-25"));
-    expect(result.current.effectiveFrom).toBe("2026-07-25");
-
-    act(() => result.current.handleBlockChange(BUILD.id));
-    expect(result.current.effectiveFrom).toBe(BUILD.startsOn);
-
-    act(() => result.current.handleBlockChange("none"));
-    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
-  });
-
-  it("the request carries the chosen block's first available day", async () => {
-    const fetchSpy = mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
-    act(() => result.current.handleBlockChange(BUILD.id));
-
-    await act(async () => {
-      await result.current.generatePlan();
-    });
-
-    expect(postedBody(fetchSpy).effectiveFrom).toBe(BUILD.startsOn);
-  });
-
-  it("a saved plan resets the block pick as it resets the date", async () => {
-    mockFetch();
-    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
-    act(() => result.current.handleBlockChange(BUILD.id));
-
-    await act(async () => {
-      await result.current.generatePlan();
-    });
-
-    expect(result.current.blockValue).toBe("none");
-    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
-  });
-
-  it("no options and nothing fixed until the resolved inputs have loaded", () => {
-    planState.nutritionData = null;
-    const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: BUILD.id })
-    );
-    expect(result.current.blockOptions).toEqual([]);
-    expect(result.current.blockValue).toBe("none");
-    expect(result.current.blockSelected).toBe(false);
-    expect(result.current.effectiveFrom).toBeNull();
   });
 });
 
@@ -641,7 +472,6 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
     goalDeadline: "2026-12-31",
   };
   const BUILD_GOAL = { id: "g-build", name: "Build", targetWeight: 88, deadline: "2026-12-31" };
-  const FUTURE_BLOCK = { id: "b-peak", name: "Peak", startsOn: "2026-08-10", endsOn: "2026-09-06" };
 
   beforeEach(() => {
     planState.nutritionData = {
@@ -657,7 +487,6 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    blocksState.blocks = [];
   });
 
   it("reads the goal for the Starts on day, and a new date is a new read", () => {
@@ -756,7 +585,7 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
 
   it("an arrival's start day is where the drawer starts; the coach's own pick wins over it", () => {
     const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripStartsOn: THREE_WEEKS_OUT })
+      useNutritionBuilder({ client: CLIENT, drawerOpen: true, tripStartsOn: THREE_WEEKS_OUT })
     );
     expect(result.current.effectiveFrom).toBe(THREE_WEEKS_OUT);
     // Never a render on the client's today first.
@@ -766,28 +595,11 @@ describe("useNutritionBuilder — the goal on the Starts on day", () => {
     expect(result.current.effectiveFrom).toBe("2026-08-03");
   });
 
-  it("a chosen block wins over an arrival's start day", () => {
-    blocksState.blocks = [FUTURE_BLOCK];
-    const { result } = renderHook(() =>
-      useNutritionBuilder({
-        client: CLIENT,
-        roundTripBlockId: FUTURE_BLOCK.id,
-        roundTripStartsOn: THREE_WEEKS_OUT,
-        drawerOpen: true,
-      })
-    );
-    expect(result.current.effectiveFrom).toBe(FUTURE_BLOCK.startsOn);
-  });
-
-  it("Set nutrition from a day moves to the dash and that day in one update", () => {
-    blocksState.blocks = [FUTURE_BLOCK];
-    const { result } = renderHook(() =>
-      useNutritionBuilder({ client: CLIENT, drawerOpen: true, roundTripBlockId: FUTURE_BLOCK.id })
-    );
-    expect(result.current.blockValue).toBe(FUTURE_BLOCK.id);
+  it("Set nutrition from a day moves the date to that day, over the coach's own pick", () => {
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT, drawerOpen: true }));
+    act(() => result.current.handleEffectiveFromChange("2026-08-03"));
 
     act(() => result.current.setStartsOn(THREE_WEEKS_OUT));
-    expect(result.current.blockValue).toBe("none");
     expect(result.current.effectiveFrom).toBe(THREE_WEEKS_OUT);
   });
 

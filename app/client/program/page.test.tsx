@@ -12,8 +12,8 @@ vi.mock("swr", () => ({
 }));
 
 // The cards have their own tests — stub them so this file only pins the page's
-// gating (loading / error / empty / which cards render). Stubbing the journey
-// section also severs its units-context → auth-context import chain, which
+// gating (loading / error / empty / which cards render). Stubbing the goal
+// card also severs its units-context → auth-context import chain, which
 // constructs the browser Supabase client at module load and throws without
 // env vars.
 vi.mock("@/components/client-portal/program/training-plan-card", () => ({
@@ -30,14 +30,33 @@ vi.mock("@/components/client-portal/program/nutrition-plan-card", () => ({
   NutritionPlanCard: () => <div data-testid="nutrition-plan-card" />,
 }));
 
-vi.mock("@/components/client-portal/program/journey-section", () => ({
-  JourneySection: () => <div data-testid="journey-section" />,
+vi.mock("@/components/client-portal/program/goal-card", () => ({
+  GoalCard: ({
+    goal,
+    current,
+  }: {
+    goal?: { name?: string | null };
+    current?: { weightKg: number | null; bodyFatPercentage: number | null };
+  }) => (
+    <div
+      data-testid="goal-card"
+      data-current-weight={current?.weightKg ?? ""}
+      data-current-body-fat={current?.bodyFatPercentage ?? ""}
+    >
+      {goal?.name}
+    </div>
+  ),
 }));
 
-vi.mock("@/components/client-portal/program/goal-card", () => ({
-  GoalCard: ({ goal }: { goal?: { name?: string | null } }) => (
-    <div data-testid="goal-card">{goal?.name}</div>
-  ),
+// The profile the client layout loaded before rendering the page; its newest
+// readings are what the goal card's progress runs to.
+vi.mock("@/hooks/use-client-profile", () => ({
+  useClientProfile: () => ({
+    client: { currentWeight: 80.2, currentBodyFatPercentage: 18.4 },
+    error: undefined,
+    isLoading: false,
+    mutate: vi.fn(),
+  }),
 }));
 
 type SWRState = {
@@ -154,52 +173,16 @@ describe("ProgramPage", () => {
     expect(screen.queryByText(/couldn't load your program/i)).toBeNull();
   });
 
-  it("mounts the journey section above the plan cards when the journey loads", () => {
+  // The goal card reads its own route (SD7, docs/SUNSET-PLAN.md): the goal and
+  // the readings its progress is judged from, and nothing about blocks.
+  it("mounts the goal card first, above the plan cards, from the goal route", () => {
     setSWR({
       "/api/client/training-plan": {
         data: { success: true, data: makeTrainingPlan() },
       },
       "/api/client/nutrition-plan": { data: { success: true, data: null } },
-      "/api/client/journey": {
-        data: { success: true, data: { clientToday: "2026-08-12", blocks: [] } },
-      },
-    });
-    render(<ProgramPage />);
-
-    const section = screen.getByTestId("journey-section");
-    const card = screen.getByTestId("training-plan-card");
-    expect(
-      section.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  it("renders the journey section beside the empty state when blocks exist but no plans", () => {
-    setSWR({
-      "/api/client/training-plan": { data: { success: true, data: null } },
-      "/api/client/nutrition-plan": { data: { success: true, data: null } },
-      "/api/client/journey": {
-        data: { success: true, data: { clientToday: "2026-08-12", blocks: [] } },
-      },
-    });
-    render(<ProgramPage />);
-
-    expect(screen.getByTestId("journey-section")).toBeInTheDocument();
-    expect(screen.getByText("No program yet")).toBeInTheDocument();
-  });
-
-  // The goal left the block card (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d2):
-  // every client with a goal sees it, block or no block.
-  it("mounts the goal card first, from the journey's goal, whether or not there are blocks", () => {
-    setSWR({
-      "/api/client/training-plan": {
-        data: { success: true, data: makeTrainingPlan() },
-      },
-      "/api/client/nutrition-plan": { data: { success: true, data: null } },
-      "/api/client/journey": {
-        data: {
-          success: true,
-          data: { clientToday: "2026-08-12", blocks: [], goal: { weightKg: 71.9, deadline: null, name: "Trim down" } },
-        },
+      "/api/client/goal": {
+        data: { success: true, data: { goal: { weightKg: 71.9, deadline: null, name: "Trim down" } } },
       },
     });
     render(<ProgramPage />);
@@ -207,32 +190,50 @@ describe("ProgramPage", () => {
     const card = screen.getByTestId("goal-card");
     expect(card).toHaveTextContent("Trim down");
     expect(
-      card.compareDocumentPosition(screen.getByTestId("journey-section")) &
+      card.compareDocumentPosition(screen.getByTestId("training-plan-card")) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    expect(swrCall).toHaveBeenCalledWith("/api/client/goal");
+    expect(swrCall).not.toHaveBeenCalledWith("/api/client/journey");
+    // The newest readings come from the profile, not the goal read.
+    expect(card).toHaveAttribute("data-current-weight", "80.2");
+    expect(card).toHaveAttribute("data-current-body-fat", "18.4");
   });
 
-  it("a journey fetch failure drops only the section — the plan cards stay", () => {
+  it("renders the goal card beside the empty state when there are no plans", () => {
+    setSWR({
+      "/api/client/training-plan": { data: { success: true, data: null } },
+      "/api/client/nutrition-plan": { data: { success: true, data: null } },
+      "/api/client/goal": {
+        data: { success: true, data: { goal: { weightKg: null, deadline: null, name: "Trim down" } } },
+      },
+    });
+    render(<ProgramPage />);
+
+    expect(screen.getByTestId("goal-card")).toBeInTheDocument();
+    expect(screen.getByText("No program yet")).toBeInTheDocument();
+  });
+
+  it("a goal fetch failure drops only the goal card — the plan cards stay", () => {
     setSWR({
       "/api/client/training-plan": {
         data: { success: true, data: makeTrainingPlan() },
       },
       "/api/client/nutrition-plan": { data: { success: true, data: null } },
-      "/api/client/journey": { error: new Error("boom") },
+      "/api/client/goal": { error: new Error("boom") },
     });
     render(<ProgramPage />);
 
-    expect(screen.queryByTestId("journey-section")).toBeNull();
     expect(screen.queryByTestId("goal-card")).toBeNull();
     expect(screen.getByTestId("training-plan-card")).toBeInTheDocument();
     expect(screen.queryByText(/couldn't load your program/i)).toBeNull();
   });
 
-  it("the journey fetch participates in the initial-load skeleton gate", () => {
+  it("the goal fetch participates in the initial-load skeleton gate", () => {
     setSWR({
       "/api/client/training-plan": { data: { success: true, data: null } },
       "/api/client/nutrition-plan": { data: { success: true, data: null } },
-      "/api/client/journey": { isLoading: true },
+      "/api/client/goal": { isLoading: true },
     });
     const { container } = render(<ProgramPage />);
 

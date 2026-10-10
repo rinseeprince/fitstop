@@ -117,35 +117,15 @@ describe("attention-feed-service", () => {
       expect(degraded.get("c1")!.trainingWindows).toEqual([])
     })
 
-    it("carries each client's blocks by name and window, and none when the read degraded", () => {
-      const result = groupClientData(
-        [baseClient, { ...baseClient, id: "c2", name: "Client 2" }],
-        null, null, null, null, null, null, null,
-        [
-          { clientId: "c1", name: "Build", start: "2026-04-06", end: "2026-05-03" },
-          { clientId: "c2", name: "Cut", start: "2026-03-09", end: "2026-04-05" },
-        ],
-      )
-      expect(result.get("c1")!.blocks).toEqual([{ name: "Build", start: "2026-04-06", end: "2026-05-03" }])
-      expect(result.get("c2")!.blocks).toEqual([{ name: "Cut", start: "2026-03-09", end: "2026-04-05" }])
-      expect(groupClientData([baseClient], null, null, null, null, null).get("c1")!.blocks).toEqual([])
-    })
-
-    it("names the block in the alert a client's windows and blocks produce together", () => {
+    it("raises the prescription-ending alert a client's windows produce", () => {
       const map = groupClientData(
         [baseClient], null, null, null, null, null,
         [{ clientId: "c1", start: "2025-12-29", end: "2026-01-31" }],
         null,
-        [
-          { clientId: "c1", name: "Build", start: "2025-12-29", end: "2026-01-31" },
-          { clientId: "c1", name: "Cut", start: "2026-02-01", end: "2026-02-28" },
-        ],
       )
       const alerts = evaluateAndSortTriggers(map, { start: "2026-01-01", end: "2026-01-28" })
         .find((c) => c.clientId === "c1")?.alerts ?? []
-      expect(alerts.map((a) => a.message)).toEqual([
-        "Nutrition targets end 31 Jan, the last day of Build, and Cut has no targets set",
-      ])
+      expect(alerts.map((a) => a.message)).toEqual(["Nutrition targets end 31 Jan"])
     })
 
     it("groups the client's own measurement logs per client, as dates, skipping a null row", () => {
@@ -657,12 +637,12 @@ describe("attention-feed-service", () => {
       // Promise.allSettled, so their chunks interleave — assert on the union,
       // not on a positional slice.)
       expect(new Set(inCalls.flat()).size).toBe(250)
-      // Each read covers all 250 ids across 3 chunks (100/100/50), 10 reads: the
+      // Each read covers all 250 ids across 3 chunks (100/100/50), 9 reads: the
       // six window reads (the day-form's two tables, habits, habit entries,
-      // events, measurements), the two plan-window reads, the blocks read and
-      // the day reader's versions read (its per-day sources are read for the
-      // clients a version covers, none here).
-      expect(inCalls.length).toBe(30)
+      // events, measurements), the two plan-window reads and the day reader's
+      // versions read (its per-day sources are read for the clients a version
+      // covers, none here).
+      expect(inCalls.length).toBe(27)
     })
 
     it("reads only the measurements the client logged themselves, from the live view", async () => {
@@ -795,9 +775,6 @@ describe("attention-feed-service", () => {
       expect(calls["training_plans"].is).toEqual([["deleted_at", null]])
       expect(calls["training_plans"].neq).toEqual([["status", "archived"]])
       expect(calls["training_plans"].eq ?? []).toEqual([])
-      // The blocks the messages name: non-archived only, like the covering read.
-      expect(calls["client_phases"].select).toEqual([["id, client_id, name, starts_on, ends_on"]])
-      expect(calls["client_phases"].is).toEqual([["archived_at", null]])
     })
   })
 
@@ -988,7 +965,7 @@ describe("groupClientData — a logged day's target and verdict come from the co
     const map = groupClientData(
       [baseClient, { ...baseClient, id: "c2", name: "Client 2" }],
       days([foodRow("c1", "2026-04-01", 2000), foodRow("c1", "2026-04-02", 2000), foodRow("c2", "2026-04-01", 2000)]),
-      null, null, null, null, null, null, null,
+      null, null, null, null, null, null,
       [dayTarget("c1", "2026-04-01", 2000), dayTarget("c1", "2026-04-02", 2400), dayTarget("c2", "2026-04-01", 2100)],
     )
     const c1 = map.get("c1")!.logs
@@ -1005,7 +982,7 @@ describe("groupClientData — a logged day's target and verdict come from the co
   it("a day with no computed target — or a degraded target read — carries no target and no verdict", () => {
     const withGap = groupClientData(
       [baseClient], days([foodRow("c1", "2026-04-01", 2000)]),
-      null, null, null, null, null, null, null,
+      null, null, null, null, null, null,
       [dayTarget("c1", "2026-04-03", 2000)],
     )
     expect(withGap.get("c1")!.logs[0]).toMatchObject({
@@ -1014,7 +991,7 @@ describe("groupClientData — a logged day's target and verdict come from the co
 
     const degraded = groupClientData(
       [baseClient], days([foodRow("c1", "2026-04-01", 2000)]),
-      null, null, null, null, null, null, null, null,
+      null, null, null, null, null, null, null,
     )
     expect(degraded.get("c1")!.logs[0].nutritionAdherence).toBeUndefined()
   })
@@ -1024,7 +1001,7 @@ describe("groupClientData — a logged day's target and verdict come from the co
     const map = groupClientData(
       [baseClient],
       days(dates.map((date) => foodRow("c1", date, 1500))),
-      null, null, null, null, null, null, null,
+      null, null, null, null, null, null,
       dates.map((date) => dayTarget("c1", date, 2200)),
     )
     const alerts = evaluateAndSortTriggers(map, { start: "2026-04-01", end: "2026-04-04" })

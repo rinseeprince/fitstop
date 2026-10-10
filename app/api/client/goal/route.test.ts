@@ -17,8 +17,8 @@ vi.mock("@/lib/auth-helpers", () => ({
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
-vi.mock("@/services/client-journey-service", () => ({
-  getClientJourney: vi.fn(),
+vi.mock("@/services/client-goal-wire-service", () => ({
+  getClientGoalWire: vi.fn(),
 }));
 
 import { GET } from "./route";
@@ -28,37 +28,25 @@ import {
 } from "@/lib/rate-limit";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import { getClientTodayString } from "@/services/today-service";
-import { getClientJourney } from "@/services/client-journey-service";
-import type { ClientJourney } from "@/types/client-journey";
+import { getClientGoalWire } from "@/services/client-goal-wire-service";
+import type { ClientGoalWire } from "@/types/client-goal-wire";
 
 const CLIENT_ID = "22222222-2222-2222-2222-222222222222";
 
-const JOURNEY: ClientJourney = {
-  clientToday: "2026-08-12",
-  blocks: [
-    {
-      id: "block-1",
-      name: "Build",
-      focus: "Six weeks of volume",
-      startsOn: "2026-08-01",
-      endsOn: "2026-09-06",
-      weeks: 6,
-      state: "current",
-      weekOfTotal: { current: 2, total: 6 },
-    },
-  ],
-  goal: { weightKg: 85, deadline: "2026-12-01" },
-  currentWeightKg: 88.6,
-  currentBlockNotes: {
-    blockId: "block-1",
-    notes: [
-      { id: "note-1", effectiveOn: "2026-08-05", body: "Dropping calories 200." },
-    ],
+const GOAL: ClientGoalWire = {
+  goal: {
+    weightKg: 85,
+    deadline: "2026-12-01",
+    name: "Lose weight",
+    type: "lose_weight",
+    bodyFatPercentage: null,
+    description: null,
+    startReadings: { weightKg: 91.2, bodyFatPercentage: null },
   },
 };
 
 function request(): NextRequest {
-  return new NextRequest("http://localhost:3000/api/client/journey", {
+  return new NextRequest("http://localhost:3000/api/client/goal", {
     method: "GET",
   });
 }
@@ -67,20 +55,19 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getAuthenticatedClientId).mockResolvedValue(CLIENT_ID);
   vi.mocked(getClientTodayString).mockResolvedValue("2026-08-12");
-  vi.mocked(getClientJourney).mockResolvedValue(JOURNEY);
+  vi.mocked(getClientGoalWire).mockResolvedValue(GOAL);
 });
 
-describe("GET /api/client/journey", () => {
-  it("returns the journey payload with no-store, kg values untagged", async () => {
+describe("GET /api/client/goal", () => {
+  it("returns the goal with no-store, kg values untagged", async () => {
     const response = await GET(request());
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({ success: true, data: JOURNEY });
+    expect(body).toEqual({ success: true, data: GOAL });
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     // Canonical kg on the wire: no unit fields anywhere in the payload.
     expect(JSON.stringify(body)).not.toMatch(/unit/i);
-    expect(getClientJourney).toHaveBeenCalledWith(CLIENT_ID, "2026-08-12");
   });
 
   it("runs the two rate-limit tiers in the §9 order: IP guard first, per-client after auth", async () => {
@@ -105,29 +92,29 @@ describe("GET /api/client/journey", () => {
 
     expect(response.status).toBe(401);
     expect(getClientTodayString).not.toHaveBeenCalled();
-    expect(getClientJourney).not.toHaveBeenCalled();
+    expect(getClientGoalWire).not.toHaveBeenCalled();
   });
 
-  it("resolves today at the route and threads it down (service never derives time)", async () => {
+  it("resolves today at the route and hands it down (the service never derives time)", async () => {
     await GET(request());
 
     expect(getClientTodayString).toHaveBeenCalledWith(CLIENT_ID);
-    expect(getClientJourney).toHaveBeenCalledWith(CLIENT_ID, "2026-08-12");
+    expect(getClientGoalWire).toHaveBeenCalledWith(CLIENT_ID, "2026-08-12");
   });
 
   it("returns a generic 500 without leaking the raw error", async () => {
     const consoleSpy = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
-    vi.mocked(getClientJourney).mockRejectedValue(
-      new Error("relation check_ins exploded")
+    vi.mocked(getClientGoalWire).mockRejectedValue(
+      new Error("relation client_goals exploded")
     );
 
     const response = await GET(request());
     const body = await response.json();
 
     expect(response.status).toBe(500);
-    expect(body).toEqual({ success: false, error: "Failed to fetch journey" });
+    expect(body).toEqual({ success: false, error: "Failed to fetch goal" });
     expect(JSON.stringify(body)).not.toContain("exploded");
     consoleSpy.mockRestore();
   });

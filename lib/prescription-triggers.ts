@@ -10,10 +10,9 @@ export type PlanWindow = { start: string; end: string }
 /** A window with the client it belongs to — the shape the cross-client readers return. */
 export type ClientPlanWindow = PlanWindow & { clientId: string }
 
-/** A journey block's name and window — the block a message names, never a bound. */
-export type BlockWindow = PlanWindow & { name: string }
-
-export type ClientBlockWindow = BlockWindow & { clientId: string }
+/** A journey block's name and window for one client: the shape the blocks
+ *  service's cross-client read returns. No trigger here reads it. */
+export type ClientBlockWindow = PlanWindow & { name: string; clientId: string }
 
 type PrescriptionTrack = "nutrition" | "training"
 
@@ -81,39 +80,22 @@ export function findPrescriptionGap(
   }
 }
 
-const TRACK_COPY: Record<
-  PrescriptionTrack,
-  { type: AlertType; ending: string; none: string; unset: string }
-> = {
+const TRACK_COPY: Record<PrescriptionTrack, { type: AlertType; ending: string; none: string }> = {
   nutrition: {
     type: "nutrition_ending",
     ending: "Nutrition targets end",
     none: "No nutrition targets",
-    unset: "targets set",
   },
   training: {
     type: "training_ending",
     ending: "Training ends",
     none: "No training scheduled",
-    unset: "program placed",
   },
 }
-
-const blockCovering = (blocks: readonly BlockWindow[], date: string): BlockWindow | undefined =>
-  blocks.find((block) => block.start <= date && date <= block.end)
-
-const firstBlockAfter = (blocks: readonly BlockWindow[], date: string): BlockWindow | undefined =>
-  [...blocks].filter((block) => block.start > date).sort((a, b) => a.start.localeCompare(b.start))[0]
 
 interface PrescriptionEndingParams {
   track: PrescriptionTrack
   windows: readonly PlanWindow[]
-  /**
-   * The client's journey blocks, so the message can name the one the stop
-   * falls in. Blocks are context here, never a bound: with none, or with none
-   * covering the day in question, the message is the plain form.
-   */
-  blocks?: readonly BlockWindow[]
   /** The feed's window end — the coach-local today every day-deciding trigger judges on. */
   today: string
 }
@@ -133,18 +115,10 @@ interface PrescriptionEndingParams {
  *   end date brings it back (see filterDismissedAlerts).
  * - A gap already under way with a plan queued after it is a holiday or a
  *   rest period the coach laid out, and nothing fires.
- *
- * A client with blocks gets the block named (owner, 2026-09-10): the HIGH
- * names the block the client is sitting in with nothing ("…, in Cut"); the
- * MEDIUM names the block the last day falls in — "the last day of Build" when
- * the prescription ends with its block, "inside Build" when it stops before
- * its block does — and, when nothing is queued on the track and a block
- * follows, that the next block has nothing set, in the block card's own words.
  */
 export function evaluatePrescriptionEnding({
   track,
   windows,
-  blocks = [],
   today,
 }: PrescriptionEndingParams): TriggerResult | null {
   const gap = findPrescriptionGap(windows, today)
@@ -153,13 +127,10 @@ export function evaluatePrescriptionEnding({
 
   if (gap.from <= today) {
     if (gap.resumesOn) return null
-    const holder = blockCovering(blocks, today)
     return {
       type: copy.type,
       severity: "high",
-      message:
-        `${copy.none} from ${formatDateOnlyShort(gap.from)}` +
-        (holder ? `, in ${holder.name}` : ""),
+      message: `${copy.none} from ${formatDateOnlyShort(gap.from)}`,
       affectedDays: [today],
       metricData: [],
     }
@@ -169,15 +140,7 @@ export function evaluatePrescriptionEnding({
   if (daysBetween(today, lastDay) >= PLAN_ENDING_LEAD_DAYS) return null
 
   let message = `${copy.ending} ${formatDateOnlyShort(lastDay)}`
-  const holder = blockCovering(blocks, lastDay)
-  const endsWithBlock = holder !== undefined && holder.end === lastDay
-  if (holder) message += endsWithBlock ? `, the last day of ${holder.name}` : `, inside ${holder.name}`
-  if (gap.resumesOn) {
-    message += `, nothing until ${formatDateOnlyShort(gap.resumesOn)}`
-  } else if (endsWithBlock) {
-    const next = firstBlockAfter(blocks, lastDay)
-    if (next) message += `, and ${next.name} has no ${copy.unset}`
-  }
+  if (gap.resumesOn) message += `, nothing until ${formatDateOnlyShort(gap.resumesOn)}`
   return {
     type: copy.type,
     severity: "medium",

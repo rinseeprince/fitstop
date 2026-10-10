@@ -5,7 +5,6 @@ import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { calendarCollisionDetection } from "./calendar-collision";
 import { useCalendarEvents, useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
-import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
@@ -155,7 +154,6 @@ export function TrainingCalendarView({
   // the training layout) and the month view is SWR-cached, so every success
   // path below must also invalidate the nutrition calendar's cache.
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
-  const clearBlockFacts = useClearBlockFacts();
   const clearGoalHistory = useClearClientGoalHistory();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
@@ -205,10 +203,9 @@ export function TrainingCalendarView({
           void invalidateNutritionCalendar(clientId);
           void clearClientOverview(clientId);
           void clearAttentionFeed();
-          // The Journey block cards and goals table are DERIVED from these
-          // rows, so they are wrong the moment this lands (CONVENTIONS §7 —
-          // the area that reads what you wrote, not the one you wrote).
-          void clearBlockFacts(clientId);
+          // The goals table is DERIVED from these rows, so it is wrong the
+          // moment this lands (CONVENTIONS §7 — the area that reads what you
+          // wrote, not the one you wrote).
           void clearGoalHistory(clientId);
         } catch (error) {
           toast.error("Placement failed", {

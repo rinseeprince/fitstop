@@ -53,7 +53,7 @@ export class UnknownBlockIdError extends Error {}
 /** 503: the client's blocks could not be read, so nothing knows where a plan
  *  placed now would end. Every caller asks before it writes, so the save is
  *  refused with this sentence rather than stored without the block's end. */
-export class BlocksUnreadableError extends Error {
+class BlocksUnreadableError extends Error {
   constructor() {
     super(BLOCKS_UNREADABLE);
   }

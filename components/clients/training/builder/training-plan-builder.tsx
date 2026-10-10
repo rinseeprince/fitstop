@@ -8,13 +8,7 @@ import { PlanEditorOverlay } from "./plan-editor-overlay";
 import { TrainingHistoryTable } from "../training-history-table";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
-import {
-  journeyReturnParams,
-  paneParamSearch,
-  resolvePaneParam,
-  type ClientTab,
-} from "@/lib/client-tabs";
-import { useJourneyReturnBlock } from "@/hooks/use-journey-round-trip";
+import { paneParamSearch, resolvePaneParam, type ClientTab } from "@/lib/client-tabs";
 import { useCoachBack } from "@/hooks/use-coach-back";
 import type { Client } from "@/types/check-in";
 
@@ -25,11 +19,7 @@ type TrainingPlanBuilderProps = {
   // ?subtab=) and it pushes a history entry for the tab change. The history
   // table's exercise drill-down needs it now that Exercise Data lives on the
   // Journey tab (Session 7.1).
-  onTabChange?: (
-    tab: ClientTab,
-    extraParams?: Record<string, string | null>,
-    options?: { replace?: boolean }
-  ) => void;
+  onTabChange?: (tab: ClientTab, extraParams?: Record<string, string | null>) => void;
 };
 
 export function TrainingPlanBuilder({
@@ -48,35 +38,21 @@ export function TrainingPlanBuilder({
   // lands on the calendar with no tray; the editor's arrow replaces back to the
   // list; the X pops the tray's entry, or replaces the param away on a pasted
   // address. "Edit plan" PUSHES the plan editor, and its arrow pops that
-  // entry. An apply or a plan save pops its editor's entry, or completes it as
-  // the Journey return when a round trip is alive.
+  // entry. An apply or a plan save pops its editor's entry onto the calendar.
   const trayOpen = searchParams.get("apply") === "1";
   const editorPlanId = searchParams.get("editor");
   const planEditorId = searchParams.get("plan");
-  // The Journey round trip's return target, captured on arrival (7.3): the
-  // block the apply dialog's Block field preselects, and where an apply or a
-  // plan save lands. Cleared by the tray's X, the plan editor's arrow and a
-  // hand open, so an abandoned trip cannot bounce a later, unrelated save back
-  // to Journey.
-  const { returnBlockId, clearReturnBlock } = useJourneyReturnBlock(
-    trayOpen || planEditorId != null
-  );
 
   const openTray = () => {
-    clearReturnBlock();
     const params = new URLSearchParams(searchParams.toString());
     params.set("apply", "1");
     router.push(`?${params.toString()}`, { scroll: false });
   };
-  const closeTrayEntry = useCoachBack(() => {
+  const closeTray = useCoachBack(() => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("apply");
     router.replace(`?${params.toString()}`, { scroll: false });
   });
-  const closeTray = () => {
-    clearReturnBlock();
-    closeTrayEntry();
-  };
   const openEditor = (savedPlanId: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("apply");
@@ -96,28 +72,11 @@ export function TrainingPlanBuilder({
     router.replace(`?${params.toString()}`, { scroll: false });
   });
   const openPlanEditor = (planId: string) => {
-    clearReturnBlock();
     const params = new URLSearchParams(searchParams.toString());
     params.delete("apply");
     params.delete("editor");
     params.set("plan", planId);
     router.push(`?${params.toString()}`, { scroll: false });
-  };
-  const exitPlanEditor = () => {
-    clearReturnBlock();
-    closeEditor();
-  };
-  // A save or an apply completes its editor's entry — never left behind Back:
-  // with a trip it BECOMES the Journey entry (the tab change unmounts this
-  // surface), without one it is popped onto the calendar.
-  const completeEditor = () => {
-    if (returnBlockId) {
-      onTabChange?.("metrics", journeyReturnParams(returnBlockId), {
-        replace: true,
-      });
-    } else {
-      closeEditor();
-    }
   };
 
   // ?training= is OURS alone (Session 7.2) — read unconditionally, so a deep
@@ -166,16 +125,17 @@ export function TrainingPlanBuilder({
           onPick={openEditor}
           onExitEditor={exitEditorToList}
           clientName={client.name}
-          preselectedBlockId={returnBlockId}
-          onApplied={completeEditor}
+          // An apply completes the editor's entry — popped onto the calendar,
+          // never left behind Back.
+          onApplied={closeEditor}
         />
 
         <PlanEditorOverlay
           clientId={client.id}
           planId={planEditorId}
           clientName={client.name}
-          onExit={exitPlanEditor}
-          onSaved={completeEditor}
+          onExit={closeEditor}
+          onSaved={closeEditor}
         />
       </TrainingBuilderProvider>
     </ErrorBoundary>

@@ -12,7 +12,7 @@ import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 export const DAY_MS = 86_400_000;
 
 /** Chain-derived identity, stable across range windows. */
-export interface BlockBandIdentity {
+interface BlockBandIdentity {
   id: string;
   name: string;
   color: string;

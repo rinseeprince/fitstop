@@ -45,27 +45,6 @@ function clickGenerate() {
   fireEvent.click(screen.getByRole("button", { name: /Generate Plan/ }));
 }
 
-describe("DrawerFooter — what counts as a save", () => {
-  it("reports a save when generatePlan resolves true", async () => {
-    generatePlan.mockResolvedValue(true);
-    const onSaved = vi.fn();
-    render(<DrawerFooter onSaved={onSaved} />);
-    clickGenerate();
-    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
-  });
-
-  it("reports NOTHING when generatePlan resolves false", async () => {
-    // Validation refused, the POST failed, or Session 6's note insert threw
-    // after the plan committed. The coach stays put in every one of those.
-    generatePlan.mockResolvedValue(false);
-    const onSaved = vi.fn();
-    render(<DrawerFooter onSaved={onSaved} />);
-    clickGenerate();
-    await waitFor(() => expect(generatePlan).toHaveBeenCalledTimes(1));
-    expect(onSaved).not.toHaveBeenCalled();
-  });
-});
-
 // docs/MEASUREMENT-LOG-PLAN.md commit 8bb, D26: the save-time date dialog is
 // gone. The date is a drawer setting the coach set before reaching the button.
 describe("DrawerFooter — Generate saves directly from the drawer's settings", () => {

@@ -72,14 +72,7 @@ type ProgramBuilderProps = {
 /** The plan editor's one line on why days past the plan's limit are greyed. */
 function limitNotice(limit: WindowCap): string {
   const dayAfter = formatDateOnlyShort(addDaysToDateString(limit.endsOn, 1));
-  switch (limit.source) {
-    case "block":
-      return `This block ends ${formatDateOnlyShort(limit.endsOn)}. Days after it are greyed out.`;
-    case "next_block":
-      return `The next block starts ${dayAfter}. Days from then are greyed out.`;
-    case "next_plan":
-      return `The next program starts ${dayAfter}. Days from then are greyed out.`;
-  }
+  return `The next program starts ${dayAfter}. Days from then are greyed out.`;
 }
 
 export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
@@ -93,7 +86,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     clientId,
     clientName,
     clientTimezone,
-    preselectedBlockId,
     onApplied,
     plan,
     isPlanLoading,
@@ -468,9 +460,9 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 }
               />
               {isPlacedPlan && limit && (
-                // The plan stays inside its limit — the block's end, else the
-                // day before the next block or program — and the grid greys
-                // the days past it; this line says why.
+                // The plan stays inside its limit — the day before the next
+                // program — and the grid greys the days past it; this line
+                // says why.
                 <div className="mb-2 rounded-[6px] border border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] px-3 py-2 text-[12.5px] text-[#0a5c55]">
                   {limitNotice(limit)}
                 </div>
@@ -722,7 +714,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
             preselectedClientId={clientId ?? undefined}
             clientTimezone={clientTimezone ?? undefined}
             clientName={clientName ?? undefined}
-            preselectedBlockId={preselectedBlockId}
             onSuccess={() => onApplied?.()}
           />
         </>

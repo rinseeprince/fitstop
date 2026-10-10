@@ -105,11 +105,10 @@ export async function clearTrainingPlansForClient(
   clientId: string,
   clientToday: string,
   /**
-   * Optional block window. Given, only the programs that START inside it go —
-   * a block contains its plans (placement is bounded by the block, and drawing
-   * or shortening one trims its plans to fit), so the programs starting in its
-   * days are the block's own. Omitted, every program with a day still ahead
-   * goes: that is the training calendar's own delete.
+   * Optional block window, the block delete's. Given, only the programs that
+   * START inside it go — the programs starting in a block's days are the
+   * block's own. Omitted, every program with a day still ahead goes: that is
+   * the training calendar's own delete.
    */
   window?: { from: string; to: string }
 ): Promise<{ plansCleared: number }> {

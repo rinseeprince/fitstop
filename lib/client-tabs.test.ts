@@ -5,11 +5,9 @@ import {
   journeyPlanTripParams,
   nutritionDrawerParams,
   paneParamSearch,
-  readJourneyReturnBlock,
-  readJourneyTrip,
+  readNutritionDrawerTrip,
   resolvePaneParam,
-  stripJourneyReturn,
-  stripJourneyTrip,
+  stripNutritionDrawerTrip,
 } from "./client-tabs";
 
 // The pair that regressed when tab switches briefly preserved the SHARED
@@ -178,22 +176,10 @@ describe("buildClientTabUrl + the single-owner pane params", () => {
   });
 });
 
-describe("the round trip's strips", () => {
-  const trip = "tab=training&training=plans&apply=1&returnTo=journey&returnBlock=blk-7";
-
-  it("stripJourneyReturn removes the two return params and keeps the surface's address", () => {
-    expect(stripJourneyReturn(trip)).toBe("tab=training&training=plans&apply=1");
-  });
-
-  it("stripJourneyTrip removes the surface's one-shot as well", () => {
-    expect(stripJourneyTrip(trip, "apply")).toBe("tab=training&training=plans");
-  });
-});
-
 // Journey's "edit plan": the block card sends the coach to the plan editor on
-// the plan it heads, knowing the way back to the block.
+// the plan it heads.
 describe("journeyPlanTripParams", () => {
-  it("addresses the plan editor on the plan, with the trip back to the block", () => {
+  it("addresses the plan editor on the plan, carrying the block's return params", () => {
     expect(journeyPlanTripParams("p-9", "blk-7")).toEqual({
       plan: "p-9",
       returnTo: "journey",
@@ -214,27 +200,6 @@ describe("journeyPlanTripParams", () => {
     expect(params.get("returnBlock")).toBe("blk-7");
     // The plan editor is its own place: the trip opens no tray.
     expect(params.has("apply")).toBe(false);
-  });
-});
-
-describe("readJourneyReturnBlock", () => {
-  const search = (q: string) => new URLSearchParams(q);
-
-  it("returns the block a Journey trip names, whatever surface it opened", () => {
-    expect(readJourneyReturnBlock(search("apply=1&returnTo=journey&returnBlock=blk-7"))).toBe(
-      "blk-7"
-    );
-    expect(readJourneyReturnBlock(search("plan=p-9&returnTo=journey&returnBlock=blk-7"))).toBe(
-      "blk-7"
-    );
-  });
-
-  it("returns null for a return target naming something else, or none", () => {
-    expect(readJourneyReturnBlock(search("plan=p-9&returnTo=elsewhere&returnBlock=blk-7"))).toBe(
-      null
-    );
-    expect(readJourneyReturnBlock(search("plan=p-9&returnBlock=blk-7"))).toBe(null);
-    expect(readJourneyReturnBlock(search("plan=p-9&returnTo=journey"))).toBe(null);
   });
 });
 
@@ -270,27 +235,25 @@ describe("the nutrition drawer's start day", () => {
     });
   });
 
-  it("readJourneyTrip hands the drawer a well-formed day, and nothing else", () => {
-    expect(readJourneyTrip(new URLSearchParams("edit=1&startsOn=2026-10-19"), "edit")).toEqual({
+  it("readNutritionDrawerTrip hands the drawer a well-formed day, and nothing else", () => {
+    expect(readNutritionDrawerTrip(new URLSearchParams("edit=1&startsOn=2026-10-19"))).toEqual({
       open: true,
-      returnBlockId: null,
       startsOn: "2026-10-19",
     });
-    expect(readJourneyTrip(new URLSearchParams("edit=1&startsOn=19-10-2026"), "edit").startsOn).toBeNull();
+    expect(readNutritionDrawerTrip(new URLSearchParams("edit=1&startsOn=19-10-2026")).startsOn).toBeNull();
     // Shaped like a date but not one: never a day the drawer starts on.
-    expect(readJourneyTrip(new URLSearchParams("edit=1&startsOn=2026-13-45"), "edit").startsOn).toBeNull();
-    expect(readJourneyTrip(new URLSearchParams("edit=1&startsOn=2026-02-30"), "edit").startsOn).toBeNull();
-    expect(readJourneyTrip(new URLSearchParams("edit=1"), "edit").startsOn).toBeNull();
+    expect(readNutritionDrawerTrip(new URLSearchParams("edit=1&startsOn=2026-13-45")).startsOn).toBeNull();
+    expect(readNutritionDrawerTrip(new URLSearchParams("edit=1&startsOn=2026-02-30")).startsOn).toBeNull();
+    expect(readNutritionDrawerTrip(new URLSearchParams("edit=1")).startsOn).toBeNull();
     // No drawer trip, no day.
-    expect(readJourneyTrip(new URLSearchParams("startsOn=2026-10-19"), "edit")).toEqual({
+    expect(readNutritionDrawerTrip(new URLSearchParams("startsOn=2026-10-19"))).toEqual({
       open: false,
-      returnBlockId: null,
       startsOn: null,
     });
   });
 
-  it("stripJourneyTrip takes the day with the trip", () => {
-    expect(stripJourneyTrip("tab=nutrition&nutrition=plans&edit=1&startsOn=2026-10-19", "edit")).toBe(
+  it("stripNutritionDrawerTrip takes the day with the open param, and leaves the pane", () => {
+    expect(stripNutritionDrawerTrip("tab=nutrition&nutrition=plans&edit=1&startsOn=2026-10-19")).toBe(
       "tab=nutrition&nutrition=plans"
     );
   });

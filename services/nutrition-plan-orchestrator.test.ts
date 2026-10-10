@@ -60,7 +60,7 @@ import {
 } from "./nutrition-plan-orchestrator";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 import type { GoalOnDay } from "@/types/client-goals";
-import { BLOCKS_UNREADABLE, CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
+import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 
 const clientId = "client-1";
 const coachId = "coach-1";
@@ -360,17 +360,16 @@ describe("orchestrateNutritionPlanCreation — the placement's end", () => {
     );
   });
 
-  it("refuses the save when the end can't be resolved — the blocks read failed, so nothing is written", async () => {
-    // Targets stored without the block's end would run past it, into days the
-    // coach has not priced. The end is resolved first, so the refusal costs
-    // nothing.
+  it("refuses the save when the end can't be resolved, so nothing is written", async () => {
+    // The end is resolved first, so a failed read costs nothing: no version is
+    // stored without its end.
     vi.mocked(resolveNutritionPlacementEnd).mockRejectedValue(
-      new Error(BLOCKS_UNREADABLE)
+      new Error("Failed to resolve the next nutrition version: timeout")
     );
 
     await expect(
       orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {})
-    ).rejects.toThrow(BLOCKS_UNREADABLE);
+    ).rejects.toThrow("Failed to resolve the next nutrition version: timeout");
 
     expect(createNutritionPlan).not.toHaveBeenCalled();
   });

@@ -1,18 +1,16 @@
 "use client";
 
-import { useMemo, type ComponentProps } from "react";
+import type { ComponentProps } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MetricHero } from "./metric-hero";
 import { MetricProgressionSection } from "./metric-progression-section";
 import { MetricStatCardsPending } from "./metric-stat-cards";
 import { MeasurementLogSection } from "./measurement-log-section";
-import { useClientBlocks } from "./hooks/use-client-blocks";
 import {
   usePhysiqueMetrics,
   useWellnessMetrics,
   type MetricPaneData,
 } from "./hooks/use-merged-metrics";
-import { shapeBlockBandIdentity } from "./blocks/block-chart-bands";
 import { cardThreeKind, type LogRow } from "./metrics-view-types";
 import type { Client } from "@/types/check-in";
 
@@ -31,8 +29,6 @@ type MetricPaneProps = {
   onSelectMetric: (id: string) => void;
   range: ProgressionRange;
   onRangeChange: (range: ProgressionRange) => void;
-  showBlocks: boolean;
-  onToggleBlocks: (show: boolean) => void;
   onLogFirst: () => void;
   onEditReading: (row: LogRow) => void;
   onRemoveReading: (row: LogRow) => void;
@@ -55,23 +51,16 @@ export function WellnessPane(props: MetricPaneProps) {
 /** Hero, chart and measurement log — the same for both panes. */
 function MetricPaneBody({
   data,
-  clientId,
   focusedMetricId,
   onSelectMetric,
   range,
   onRangeChange,
-  showBlocks,
-  onToggleBlocks,
   onLogFirst,
   onEditReading,
   onRemoveReading,
   onRestoreReading,
   pendingRowId,
 }: MetricPaneProps & { data: MetricPaneData }) {
-  // The chart's block bands: the Blocks pane's own read, shared through SWR.
-  const { blocks } = useClientBlocks(clientId);
-  const blockBands = useMemo(() => shapeBlockBandIdentity(blocks), [blocks]);
-
   const { metrics, logRows, isLoading, isError } = data;
   const focusedMetric = metrics.find((m) => m.id === focusedMetricId) ?? null;
 
@@ -109,9 +98,6 @@ function MetricPaneBody({
         range={range}
         onRangeChange={onRangeChange}
         onLogFirst={onLogFirst}
-        blockBands={blockBands}
-        showBlocks={showBlocks}
-        onToggleBlocks={onToggleBlocks}
       />
       {/* The key remounts the log on every switch — metric ids are unique
           across both panes — so its page returns to 1 with no effect. */}

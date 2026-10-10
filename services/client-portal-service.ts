@@ -43,7 +43,7 @@ export type NutritionTargets = {
 // SCOPE: this list governs THIS read. The goal is not a column anywhere: every
 // client wire takes it from `client_goals` — the goal in force on the client's
 // today — and this profile carries its two targets (getClientForCurrentUser);
-// its deadline reaches the client through GET /api/client/journey.
+// its deadline reaches the client through GET /api/client/goal.
 //
 // The client's readings — current and at the start — are not columns: they
 // ride in from the two measurement views (CLIENT_MEASUREMENT_EMBEDS), embedded

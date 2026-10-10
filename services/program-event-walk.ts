@@ -1,10 +1,9 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getNextPlanStartCap } from "./training-event-service";
-import { getBlockBoundForDate } from "./client-blocks-service";
 import { getDateString } from "@/lib/date-helpers";
 import type { TrainingEventInsert } from "@/lib/database-helpers";
 
-/** Rows per upsert statement: a long block of several-session days runs to thousands of events. */
+/** Rows per upsert statement: a long program of several-session days runs to thousands of events. */
 const UPSERT_CHUNK = 500;
 
 /** `date + n` days, as a YYYY-MM-DD string. */
@@ -91,16 +90,13 @@ export async function generateProgramEvents(params: {
 export type WindowCap = {
   /** The last day a program starting on the queried date may run to. */
   endsOn: string;
-  source: "block" | "next_block" | "next_plan";
+  source: "next_plan";
 };
 
 /**
- * The furthest day a program starting on `startDate` may run to, and why: the
- * block covering the date ends it; a block after it caps it at the day before
- * that block; the next live program caps it at the day before its start; the
- * earliest of those wins. `stretchesToCap` says a block COVERS the date, in
- * which case a placement fills to the cap rather than stopping at its own
- * length. A null cap means nothing bounds the program but itself.
+ * The furthest day a program starting on `startDate` may run to: the day
+ * before the next live program starts. Null when no program follows, so
+ * nothing bounds the program but its own length.
  *
  * One question for placement and for the plan editor, so an edited program
  * stays inside the bound placement gave it.
@@ -108,40 +104,20 @@ export type WindowCap = {
 export async function resolveWindowCap(
   clientId: string,
   startDate: string,
-): Promise<{ stretchesToCap: boolean; cap: WindowCap | null }> {
-  const [bound, nextPlanCap] = await Promise.all([
-    getBlockBoundForDate(clientId, startDate),
-    getNextPlanStartCap(clientId, startDate),
-  ]);
-
-  let cap: WindowCap | null =
-    bound?.kind === "covering"
-      ? { endsOn: bound.endsOn, source: "block" }
-      : bound?.kind === "next"
-        ? { endsOn: addDays(bound.startsOn, -1), source: "next_block" }
-        : null;
-  if (nextPlanCap && (!cap || nextPlanCap < cap.endsOn)) {
-    cap = { endsOn: nextPlanCap, source: "next_plan" };
-  }
-  return { stretchesToCap: bound?.kind === "covering", cap };
+): Promise<WindowCap | null> {
+  const nextPlanCap = await getNextPlanStartCap(clientId, startDate);
+  return nextPlanCap ? { endsOn: nextPlanCap, source: "next_plan" } : null;
 }
 
 /**
- * How far a NEW placement from `startDate` should run — the block's last day
- * when a block covers that date, else the program's own authored length.
- * Capped, either way, at the day before the next coexisting program starts.
+ * How far a NEW placement from `startDate` runs: the program's own authored
+ * length, capped at the day before the next coexisting program starts. A
+ * program shorter than the gap to the next one runs its length and stops;
+ * nothing stretches it to fill the gap.
  *
  * Decided once, here, and stored on the row (migration 167): every reader
- * takes a program's end from `training_plans.effective_until`. The plan
- * editor's save moves it under the same cap, and a block drawn or shortened
- * over it trims it to the block.
- *
- * The block is not a maximum here: a block LONGER than the program stretches
- * the window and the caller repeats the program to fill it, a block SHORTER
- * truncates it. A placement on a day no block covers keeps the program's own
- * length, capped at the day before the NEXT block starts — a cap, never a
- * length, so a program placed in a gap stops at the block rather than filling
- * the gap or running into a block the coach has not set up.
+ * takes a program's end from `training_plans.effective_until`, and the plan
+ * editor's save moves it under the same cap.
  */
 export async function resolvePlacementWindowEnd(params: {
   clientId: string;
@@ -150,49 +126,16 @@ export async function resolvePlacementWindowEnd(params: {
   startDate: string;
 }): Promise<string> {
   const { clientId, dayCount, startDate } = params;
-  const { stretchesToCap, cap } = await resolveWindowCap(clientId, startDate);
   const ownEnd = placementEndDate(startDate, dayCount);
-  if (stretchesToCap && cap) return cap.endsOn;
+  const cap = await resolveWindowCap(clientId, startDate);
   return cap && cap.endsOn < ownEnd ? cap.endsOn : ownEnd;
 }
 
 /**
- * Repeat the authored program's days until they cover `days`, then cut there.
- *
- * Cloning, never sharing: the caller gives every returned day's sessions their
- * OWN rows, so a coach can make cycle three heavier than cycle one. Sharing rows
- * would make one edit rewrite every cycle at once, which is the opposite of how
- * a block is programmed.
- *
- * Each cycle's `weekIndex` is offset by the authored program's own week span, so
- * `(weekIndex, orderIndex)` keeps climbing across cycles — that pair IS the
- * date-walk's day position and the ordering every placed-plan reader uses.
- * Cycle 0 is returned with the authored coordinates untouched, so a program
- * placed once is byte-identical to what placement produced before blocks bounded
- * anything. A final partial cycle is cut mid-program: the block ends when it ends.
- */
-export function expandProgramToWindow<T extends { weekIndex: number; orderIndex: number }>(
-  authored: T[],
-  days: number,
-): T[] {
-  if (authored.length === 0 || days <= 0) return [];
-
-  const weeksPerCycle = Math.max(...authored.map((s) => s.weekIndex)) + 1;
-
-  const expanded: T[] = [];
-  for (let i = 0; i < days; i += 1) {
-    const day = authored[i % authored.length];
-    const cycle = Math.floor(i / authored.length);
-    expanded.push({ ...day, weekIndex: day.weekIndex + cycle * weeksPerCycle });
-  }
-  return expanded;
-}
-
-/**
- * The last day of one pass of a placed program: `startDate + max(1, dayCount) − 1`.
- * The length a placement asks for when no block stretches it. Nothing derives
- * an existing program's end from its rows any more — the end is on the row
- * (migration 167) and every reader takes it from there.
+ * The last day of a placed program: `startDate + max(1, dayCount) − 1`, the
+ * length a placement asks for. Nothing derives an existing program's end
+ * from its rows any more — the end is on the row (migration 167) and every
+ * reader takes it from there.
  */
 export function placementEndDate(startDate: string, dayCount: number): string {
   return addDays(startDate, Math.max(1, dayCount) - 1);

@@ -91,6 +91,14 @@ describe("useTrainingPlan", () => {
     expect(trainingPlanKey(CLIENT)).toBe("/api/clients/client-1/training");
   });
 
+  it("reads nothing while no client is chosen", () => {
+    const { result } = renderHook(() => useTrainingPlan({ clientId: "" }), { wrapper });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.planStartFloor).toBeNull();
+    expect(result.current.clientToday).toBeNull();
+  });
+
   it("the training area's invalidator reaches it: a calendar write revalidates the read", async () => {
     fetchMock.mockImplementation(() => Promise.resolve(ok(planResponse("Upper Lower"))));
     const { result } = renderHook(

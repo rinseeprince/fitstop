@@ -15,7 +15,6 @@
  * - the computed nutrition days of every client in the window (through the day
  *   reader's cross-client read): the target and verdict of each logged day,
  *   for the nutrition-miss and activity-mismatch triggers
- * - client_phases: the journey blocks those triggers name (through the blocks service)
  *
  * "Did the client log today?" is answered once, by `lib/logged-days.ts`, from
  * these rows (`loggedDaysFor` in lib/attention-feed-helpers.ts).
@@ -32,7 +31,6 @@ import { CLIENT_MEASUREMENT_SOURCE } from "@/lib/logged-days"
 import { getNutritionWindowsForClients } from "./nutrition-plan-service"
 import { getNutritionTargetsForClients } from "./nutrition-days-service"
 import { getLiveProgramWindowsForClients } from "./training-service"
-import { getBlockWindowsForClients } from "./client-blocks-service"
 import { listHabitEntriesForClients, listHabitsForClients } from "./client-habits-service"
 import {
   NUTRITION_LOG_COLUMNS,
@@ -123,7 +121,6 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     dismissalsResult,
     nutritionWindowsResult,
     trainingWindowsResult,
-    blocksResult,
     dayTargetsResult,
   ] = await Promise.allSettled([
     // 2. The day-form's two tables (required for the core triggers): the
@@ -206,10 +203,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     //    events posture, and never impersonates "nothing prescribed" elsewhere.
     getNutritionWindowsForClients(clientIds),
     getLiveProgramWindowsForClients(clientIds),
-    // 10. Journey blocks (graceful degradation): a failed read drops the block
-    //     names from the prescription-ending messages, never the alerts.
-    getBlockWindowsForClients(clientIds),
-    // 11. Every client's computed nutrition targets over the window (graceful
+    // 10. Every client's computed nutrition targets over the window (graceful
     //     degradation): the food log stores no target and no verdict, so the
     //     nutrition-miss and activity-mismatch triggers judge each logged day
     //     against this read; a failed read silences them for the request.
@@ -267,13 +261,6 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     console.error("Error fetching training plan windows:", trainingWindowsResult.reason)
   }
 
-  let blocks = null
-  if (blocksResult.status === "fulfilled") {
-    blocks = blocksResult.value
-  } else {
-    console.error("Error fetching journey blocks:", blocksResult.reason)
-  }
-
   let dayTargets = null
   if (dayTargetsResult.status === "fulfilled") {
     dayTargets = dayTargetsResult.value
@@ -291,7 +278,6 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     clientLogRows,
     nutritionWindows,
     trainingWindows,
-    blocks,
     dayTargets,
   )
 
@@ -345,7 +331,6 @@ export async function evaluateSingleClientAlerts(
     dismissalsResult,
     nutritionWindowsResult,
     trainingWindowsResult,
-    blocksResult,
     dayTargetsResult,
   ] = await Promise.allSettled([
       // The day-form's two tables, ordered like the cross-client path so the
@@ -395,7 +380,6 @@ export async function evaluateSingleClientAlerts(
       // Overview and the dashboard judge a client's prescription from one read shape.
       getNutritionWindowsForClients([clientId]),
       getLiveProgramWindowsForClients([clientId]),
-      getBlockWindowsForClients([clientId]),
       // The same cross-client target read over one id, so the Overview and
       // the dashboard judge a logged day against the same computed target.
       getNutritionTargetsForClients([clientId], startDate, endDate),
@@ -426,7 +410,6 @@ export async function evaluateSingleClientAlerts(
     nutritionWindowsResult.status === "fulfilled" ? nutritionWindowsResult.value : null
   const trainingWindows =
     trainingWindowsResult.status === "fulfilled" ? trainingWindowsResult.value : null
-  const blocks = blocksResult.status === "fulfilled" ? blocksResult.value : null
   const dayTargets = dayTargetsResult.status === "fulfilled" ? dayTargetsResult.value : null
 
   const clientDataMap = groupClientData(
@@ -438,7 +421,6 @@ export async function evaluateSingleClientAlerts(
     clientLogRows,
     nutritionWindows,
     trainingWindows,
-    blocks,
     dayTargets,
   )
   const withAlerts = evaluateAndSortTriggers(clientDataMap, dateRange)

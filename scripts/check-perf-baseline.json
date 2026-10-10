@@ -40,7 +40,7 @@
     "services/client-adherence-service.ts": 1,
     "services/client-goals-service.ts": 1,
     "services/client-habit-figures-service.ts": 2,
-    "services/client-overview-brief-service.ts": 2,
+    "services/client-overview-brief-service.ts": 1,
     "services/client-portal-progress.ts": 1,
     "services/client-portal-service.ts": 2,
     "services/client-service.ts": 2,

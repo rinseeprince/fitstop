@@ -50,9 +50,9 @@ export const UNREVIEWED_CHECK_IN_STATUSES = [
 // orchestrator's custom branch, both of which derive their message from it.
 export const CUSTOM_MACRO_CALORIE_TOLERANCE = 10;
 
-// How far a nutrition version runs when the client has neither a block nor a
-// live training program to bound it: eight weeks from its start. The last step
-// of resolveNutritionPlacementEnd (services/nutrition-plan-service.ts);
+// How far a nutrition version runs when the client has no live training
+// program to bound it: eight weeks from its start. The fallback of
+// resolveNutritionPlacementEnd (services/nutrition-plan-service.ts);
 // migration 166's backfill spelled the same number.
 export const NUTRITION_PLACEMENT_FALLBACK_DAYS = 56;
 
@@ -109,7 +109,7 @@ export const GIRTH_LIMB_CM_MAX = 100;
 // literal. Do not "unify" it.
 export const LOAD_KG_MAX = 2000;
 
-// Journey blocks (client_phases). BLOCK_WEEKS_MAX deliberately MIRRORS the
+// Journey blocks. BLOCK_WEEKS_MAX deliberately MIRRORS the
 // program builder's MAX_WEEKS (components/clients/training/program-builder/
 // program-builder-types.ts) rather than importing it: lib must not depend on
 // components/, and the two bound different things — an authored program's
@@ -168,9 +168,8 @@ export const PARTIAL_TRAINING_THRESHOLD = 3;
 export const NO_ENGAGEMENT_SILENCE_DAYS = 3; // No activity (logs/habits/completed sessions) in this many days
 export const NO_ENGAGEMENT_ACTIVATION_GRACE_DAYS = 3; // Days after start_date before a silent client is flagged
 
-// The final N days of a block or a prescription, the end day included: the
-// Overview's block-ending row and the prescription-ending alerts read this one
-// number so the rows on one card cannot disagree about what "ending soon" means.
+// The final N days of a prescription, the end day included: the window in
+// which the prescription-ending alerts give their heads-up.
 export const PLAN_ENDING_LEAD_DAYS = 7;
 
 export const HIGH_STRESS_THRESHOLD = 8; // Stress level
@@ -239,7 +238,6 @@ export const AUDIT_ACTIONS = {
   INTAKE_SYNC_METRICS: "intake.sync_metrics",
   NUTRITION_PLAN_CREATE: "nutrition_plan.create",
   NUTRITION_PLAN_DELETE: "nutrition_plan.delete",
-  NUTRITION_PLAN_VERSION_DELETE: "nutrition_plan.version_delete",
   NUTRITION_PLAN_KEEP_FOR_GOAL: "nutrition_plan.keep_for_goal",
   TRAINING_PLAN_PLACE: "training_plan.place",
   TRAINING_PLAN_CREATE: "training_plan.create",

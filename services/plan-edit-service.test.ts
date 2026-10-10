@@ -312,7 +312,7 @@ beforeEach(() => {
   mockRpc.mockResolvedValue({ data: null, error: null } as never);
   vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
   vi.mocked(resolveEventDeletionFloor).mockResolvedValue(TODAY);
-  vi.mocked(resolveWindowCap).mockResolvedValue({ stretchesToCap: false, cap: null });
+  vi.mocked(resolveWindowCap).mockResolvedValue(null);
   vi.mocked(fetchVisibleExerciseIds).mockImplementation((_coachId, ids) =>
     Promise.resolve(new Set(ids)),
   );
@@ -677,8 +677,8 @@ describe("getPlanForEditing", () => {
   });
 
   it("lays the days past the plan's limit as rest, even with an event", async () => {
-    const cap: WindowCap = { endsOn: "2026-09-17", source: "next_block" };
-    vi.mocked(resolveWindowCap).mockResolvedValue({ stretchesToCap: false, cap });
+    const cap: WindowCap = { endsOn: "2026-09-17", source: "next_plan" };
+    vi.mocked(resolveWindowCap).mockResolvedValue(cap);
     const THU = rowId(1);
     const FRI = rowId(2);
     mockTables({
@@ -787,10 +787,7 @@ describe("getPlanForEditing", () => {
   });
 
   it("reaches the version through the plan's own days past its limit, which the save clears", async () => {
-    vi.mocked(resolveWindowCap).mockResolvedValue({
-      stretchesToCap: false,
-      cap: { endsOn: "2026-09-17", source: "next_block" },
-    });
+    vi.mocked(resolveWindowCap).mockResolvedValue({ endsOn: "2026-09-17", source: "next_plan" });
     const FRI = rowId(1);
     const reads = mockTables({
       sessions: [sessionRow(FRI, "Friday")],
@@ -811,10 +808,7 @@ describe("getPlanForEditing", () => {
   });
 
   it("names a limit past the plan's last week, and reads no further than that week", async () => {
-    vi.mocked(resolveWindowCap).mockResolvedValue({
-      stretchesToCap: false,
-      cap: { endsOn: "2026-09-24", source: "next_plan" },
-    });
+    vi.mocked(resolveWindowCap).mockResolvedValue({ endsOn: "2026-09-24", source: "next_plan" });
     const reads = mockTables({});
 
     const { days, version } = await open();
@@ -994,13 +988,13 @@ describe("savePlanEdit", () => {
     it("refuses as stale when the plan's limit appeared, moved or went", async () => {
       mockTables({});
       const cases: Array<{ seen: string | null; now: WindowCap | null }> = [
-        { seen: null, now: { endsOn: "2026-09-24", source: "next_block" } },
+        { seen: null, now: { endsOn: "2026-09-24", source: "next_plan" } },
         { seen: "2026-09-24", now: { endsOn: "2026-09-27", source: "next_plan" } },
         { seen: "2026-09-24", now: null },
       ];
 
       for (const { seen, now } of cases) {
-        vi.mocked(resolveWindowCap).mockResolvedValue({ stretchesToCap: false, cap: now });
+        vi.mocked(resolveWindowCap).mockResolvedValue(now);
         await expect(save(grid(2), encode(versionFor({ limit: seen })))).rejects.toThrow(
           PlanEditStaleError,
         );
@@ -1097,11 +1091,8 @@ describe("savePlanEdit", () => {
     });
 
     it("caps an extension at the plan's limit", async () => {
-      // The next block starts on the 25th; the coach added week 3.
-      vi.mocked(resolveWindowCap).mockResolvedValue({
-        stretchesToCap: false,
-        cap: { endsOn: "2026-09-24", source: "next_block" },
-      });
+      // The next program starts on the 25th; the coach added week 3.
+      vi.mocked(resolveWindowCap).mockResolvedValue({ endsOn: "2026-09-24", source: "next_plan" });
       mockTables({});
       const days = grid(3, {
         0: session("Push"),
@@ -1134,11 +1125,8 @@ describe("savePlanEdit", () => {
     });
 
     it("counts the weeks the plan keeps when its limit falls inside it", async () => {
-      // A block placed after this plan starts on the 18th.
-      vi.mocked(resolveWindowCap).mockResolvedValue({
-        stretchesToCap: false,
-        cap: { endsOn: "2026-09-17", source: "next_block" },
-      });
+      // A program placed after this plan starts on the 18th.
+      vi.mocked(resolveWindowCap).mockResolvedValue({ endsOn: "2026-09-17", source: "next_plan" });
       mockTables({ plans: [{ ...PLAN, effective_until: "2026-09-27" }] });
 
       await save(

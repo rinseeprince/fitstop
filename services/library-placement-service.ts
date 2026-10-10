@@ -5,7 +5,6 @@ import { cancelFutureEventsForPlans } from "./training-event-service";
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import {
   generateProgramEvents,
-  expandProgramToWindow,
   resolvePlacementWindowEnd,
   type ProgramSession,
 } from "./program-event-walk";
@@ -27,8 +26,7 @@ import type {
 import type { SavedSession, SavedExercise, SavedExerciseGroup } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import type { InlinePlanBody } from "@/lib/validations/training";
-// Pure date maths, shared with the block chain rather than re-derived here —
-// the block is what supplies this window's length.
+// Pure date maths, shared with the block chain rather than re-derived here.
 import { inclusiveDays, weeksSpanned } from "@/lib/blocks/block-chain";
 import { toPrescribedFields } from "@/utils/prescribed-fields";
 import { sessionExercises } from "@/utils/exercise-groups";
@@ -394,22 +392,17 @@ async function placePlaceablePlanOnCalendar(params: {
   //    event generation below to exactly the same range, so re-placing the same
   //    window is idempotent and non-overlapping plans coexist untouched.
   //
-  //    The LENGTH is the block covering the start date when there is one, else
-  //    the program's own day count. So the block is the length knob: a program
-  //    shorter than its block repeats to fill it, a longer one is cut at its end.
+  //    The LENGTH is the program's own day count, cut at the day before the
+  //    next program when that comes first. Nothing stretches it.
   const endDate = await resolvePlacementWindowEnd({
     clientId,
     dayCount: authoredDays.length,
     startDate,
   });
 
-  //    The days actually placed: the authored program repeated until it covers
-  //    the window, then cut. Each cycle is CLONED below, never shared, so cycle
-  //    three can be progressed past cycle one.
-  const windowDays = expandProgramToWindow(
-    authoredDays,
-    inclusiveDays(startDate, endDate),
-  );
+  //    The days actually placed: the authored program's days, cut where the
+  //    window ends.
+  const windowDays = authoredDays.slice(0, inclusiveDays(startDate, endDate));
 
   // H3: snapshot the scheduled events the RPC is about to delete, BEFORE it
   // commits, so a failure in the non-transactional clone/event-gen below can
@@ -433,10 +426,10 @@ async function placePlaceablePlanOnCalendar(params: {
     // Sessions per week, from the program's own rows — a day can hold several,
     // so a week can hold more than seven.
     frequencyPerWeek: deriveFrequencyPerWeek(savedPlan.sessions),
-    // The PLACED length, not the authored one: with the block as the length knob
-    // a 4-week program can occupy a 12-week window, and the Overview's plan chip
-    // derives its "Ended" date from this column — left at the authored value it
-    // would contradict the calendar.
+    // The PLACED length, not the authored one: a program cut short by the next
+    // one occupies fewer weeks than it was written for, and the Overview's plan
+    // chip derives its "Ended" date from this column — left at the authored
+    // value it would contradict the calendar.
     programDurationWeeks: weeksSpanned(startDate, endDate),
     effectiveFrom: startDate,
     windowEnd: endDate,
@@ -457,10 +450,9 @@ async function placePlaceablePlanOnCalendar(params: {
   //    coordinate could tell them apart. `placedDays` is the ordered program the
   //    event walk maps onto calendar dates.
   //
-  //    BATCHED, not one insert per row. With the block as the length knob a
-  //    short program repeats to fill a long block — a one-week program in a
-  //    52-week block is 364 days, more rows when its days hold several sessions —
-  //    and a round trip each would take the placement past any request budget.
+  //    BATCHED, not one insert per row. A program can run to 52 weeks — 364
+  //    days, more rows when its days hold several sessions — and a round trip
+  //    each would take the placement past any request budget.
   //    Chunked because a single statement of unbounded width is its own problem.
   const sessionRows: TrainingSessionInsert[] = [];
   const groupRows: ReturnType<typeof trainingGroupRowsFromCopy>[] = [];
@@ -545,7 +537,7 @@ async function placePlaceablePlanOnCalendar(params: {
 
   // 6. Supersede: the earlier programs' sessions from the start day onward go
   //    — inside the window the RPC already removed them, past it they are the
-  //    stale tail a block carved out of a longer program used to leave. Logged
+  //    rest of a longer earlier program, whose window the RPC capped. Logged
   //    days are detached, not deleted. The placement is committed by now, so a
   //    failure here is reported as such and never compensated.
   await cancelFutureEventsForPlans(

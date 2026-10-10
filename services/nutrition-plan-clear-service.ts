@@ -34,16 +34,13 @@ import { deleteNutritionDayEditsInRanges } from "./nutrition-day-edits-service";
  * invisible (no day to see or revert it on) and would answer again under
  * whatever version next covered the date.
  *
- * ONE act, three selections: the nutrition calendar's own delete (every
- * running or queued version), the block delete, which always takes the
- * block's plans (only the versions inside it), and the block card's per-plan
- * delete (one version by id). Every selection hands its rows to the same
- * retire path — the statements are spelled once, in `endNutritionVersionsAt`,
- * which a block trim shares. There is no delete-the-days-but-keep-the-
- * plan variant (owner, 2026-09-08): a version left standing covers its days,
- * so the two cannot be separated. Deleting one version never touches another
- * (owner, 2026-09-11): a queued version's dates go empty and the coach fills
- * them; nothing regrows.
+ * ONE act, two selections: the nutrition calendar's own delete (every
+ * running or queued version) and the block delete, which always takes the
+ * block's plans (only the versions inside it). Both hand their rows to the
+ * same retire path — the statements are spelled once, in
+ * `endNutritionVersionsAt`, which a block trim shares. There is no
+ * delete-the-days-but-keep-the-plan variant (owner, 2026-09-08): a version
+ * left standing covers its days, so the two cannot be separated.
  *
  * Three statements, whatever the count: the edits first, then the cap at
  * yesterday, then the archive. The edits go FIRST so a mid-flight failure leaves every
@@ -159,13 +156,10 @@ export async function clearNutritionPlansForClient(
   clientId: string,
   clientToday: string,
   /**
-   * Optional block window. Given, only the versions that START inside it go —
-   * a block contains its plans (a version's end is resolved to the block
-   * covering its start, see resolveNutritionPlacementEnd, and drawing or
-   * shortening a block trims its versions to fit), so the versions starting
-   * in its days are the block's own. Omitted, every running or queued version
-   * goes: that is the nutrition calendar's own delete, and it is the training
-   * calendar's shape.
+   * Optional block window, the block delete's. Given, only the versions that
+   * START inside it go — the versions starting in a block's days are the
+   * block's own. Omitted, every running or queued version goes: that is the
+   * nutrition calendar's own delete, and it is the training calendar's shape.
    */
   window?: { from: string; to: string }
 ): Promise<RetireResult> {
@@ -180,37 +174,4 @@ export async function clearNutritionPlansForClient(
   }
 
   return retireNutritionVersions(clientId, clientToday, versions ?? []);
-}
-
-type NutritionVersionDeleteOutcome = {
-  /** `ended` for a running version capped at yesterday; `archived` for a queued one. */
-  outcome: "ended" | "archived";
-  editsCleared: number;
-};
-
-/**
- * The block card's per-plan delete: ONE version by id, and nothing else. The
- * row must belong to the client, be active and still reach today — a foreign
- * id, an archived version or a finished one answers null, and the route says
- * not found. The running version beside it and the queued version after it
- * are left exactly where they are.
- */
-export async function clearNutritionPlanById(
-  clientId: string,
-  clientToday: string,
-  versionId: string
-): Promise<NutritionVersionDeleteOutcome | null> {
-  const { data: version, error } = await versionsStillAhead(clientId, clientToday)
-    .eq("id", versionId)
-    .maybeSingle();
-  if (error) {
-    throw new Error(`Failed to resolve the nutrition version to delete: ${error.message}`);
-  }
-  if (!version) return null;
-
-  const { editsCleared } = await retireNutritionVersions(clientId, clientToday, [version]);
-  return {
-    outcome: version.effective_from < clientToday ? "ended" : "archived",
-    editsCleared,
-  };
 }

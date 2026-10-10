@@ -45,10 +45,9 @@ type MetricsTabContentProps = {
 /**
  * The Journey tab: the pane bar, the pane on screen, and the dialogs the panes
  * share. It reads NOTHING itself — each pane reads its own data, so only the
- * pane on screen loads (Physique: the measurements, the goal and the blocks;
- * Goals: the goals table, the measurements and the goal; Wellness: the
- * wellness series and the blocks; Training: its exercise reads; Blocks: the
- * blocks and their plans). Log measurement sits on the Physique pane alone,
+ * pane on screen loads (Physique: the measurements and the goal; Goals: the
+ * goals table, the measurements and the goal; Wellness: the wellness series;
+ * Training: its exercise reads; Blocks: the blocks and their plans). Log measurement sits on the Physique pane alone,
  * its metric list the seven physique metrics of the catalog.
  */
 export const MetricsTabContent = ({
@@ -104,9 +103,6 @@ export const MetricsTabContent = ({
 
   const [range, setRange] = useState<30 | 60 | 90 | "all">(30);
   const [logOpen, setLogOpen] = useState(false);
-  // Chart-band toggle: ON by default when blocks exist (owner-reviewed at
-  // plan time); the checkbox lives in the chart card's legend slot.
-  const [showBlocks, setShowBlocks] = useState(true);
 
   // The dialog lists the physique metrics, from the catalog: opening it loads
   // nothing.
@@ -156,8 +152,6 @@ export const MetricsTabContent = ({
     onSelectMetric: setMetric,
     range,
     onRangeChange: setRange,
-    showBlocks,
-    onToggleBlocks: setShowBlocks,
     onLogFirst: () => setLogOpen(true),
     onEditReading: editing.show,
     onRemoveReading: removing.show,

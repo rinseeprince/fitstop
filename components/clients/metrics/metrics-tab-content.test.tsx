@@ -32,9 +32,6 @@ vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), err
 vi.mock("./hooks/use-reading-actions", () => ({
   useReadingActions: () => ({ correct: vi.fn(), remove: vi.fn(), restore: vi.fn() }),
 }));
-vi.mock("./hooks/use-client-blocks", () => ({
-  useClientBlocks: () => ({ blocks: [], clientToday: null, isLoading: false, isError: false }),
-}));
 vi.mock("./hooks/use-log-measurement", () => ({
   useLogMeasurement: () => vi.fn(),
 }));

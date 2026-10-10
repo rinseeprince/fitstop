@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
-import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
@@ -53,7 +52,6 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   const { editMode, setEditMode } = builder;
   const invalidateTrainingData = useInvalidateTrainingData();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
-  const clearBlockFacts = useClearBlockFacts();
   const clearGoalHistory = useClearClientGoalHistory();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
@@ -76,13 +74,11 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
         throw new Error(data.error ?? "Failed to clear plan");
       }
       toast.success("Training plan deleted");
-      // The Journey block cards are DERIVED from these rows, so they now claim a
-      // program that is gone. Cleared rather than revalidated: they render a
-      // definite answer, and SWR serves the stale one for the whole refetch
-      // (CONVENTIONS §7). The goals table and the hero's plan read likewise:
-      // the delete ends the programs they list and changes which plan it
-      // describes.
-      void clearBlockFacts(clientId);
+      // The goals table is DERIVED from these rows, so it now lists a program
+      // that is gone. Cleared rather than revalidated: it renders a definite
+      // answer, and SWR serves the stale one for the whole refetch
+      // (CONVENTIONS §7). The hero's plan read likewise: the delete changes
+      // which plan it describes.
       void clearGoalHistory(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();

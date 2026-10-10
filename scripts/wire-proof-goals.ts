@@ -15,7 +15,7 @@
  * Sam's recordings must be byte-identical: the profile's copy and the goal
  * agree for him. The fixture's must keep their shape — its copy held a stale
  * 170 kg against the goal's 77.1. A wire may also gain fields (commit 8d2 gave
- * the journey's goal the client's goal card): every recorded value kept and
+ * the goal what the client's goal card shows): every recorded value kept and
  * nothing lost is additive, and passes as such. `PATCH /api/client/settings` is a write: it
  * sends the client's own timezone back, a no-op that still moves the client's
  * `updatedAt` — which the next recording's `/api/client/me` then reads — so
@@ -73,7 +73,7 @@ async function record(label: string): Promise<void> {
       data: { timezone?: string | null; unitPreference?: string };
     };
     await recordOne(dir, `client-progress-${p}`, client, "GET", "/api/client/progress");
-    await recordOne(dir, `client-journey-${p}`, client, "GET", "/api/client/journey");
+    await recordOne(dir, `client-goal-${p}`, client, "GET", "/api/client/goal");
     // Send back what the client already has: nothing changes but updatedAt.
     const settings = me.data.timezone
       ? { timezone: me.data.timezone }

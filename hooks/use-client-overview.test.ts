@@ -101,7 +101,7 @@ function sourceFiles(): string[] {
  * The rule (CONVENTIONS §7): the area that owes an invalidator is the one that
  * READS what you wrote. The Overview's Current-plan cards and Needs-attention
  * rows and the dashboard feed are derived from the plan tables, so every
- * success path that calls one of the three calendar invalidators must call
+ * success path that calls one of the two calendar invalidators must call
  * both clearers too. Derived from the tree at test time — never a list — so a
  * calendar writer added later without them fails here.
  */
@@ -109,12 +109,10 @@ describe("every calendar writer clears the Overview and the feed", () => {
   const INVALIDATOR_CALLS = [
     "useInvalidateTrainingData()",
     "useInvalidateNutritionCalendar()",
-    "useInvalidateClientBlocks()",
   ];
   const OWNERS = new Set([
     "hooks/use-calendar-events.ts",
     "hooks/use-nutrition-calendar-events.ts",
-    "components/clients/metrics/hooks/use-client-blocks.ts",
   ]);
 
   it("holds across the tree, and the scan matches the writers it exists for", () => {

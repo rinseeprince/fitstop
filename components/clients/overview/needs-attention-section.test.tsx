@@ -18,7 +18,6 @@ const PROPS = {
   clientName: "Alex",
   unreviewedCheckIn: null,
   attentionAlerts: [],
-  blockEnding: null,
   onTabChange: vi.fn(),
   onDismissAlert: vi.fn(),
 };
@@ -37,13 +36,16 @@ describe("NeedsAttentionSection", () => {
       <NeedsAttentionSection
         {...PROPS}
         unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
-        attentionAlerts={[alert("training_missed", "high", "Missed 3 training sessions")]}
-        blockEnding={{ blockName: "Build", endsOn: "2026-08-30", nextBlockName: "Cut" }}
+        attentionAlerts={[
+          alert("training_missed", "high", "Missed 3 training sessions"),
+          alert("habit_missed", "low", "Missed Water 4 days"),
+        ]}
       />
     );
 
     expect(screen.getByText("Check-in awaiting review")).toBeInTheDocument();
     expect(screen.getByText("3 sessions missed")).toBeInTheDocument();
+    expect(screen.getByText("Missed Water 4 days")).toBeInTheDocument();
     // A "3" beside three visible rows restates what is already on screen.
     expect(screen.queryByText("3", { selector: "span" })).not.toBeInTheDocument();
   });
@@ -66,22 +68,6 @@ describe("NeedsAttentionSection", () => {
 
     await user.click(screen.getByText("Check-in awaiting review"));
     expect(onTabChange).toHaveBeenCalledWith("check-ins", { checkIn: "ci-1" });
-  });
-
-  it("keeps the block-ending row's journey round-trip params", async () => {
-    const user = userEvent.setup();
-    const onTabChange = vi.fn();
-
-    render(
-      <NeedsAttentionSection
-        {...PROPS}
-        onTabChange={onTabChange}
-        blockEnding={{ blockName: "Build", endsOn: "2026-08-30", nextBlockName: "Cut" }}
-      />
-    );
-
-    await user.click(screen.getByText("Build ends Sunday."));
-    expect(onTabChange).toHaveBeenCalledWith("metrics", { journey: "blocks" });
   });
 
   it("words an alert with the dashboard's own copy functions", () => {
@@ -166,25 +152,25 @@ describe("NeedsAttentionSection", () => {
     expect(titles[0]).toBe("3 sessions missed");
   });
 
-  it("caps at three rows across all three sources, keeping their order", () => {
+  it("caps at three rows across both sources, keeping their order", () => {
     render(
       <NeedsAttentionSection
         {...PROPS}
         unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
-        blockEnding={{ blockName: "Build", endsOn: "2026-06-07", nextBlockName: "Cut" }}
         attentionAlerts={[
           alert("training_missed", "high", "Missed 3 training sessions this week"),
           alert("habit_missed", "low", "Missed Water 4 days"),
+          alert("high_stress", "medium", "Stress elevated", ["2026-08-01", "2026-08-02"]),
         ]}
       />
     );
 
-    // Four rows, three shown: the check-in, the block boundary, then the
-    // highest-severity alert. The three sources are one ordered list, and the
-    // cap slices it — it must not drop a source.
+    // Four rows, three shown: the check-in, then the alerts by severity. The
+    // two sources are one ordered list, and the cap slices it — it must not
+    // drop a source.
     expect(screen.getByText("Check-in awaiting review")).toBeInTheDocument();
-    expect(screen.getByText(/Build ends/)).toBeInTheDocument();
     expect(screen.getByText("3 sessions missed")).toBeInTheDocument();
+    expect(screen.getByText("High stress (2 days)")).toBeInTheDocument();
     expect(screen.queryByText(/Missed Water/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument();
   });
@@ -195,10 +181,10 @@ describe("NeedsAttentionSection", () => {
       <NeedsAttentionSection
         {...PROPS}
         unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
-        blockEnding={{ blockName: "Build", endsOn: "2026-06-07", nextBlockName: "Cut" }}
         attentionAlerts={[
           alert("training_missed", "high", "Missed 3 training sessions this week"),
           alert("habit_missed", "low", "Missed Water 4 days"),
+          alert("high_stress", "medium", "Stress elevated", ["2026-08-01", "2026-08-02"]),
         ]}
       />
     );
@@ -223,7 +209,7 @@ describe("NeedsAttentionSection", () => {
     expect(screen.queryByRole("button", { name: /more$/ })).not.toBeInTheDocument();
   });
 
-  it("dismisses an alert by type, and offers no dismiss on the coach-action rows", async () => {
+  it("dismisses an alert by type, and offers no dismiss on the check-in row", async () => {
     const user = userEvent.setup();
     const onDismissAlert = vi.fn();
 
@@ -232,7 +218,6 @@ describe("NeedsAttentionSection", () => {
         {...PROPS}
         onDismissAlert={onDismissAlert}
         unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
-        blockEnding={{ blockName: "Build", endsOn: "2026-08-30", nextBlockName: null }}
         attentionAlerts={[alert("mood_drop", "high", "Mood dropped")]}
       />
     );

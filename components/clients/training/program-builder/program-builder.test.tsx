@@ -834,7 +834,7 @@ function makePlanForEditing(overrides: Partial<PlanForEditing> = {}): PlanForEdi
     },
     clientToday: "2026-07-22",
     firstEditableDate: "2026-07-22",
-    limit: { endsOn: "2026-08-01", source: "block" },
+    limit: { endsOn: "2026-08-01", source: "next_plan" },
     days: Array.from({ length: 21 }, (_, i): PlanEditDay => ({
       date: addDaysToDateString(PLAN_START, i),
       sessions: holdsSession(i)
@@ -953,11 +953,11 @@ describe("ProgramBuilder placed-plan target (the plan editor)", () => {
     expect(screen.getAllByLabelText(/^Add session to day/)).toHaveLength(6);
   });
 
-  it("greys the days past the block's end and says why", async () => {
+  it("greys the days from the next program's start and says why", async () => {
     const { container } = renderPlaced();
     await openEditor();
     expect(
-      screen.getByText("This block ends 1 Aug. Days after it are greyed out."),
+      screen.getByText("The next program starts 2 Aug. Days from then are greyed out."),
     ).toBeInTheDocument();
     // Days 18-20 are greyed, and carry no Rest label: 4 history + 6 editable.
     expect(container.getElementsByClassName("bg-[rgba(147,176,180,0.12)]")).toHaveLength(3);

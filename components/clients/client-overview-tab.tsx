@@ -45,8 +45,8 @@ import type { ClientNote } from "@/types/coach-overview";
 interface ClientOverviewTabProps {
   client: Client;
   onClientUpdated?: () => void;
-  /** extraParams address a pane on arrival (the block-ending row sends
-   *  `{ journey: "blocks" }`); every plain-tab caller ignores it. */
+  /** extraParams address a pane on arrival (the check-in row sends
+   *  `{ checkIn: <id> }`); every plain-tab caller ignores it. */
   onTabChange?: (tab: ClientTab, extraParams?: Record<string, string>) => void;
 }
 
@@ -269,7 +269,6 @@ export function ClientOverviewTab({
               clientName={client.name}
               unreviewedCheckIn={brief.waitingOnYou.unreviewedCheckIn}
               attentionAlerts={brief.waitingOnYou.attentionAlerts}
-              blockEnding={brief.waitingOnYou.blockEnding}
               onTabChange={goToTab}
               onDismissAlert={handleDismissAlert}
             />

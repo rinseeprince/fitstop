@@ -206,11 +206,11 @@ async function readPlan(clientId: string, planId: string): Promise<PlanRow | nul
 
 /** The first editable day and the plan's limit, as of now. */
 async function resolveEditableDays(clientId: string, plan: PlanRow, clientToday: string) {
-  const [floor, { cap }] = await Promise.all([
+  const [floor, limit] = await Promise.all([
     resolveEventDeletionFloor(clientId, clientToday),
     resolveWindowCap(clientId, plan.effective_from),
   ]);
-  return { firstEditableDate: later(floor, plan.effective_from), limit: cap };
+  return { firstEditableDate: later(floor, plan.effective_from), limit };
 }
 
 async function readCalendar(
@@ -519,7 +519,7 @@ export async function savePlanEdit(params: {
   ]);
   if (!plan) throw new PlanEditNotFoundError();
   // An editor opened on a plan that has since ended, or whose first editable
-  // day or limit has moved (a log today, midnight, a new block or plan),
+  // day or limit has moved (a log today, midnight, a new plan after it),
   // was built from a calendar that is not there any more.
   if (plan.effective_until < clientToday) throw new PlanEditStaleError();
   const { firstEditableDate, limit } = await resolveEditableDays(clientId, plan, clientToday);

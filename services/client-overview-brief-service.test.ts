@@ -9,8 +9,6 @@ const getClientByIdMock = vi.fn();
 const resolveCheckInDueMock = vi.fn();
 const getDaysUntilOrPastDueMock = vi.fn();
 const isClientOverdueMock = vi.fn();
-const listBlocksMock = vi.fn();
-const getClientTodayStringMock = vi.fn();
 
 vi.mock("./coach-client-views-service", () => ({
   getLastViewedAt: (...a: unknown[]) => getLastViewedAtMock(...a),
@@ -30,12 +28,6 @@ vi.mock("./check-in-tracking-service", () => ({
   resolveCheckInDue: (...a: unknown[]) => resolveCheckInDueMock(...a),
   getDaysUntilOrPastDue: (...a: unknown[]) => getDaysUntilOrPastDueMock(...a),
   isClientOverdue: (...a: unknown[]) => isClientOverdueMock(...a),
-}));
-vi.mock("./client-blocks-service", () => ({
-  listBlocks: (...a: unknown[]) => listBlocksMock(...a),
-}));
-vi.mock("./today-service", () => ({
-  getClientTodayString: (...a: unknown[]) => getClientTodayStringMock(...a),
 }));
 
 const fromMock = vi.fn();
@@ -83,8 +75,6 @@ beforeEach(() => {
   resolveCheckInDueMock.mockReturnValue(new Date("2026-06-05T00:00:00"));
   getDaysUntilOrPastDueMock.mockReturnValue(-2);
   isClientOverdueMock.mockReturnValue(false);
-  listBlocksMock.mockResolvedValue([]);
-  getClientTodayStringMock.mockResolvedValue("2026-06-04");
   fromMock.mockImplementation((table: string) =>
     makeChain(0, table === "check_ins" ? LATEST_CHECK_IN : null)
   );
@@ -219,46 +209,11 @@ describe("getOverviewBrief", () => {
     expect(resolveCheckInDueMock).not.toHaveBeenCalled();
   });
 
-  it("surfaces the block-ending row when the current block is in its final 7 days", async () => {
+  it("waits on the check-in and the alerts, and nothing else", async () => {
     getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
-    getClientTodayStringMock.mockResolvedValue("2026-06-04");
-    listBlocksMock.mockResolvedValue([
-      { id: "b1", name: "Build", startsOn: "2026-05-11", endsOn: "2026-06-07" },
-      { id: "b2", name: "Cut", startsOn: "2026-06-08", endsOn: "2026-07-05" },
-    ]);
 
     const brief = await getOverviewBrief("coach-1", "client-1");
 
-    expect(brief.waitingOnYou.blockEnding).toEqual({
-      blockName: "Build",
-      endsOn: "2026-06-07",
-      nextBlockName: "Cut",
-    });
-    // Anchored on the CLIENT's calendar day — the blocks routes' anchor.
-    expect(getClientTodayStringMock).toHaveBeenCalledWith("client-1");
-  });
-
-  it("no block-ending row mid-block", async () => {
-    getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
-    getClientTodayStringMock.mockResolvedValue("2026-05-20");
-    listBlocksMock.mockResolvedValue([
-      { id: "b1", name: "Build", startsOn: "2026-05-11", endsOn: "2026-06-07" },
-    ]);
-
-    const brief = await getOverviewBrief("coach-1", "client-1");
-
-    expect(brief.waitingOnYou.blockEnding).toBeNull();
-  });
-
-  it("a blocks read failure degrades the row to null, never the brief", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
-    listBlocksMock.mockRejectedValue(new Error("blocks boom"));
-
-    const brief = await getOverviewBrief("coach-1", "client-1");
-
-    expect(brief.waitingOnYou.blockEnding).toBeNull();
-    expect(brief.waitingOnYou.unreviewedCheckIn).not.toBeUndefined();
-    consoleSpy.mockRestore();
+    expect(Object.keys(brief.waitingOnYou)).toEqual(["unreviewedCheckIn", "attentionAlerts"]);
   });
 });

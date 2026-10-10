@@ -174,9 +174,9 @@ describe("planForEditingToDraft", () => {
   });
 
   it("lays rest days and greyed days as empty slots", () => {
-    // The block ends on position 10, and the read lays nothing past it.
+    // The next program starts after position 10, and the read lays nothing past it.
     const read = makeRead({
-      limit: { endsOn: dateAt(10), source: "block" },
+      limit: { endsOn: dateAt(10), source: "next_plan" },
       days: Array.from({ length: 14 }, (_, i): PlanEditDay =>
         i > 10 ? { date: dateAt(i), sessions: [] } : makeDay(i),
       ),
@@ -191,7 +191,7 @@ describe("planForEditingToDraft", () => {
 
   it("counts the editable days from the plan's start", () => {
     const capped = planForEditingToDraft(
-      makeRead({ limit: { endsOn: "2026-08-02", source: "next_block" } }),
+      makeRead({ limit: { endsOn: "2026-08-02", source: "next_plan" } }),
     );
     expect(capped.editableDays).toEqual({ from: 8, through: 18 });
     // Nothing bounds the plan: no last day.

@@ -69,23 +69,11 @@ vi.mock("@/components/clients/check-ins/check-ins-tab-content", () => ({
   CheckInsTabContent: ({
     onTabChange,
   }: {
-    onTabChange: (
-      tab: string,
-      extra?: Record<string, string | null>,
-      options?: { replace?: boolean }
-    ) => void
+    onTabChange: (tab: string, extra?: Record<string, string | null>) => void
   }) => (
-    <>
-      <button type="button" onClick={() => onTabChange("check-ins", { checkIn: null })}>
-        return to list
-      </button>
-      <button
-        type="button"
-        onClick={() => onTabChange("metrics", { journey: "blocks" }, { replace: true })}
-      >
-        complete a flow
-      </button>
-    </>
+    <button type="button" onClick={() => onTabChange("check-ins", { checkIn: null })}>
+      return to list
+    </button>
   ),
 }))
 vi.mock("@/components/clients/notes/notes-tab-content", () => ({
@@ -152,17 +140,6 @@ describe("ClientProfilePage navigation", () => {
 
     expect(replace).toHaveBeenCalledTimes(1)
     expect(replace).toHaveBeenCalledWith("/clients/c-1?tab=check-ins", { scroll: false })
-    expect(push).not.toHaveBeenCalled()
-  })
-
-  it("a tab change that completes a flow replaces, scrolled to top like any tab change", () => {
-    search.current = new URLSearchParams("tab=check-ins&training=plans")
-    render(<ClientProfilePage />)
-
-    fireEvent.click(screen.getByRole("button", { name: "complete a flow" }))
-
-    expect(replace).toHaveBeenCalledTimes(1)
-    expect(replace).toHaveBeenCalledWith("/clients/c-1?tab=metrics&training=plans&journey=blocks")
     expect(push).not.toHaveBeenCalled()
   })
 

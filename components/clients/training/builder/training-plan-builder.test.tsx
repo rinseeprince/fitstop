@@ -73,7 +73,6 @@ vi.mock("./training-plan-builder-overlay", () => ({
   TrainingPlanBuilderOverlay: (props: {
     trayOpen: boolean;
     editorPlanId: string | null;
-    preselectedBlockId?: string | null;
     onPick: (savedPlanId: string) => void;
     onExitEditor: () => void;
     onApplied?: () => void;
@@ -83,7 +82,6 @@ vi.mock("./training-plan-builder-overlay", () => ({
       data-testid="overlay"
       data-tray={String(props.trayOpen)}
       data-editor={props.editorPlanId ?? ""}
-      data-block={props.preselectedBlockId ?? ""}
     >
       <button type="button" onClick={() => props.onPick("plan-1")}>
         pick
@@ -207,7 +205,7 @@ describe("TrainingPlanBuilder — the tray and the editor are places", () => {
     expect(replace).toHaveBeenCalledWith("?tab=training&training=plans", { scroll: false });
   });
 
-  it("an apply without a trip pops the editor's entry onto the calendar", () => {
+  it("an apply pops the editor's entry onto the calendar", () => {
     coachHistory.current = true;
     at("tab=training&training=plans&editor=plan-1");
     const onTabChange = vi.fn();
@@ -289,7 +287,7 @@ describe("TrainingPlanBuilder — the plan editor is a place", () => {
     expect(replace).toHaveBeenCalledWith("?tab=training&training=plans", { scroll: false });
   });
 
-  it("a save without a trip pops the plan editor's entry onto the calendar", () => {
+  it("a save pops the plan editor's entry onto the calendar", () => {
     coachHistory.current = true;
     at("tab=training&training=plans&plan=plan-9");
     const onTabChange = vi.fn();
@@ -313,164 +311,31 @@ describe("TrainingPlanBuilder — the plan editor is a place", () => {
   });
 });
 
-describe("TrainingPlanBuilder — the Journey round trip", () => {
-  const TRIP = "tab=training&training=plans&apply=1&returnTo=journey&returnBlock=blk-7";
-
-  it("arrives with the tray open, captures the block, and strips ONLY the return params", () => {
-    at(TRIP);
-    render(<TrainingPlanBuilder client={client} />);
-
-    expect(overlay()).toHaveAttribute("data-tray", "true");
-    expect(overlay()).toHaveAttribute("data-block", "blk-7");
-    expect(replace).toHaveBeenCalledTimes(1);
-    expect(replace).toHaveBeenCalledWith("?tab=training&training=plans&apply=1", {
-      scroll: false,
-    });
-    expect(push).not.toHaveBeenCalled();
-  });
-
-  it("the block survives the pick and the arrow, and an apply completes the editor's entry as the Journey entry", () => {
-    at(TRIP);
+// A save stays on the tab it was made on. The Journey's Blocks pane still opens
+// the tray and the plan editor with its return params on the address; nothing
+// reads them, and nothing writes the address on arrival.
+describe("TrainingPlanBuilder — no trip back", () => {
+  it("an apply from a Blocks pane link pops onto the calendar, and the arrival writes nothing", () => {
+    coachHistory.current = true;
+    at("tab=training&training=plans&editor=plan-1&returnTo=journey&returnBlock=blk-7");
     const onTabChange = vi.fn();
-    const { rerender } = render(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    at("tab=training&training=plans&apply=1");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
+    render(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
+    expect(replace).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "pick" }));
-    at("tab=training&training=plans&editor=plan-1");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    expect(overlay()).toHaveAttribute("data-block", "blk-7");
-
-    fireEvent.click(screen.getByRole("button", { name: "exit" }));
-    at("tab=training&training=plans&apply=1");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    expect(overlay()).toHaveAttribute("data-block", "blk-7");
-
-    fireEvent.click(screen.getByRole("button", { name: "pick" }));
-    at("tab=training&training=plans&editor=plan-1");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
     fireEvent.click(screen.getByRole("button", { name: "applied" }));
-
-    expect(onTabChange).toHaveBeenCalledWith(
-      "metrics",
-      { journey: "blocks", block: "blk-7" },
-      { replace: true }
-    );
-    expect(back).not.toHaveBeenCalled();
-  });
-
-  it("the X abandons the trip: a later apply pops onto the calendar", () => {
-    coachHistory.current = true;
-    at(TRIP);
-    const onTabChange = vi.fn();
-    const { rerender } = render(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    at("tab=training&training=plans&apply=1");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "close" }));
-    expect(overlay()).toHaveAttribute("data-block", "");
-
-    // Forward re-enters the tray as a place; the flow is fresh.
-    fireEvent.click(screen.getByRole("button", { name: "pick" }));
-    at("tab=training&training=plans&editor=plan-1");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "applied" }));
-
-    expect(onTabChange).not.toHaveBeenCalled();
-    expect(back).toHaveBeenCalledTimes(2);
-  });
-
-  it("a hand open starts a fresh flow: nothing rides on from a trip left by browser Back", () => {
-    at(TRIP);
-    const onTabChange = vi.fn();
-    const { rerender } = render(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    // Back out of the editor left the trip captured and the surface closed.
-    at("tab=training&training=plans");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    expect(overlay()).toHaveAttribute("data-block", "blk-7");
-
-    fireEvent.click(screen.getByRole("button", { name: "Apply program" }));
-    expect(overlay()).toHaveAttribute("data-block", "");
-    expect(push).toHaveBeenCalledWith("?tab=training&training=plans&apply=1", {
-      scroll: false,
-    });
-  });
-
-  // Journey's "edit plan" lands straight in the plan editor: no tray, no
-  // `?apply=1`, and the trip rides beside `?plan=`.
-  const PLAN_TRIP = "tab=training&training=plans&plan=plan-9&returnTo=journey&returnBlock=blk-7";
-
-  it("arrives in the plan editor, captures the block, and strips ONLY the return params", () => {
-    at(PLAN_TRIP);
-    render(<TrainingPlanBuilder client={client} />);
-
-    expect(planEditor()).toHaveAttribute("data-plan", "plan-9");
-    expect(overlay()).toHaveAttribute("data-block", "blk-7");
-    expect(replace).toHaveBeenCalledTimes(1);
-    expect(replace).toHaveBeenCalledWith("?tab=training&training=plans&plan=plan-9", {
-      scroll: false,
-    });
-    expect(push).not.toHaveBeenCalled();
-  });
-
-  it("a plan save completes the editor's entry as the Journey entry", () => {
-    coachHistory.current = true;
-    at(PLAN_TRIP);
-    const onTabChange = vi.fn();
-    const { rerender } = render(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    at("tab=training&training=plans&plan=plan-9");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "plan saved" }));
-    expect(onTabChange).toHaveBeenCalledTimes(1);
-    expect(onTabChange).toHaveBeenCalledWith(
-      "metrics",
-      { journey: "blocks", block: "blk-7" },
-      { replace: true }
-    );
-    expect(back).not.toHaveBeenCalled();
-    // The arrival's strip is the only replace here; the save is the tab change.
-    expect(replace).toHaveBeenCalledTimes(1);
-  });
-
-  it("the plan editor's arrow abandons the trip and pops: a later save pops onto the calendar", () => {
-    coachHistory.current = true;
-    at(PLAN_TRIP);
-    const onTabChange = vi.fn();
-    const { rerender } = render(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    at("tab=training&training=plans&plan=plan-9");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "plan arrow" }));
     expect(back).toHaveBeenCalledTimes(1);
-    expect(overlay()).toHaveAttribute("data-block", "");
-
-    // Forward re-enters the plan editor as a place; the flow is fresh.
-    fireEvent.click(screen.getByRole("button", { name: "plan saved" }));
     expect(onTabChange).not.toHaveBeenCalled();
-    expect(back).toHaveBeenCalledTimes(2);
   });
 
-  it("Edit plan starts a fresh flow: nothing rides on from a trip left by browser Back", () => {
+  it("a plan save from a Blocks pane link pops onto the calendar", () => {
     coachHistory.current = true;
-    at(TRIP);
+    at("tab=training&training=plans&plan=plan-9&returnTo=journey&returnBlock=blk-7");
     const onTabChange = vi.fn();
-    const { rerender } = render(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    // Back out of the tray left the trip captured and the surface closed.
-    at("tab=training&training=plans");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
-    expect(overlay()).toHaveAttribute("data-block", "blk-7");
+    render(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
+    expect(replace).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit plan" }));
-    expect(overlay()).toHaveAttribute("data-block", "");
-    expect(push).toHaveBeenCalledWith("?tab=training&training=plans&plan=plan-9", {
-      scroll: false,
-    });
-
-    at("tab=training&training=plans&plan=plan-9");
-    rerender(<TrainingPlanBuilder client={client} onTabChange={onTabChange} />);
     fireEvent.click(screen.getByRole("button", { name: "plan saved" }));
-    expect(onTabChange).not.toHaveBeenCalled();
     expect(back).toHaveBeenCalledTimes(1);
+    expect(onTabChange).not.toHaveBeenCalled();
   });
 });

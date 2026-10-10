@@ -44,13 +44,8 @@ type TrainingPlanBuilderOverlayProps = {
   // as the client editor, not the generic /dashboard/programs builder.
   clientName?: string;
   // Fires once the plan has landed on the client's calendar. This component
-  // reports the fact; the PARENT decides what happens next (Session 7.3's
-  // return trip to the Journey block the coach came from).
+  // reports the fact; the PARENT decides what happens next.
   onApplied?: () => void;
-  // That same block, preselected in the apply dialog's Block field. The parent
-  // captured it on arrival — the URL is stripped of the trip in the same
-  // effect — so it is threaded down rather than re-read.
-  preselectedBlockId?: string | null;
 };
 
 export function TrainingPlanBuilderOverlay({
@@ -61,7 +56,6 @@ export function TrainingPlanBuilderOverlay({
   onExitEditor,
   clientName,
   onApplied,
-  preselectedBlockId,
 }: TrainingPlanBuilderOverlayProps) {
   const builder = useTrainingBuilderContext();
   // The surface is open while either address is: the tray shows under no
@@ -137,7 +131,6 @@ export function TrainingPlanBuilderOverlay({
               clientId={builder.clientId}
               clientName={clientName}
               clientTimezone={builder.clientTimezone}
-              preselectedBlockId={preselectedBlockId ?? undefined}
               // The plan landed on the client's calendar (the apply dialog
               // refreshed what reads it); the parent completes the editor's
               // entry — not the back arrow, so the confirm-leave guard never

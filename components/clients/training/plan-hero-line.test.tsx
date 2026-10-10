@@ -11,7 +11,6 @@ const refresh = vi.hoisted(() => ({
   invalidateNutritionCalendar: vi.fn(),
   clearClientOverview: vi.fn(),
   clearAttentionFeed: vi.fn(),
-  clearBlockFacts: vi.fn(),
 }));
 vi.mock("@/hooks/use-calendar-events", () => ({
   useInvalidateTrainingData: () => refresh.invalidateTrainingData,
@@ -24,9 +23,6 @@ vi.mock("@/hooks/use-client-overview", () => ({
 }));
 vi.mock("@/hooks/use-attention-feed", () => ({
   useClearAttentionFeed: () => refresh.clearAttentionFeed,
-}));
-vi.mock("@/components/clients/metrics/hooks/use-client-blocks", () => ({
-  useClearBlockFacts: () => refresh.clearBlockFacts,
 }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
@@ -284,7 +280,6 @@ describe("PlanHeroLine", () => {
       expect(refresh.invalidateNutritionCalendar).toHaveBeenCalledWith(CLIENT);
       expect(refresh.clearClientOverview).toHaveBeenCalledWith(CLIENT);
       expect(refresh.clearAttentionFeed).toHaveBeenCalledTimes(1);
-      expect(refresh.clearBlockFacts).toHaveBeenCalledWith(CLIENT);
       expect(refresh.invalidateTrainingData).toHaveBeenCalledWith(CLIENT);
       // …and until the Training tab has refetched, the confirm stays, spinning.
       expect(screen.getByRole("dialog")).toBeInTheDocument();

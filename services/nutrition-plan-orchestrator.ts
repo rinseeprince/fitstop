@@ -140,9 +140,8 @@ export async function orchestrateNutritionPlanCreation(
   }
 
   // The placement's window. Its END is resolved here, once, the way a training
-  // program's is at placement — the block covering the start, else the furthest
-  // live program's end, else the fixed fallback — capped at the next queued
-  // version (migration 166). Both handlers hand it to the RPC, which stores it
+  // program's is at placement — the furthest live program's end, else the
+  // fixed fallback — capped at the next queued version (migration 166). Both handlers hand it to the RPC, which stores it
   // on the row; every day inside the window is then computed from the row, so
   // the window and the days it answers for are one thing by construction.
   const effectiveUntil = await resolveNutritionPlacementEnd(clientId, effectiveDate);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Calendar } from "lucide-react";
 import useSWR from "swr";
 import {
@@ -25,20 +25,10 @@ import {
 import { toast } from "sonner";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
-import { useClearTrainingPlan } from "@/hooks/use-training-plan";
+import { useClearTrainingPlan, useTrainingPlan } from "@/hooks/use-training-plan";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
-import {
-  useClearBlockFacts,
-  useClientBlocks,
-} from "@/components/clients/metrics/hooks/use-client-blocks";
-import { BlockStartPicker } from "@/components/clients/metrics/blocks/block-start-picker";
-import {
-  buildBlockStartOptions,
-  selectBlockStartOption,
-  NO_BLOCK_OPTION,
-} from "@/lib/blocks/block-start-options";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { format } from "date-fns";
 import {
@@ -66,11 +56,6 @@ type ApplyToClientDialogProps = {
   clientTimezone?: string;
   /** Name of the preselected client, for the sentence under the date field. */
   clientName?: string;
-  /** The Journey block the coach came from ("place one" on its card), or
-   *  null — preselected in the Block field, never a binding. Captured on
-   *  arrival by the host's `useJourneyRoundTrip` and threaded down, because
-   *  the URL is stripped of the trip in the same effect. */
-  preselectedBlockId?: string | null;
   onSuccess?: (clientId: string) => void;
 };
 
@@ -88,25 +73,19 @@ export function ApplyToClientDialog({
   preselectedClientId,
   clientTimezone,
   clientName,
-  preselectedBlockId = null,
   onSuccess,
 }: ApplyToClientDialogProps) {
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const invalidateTrainingData = useInvalidateTrainingData();
   const clearTrainingPlan = useClearTrainingPlan();
-  const clearBlockFacts = useClearBlockFacts();
   const clearGoalHistory = useClearClientGoalHistory();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
-  // The coach's own picks, null until they touch a field. The Block field's
-  // value and the date the field shows are DERIVED from them below — the block
-  // pick, else the block the coach came from, else the dash; a chosen block's
-  // first available day, else the date pick, else the floor — so the defaults
-  // follow the floor and the blocks as the payload lands instead of being reset
-  // by an effect (the nutrition builder's shape). An emptied date means the
-  // floor again.
-  const [blockPick, setBlockPick] = useState<string | null>(null);
+  // The coach's own date, null until they touch the field. The date the field
+  // shows is DERIVED from it below — the pick, else the floor — so the default
+  // follows the floor as the read lands instead of being reset by an effect
+  // (the nutrition builder's shape). An emptied date means the floor again.
   const [startDatePick, setStartDatePick] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -122,7 +101,6 @@ export function ApplyToClientDialog({
   useEffect(() => {
     if (open) {
       setClientId(preselectedClientId ?? "");
-      setBlockPick(null);
       setStartDatePick(null);
     }
   }, [open, preselectedClientId]);
@@ -156,29 +134,15 @@ export function ApplyToClientDialog({
   // The earliest day a program may START: the deletion floor — the client's
   // today, or tomorrow once they have logged a WORKOUT today (a meal moves
   // nothing; owner, 2026-09-11). A server answer (it reads the client's
-  // training log), so it rides the blocks payload beside the client's today
-  // and the blocks themselves; an empty client id fetches nothing. Until it
-  // lands the timezone-derived today stands in, and the server refuses a
-  // start before the floor either way.
-  const { blocks, clientToday: payloadToday, planStartFloor } = useClientBlocks(clientId);
+  // training log), so it rides the Training tab's plan read beside the
+  // client's today; an empty client id reads nothing. Until it lands the
+  // timezone-derived today stands in, and the server refuses a start before
+  // the floor either way.
+  const { clientToday: payloadToday, planStartFloor } = useTrainingPlan({ clientId });
   const startFloor = planStartFloor ?? clientLocalToday ?? deviceToday;
-  // The Block field over the date: the dash (no block) first, then the client's
-  // blocks whose end is on or after the floor. The coach's pick wins; with
-  // none, the block they came from is preselected — the whole point of "place
-  // one" is that they have already said which days they mean; else the dash.
-  // A chosen block FIXES the start on its first available day (the floor for a
-  // block already under way, never the day it began) and the date field is
-  // disabled: a plan placed in a block begins where the block does. With the
-  // dash the date is the coach's own, seeded at the floor — a coach placing a
+  // The date is the coach's own, seeded at the floor — a coach placing a
   // program almost always means now.
-  const blockOptions = useMemo(
-    () => buildBlockStartOptions(blocks, startFloor),
-    [blocks, startFloor]
-  );
-  const selectedBlock = selectBlockStartOption(blockOptions, blockPick, preselectedBlockId);
-  const fixedStart =
-    selectedBlock.value !== NO_BLOCK_OPTION ? selectedBlock.startsOn : null;
-  const startDate = fixedStart ?? startDatePick ?? startFloor;
+  const startDate = startDatePick ?? startFloor;
   // Why today is greyed out, when it is — said only once the payload says so.
   const loggedLine =
     planStartFloor && payloadToday && planStartFloor > payloadToday
@@ -234,10 +198,9 @@ export function ApplyToClientDialog({
       void invalidateNutritionCalendar(clientId);
       void invalidateTrainingData(clientId);
       void clearTrainingPlan(clientId);
-      // And the Journey block cards and goals table, which are DERIVED from the
-      // rows this just wrote — the area that owes an invalidator is the one
-      // that READS what you wrote, not the one you wrote (CONVENTIONS §7).
-      void clearBlockFacts(clientId);
+      // And the goals table, which is DERIVED from the rows this just wrote —
+      // the area that owes an invalidator is the one that READS what you
+      // wrote, not the one you wrote (CONVENTIONS §7).
       void clearGoalHistory(clientId);
       // And the Overview's cards and rows and the dashboard feed, which are
       // DERIVED from what this wrote — cleared, not revalidated, because they
@@ -288,30 +251,9 @@ export function ApplyToClientDialog({
             </div>
           )}
 
-          {/* Block. A chosen block fixes the start on its first available day
-              and greys the date field under it; the dash hands the date back to
-              the coach. The placement resolves its own window from the block
-              covering the start; this only starts the plan where the block the
-              coach means begins. */}
-          <div className="space-y-1.5">
-            <Label htmlFor="start-block">Block</Label>
-            <BlockStartPicker
-              id="start-block"
-              options={blockOptions}
-              value={selectedBlock.value}
-              onValueChange={(value) => {
-                setBlockPick(value);
-                // A block change discards a typed date: the dash then reads
-                // the floor again, not a day picked for a different block.
-                setStartDatePick(null);
-              }}
-            />
-          </div>
-
-          {/* Start date. Fixed and disabled while a block is chosen; the coach's
-              own with the dash, floored at the deletion floor — the server
-              refuses a start before it, and the sentence under the field says
-              why today is greyed. */}
+          {/* Start date. The coach's own, floored at the deletion floor — the
+              server refuses a start before it, and the sentence under the field
+              says why today is greyed. */}
           <div className="space-y-1.5">
             <Label htmlFor="start-date">Start Date</Label>
             <Input
@@ -319,7 +261,6 @@ export function ApplyToClientDialog({
               type="date"
               value={startDate}
               min={startFloor}
-              disabled={fixedStart != null}
               onChange={(e) => setStartDatePick(e.target.value || null)}
             />
             {loggedLine && (

@@ -240,6 +240,9 @@ All client API endpoints require authentication except where noted.
 - `GET /api/client/progress?days={30|60|90}` - Get progress data
 - Returns weight history, measurements, training consistency
 
+### Goal
+- `GET /api/client/goal` - The goal card on the Program tab: `{ goal }` (`ClientGoalWire`, `types/client-goal-wire.ts`), the goal in force on the client's today with that day's deadline, and the readings on its start day. `goal` is `{ weightKg, deadline, name, type, bodyFatPercentage, description, startReadings }`: `name` and `type` (`GoalType`, `lib/goals/goal-types.ts`) say what the goal is; `weightKg` (kilograms) and `bodyFatPercentage` (percent) are the goal's targets, a null `weightKg` meaning maintenance; `deadline` is YYYY-MM-DD or null; `description` is the goal's own words. `startReadings` is `{ weightKg, bodyFatPercentage }`, the client's reading of each on the goal's start day (the newest on or before it, else the first after it), which its progress runs from. Its progress runs to the newest readings, which are the profile's: `currentWeight` and `currentBodyFatPercentage` on `GET /api/client/me`. With no goal in force every field is null, `startReadings` included; a goal planned for a later day is not here before its day. Canonical kg, no unit tags. `no-store`
+
 ### Check-ins
 - `GET /api/client/check-ins?limit=20&offset=0` - Get check-in history
 - `POST /api/client/check-ins` - Submit new check-in

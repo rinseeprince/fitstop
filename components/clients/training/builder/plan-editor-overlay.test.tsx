@@ -22,7 +22,6 @@ const invalidateTrainingData = vi.fn(
 const invalidateNutritionCalendar = vi.fn();
 const clearClientOverview = vi.fn();
 const clearAttentionFeed = vi.fn();
-const clearBlockFacts = vi.fn();
 vi.mock("@/hooks/use-calendar-events", () => ({
   useInvalidateTrainingData: () => invalidateTrainingData,
 }));
@@ -34,9 +33,6 @@ vi.mock("@/hooks/use-client-overview", () => ({
 }));
 vi.mock("@/hooks/use-attention-feed", () => ({
   useClearAttentionFeed: () => clearAttentionFeed,
-}));
-vi.mock("@/components/clients/metrics/hooks/use-client-blocks", () => ({
-  useClearBlockFacts: () => clearBlockFacts,
 }));
 vi.mock("@/components/clients/training/program-builder/program-draft-provider", () => ({
   ProgramDraftProvider: ({
@@ -102,7 +98,6 @@ describe("PlanEditorOverlay", () => {
     expect(invalidateNutritionCalendar).toHaveBeenCalledWith("client-1");
     expect(clearClientOverview).toHaveBeenCalledWith("client-1");
     expect(clearAttentionFeed).toHaveBeenCalledTimes(1);
-    expect(clearBlockFacts).toHaveBeenCalledWith("client-1");
     // Still refetching: the host has not been told to close.
     expect(onSaved).not.toHaveBeenCalled();
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const { mockUseSWR, mutate } = vi.hoisted(() => ({ mockUseSWR: vi.fn(), mutate: vi.fn() }));
 vi.mock("swr", () => ({ default: mockUseSWR, useSWRConfig: () => ({ mutate }) }));
@@ -87,18 +87,28 @@ describe("the goals table read", () => {
 
 /**
  * The goals table lists, beside the goals, the programs placed, replaced or
- * ended and the nutrition versions during each — the rows the Journey's block
- * facts are computed from — and the habits added, changed, stopped or started
- * again. So every writer that clears the block facts clears the table too, and
- * so do every goal write made where the table is not on screen and every habit
- * write (CONVENTIONS §7 — the area that owes a clearer is the one that READS
- * what you wrote). Derived from the tree, so a writer added later without the
- * clearer fails here.
+ * ended and the nutrition versions during each, and the habits added,
+ * changed, stopped or started again. So every writer of a program's or a
+ * version's window clears the table, and so do every goal write made where
+ * the table is not on screen and every habit write (CONVENTIONS §7 — the area
+ * that owes a clearer is the one that READS what you wrote).
  */
 describe("every writer of what the goals table lists clears it", () => {
   const ROOT = join(__dirname, "..");
-  const SCAN_DIRS = ["app", "components", "hooks"];
-  const OWNERS = new Set(["components/clients/metrics/hooks/use-client-blocks.ts"]);
+  // Placement, the plan editor, a start moved, a program deleted, every
+  // program deleted, the drawer's save, the nutrition delete, and the Blocks
+  // pane's trims and deletes.
+  const PLAN_WRITERS = [
+    "components/training-library/apply-to-client-dialog.tsx",
+    "components/clients/training/calendar/training-calendar-view.tsx",
+    "components/clients/training/builder/plan-editor-overlay.tsx",
+    "components/clients/training/plan-hero-line.tsx",
+    "components/clients/training/training-plan-hero.tsx",
+    "components/clients/training/builder/training-builder-right-panel.tsx",
+    "hooks/use-nutrition-builder.ts",
+    "components/clients/nutrition/builder/nutrition-plan-builder.tsx",
+    "components/clients/metrics/blocks/blocks-subtab.tsx",
+  ];
   const GOAL_AND_HABIT_WRITERS = [
     "components/clients/goals/use-goal-writes.ts",
     // Sync metrics may set a first goal, from the intake review and its floating panel
@@ -117,40 +127,8 @@ describe("every writer of what the goals table lists clears it", () => {
     return new RegExp(`\\b${bound[1]}\\(`).test(source.slice(bound.index + bound[0].length));
   }
 
-  function walk(dir: string, out: string[]) {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) {
-        if (entry === "node_modules" || entry.startsWith(".")) continue;
-        walk(full, out);
-      } else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) {
-        out.push(full);
-      }
-    }
-  }
-
-  it("holds for every writer that clears the block facts, and the scan finds the writers it exists for", () => {
-    const files: string[] = [];
-    for (const dir of SCAN_DIRS) walk(join(ROOT, dir), files);
-
-    const writers: string[] = [];
-    const violations: string[] = [];
-    for (const file of files) {
-      const rel = relative(ROOT, file);
-      if (OWNERS.has(rel)) continue;
-      const source = readFileSync(file, "utf8");
-      if (!source.includes("useClearBlockFacts()")) continue;
-      writers.push(rel);
-      if (!callsTheClearer(source)) violations.push(rel);
-    }
-
-    // Placement, the plan editor, a start moved, a program deleted, every
-    // program deleted, the drawer's save, the nutrition delete, the blocks'
-    // trims and deletes: a scan matching fewer has lost its subject.
-    expect(writers).toContain("components/training-library/apply-to-client-dialog.tsx");
-    expect(writers).toContain("hooks/use-nutrition-builder.ts");
-    expect(writers.length).toBeGreaterThanOrEqual(8);
-    expect(violations).toEqual([]);
+  it.each(PLAN_WRITERS)("holds for the plan writer %s", (rel) => {
+    expect(callsTheClearer(readFileSync(join(ROOT, rel), "utf8"))).toBe(true);
   });
 
   it.each(GOAL_AND_HABIT_WRITERS)("holds for the goal and habit writer %s", (rel) => {

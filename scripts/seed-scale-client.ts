@@ -190,7 +190,6 @@ async function main() {
   const checkInRows = await insertCheckIns(args.months, rng);
   await insertMeasurements(checkInRows, startDate);
   await insertTrainingEvents(sessionIds, args.months);
-  await insertJourneyBlocks();
   // The check-ins are inserted directly, so each gets the copy a sent check-in
   // saves (migration 195) from the fill — what its review shows, once its
   // readings, workouts and targets are all in place — before anything reads it.
@@ -261,7 +260,6 @@ async function cleanExistingFixtures(fullReset: boolean) {
     await deleteGoal({ goalId: goal.id, clientId: c });
   }
   console.log(`  cleared client_goals (${goals.length})`);
-  await del("client_phases (journey blocks)", supabaseAdmin.from("client_phases").delete().eq("client_id", c));
   // The client's check-in form (migration 157). check_in_answers went with the
   // check_ins delete above (CASCADE); this is the form row and, through its own
   // CASCADEs, its fields and question rows. Cleared before the coach delete so
@@ -1091,61 +1089,6 @@ function weekIsMissed(weekStart: string, seed: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Journey blocks (migration 145)
-// ---------------------------------------------------------------------------
-
-/**
- * Four contiguous blocks tiling the client's 365-day tenure.
- *
- * Blocks were previously NOT seeded — the fixture carried three left over from
- * a manual Session 3 smoke, so any getBlockFacts measurement was unreproducible
- * and would drift the moment someone re-seeded. Each block starts the day after
- * the previous ends.
- *
- * The last block CONTAINS today, so the current/past/future derivation and the
- * client journey's `currentBlockNotes` — the save notes of the versions starting
- * in the current block, seeded on the version rows (migration 172) — both have
- * something real to resolve.
- */
-async function insertJourneyBlocks() {
-  console.log("Inserting journey blocks...");
-
-  const BLOCKS = 4;
-  const spanDays = 365;
-  const lengthDays = Math.floor(spanDays / BLOCKS); // 91
-  const names = ["Base", "Build", "Cut 1", "Cut 2"];
-  const focuses = [
-    "Rebuild the habit of showing up four times a week",
-    "Volume up while calories hold",
-    "Six weeks of a steeper deficit while training volume holds",
-    null,
-  ];
-
-  const blockRows = Array.from({ length: BLOCKS }, (_, i) => {
-    const startsOn = getDateDaysAgo(spanDays - i * lengthDays);
-    // The final block runs to the end of the tenure so it contains today.
-    const endsOn =
-      i === BLOCKS - 1
-        ? getDateDaysFrom(new Date(), 14)
-        : getDateDaysAgo(spanDays - (i + 1) * lengthDays + 1);
-    return {
-      id: `5ca1ec1e-0000-4000-8005-00000000000${i + 1}`,
-      client_id: PERF_CLIENT_ID,
-      name: names[i],
-      focus: focuses[i],
-      starts_on: startsOn,
-      ends_on: endsOn,
-    };
-  });
-
-  const { error: blockErr } = await supabaseAdmin
-    .from("client_phases")
-    .insert(blockRows);
-  if (blockErr) throw new Error(`client_phases insert failed: ${blockErr.message}`);
-  console.log(`  inserted ${blockRows.length} blocks`);
-}
 
 main().catch((err) => {
   console.error("Seed failed:", err);

@@ -8,7 +8,6 @@ import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
-import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 import { HEADER_EYEBROW_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { TextSkeleton } from "@/components/text-skeleton";
@@ -51,7 +50,6 @@ export function TrainingPlanHero({
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
-  const clearBlockFacts = useClearBlockFacts();
   const clearGoalHistory = useClearClientGoalHistory();
 
   // A running program ends yesterday and keeps its past; one that hasn't
@@ -66,15 +64,14 @@ export function TrainingPlanHero({
         toast.error("Delete failed", { description: body.error ?? DELETE_FAILED });
         return false;
       }
-      // Everything that reads the program: the Overview, the feed, the block
-      // card and the goals table render definite answers and are cleared; the
-      // nutrition month recomputes its training days. The Training tab's reads
+      // Everything that reads the program: the Overview, the feed and the goals
+      // table render definite answers and are cleared; the nutrition month
+      // recomputes its training days. The Training tab's reads
       // — the calendar and this hero's plan — revalidate in place, awaited, so
       // the confirm closes onto the hero without the program.
       void invalidateNutritionCalendar(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
-      void clearBlockFacts(clientId);
       void clearGoalHistory(clientId);
       await invalidateTrainingData(clientId);
       deleteDialog.close();

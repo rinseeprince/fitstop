@@ -5,19 +5,6 @@ vi.mock("@/services/client-service", () => ({
   getClientById: vi.fn(),
 }));
 
-vi.mock("@/services/client-blocks-service", async () => {
-  // As above: the route imports the class alone, and the real module loads
-  // supabase-admin. The sentence comes from the constant, never a copy of it.
-  const { BLOCKS_UNREADABLE } = await import("@/lib/constants");
-  return {
-    BlocksUnreadableError: class BlocksUnreadableError extends Error {
-      constructor() {
-        super(BLOCKS_UNREADABLE);
-      }
-    },
-  };
-});
-
 vi.mock("@/services/training-service", () => ({
   getTrainingPlanById: vi.fn(),
 }));
@@ -67,8 +54,6 @@ import {
 import { getClientTodayString } from "@/services/today-service";
 import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { PlacementSupersedeError } from "@/services/library-placement-service";
-import { BlocksUnreadableError } from "@/services/client-blocks-service";
-import { BLOCKS_UNREADABLE } from "@/lib/constants";
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import { POST } from "./route";
 
@@ -297,18 +282,6 @@ describe("the placement supersedes the earlier programs (migration 167)", () => 
 
     expect(res.status).toBe(500);
     expect(data.error).toMatch(/^The program is on the calendar/);
-  });
-
-  it("a blocks read that failed refuses the placement with its own sentence", async () => {
-    // Nothing is written: the window is resolved first, and a program laid
-    // without the block's end would run straight through the block.
-    vi.mocked(placePlanOnCalendar).mockRejectedValue(new BlocksUnreadableError());
-
-    const res = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15" });
-    const data = await res.json();
-
-    expect(res.status).toBe(503);
-    expect(data.error).toBe(BLOCKS_UNREADABLE);
   });
 });
 

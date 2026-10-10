@@ -340,8 +340,8 @@ export type NutritionEvent = {
   // on the day the version took effect and null on its other days. Never
   // returned by /api/client/** — every client route that reaches a day builds
   // a new object literal rather than spreading one, which is the only thing
-  // keeping it off that wire; the client reads it through
-  // GET /api/client/journey instead.
+  // keeping it off that wire. It is the coach's own note: no client screen
+  // shows it.
   coachNote: string | null;
   // Always "scheduled": a computed day has no lifecycle. Kept because the
   // coach calendar's edit gates read it.

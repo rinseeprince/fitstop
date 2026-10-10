@@ -19,8 +19,6 @@ import {
 import { useUnits } from "@/contexts/units-context";
 import { KG_PER_LB } from "@/utils/unit-conversions";
 import { formatDateOnlyShort } from "@/components/clients/overview/overview-format";
-import { BlockStartPicker } from "@/components/clients/metrics/blocks/block-start-picker";
-import type { BlockStartOption } from "@/lib/blocks/block-start-options";
 
 /**
  * FULLY CONTROLLED, deliberately. This form used to own a second copy of the
@@ -40,18 +38,8 @@ type NutritionSettingsFormProps = {
     proteinTargetGPerKg: number;
     dietType: DietType;
   }) => void;
-  /** The Block field: the dash (no block), then the client's blocks whose end
-   *  is on or after the client's today, each with its range; and the selected
-   *  one. Empty until the resolved inputs have loaded. */
-  blockOptions: readonly BlockStartOption[];
-  blockValue: string;
-  onBlockChange: (value: string) => void;
-  /** True while a block is chosen: the start is fixed on the block's first
-   *  available day and the date field is disabled. */
-  blockSelected: boolean;
-  /** The day the plan takes effect — a chosen block's first available day,
-   *  else the coach's pick, else the client's today. Null until the resolved
-   *  inputs have loaded. */
+  /** The day the plan takes effect — the coach's pick, else the client's
+   *  today. Null until the resolved inputs have loaded. */
   effectiveFrom: string | null;
   /** The client's today: on the client's calendar, the same day the server's
    *  past-date belt judges — and the field's floor, the earliest day targets
@@ -76,10 +64,6 @@ export function NutritionSettingsForm({
   proteinTargetGPerKg,
   dietType,
   onSettingsChange,
-  blockOptions,
-  blockValue,
-  onBlockChange,
-  blockSelected,
   effectiveFrom,
   clientToday,
   queuedChangeDate,
@@ -186,31 +170,12 @@ export function NutritionSettingsForm({
         </p>
       </div>
 
-      {/* Block. A chosen block fixes the start on its first available day and
-          greys the date field under it; the dash hands the date back to the
-          coach. The save resolves its own window from the block covering the
-          start; this only starts the version where the block the coach means
-          begins. */}
-      <div className="space-y-1.5">
-        <label htmlFor="start-block" className={SECTION_LABEL_CLASS}>
-          Block
-        </label>
-        <BlockStartPicker
-          id="start-block"
-          options={blockOptions}
-          value={blockValue}
-          onValueChange={onBlockChange}
-          triggerClassName={selectTriggerClass}
-          itemClassName={selectItemClass}
-        />
-      </div>
-
       {/* Starts on. The window the deficit is spread over begins here, in the
           preview and in the save alike (docs/MEASUREMENT-LOG-PLAN.md commit
-          8bb). Fixed and disabled while a block is chosen; the coach's own with
-          the dash, floored at the client's today — the server refuses a past
-          start, and nothing else bounds it: a today the client has already
-          logged is the coach's to replace, and the save re-records their log. */}
+          8bb). The coach's own, floored at the client's today — the server
+          refuses a past start, and nothing else bounds it: a today the client
+          has already logged is the coach's to replace, and the save re-records
+          their log. */}
       <div className="space-y-1.5">
         <label htmlFor="starts-on" className={SECTION_LABEL_CLASS}>
           Starts on
@@ -220,7 +185,6 @@ export function NutritionSettingsForm({
           type="date"
           value={effectiveFrom ?? ""}
           min={clientToday ?? undefined}
-          disabled={blockSelected}
           onChange={(e) => onEffectiveFromChange(e.target.value)}
           className={cn(MONO, FOCUS_RING, "h-10 bg-white")}
         />

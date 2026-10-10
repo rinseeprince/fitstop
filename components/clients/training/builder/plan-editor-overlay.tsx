@@ -8,7 +8,6 @@ import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
-import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientGoalHistory } from "@/hooks/use-client-goals";
 
 // The plan editor: the SHARED Program builder mounted full-screen over one of
@@ -40,7 +39,6 @@ export function PlanEditorOverlay({
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
-  const clearBlockFacts = useClearBlockFacts();
   const clearGoalHistory = useClearClientGoalHistory();
 
   return (
@@ -87,9 +85,7 @@ export function PlanEditorOverlay({
                 void invalidateNutritionCalendar(clientId);
                 void clearClientOverview(clientId);
                 void clearAttentionFeed();
-                // The Journey block cards and goals table are derived from
-                // the plan's window.
-                void clearBlockFacts(clientId);
+                // The goals table is derived from the plan's window.
                 void clearGoalHistory(clientId);
                 await invalidateTrainingData(clientId);
                 onSaved();

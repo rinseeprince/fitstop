@@ -20,9 +20,8 @@ import {
   type QueryRecord,
 } from "./perf-baseline-wrapper";
 import { PERF_CLIENT_ID } from "./perf-fixtures";
-import { getBlockFacts } from "@/services/client-blocks-facts-service";
 import { getClientTodayString } from "@/services/today-service";
-import { getClientJourney } from "@/services/client-journey-service";
+import { getClientGoalWire } from "@/services/client-goal-wire-service";
 
 import {
   getClientExerciseList,
@@ -109,27 +108,16 @@ async function main() {
     () => getClientProgressData(PERF_CLIENT_ID, 90),
   ));
 
-  // Session 6: the block-facts fan-out and the paged plan-notes read. Both are
-  // whole-span reads whose cost must be bounded by the RESULT, not by how long
-  // the client has been coached.
   // The route resolves the client's day before the service runs; resolved
   // here the same way, outside the timed call, so the measurement is the
-  // fan-out alone.
+  // service alone.
   const perfClientToday = await getClientTodayString(PERF_CLIENT_ID);
   baselines.push(await measure(
-    "getBlockFacts (3-way fan-out)",
-    "services/client-blocks-facts-service.ts",
-    `getBlockFacts(PERF_CLIENT_ID, clientToday)`,
-    () => getBlockFacts(PERF_CLIENT_ID, perfClientToday),
-    "The blocks, then two parallel reads over the whole journey span, partitioned per block in memory — round trips are constant in the number of blocks, never per-block.",
-  ));
-
-  baselines.push(await measure(
-    "getClientJourney",
-    "services/client-journey-service.ts",
-    `getClientJourney(PERF_CLIENT_ID, today)`,
-    () => getClientJourney(PERF_CLIENT_ID, getTodayDateString()),
-    "Client Program tab. Reads only the CURRENT block's note window — elapsed blocks' notes never leave the DB.",
+    "getClientGoalWire",
+    "services/client-goal-wire-service.ts",
+    `getClientGoalWire(PERF_CLIENT_ID, clientToday)`,
+    () => getClientGoalWire(PERF_CLIENT_ID, perfClientToday),
+    "Client Program tab's goal card: the goal in force, then the readings on its start day in one round trip.",
   ));
 
   baselines.push(await measure(
@@ -211,7 +199,6 @@ type FixtureCounts = {
   check_ins: number;
   client_habit_logs: number;
   client_measurements: number;
-  client_phases: number;
 };
 
 async function fetchFixtureCounts(): Promise<FixtureCounts> {
@@ -225,7 +212,6 @@ async function fetchFixtureCounts(): Promise<FixtureCounts> {
     check_ins: 0,
     client_habit_logs: 0,
     client_measurements: 0,
-    client_phases: 0,
   };
   const c = String(PERF_CLIENT_ID);
 
@@ -238,7 +224,6 @@ async function fetchFixtureCounts(): Promise<FixtureCounts> {
     ["check_ins", supabaseAdmin.from("check_ins").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["client_habit_logs", supabaseAdmin.from("client_habit_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["client_measurements", supabaseAdmin.from("client_measurements_live").select("id", { count: "exact", head: true }).eq("client_id", c)],
-    ["client_phases", supabaseAdmin.from("client_phases").select("id", { count: "exact", head: true }).eq("client_id", c)],
   ] as const;
 
   for (const [name, q] of queries) {
@@ -289,7 +274,6 @@ function buildMarkdown(baselines: FunctionBaseline[], fixtures: FixtureCounts): 
   lines.push(`| check_ins | ${fixtures.check_ins} |`);
   lines.push(`| client_habit_logs | ${fixtures.client_habit_logs} |`);
   lines.push(`| client_measurements | ${fixtures.client_measurements} |`);
-  lines.push(`| client_phases (journey blocks) | ${fixtures.client_phases} |`);
   lines.push("");
   lines.push(`Reproduce: \`npx tsx scripts/seed-scale-client.ts\` then \`npx tsx scripts/perf-baseline.ts\`.`);
   lines.push("");

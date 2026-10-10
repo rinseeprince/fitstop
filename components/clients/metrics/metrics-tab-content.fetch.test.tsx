@@ -180,11 +180,7 @@ describe("MetricsTabContent — each pane requests only its own reads", () => {
   const PANES: [string, string[]][] = [
     [
       "body",
-      [
-        `/api/clients/${CLIENT_ID}/blocks`,
-        `/api/clients/${CLIENT_ID}/goals`,
-        `/api/clients/${CLIENT_ID}/measurement-series`,
-      ],
+      [`/api/clients/${CLIENT_ID}/goals`, `/api/clients/${CLIENT_ID}/measurement-series`],
     ],
     [
       "goals",
@@ -194,7 +190,7 @@ describe("MetricsTabContent — each pane requests only its own reads", () => {
         `/api/clients/${CLIENT_ID}/measurement-series`,
       ],
     ],
-    ["wellness", [`/api/clients/${CLIENT_ID}/blocks`, `/api/clients/${CLIENT_ID}/wellness-series`]],
+    ["wellness", [`/api/clients/${CLIENT_ID}/wellness-series`]],
     ["training", [`/api/clients/${CLIENT_ID}/training/exercise-history?metric=list`]],
     ["blocks", [`/api/clients/${CLIENT_ID}/blocks`, `/api/clients/${CLIENT_ID}/blocks/facts`]],
   ];

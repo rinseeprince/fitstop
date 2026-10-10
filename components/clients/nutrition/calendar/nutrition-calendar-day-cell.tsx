@@ -157,12 +157,9 @@ function NoteButton({
 }) {
   const [open, setOpen] = useState(false);
 
-  // "Plan change", not "Your note": this is the version's save note
-  // (nutrition_plans.coach_note), which the client reads on their Program tab,
-  // so calling it the coach's own note would be false. The label states the
-  // KIND and stops there — a visibility claim on this one cannot be made
-  // truthfully in a word, because the client sees it only while the journey
-  // block containing it is current.
+  // "Plan change": this is the version's save note (nutrition_plans.coach_note),
+  // the coach's own — no client screen shows it. The label states the KIND, so
+  // it reads apart from the day note beside it, which the client does see.
   const label = coachNote
     ? clientNote
       ? "A plan change note and a note shown to the client"

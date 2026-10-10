@@ -3,13 +3,13 @@
 import useSWR from "swr";
 
 import { GoalCard } from "@/components/client-portal/program/goal-card";
-import { JourneySection } from "@/components/client-portal/program/journey-section";
 import { NutritionPlanCard } from "@/components/client-portal/program/nutrition-plan-card";
 import { TrainingPlanCard } from "@/components/client-portal/program/training-plan-card";
 import { TrainingWeekLayout } from "@/components/client-portal/program/training-week-layout";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useClientProfile } from "@/hooks/use-client-profile";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import type { ClientJourney } from "@/types/client-journey";
+import type { ClientGoalWire } from "@/types/client-goal-wire";
 import type { ClientTrainingPlan } from "@/types/client-training-plan";
 import type { NutritionTargets } from "@/services/client-portal-service";
 
@@ -21,9 +21,9 @@ type NutritionPlanResponse = {
   success: boolean;
   data: NutritionTargets | null;
 };
-type JourneyResponse = {
+type GoalResponse = {
   success: boolean;
-  data: ClientJourney | null;
+  data: ClientGoalWire | null;
 };
 
 function ProgramSkeleton() {
@@ -65,6 +65,10 @@ function EmptyProgram() {
 }
 
 export default function ProgramPage() {
+  // The newest readings the goal card's progress runs to. The layout renders
+  // this page only once the profile has loaded, under the same key, so this
+  // reads the cache.
+  const { client } = useClientProfile();
   const {
     data: trainingPlanData,
     error: trainingPlanError,
@@ -96,12 +100,12 @@ export default function ProgramPage() {
   );
 
   const {
-    data: journeyData,
-    error: journeyError,
-    isLoading: journeyLoading,
-    mutate: mutateJourney,
-  } = useSWR<JourneyResponse>(
-    "/api/client/journey",
+    data: goalData,
+    error: goalError,
+    isLoading: goalLoading,
+    mutate: mutateGoal,
+  } = useSWR<GoalResponse>(
+    "/api/client/goal",
     swrFetcher,
     {
       revalidateOnFocus: false,
@@ -116,7 +120,7 @@ export default function ProgramPage() {
         onRetry={() => {
           void mutateTrainingPlan();
           void mutateNutritionPlan();
-          void mutateJourney();
+          void mutateGoal();
         }}
       />
     );
@@ -125,19 +129,26 @@ export default function ProgramPage() {
   const loading =
     (trainingPlanLoading && !trainingPlanData) ||
     (nutritionPlanLoading && !nutritionPlanData) ||
-    (journeyLoading && !journeyData);
+    (goalLoading && !goalData);
   if (loading) return <ProgramSkeleton />;
 
   const trainingPlan = trainingPlanData?.data ?? null;
   const nutritionPlan = nutritionPlanData?.data ?? null;
-  // A journey fetch failure only drops the goal and the blocks (the page's
-  // per-card error posture); the plan cards below stay useful.
-  const journey = !journeyError ? (journeyData?.data ?? null) : null;
+  // A goal fetch failure only drops the goal card (the page's per-card error
+  // posture); the plan cards below stay useful.
+  const goal = !goalError ? (goalData?.data?.goal ?? null) : null;
 
   return (
     <div className="flex flex-col gap-2 pb-6">
-      {journey && <GoalCard goal={journey.goal} />}
-      {journey && <JourneySection journey={journey} />}
+      {goal && (
+        <GoalCard
+          goal={goal}
+          current={{
+            weightKg: client?.currentWeight ?? null,
+            bodyFatPercentage: client?.currentBodyFatPercentage ?? null,
+          }}
+        />
+      )}
       {!trainingPlan && !nutritionPlan ? (
         <EmptyProgram />
       ) : (

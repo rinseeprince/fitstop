@@ -34,7 +34,9 @@ function loadErrorMessage(error: unknown): string {
 }
 
 /**
- * Reads a client's active training plan for the coach-side Training tab.
+ * Reads a client's active training plan for the coach-side Training tab. The
+ * apply dialog reads it too, for the floor its start date takes; with no client
+ * chosen yet (an empty id) it reads nothing.
  *
  * Read-only: authoring lives in the Programs builder (`ProgramDraftProvider`),
  * and a plan reaches a client's calendar through placement, not through here.
@@ -45,7 +47,7 @@ function loadErrorMessage(error: unknown): string {
  */
 export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
   const { data, error, mutate } = useSWR<GetPlanApiResponse>(
-    trainingPlanKey(clientId),
+    clientId ? trainingPlanKey(clientId) : null,
     fetchTrainingPlan,
     {
       revalidateOnFocus: false,

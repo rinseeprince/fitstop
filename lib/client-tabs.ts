@@ -27,8 +27,8 @@ export type ClientTab = (typeof CLIENT_TABS)[number]["value"]
  * pane on the return trip. Carrying one is always safe: only its own tab reads
  * it, so a value belonging to a tab you are not on is inert.
  *
- * `extraParams` ADDRESSES a pane on arrival (the Overview's block-ending row
- * sends `{ journey: "blocks" }`): each entry is set after the tab, overriding
+ * `extraParams` ADDRESSES a pane on arrival (the Overview's goal history
+ * sends `{ journey: "goals" }`): each entry is set after the tab, overriding
  * any carried value. Only single-owner params belong here — setting `subtab`
  * through it would reintroduce the cross-tab guard bug this function exists
  * to prevent. A `null` value DELETES the key: the whole query is carried, so
@@ -128,35 +128,33 @@ export function paneParamSearch(
 }
 
 // ---------------------------------------------------------------------------
-// The Journey ⇄ setup-surface round trip (Session 7.3 / 7.4)
+// Arrivals that open a setup surface
 //
-// A Journey block's Training or Nutrition fact IS the way in — unset ("place
-// one" / "set targets", which open the apply tray and the nutrition drawer)
-// or set (a running or planned program's "edit plan", which opens the plan
-// editor on it; an ended one's "update plan", which opens the apply tray;
-// "update targets", which opens the drawer): one click lands on the owning
-// tab with its surface already open, and a successful save lands back on the
-// block it came from, expanded.
+// The Overview opens the nutrition drawer on the Plans pane ("Set nutrition
+// from 19 Oct", "Regenerate"): `?edit=1`, and the day it should start on. The
+// drawer captures both on arrival and strips them (`useNutritionDrawerTrip`),
+// because the whole query is carried across every tab change and a lingering
+// open-param re-opens the drawer on every return to the tab. A save stays on
+// the tab it was made on.
 //
-// The return params are ONE-SHOT: the surface captures the block on arrival
-// and strips them (`useJourneyRoundTrip` on the nutrition drawer, which also
-// consumes its `?edit=1`; `useJourneyReturnBlock` on the apply tray and the
-// plan editor, whose `?apply=1` / `?plan=` are their addresses and stay),
-// because the whole query is carried across every tab change and a `returnTo`
-// left riding would bounce a LATER, unrelated save back to Journey.
+// The Journey's Blocks pane links to the setup surfaces too: the apply tray
+// (`?apply=1`), the drawer (`?edit=1`) and the plan editor (`?plan=`). Its
+// links still carry `returnTo` / `returnBlock`, which nothing reads.
 // ---------------------------------------------------------------------------
 
-/** Which surface the trip opens. The value IS the URL param name. */
-export type JourneyTripSurface = "apply" | "edit"
+/** Which surface a Blocks pane link opens. The value IS the URL param name. */
+type JourneyTripSurface = "apply" | "edit"
 
 const RETURN_TO = "returnTo"
 const RETURN_BLOCK = "returnBlock"
 const RETURN_TO_JOURNEY = "journey"
+/** The nutrition drawer's one-shot open param. */
+const NUTRITION_DRAWER = "edit"
 /** The day the nutrition drawer should start on, riding one-shot on `?edit=1`. */
 const STARTS_ON = "startsOn"
 
-/** Journey → a setup surface, already open, knowing the way back. Spread it
- *  beside the destination pane: `{ training: "plans", ...journeyTripParams(…) }`. */
+/** The Blocks pane → a setup surface, already open. Spread it beside the
+ *  destination pane: `{ training: "plans", ...journeyTripParams(…) }`. */
 export function journeyTripParams(
   surface: JourneyTripSurface,
   blockId: string
@@ -168,8 +166,8 @@ export function journeyTripParams(
   }
 }
 
-/** Journey → the plan editor on one of the block's programs, knowing the way
- *  back. Spread it beside the destination pane:
+/** The Blocks pane → the plan editor on one of the block's programs. Spread it
+ *  beside the destination pane:
  *  `{ training: "plans", ...journeyPlanTripParams(planId, blockId) }`. */
 export function journeyPlanTripParams(
   planId: string,
@@ -185,60 +183,30 @@ export function journeyPlanTripParams(
 /**
  * The Overview → the nutrition drawer, open on the Plans pane — from a day when
  * `startsOn` is given ("Set nutrition from 19 Oct"), else from the client's
- * today ("Regenerate"). No return target: a save stays on the Nutrition tab.
+ * today ("Regenerate"). A save stays on the Nutrition tab.
  */
 export function nutritionDrawerParams(startsOn?: string): Record<string, string> {
   return {
     nutrition: "plans",
-    edit: "1",
+    [NUTRITION_DRAWER]: "1",
     ...(startsOn ? { [STARTS_ON]: startsOn } : {}),
   }
 }
 
-/** A setup surface → back to the block it came from, expanded. */
-export function journeyReturnParams(blockId: string): Record<string, string> {
-  return { journey: "blocks", block: blockId }
-}
-
-/** The block a Journey trip names, or null when the URL carries none. */
-export function readJourneyReturnBlock(search: URLSearchParams): string | null {
-  return search.get(RETURN_TO) === RETURN_TO_JOURNEY ? search.get(RETURN_BLOCK) : null
-}
-
-/** What a surface should do with the URL it just received. `returnBlockId` is
- *  null for a surface opened any other way, so an ordinary save never bounces;
- *  `startsOn` is the day an arrival asked the drawer to start on, when it is a
- *  well-formed day. */
-export function readJourneyTrip(
-  search: URLSearchParams,
-  surface: JourneyTripSurface
-): { open: boolean; returnBlockId: string | null; startsOn: string | null } {
-  if (search.get(surface) !== "1") return { open: false, returnBlockId: null, startsOn: null }
+/** Whether the URL the Nutrition tab just received opens the drawer, and the
+ *  day it asks the drawer to start on, when that is a well-formed day. */
+export function readNutritionDrawerTrip(
+  search: URLSearchParams
+): { open: boolean; startsOn: string | null } {
+  if (search.get(NUTRITION_DRAWER) !== "1") return { open: false, startsOn: null }
   const startsOn = search.get(STARTS_ON)
-  return {
-    open: true,
-    returnBlockId: readJourneyReturnBlock(search),
-    startsOn: startsOn && isCalendarDay(startsOn) ? startsOn : null,
-  }
+  return { open: true, startsOn: startsOn && isCalendarDay(startsOn) ? startsOn : null }
 }
 
-/** The same query with the one-shot trip params removed. */
-export function stripJourneyTrip(
-  currentSearch: string,
-  surface: JourneyTripSurface
-): string {
-  const params = new URLSearchParams(stripJourneyReturn(currentSearch))
-  params.delete(surface)
+/** The same query with the drawer's one-shot params removed. */
+export function stripNutritionDrawerTrip(currentSearch: string): string {
+  const params = new URLSearchParams(currentSearch)
+  params.delete(NUTRITION_DRAWER)
   params.delete(STARTS_ON)
   return params.toString()
 }
-
-/** The same query with the return params alone removed — the apply tray's
- *  strip: `?apply=1` is the tray's address and stays. */
-export function stripJourneyReturn(currentSearch: string): string {
-  const params = new URLSearchParams(currentSearch)
-  params.delete(RETURN_TO)
-  params.delete(RETURN_BLOCK)
-  return params.toString()
-}
-

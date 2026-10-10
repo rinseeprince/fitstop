@@ -16,8 +16,8 @@ const mockUsePlanEdit = vi.mocked(usePlanEdit);
 type PlanEditResponse = { success: boolean; data: PlanForEditing };
 
 /** A one-week plan from 2026-07-15; today (07-17) is its first editable day
- *  and its block ends on its last day. Day 3 (07-17) holds a morning and an
- *  evening session. */
+ *  and the next program starts the day after its last day. Day 3 (07-17)
+ *  holds a morning and an evening session. */
 function makeRead(version: string, planName = "PPL Block"): PlanForEditing {
   return {
     plan: {
@@ -29,7 +29,7 @@ function makeRead(version: string, planName = "PPL Block"): PlanForEditing {
     },
     clientToday: "2026-07-17",
     firstEditableDate: "2026-07-17",
-    limit: { endsOn: "2026-07-21", source: "block" },
+    limit: { endsOn: "2026-07-21", source: "next_plan" },
     days: Array.from({ length: 7 }, (_, i) => ({
       date: `2026-07-${15 + i}`,
       sessions:
@@ -121,7 +121,7 @@ describe("usePlacedPlanSource", () => {
     expect(view.result.current).toMatchObject({
       editableDays: { from: 2, through: 6 },
       todayPosition: 2,
-      limit: { endsOn: "2026-07-21", source: "block" },
+      limit: { endsOn: "2026-07-21", source: "next_plan" },
       version: "v-1",
     });
 
