@@ -240,7 +240,9 @@ Every consumer outside the blocks' own folder stops depending on them, with the 
 **How every commit runs.** Paste the prompt into a fresh session; it builds without a plan review and stops only for
 the reasons it names. Read CONVENTIONS.md whole, this plan's head, §2's subsection for the commit, §3, §5 and the
 entry. Delete, never comment out. A deleted file's test goes with it; a surviving file's test is rewritten to the new
-shape. Nothing is added to `knip.json`'s ignore list. Migrations: `npx supabase db push --dry-run --linked`, then the
+shape. Nothing is added to `knip.json`'s ignore list. A deleted route's rows leave `scripts/perf-routes.ts` with it,
+its baseline among them (`scripts/perf-routes.test.ts` fails on a row whose handler is gone), and `npm run check:perf`
+runs with the other gates (CONVENTIONS §13). Migrations: `npx supabase db push --dry-run --linked`, then the
 push once, on DEV; `check:rls` after. Commit directly to main (this plan file included), replace the entry's STATUS
 with SHIPPED, the hash and the date, and hand over in plain words.
 

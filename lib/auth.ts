@@ -18,6 +18,7 @@ import {
 } from "@/lib/constants"
 import { captureApiError } from "@/lib/error-handler"
 import { landsOnSetPassword } from "@/lib/password-link"
+import { countPoolQueries } from "@/lib/perf/db-calls"
 import { supabaseConnection } from "@/lib/supabase-connection"
 import type * as AccountService from "@/services/account-service"
 import type * as AuthEmailService from "@/services/auth-email-service"
@@ -90,6 +91,9 @@ export const authPool = new Pool({
 // A connection the pooler drops while idle is reported, not thrown: with no
 // listener, pg-pool's "error" event would take the process down.
 authPool.on("error", (error) => captureApiError(error, { source: "Better Auth's database pool" }))
+// PERF_COUNT=1 in the Next server prints every statement Better Auth sends
+// (CONVENTIONS §14 "Request budgets"); unset, it changes nothing.
+countPoolQueries(authPool)
 
 /** The admin plugin's create-user endpoint: the one path that may make a login (D9). */
 const CREATE_USER_PATH = "/admin/create-user"

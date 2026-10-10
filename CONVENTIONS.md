@@ -493,7 +493,9 @@
   params `DEFAULT NULL` + `COALESCE` in the body; `GRANT EXECUTE … TO service_role`), or the
   plan states exactly what is left inconsistent when the second write fails (§2 item 13).
   A normalised model that is written non-transactionally has traded one class of corruption
-  for another.
+  for another. No script tells one statement from several, so the check is the review that a
+  new or changed write path triggers (§2 "Security, load & performance review", items 8 and
+  13). `[gate: review]`
 
   **In every plan, the data model is a decision, not a detail.** State the proposed tables,
   the alternatives considered (including the tempting column-on-the-parent one), and why the
@@ -527,6 +529,7 @@
   - **Services that read or write user-owned data MUST accept an explicit scope parameter** (usually `clientId`, sometimes `coachId` for coach-owned resources). No service function reads client-owned data without being told whose data to read.
   - **Services MUST filter on the provided scope.** `.eq('client_id', clientId)` (or the equivalent join constraint for nested entities). A service that accepts `clientId` but doesn't filter on it is a data leak waiting to happen.
   - **Services trust their callers.** The route layer is responsible for proving that the `clientId` passed in is one the authed principal is allowed to access. Services do not re-verify (that would be the auth check moving into the wrong layer and creating circular dependencies).
+  - **The route resolves the request's client once and hands it down.** A client's row, its today and its week anchor are read once per request, by the route (`getClientById`, `getClientTodayString` or `getCoachTodayString`, `getClientWeekAnchor`), and passed to every service the route calls. A service handed a client takes `today`, the anchor or the row from its caller and never resolves them itself: no module under `services/` but their own imports those four. `[gate: check:perf B]`
   - **Never pass a user-provided `clientId` straight to a service.** The route takes `clientId` from the URL path (or request body) and MUST run an ownership check against the authed principal before handing it to a service. See the IDOR chain in step 4 above.
   - **Cross-user reads are legitimate.** Coach dashboard reads aggregate across all of a coach's clients; attention feed, library browsing, etc. These pass `coachId` to services that fan out; the service filters on `coach_id` rather than `client_id`. Same rule: caller-verified scope, service filters on it.
 
@@ -852,6 +855,7 @@
      statically prerendered coach page loses its structural chrome or `/clients`'s prerender claims a
      view (ARCHITECTURE → "Coach route group"). Not triggered by ordinary component/data changes.
   9. `npx knip` - exits clean. Vendored `components/ui/**`, the generated `types/database.ts` and the packages imported only from CSS are configured away in `knip.json`, so anything the report lists is the sweep's work list, not noise to read past.
+  10. `npm run check:perf` - the request rules hold (§8 "The route resolves the request's client once", §14 "Request budgets"): no file holds more whole-row selects (A), context resolvers imported by a service (B) or whole-and-sliced route reads (C) than `scripts/check-perf-baseline.json` gives it. A fix lowers the baseline with `npm run check:perf -- --write`.
 
   ## 14. Performance
   - Database queries: Indexes on foreign keys, frequently queried fields. Index *with* the query — add the keyset index alongside the read it serves (see §8 "Client read scaling").
@@ -859,6 +863,24 @@
   - Images: Optimize/compress before upload, use WebP
   - Caching: Redis (Upstash) for rate limiting and the 60-second `user_id → client_id` auth-resolution cache (`lib/auth-cache.ts`). Any other cache needs an explicit request (§2 "Scope discipline").
   - Lazy loading / infinite scroll: a **web-render** concern. The client web app is a throwaway test harness (the real client is React Native), so web-render perf — lazy-mount, memoization, virtualization, chart animations — is explicitly **out of scope** for the client portal; invest scale work in the data/API/DB layer instead. (Coach-side web perf is unaffected by this note.)
+
+  ### Request budgets
+
+  Every API route has a budget in database calls, counted after auth: from the end of the request's last Better Auth session read, so the proxy's reads and the session reads are not in it.
+
+  | What | Budget |
+  |---|---|
+  | A GET route | ≤ 6 database calls, ≤ 3 of them one after another |
+  | A write route | ≤ 3 reads + 1 RPC (or 1 statement) |
+  | A page's first paint, app routes only, chrome excluded | no more requests than before the change, each within its route's budget |
+  | A route's JSON body | ≤ 50 kB, except the plan editor's read (`GET /api/clients/[id]/training/[planId]/edit`) and the builder's template read (`GET /api/training/saved-plans/[savedPlanId]`) |
+
+  - **A route over budget does not ship.** `scripts/perf-routes.ts` holds every route under `app/api/clients/**`, `app/api/client/**`, `app/api/check-in/**`, `app/api/check-ins/**`, `app/api/training/**` and `app/api/content/**` (its test fails on a route without a row), each with its budget and, for a read, the count measured last. `npx tsx scripts/perf-count.ts` measures every read against DEV, and `--enforce` fails on one over budget. A save is not requested there, since it would change the fixture: its count is the proof server's `[db]` lines while its proof drives it. No script opens a page, so the first-paint row is checked in review. `[gate: check:perf E]`
+  - **A read returns what the screen renders.** A query names the columns its caller reads. Under `services/` and `app/api/` there is no `select("*")`, nor a select list that starts with `*`, held in a constant or not, unless the row goes to a screen whole; then its file is in `scripts/check-perf-allowlist.ts` with the reason. `[gate: check:perf A]`
+  - **Anything that can exceed one page is paged in the database** (keyset, §8 "Client read scaling"), never read whole and sliced: a route neither slices a full read by `offset` or `from` nor reads every page with `fetchAllPages`. A dictionary synced whole (§8 "Dictionaries sync via their own delta endpoint") is the one read returned whole. `[gate: check:perf C]`
+  - **An area's reads are narrow, and a save seeds its own key.** §7's invalidators refetch every read in an area, so each read inside an area returns what its screen renders and no more, within the body budget above. `[gate: check:perf E]` A save whose answer carries the new state seeds that state into its own key (`mutate(key, data, { revalidate: false })`), and the area's refresh leaves that key alone: one request for the save, none to read back what it answered. `[gate: review]`
+
+  **The counter.** With `PERF_COUNT=1` (in `.env.local`, and always in the proof server, `scripts/proof-server.ts`), `next dev` prints a `[db]` line for every database call, each `supabaseAdmin` query and function call and each statement Better Auth sends, and a `[db-burst]` line for each burst: its calls, how many ran one after another, and how long it took (`lib/perf/db-calls.ts`). Without it, and anywhere outside the Next server (production, the tests, the scripts), nothing is patched, and nothing about the database ever reaches a response.
 
   ## 15. Documentation
   - API endpoints: Request/response examples, error codes
@@ -892,7 +914,7 @@
 
   ## 19. Configuration
   - .env files: .env.local
-  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` with the optional `AUTH_ADMIN_USER_IDS`, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (Continue with Google; all six at their read site in `lib/auth.ts`), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY` with the optional `EMAIL_FROM` (the sender, at its read site in `services/email-service.ts`), `NEXT_PUBLIC_APP_URL`, and `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`. If you create `.env.example`, backfill it from those.
+  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` with the optional `AUTH_ADMIN_USER_IDS`, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (Continue with Google; all six at their read site in `lib/auth.ts`), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY` with the optional `EMAIL_FROM` (the sender, at its read site in `services/email-service.ts`), `NEXT_PUBLIC_APP_URL`, `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`, and the optional `PERF_COUNT`, the dev-only database-call counter (§14 "Request budgets"). If you create `.env.example`, backfill it from those.
   - Secrets: Never in code, use vault/secrets manager for prod
   ## 20. Units
 

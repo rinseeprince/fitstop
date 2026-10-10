@@ -1490,6 +1490,10 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 - `/api/dashboard/*` - coach dashboard aggregation routes
 - `/api/auth/*` - Better Auth's endpoints (`app/api/auth/[...all]`), which run Better Auth's own chain and answers rather than the ordering above (see "Better Auth"); `/api/auth/me` is the app's own route (`apiRateLimit`, then the session)
 
+### Database calls per request
+
+Every route has a budget in database calls (CONVENTIONS §14 "Request budgets"), and `scripts/perf-routes.ts` holds them: one row per route under `/api/clients/**`, `/api/client/**`, `/api/check-in/**`, `/api/check-ins/**`, `/api/training/**` and `/api/content/**`, with each read's count as last measured. The counter, `lib/perf/db-calls.ts`, is installed on `supabaseAdmin` (`services/supabase-admin.ts`) and on Better Auth's pool (`lib/auth.ts`) and does nothing unless `PERF_COUNT=1` in the Next server; then every call prints a `[db]` line and every burst a `[db-burst]` line to the server's stdout. `scripts/perf-count.ts` starts its own `next dev` with it on, requests every read as the perf client and as its coach, and counts the lines, the request's auth (up to the end of its last Better Auth read) apart from the route's own calls.
+
 ---
 
 ## Check-in System

@@ -5,9 +5,10 @@
  * CSRF check and Better Auth's origin check all read one origin. No email the
  * server sends leaves the machine: Resend points at a closed port, or at the
  * proof's own mailbox (scripts/proof-mailbox.ts) when the proof reads its
- * emails. It reports nothing to Sentry. It runs in its own process group, so
- * stopping it stops nothing else, and any exit of the script stops it, an
- * interrupt included.
+ * emails. It reports nothing to Sentry. It prints every database call it makes
+ * (PERF_COUNT=1, lib/perf/db-calls.ts), which a proof and scripts/perf-count.ts
+ * read in `output`. It runs in its own process group, so stopping it stops
+ * nothing else, and any exit of the script stops it, an interrupt included.
  *
  * next dev holds a lock on this folder: one proof at a time, and none while
  * another next dev runs here.
@@ -64,6 +65,7 @@ export async function startProofServer({ emailTo = NO_EMAIL }: { emailTo?: strin
       NEXT_PUBLIC_APP_URL: base,
       RESEND_BASE_URL: emailTo,
       SENTRY_DSN: "",
+      PERF_COUNT: "1",
     },
   });
   child.stdout?.on("data", (chunk: Buffer) => output.push(chunk.toString()));

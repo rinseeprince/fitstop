@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { countDbCalls } from "@/lib/perf/db-calls";
 import type { Database } from "@/types/database";
 
 // Server-only Supabase client with service role key
@@ -25,3 +26,7 @@ export const supabaseAdmin = createClient<Database>(
     },
   }
 );
+
+// PERF_COUNT=1 in the Next server prints every call this client makes
+// (CONVENTIONS §14 "Request budgets"); unset, it changes nothing.
+countDbCalls(supabaseAdmin);

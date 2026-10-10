@@ -29,7 +29,8 @@ page it touches, and a gate keeps it removed:
 2. Readers recompute instead of sharing (the 7-day figures computed 3× in one request). → §2.6 one week reader.
 3. Pagination in memory after a whole-history read. → §2.5 paged in the database.
 4. Whole objects for a few fields (the whole program for eight plan fields; `select("*")` ×49). → §2.7 narrow reads.
-5. Invalidation by prefix (every calendar write refetches a 210 kB program). → §2.7 exact keys.
+5. Invalidation by prefix (every calendar write refetches a 210 kB program). → §2.7 narrow reads inside an area, and
+   a save that seeds its own key (CONVENTIONS §7's area rule stays).
 6. Multi-statement writes without a transaction (13 paths). → §2.4 atomic RPCs.
 And underneath them, nothing counted: tests mock the database, so a 53-statement route passes like a 3-statement
 one. → §2.3 the counter and `check:perf`, built first.
@@ -95,7 +96,7 @@ export type ClientContext = {
 |---|---|
 | A GET route, after auth | ≤ 6 database calls, ≤ 3 of them sequential |
 | A write route, after auth | ≤ 3 reads + 1 RPC (or 1 statement) |
-| A page's first paint, app routes only, chrome excluded | no more requests than today's count (`scripts/perf-routes.ts` records it) and each within its route budget |
+| A page's first paint, app routes only, chrome excluded | no more requests than before the change, each within its route budget (checked in review: no script opens a page) |
 | A route's JSON body | ≤ 50 kB, except the plan editor's read and the builder's template read |
 | Any read that can exceed one page | paged in the database (keyset, §8), never read whole and sliced |
 
@@ -106,17 +107,22 @@ route over budget.
 ### 2.3 The counter and `check:perf` (P0)
 
 - **`lib/perf/db-calls.ts`.** When `PERF_COUNT=1`, patches `supabaseAdmin.from` / `.rpc` (the shape of
-  `scripts/perf-baseline-wrapper.ts`, which moves here and is imported by the baseline harness) and `authPool.query`
-  in `lib/auth.ts`, and prints one line per call to the server's stdout:
-  `[db] postgrest clients select 212ms 1 row 1.8kB` / `[db] rpc get_exercise_prs 340ms` / `[db] pg session 215ms`.
+  `scripts/perf-baseline-wrapper.ts`, which moves here and is imported by the baseline harness) and every connection
+  Better Auth's pool in `lib/auth.ts` opens (Kysely queries a pooled connection, never `authPool.query`), and prints
+  one line per call to the server's stdout, its start stamped:
+  `[db] postgrest clients select 212.4ms 1 row 1.8kB @14:03:22.517` / `[db] rpc get_exercise_prs 340.0ms 12 rows 3.1kB @…` /
+  `[db] pg session select 215.2ms 1 row 322B @…`.
   When no call has happened for 300 ms it prints a summary of the burst: `[db-burst] 29 calls · serial ≈ 5 · 1.9 s`
   ("serial" = the greedy count of non-overlapping calls, the critical path's lower bound). Off (`PERF_COUNT` unset)
   it is a no-op import: production builds carry nothing.
 - **`scripts/perf-count.ts`.** Starts the proof server (`scripts/proof-server.ts`) with `PERF_COUNT=1`, signs in as the
-  perf fixtures (`scripts/perf-fixtures.ts`, `scripts/auth-fixtures.ts`), requests each route in
-  `scripts/perf-routes.ts` one at a time, counts the `[db]` lines the server printed between request and response
-  (the server's `output` array), and prints: route, calls, serial, ms, bytes, budget, over/under. `--enforce` exits
-  non-zero on any route over budget. `--write` records the measured counts as the rows' baselines.
+  perf client and as its own coach (on DEV the owner's coach; the perf coach has no login), requests each read in
+  `scripts/perf-routes.ts` one at a time as its screen sends it, counts the `[db]` lines the server printed from the
+  request until it went quiet (the server's `output` array), and prints: route, status, calls, serial, auth, ms,
+  bytes, over/under. Auth is everything up to the end of the request's last Better Auth read; the budget counts what
+  follows. A save is never requested, since it would change the fixture: its count is the `[db]` lines its proof's
+  server printed (owner, 2026-10-10). `--enforce` exits non-zero on any read over budget. `--write` records the
+  measured counts as the rows' baselines. `--only <text>` measures the rows whose key holds the text.
 - **`scripts/check-perf.ts` (`npm run check:perf`).** Static rules, each a ratchet against
   `scripts/check-perf-baseline.json` (a commit may not add a violation; phases remove them; `--write` rebaselines):
   - A: `select("*")` / `select('*')` / `` select(`*`` `` in `services/**` and `app/api/**`, outside
@@ -124,10 +130,10 @@ route over budget.
   - B: `getClientTodayString`, `getCoachTodayString`, `getClientWeekAnchor`, `getClientById` imported anywhere under
     `services/**` other than their own files. A ratchet from P0 (no new call site); from P4c the baseline is zero.
   - C: `.slice(offset` or `.slice(from` in `app/api/**`; `fetchAllPages(` in a route handler that returns a list.
-  - D: `mutate(` with a key predicate (a function) in `hooks/**` and `components/**` — the prefix matchers §2.7
-    retires. A ratchet from P0; from P6a the baseline is zero.
+  - D: not built (owner, 2026-10-10). CONVENTIONS §7's area invalidation stays, so nothing counts `mutate(`
+    predicates; §2.7 says what replaced exact keys.
   - E (from P4c): `perf-count --enforce` over `scripts/perf-routes.ts`, run in the gate when `--routes` is passed
-    (it needs DEV; the plain gate runs A–D).
+    (it needs DEV; the plain gate runs A–C).
 - **Where the numbers go.** Every commit's handover carries `perf-count`'s rows for the routes it touched, before and
   after, side by side. The owner's smokes record the `[db-burst]` lines for the pages they open.
 
@@ -181,7 +187,7 @@ figures, `getDailyLogs`, `getNutritionPeriod`, `getClientAdherenceForRange`, the
 client nutrition-plan route's week. After P5a the check-in context is ≤ 12 calls (today 29); the submit's reads ≤ 10
 (today ~45).
 
-### 2.7 Narrow reads and exact keys (P3b–P3d, P6a, P6b)
+### 2.7 Narrow reads, and a save that seeds its own key (P3b–P3d, P6a, P6b)
 
 - **Plan metadata.** `getTrainingPlanMetaForDate(ctx, date)` returns the plan row's named columns and a session
   count; `assertPlanOwned(planId, ctx)` is `training_plans select id, client_id`. The Training tab's route returns
@@ -195,11 +201,14 @@ client nutrition-plan route's week. After P5a the check-in context is ≤ 12 cal
 - **Measurements.** `/measurement-series` returns series + baseline (the Overview's and the Physique pane's reads);
   the log list is its own paged route `/measurements/log?cursor=` (keyset on `recorded_on, recorded_at, id`).
 - **`select("*")`** survives only in the allowlist (§2.3 A): rows a screen renders whole.
-- **Exact keys.** `invalidateTrainingData`, `invalidateNutritionCalendar` and the other area matchers in
-  `hooks/use-calendar-events.ts` and `hooks/use-nutrition-calendar-events.ts`
-  become explicit key lists built from the ids the caller knows. A write that returns the new state seeds its key and
-  does not refetch it; a key that no mounted component holds is not refetched. `useNutritionPlan` becomes SWR
-  (closing TECHNICAL-DEBT "`useNutritionPlan` is not SWR").
+- **A save seeds its own key; an area's reads are narrow** (owner, 2026-10-10, in place of exact keys). CONVENTIONS
+  §7's area invalidators stay (`invalidateTrainingData`, `invalidateNutritionCalendar` and the other matchers in
+  `hooks/use-calendar-events.ts` and `hooks/use-nutrition-calendar-events.ts`): a matcher still reaches a reader
+  added later. A write whose answer carries the new state seeds that key, and the area's refresh leaves the key
+  alone. Every read an area refresh refetches is narrow: the Training tab's plan read returns metadata (the first
+  bullet above), not the 210 kB program. `useNutritionPlan` becomes SWR (closing TECHNICAL-DEBT "`useNutritionPlan`
+  is not SWR"). Exact keys come back only if `perf-count` shows area refreshes still cost real time once P6a has
+  landed, and then with a guard that a reader added later cannot be missed silently.
 
 ### 2.8 Aggregates in SQL (P7a, P7b)
 
@@ -280,7 +289,9 @@ Defaults are set so no commit stops on a blank. The owner may change any before 
   (`/api/client/goal`, the sunset's rename of the journey route, is already goal-only.)
 - **D15 `ClientContext`** as §2.1; after P4c the three resolvers and `getClientById` are route-layer only (rule B at zero).
 - **D16 The week reader** as §2.6; consumers are pure functions of `WeekFigures`.
-- **D17 Exact keys** as §2.7; a write seeds, never refetches, its own key.
+- **D17 Area invalidation stays** (owner, 2026-10-10; it was "exact keys"): CONVENTIONS §7's area matchers stay; a
+  write seeds, never refetches, its own key; every read inside an area is narrow (§2.7). Exact keys only on
+  `perf-count`'s evidence after P6a, with a guard for a reader added later.
 - **D18 Aggregates** as §2.8; `compute_check_in_adherence` replaces the TS only after `scripts/adherence-parity-proof.ts`
   shows equal results for every client of the scale seed.
 - **D19 AI** as §2.9: SSE for the assistant and an in-memory catalog. The check-in AI left with the sunset.
@@ -300,7 +311,7 @@ Defaults are set so no commit stops on a blank. The owner may change any before 
 
 - **CONVENTIONS.md.** No rule is broken. P0 adds the six rules to §8/§14 (the request context, one RPC per
   multi-table write named with its gate, the budgets, reads return what the screen renders, paged in the database,
-  exact keys), each with its gate marker. P9 marks every OTHER rule in the file as gated (named check) or ungated. P4
+  an area's reads narrow and a save seeding its own key), each with its gate marker. P9 marks every OTHER rule in the file as gated (named check) or ungated. P4
   makes §8's "routes authenticate, services use `supabaseAdmin`" literally true for context too.
 - **ARCHITECTURE.md** (current shape only, per commit): "Coach-side Data Flow" (the Overview's and the tabs' reads),
   "Client Portal Architecture" (the check-in context, the day summary, the hub), "Auth Model" (the proxy's scope),
@@ -370,12 +381,15 @@ prompt disagree, this block wins.
    **Every tier, before the gates — the whole-request review against the rules.** For each route the commit touched,
    follow the request from the route handler through every service to every database call, as the review of
    2026-10-10 did, and check it against the six P0 rules: context resolved once and handed down; one RPC for a
-   multi-table write; within budget; selects name what the screen reads; paged in the database; exact keys. The
+   multi-table write; within budget; selects name what the screen reads; paged in the database; an area's reads narrow
+   and a save seeding its own key. The
    handover lists each route with the six marks (✓ or the file:line that breaks the rule and why it is left). A
    rule broken by code this commit wrote is fixed before the gates run; one broken by code it did not touch is a
    mark in the handover for the commit that owns it.
 5. **Proof and gates:** the entry's proof once on the finished code; the tier's gates once after the last fix.
-   `perf-count` before the change and after it, for the routes the entry names.
+   `perf-count` before the change and after it, for the routes the entry names. It requests reads only (owner,
+   2026-10-10): a save's count, before and after, is the `[db]` lines its proof's server printed while the proof
+   drove it.
 6. **Scope:** build what the entry lists. A fact that changes how a later commit must be built goes into that
    commit's entry here; anything else worth doing goes in the handover as a recommendation.
 7. **Context:** `PERF_COUNT=1` is set in `.env.local` from P0 on. `lsof -i :3000` first: the proof server starts its
@@ -417,20 +431,23 @@ violation from this commit on.
   Tier A review, named as such. Under §14: the budgets table (§2.2) with the sentence *a route over budget does not
   ship*; *a read returns what the screen renders — no `select("*")` in a service unless the row is returned whole, and
   then it is allowlisted with a reason*; *anything that can exceed one page is paged in the database; never read whole
-  and sliced*; *invalidate by exact key, never by prefix; a write that returns the new state seeds its key and does not
-  refetch it*. Each new rule ends with its gate marker: `[gate: check:perf B]`, `[gate: review]`, `[gate: check:perf E]`,
-  `[gate: check:perf A]`, `[gate: check:perf C]`, `[gate: check:perf D]`.
+  and sliced*; *an area's reads are narrow, and a write that returns the new state seeds its key and does not refetch
+  it* (owner, 2026-10-10: this replaced "invalidate by exact key, never by prefix", which contradicted CONVENTIONS §7's
+  area rule; §7 stays). Each new rule ends with its gate marker: `[gate: check:perf B]`, `[gate: review]`,
+  `[gate: check:perf E]`, `[gate: check:perf A]`, `[gate: check:perf C]`, and for the last `[gate: check:perf E]` (the
+  narrow read) and `[gate: review]` (the seeded key).
 - `lib/perf/db-calls.ts` as §2.3: the patch moves out of `scripts/perf-baseline-wrapper.ts` (which imports it); `[db]`
   lines and the `[db-burst]` summary; a no-op when `PERF_COUNT` is unset (a test proves the production path imports
-  nothing that touches `supabaseAdmin`). `authPool.query` counted as `[db] pg`.
+  nothing that touches `supabaseAdmin`). Better Auth's statements counted as `[db] pg`.
 - `scripts/perf-routes.ts`: one row per route in §6's entries (every route under `app/api/clients/[id]/**`,
   `app/api/client/**`, `app/api/check-in/**`, `app/api/check-ins/**`, `app/api/clients`, `app/api/training/**`,
-  `app/api/content/**`), role, the perf fixtures' ids, the §2.2 budget, baseline 0 until `--write`.
+  `app/api/content/**`), role, the perf fixtures' ids, the §2.2 budget, baseline 0 until `--write`. A save's row keeps
+  its budget and is never requested (owner, 2026-10-10).
 - `scripts/perf-count.ts` as §2.3, with `--enforce` and `--write`; run `--write` once so every row carries today's count
   (the plan's "before" numbers; paste the table into this entry's handover).
-- `scripts/check-perf.ts`, `npm run check:perf`, rules A–D as ratchets from this commit with
-  `scripts/check-perf-baseline.json` written by `--write` (a later commit may not add a violation; P4c and P6a take B
-  and D to zero); `scripts/check-perf-allowlist.ts` starts empty.
+- `scripts/check-perf.ts`, `npm run check:perf`, rules A–C as ratchets from this commit with
+  `scripts/check-perf-baseline.json` written by `--write` (a later commit may not add a violation; P4c takes B to
+  zero); `scripts/check-perf-allowlist.ts` starts empty. Rule D is not built (§2.3).
 - Docs: ARCHITECTURE "API Route Structure": one paragraph on the counter and where the budgets live.
 
 ```text
@@ -650,7 +667,7 @@ you decided that the plan did not say.
   program) replaced by a `training_plans select id, client_id` assertion (the first use of §2.7's `assertPlanOwned`,
   placed in `services/training-service.ts`).
 - Browser: `components/clients/training/calendar/use-placed-session-editor.ts` seeds the response and no longer
-  refetches its own key (D17's first instance; the area invalidation of `/training` and `/events` stays until P6a).
+  refetches its own key (D17's first instance; the area invalidation of `/training` and `/events` stays).
 - Tests, proof §5 P2c, smoke §7.3. Docs: ARCHITECTURE "Coach-side Data Flow" (the tray save).
 
 ```text
@@ -1098,7 +1115,7 @@ anything you decided that the plan did not say.
 - `services/today-service.ts`, `services/check-in-week-service.ts`: the SQL-reading exports are deleted; what remains is
   pure and lives in `lib/client-context.ts`. `getClientById` is imported only by the two full-row routes.
 - `scripts/check-perf.ts`: rule B's baseline is zero; rule E (`perf-count --enforce` over `scripts/perf-routes.ts`) is
-  on when `--routes` is passed; `package.json` `check:perf` runs A–D, `check:perf:routes` runs E.
+  on when `--routes` is passed; `package.json` `check:perf` runs A–C, `check:perf:routes` runs E.
 - Docs: ARCHITECTURE "API Route Structure" (ClientContext: who makes it, who takes it), current shape only.
 
 ```text
@@ -1224,7 +1241,7 @@ STATUS with SHIPPED, the hash and the date, and hand over: what changed, the
 counts before and after, and anything you decided that the plan did not say.
 ```
 
-### P6a — `perf(training): the Training tab reads plan metadata, the calendar invalidates exact keys, and the nutrition plan read is SWR` · Tier B
+### P6a — `perf(training): the Training tab reads plan metadata, a save seeds its own key, and the nutrition plan read is SWR` · Tier B
 
 **STATUS: PLANNED 2026-10-10.**
 
@@ -1234,15 +1251,17 @@ counts before and after, and anything you decided that the plan did not say.
   read eight plan-level fields; grep every reader of `plan.sessions` and give each the include it needs).
 - The remaining whole-program readers used for `plan.clientId` or `.some(id)` (`events/[eventId]/route.ts`, its
   `move`, `[planId]/route.ts` GET/PATCH/DELETE) use `assertPlanOwned`.
-- Exact keys (D17): `hooks/use-calendar-events.ts invalidateTrainingData` and `isClientTrainingAreaKey`,
-  `hooks/use-nutrition-calendar-events.ts`'s matcher, `components/clients/metrics/hooks/use-client-blocks.ts
-  invalidateBlocks` become explicit key lists; a write seeds its own key and does not refetch it (`use-placed-session-editor.ts`
-  from P2c; `plan-editor-overlay.tsx` does not refetch the edit key on save; `blocks-subtab.tsx` does not refetch the
-  blocks it just seeded); "clear week" becomes one request: `DELETE /api/clients/[id]/training/[planId]/events?from=&to=`
-  (one detach + one delete inside the existing clear helpers).
+- The area invalidators stay (D17, CONVENTIONS §7): `hooks/use-calendar-events.ts invalidateTrainingData` and
+  `isClientTrainingAreaKey` and `hooks/use-nutrition-calendar-events.ts`'s matcher keep matching their areas. A save
+  whose answer carries the new state seeds its own key and the area's refresh leaves that key alone: the invalidators
+  take the seeded key to skip (`use-placed-session-editor.ts` from P2c; `plan-editor-overlay.tsx` does not refetch the
+  edit key on save). The reads a calendar save refetches are narrow: `GET /training`'s metadata above is the one that
+  mattered. "clear week" becomes one request: `DELETE /api/clients/[id]/training/[planId]/events?from=&to=` (one detach
+  + one delete inside the existing clear helpers).
 - `hooks/use-nutrition-plan.ts` becomes `useSWR` on `/api/clients/[id]/nutrition` (TECHNICAL-DEBT entry closed;
   `refetchNutrition` → `mutate`); the Nutrition tab's `/blocks` read mounts with the drawer, not the tab.
-- `check:perf` rule D's baseline falls to zero.
+- Not in this commit: exact keys. They come back only if `perf-count` after this commit shows area refreshes still
+  cost real time, and then with a guard that a reader added later cannot be missed silently (owner, 2026-10-10).
 
 ```text
 Read CONVENTIONS.md (whole) and from docs/PERF-PLAN.md its head, §2.7, D17, §5
@@ -1251,24 +1270,22 @@ read "Coach-side Data Flow" and "Training Completion Hierarchy". Read
 services/training-service.ts, app/api/clients/[id]/training/route.ts and every
 route under app/api/clients/[id]/training/**, hooks/use-training-plan.ts,
 hooks/use-calendar-events.ts, hooks/use-nutrition-calendar-events.ts,
-hooks/use-nutrition-plan.ts, hooks/use-nutrition-builder.ts,
-components/clients/metrics/hooks/use-client-blocks.ts,
-components/clients/metrics/blocks/blocks-subtab.tsx, every file under
+hooks/use-nutrition-plan.ts, hooks/use-nutrition-builder.ts, every file under
 components/clients/training/ that reads `plan.sessions` or calls
 invalidateTrainingData (grep), components/clients/training/plan-editor-overlay.tsx,
 components/clients/training/calendar/training-calendar-view.tsx (clear week),
 the TECHNICAL-DEBT.md entries "`useNutritionPlan` is not SWR" and
-"Nutrition-calendar invalidation", scripts/check-perf.ts (rule D).
+"Nutrition-calendar invalidation".
 
 Job: commit P6a of docs/PERF-PLAN.md §6 — `perf(training): the Training tab
-reads plan metadata, the calendar invalidates exact keys, and the nutrition plan
-read is SWR`. Build exactly what the entry lists, to §2.7 and D17.
+reads plan metadata, a save seeds its own key, and the nutrition plan read is
+SWR`. Build exactly what the entry lists, to §2.7 and D17.
 
 You have my go: don't show me a plan and don't wait for my review. Stop and ask
 me only if a decision this commit needs is blank, if building it would break a
 CONVENTIONS.md rule, or if a gate fails and its root fix lies outside this commit.
 
-Done when: check:perf rule D reports zero; the new range-delete route has a test
+Done when: the new range-delete route has a test
 and a mutation for its ownership; the component tests for the calendar, the tray
 and the plan editor pass; perf-count before and after for GET /training (calls
 and bytes) and for a move, a delete and a tray save (the refetches that follow,
